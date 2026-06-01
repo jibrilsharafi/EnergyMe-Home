@@ -6,7 +6,7 @@
 
 <h3>🛒 Want it ready to use? Pre-assembled and calibrated units. Just install and monitor!</h3>
 
-Available on our <a href="https://www.energyme.net/product-home-en">website</a> and on <a href="https://www.tindie.com/stores/energyme/">Tindie</a>
+Available on our <a href="https://www.energyme.net/shop">website</a> and on <a href="https://www.tindie.com/stores/energyme/">Tindie</a>
 
 [![Release](https://img.shields.io/github/release/jibrilsharafi/EnergyMe-Home.svg?style=flat-square)](https://github.com/jibrilsharafi/EnergyMe-Home/releases) [![Stars](https://img.shields.io/github/stars/jibrilsharafi/EnergyMe-Home.svg?style=flat-square&label=Stars)](https://github.com/jibrilsharafi/EnergyMe-Home/stargazers) [![License](https://img.shields.io/github/license/jibrilsharafi/EnergyMe-Home.svg?style=flat-square)](https://github.com/jibrilsharafi/EnergyMe-Home/blob/main/LICENSE) <a href="https://certification.oshwa.org/it000025.html"><img src="resources/certification-mark-IT000025-wide.svg" alt="OSHWA Certified Open Source Hardware IT000025" height="20" style="background:#ffffff;"></a>
 
@@ -16,7 +16,7 @@ Available on our <a href="https://www.energyme.net/product-home-en">website</a> 
 
 *EnergyMe-Home* is an open-source energy monitoring system for home use, capable of monitoring up to 16 circuits. It integrates with any platform through REST API, MQTT, Modbus TCP, and InfluxDB.
 
-Built for makers and DIY enthusiasts who want to track their home's energy consumption. The hardware uses ESP32-S3 and ADE7953 energy measurement IC, while the firmware is written in C++ with PlatformIO and Arduino framework. You can build and customize it yourself - all hardware designs and software are open-source. Prefer it ready to go? Grab a [pre-assembled unit](https://www.energyme.net/product-home-en).
+Built for makers and DIY enthusiasts who want to track their home's energy consumption. The hardware uses ESP32-S3 and ADE7953 energy measurement IC, while the firmware is written in C++ with PlatformIO and Arduino framework. You can build and customize it yourself - all hardware designs and software are open-source. Prefer it ready to go? Grab a [pre-assembled unit](https://www.energyme.net/shop).
 
 > A demo speaks more than 1000 words: try the [demo dashboard](https://demo-energyme-home.energyme.net)!
 
