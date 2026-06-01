@@ -1,29 +1,26 @@
 # <img src="resources/logo.png" width="32" height="32" align="center"> EnergyMe-Home
 
-<!-- All the usual badges (license, stars, release, etc.) -->
-![Online](https://img.shields.io/badge/dynamic/json?url=https://yz5sbvb4cubcfjfysawspjsz3i0lsnld.lambda-url.eu-west-1.on.aws/&query=$.total_active&style=for-the-badge&label=EnergyMe-Home%20Active&color=green&logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAACXBIWXMAAAHYAAAB2AH6XKZyAAAD+ElEQVR42r2Xa0xTVxzAyRaBrcRlU4bZK5hhhiPZJGaguEUZzrgikOHI1kQT34+YGD/4SExM6r23two2tS8KrSCtpbWYKEQUFFEuglBa2tSm1kd8EASiH4wYTTRK/95zg8U+bnvv9fHh96Ef2t/vnHvO6blJAJAkhH8u65anH699VdihsaLPQhH0pVJKXT7DVjMxzWSEz8wGKKbU6z5awIo2o3S2/cgrJH/DDHomxL3KeR88YHlbfUOmzRRE0kiyTunHV5+rEn2wgKXtNc0ZlqNIxkpBu673vQesuStNnd9a7UeCRKSYjVDWrdrw3gL+7jDl5p80P2MEHMk6qX+ScFABZaYU4JO4AaWt9Vvzmo4HRaa6KQFHyqjDeyJ/zzYmz7SNkTtto6TjX+8BKHETK1kDVpyrU82xm4LJvMRT5J/VXUO/0zQsz7KOkLtpqdM2KgdE/X05fN2DQ5GHtMQMEJ9tOJ3RyCw2QXxpNUBpl+qpdVR+HQkjKfcSkNKFQZ6T8EUFFLcf3fettYGXcHqjARa262CdQwkHb1SBdQSJYqMeIiGNwpiA7H7iUViA5NKhmd/YDS+5in87o4PdXgWY7x+YFCRmoYsZPUP6ZWwiLKCgTdvJRTy3uRqwQBWLhJ1dN0kkDiGiMAgFlFBVs9MsxmA8cTJNaZcaLMwU88M4TEJ6DxKHg84YJqCwQ1uXSL7NpeQpnmLRIIGEUZT5FN8zAT+d0j+IF/Bfj0qwfPt1GZLFROKTZTAB6fbal+x7WgtWgfLKeyRM744tF9EwayCpqenTVBZ5msUA2jsHBckNw3L4rhfJYjOzZ3IX5LcczmAbvfiiWpDcRC/UnH4ciViZ0088ZgLQSkw2xw5Q3KrkLW+k5QWh/c7OIid+JbQN6eMzagvOstfwlltplroTyxFiDy4NBWQ3V49HBKDjlbd8mYebHJ2CFX5pWihg8XktFRmw8oqGsxwdTn9yHDnij0GiM+xCsn5AUZQSsQ5WObScF1yei7v8q248KLlKZkfdiH5u0Y+9HbDGmXgG0H/7LwM4ZzniLzehiXklE3eqJW9fQNa64m9BzRAJP/bxk//qwIfj3glzWqpH3gRscLPPAHabpPfxfl7yrD58HB29cQMqutXFqZNrYSNLwJaADEQ8xIgcB/6wwl85i9OtOLdVfxMFbPJoop73kkGCl/gLCoMij6x1vqt2GudrefklxQLRMSNs9k4FyO+Q8EMvzln8OU3uADZU4Sd+F/ReUHhB07flqh6OjZAg8REg4iKlmOf8fIlHdnGtH8t/pxeTHb4jxXtv6CY2BnCY66gMY57zECxwK4OLPcoXy7yqRyU+VeB/v+rEnnuKAiEvp68BSJih/3uMeCMAAAAASUVORK5CYII=)
+<div align="center">
 
 ![Coverage](https://yz5sbvb4cubcfjfysawspjsz3i0lsnld.lambda-url.eu-west-1.on.aws/flags.svg)
 
-[![GitHub release](https://img.shields.io/github/release/jibrilsharafi/EnergyMe-Home.svg)](https://github.com/jibrilsharafi/EnergyMe-Home/releases)
-[![GitHub stars](https://img.shields.io/github/stars/jibrilsharafi/EnergyMe-Home.svg?style=social&label=Stars)](https://github.com/jibrilsharafi/EnergyMe-Home/stargazers)
-[![GitHub issues](https://img.shields.io/github/issues/jibrilsharafi/EnergyMe-Home.svg)](https://github.com/jibrilsharafi/EnergyMe-Home/issues)
-[![GitHub license](https://img.shields.io/github/license/jibrilsharafi/EnergyMe-Home.svg)](https://github.com/jibrilsharafi/EnergyMe-Home/blob/main/LICENSE)
+<h3>🛒 Want it ready to use? Pre-assembled and calibrated units. Just install and monitor!</h3>
 
-<a href="https://certification.oshwa.org/it000025.html"><img src="resources/certification-mark-IT000025-wide.svg" alt="OSHWA Certified Open Source Hardware IT000025" height="40" style="background:#ffffff;"></a>
-<a href="https://www.tindie.com/stores/energyme/?ref=offsite_badges&utm_source=sellers_jabrillo&utm_medium=badges&utm_campaign=badge_small"><img src="https://d2ss6ovg47m0r5.cloudfront.net/badges/tindie-smalls.png" alt="I sell on Tindie" height="42"></a>
+Available on our <a href="https://www.energyme.net/product-home-en">website</a> and on <a href="https://www.tindie.com/stores/energyme/">Tindie</a>
+
+[![Release](https://img.shields.io/github/release/jibrilsharafi/EnergyMe-Home.svg?style=flat-square)](https://github.com/jibrilsharafi/EnergyMe-Home/releases) [![Stars](https://img.shields.io/github/stars/jibrilsharafi/EnergyMe-Home.svg?style=flat-square&label=Stars)](https://github.com/jibrilsharafi/EnergyMe-Home/stargazers) [![License](https://img.shields.io/github/license/jibrilsharafi/EnergyMe-Home.svg?style=flat-square)](https://github.com/jibrilsharafi/EnergyMe-Home/blob/main/LICENSE) <a href="https://certification.oshwa.org/it000025.html"><img src="resources/certification-mark-IT000025-wide.svg" alt="OSHWA Certified Open Source Hardware IT000025" height="20" style="background:#ffffff;"></a>
+
+</div>
 
 ![Homepage](resources/homepage.gif)
 
-> **Join the community!** Head over to [GitHub Discussions](https://github.com/jibrilsharafi/EnergyMe-Home/discussions) - ask questions, share your builds and dashboards, suggest features, and exchange integration tips. It's the home for everyone building, installing, or tinkering with EnergyMe-Home
-
-> Want to try it? Access the [demo dashboard](https://demo-energyme-home.energyme.net)!
-
-> Don't want to build it yourself? Pre-assembled units are available on our [website store](https://www.energyme.net/product-home-en) and on [Tindie](https://www.tindie.com/stores/energyme/).
-
 *EnergyMe-Home* is an open-source energy monitoring system for home use, capable of monitoring up to 16 circuits. It integrates with any platform through REST API, MQTT, Modbus TCP, and InfluxDB.
 
-Built for makers and DIY enthusiasts who want to track their home's energy consumption. The hardware uses ESP32-S3 and ADE7953 energy measurement IC, while the firmware is written in C++ with PlatformIO and Arduino framework. You can build and customize it yourself - all hardware designs and software are open-source.
+Built for makers and DIY enthusiasts who want to track their home's energy consumption. The hardware uses ESP32-S3 and ADE7953 energy measurement IC, while the firmware is written in C++ with PlatformIO and Arduino framework. You can build and customize it yourself - all hardware designs and software are open-source. Prefer it ready to go? Grab a [pre-assembled unit](https://www.energyme.net/product-home-en).
+
+> A demo speaks more than 1000 words: try the [demo dashboard](https://demo-energyme-home.energyme.net)!
+
+> **Join the community!** Head over to [GitHub Discussions](https://github.com/jibrilsharafi/EnergyMe-Home/discussions) - ask questions, share your builds and dashboards, suggest features, and exchange integration tips. It's the home for everyone building, installing, or tinkering with EnergyMe-Home
 
 ## Supported Electrical Systems
 
