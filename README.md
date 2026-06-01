@@ -63,7 +63,7 @@ The key components include:
 - **Multiplexers**: used to monitor multiple circuits at once
 - **3.5 mm jack connectors**: used to easily connect current transformers
 
-PCB schematics and BOMs are available in the `hardware/pcb` directory, while datasheets for key components are in the `hardware/components` directory. Additional hardware specifications and technical details can be found in the [`hardware/README.md`](hardware/README.md).
+PCB schematics and BOMs are available in the `hardware/pcb` directory, while datasheets for key components are in the `hardware/components` directory. Additional hardware specifications and technical details can be found in the [`hardware/README.md`](hardware/README.md), with a condensed one-page summary in the [PCB & Firmware Datasheet](hardware/datasheet.md).
 
 The project is published on *EasyEDA* for easy access to the PCB design files. You can find the project on [EasyEDA OSHWLab](https://oshwlab.com/jabrillo/multiple-channel-energy-meter).
 
