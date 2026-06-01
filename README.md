@@ -19,6 +19,8 @@
 
 > Want to try it? Access the [demo dashboard](https://demo-energyme-home.energyme.net)!
 
+> Don't want to build it yourself? Pre-assembled units are available on our [website store](https://www.energyme.net/product-home-en) and on [Tindie](https://www.tindie.com/stores/energyme/).
+
 *EnergyMe-Home* is an open-source energy monitoring system for home use, capable of monitoring up to 16 circuits. It integrates with any platform through REST API, MQTT, Modbus TCP, and InfluxDB.
 
 Built for makers and DIY enthusiasts who want to track their home's energy consumption. The hardware uses ESP32-S3 and ADE7953 energy measurement IC, while the firmware is written in C++ with PlatformIO and Arduino framework. You can build and customize it yourself - all hardware designs and software are open-source.
