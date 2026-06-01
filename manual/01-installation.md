@@ -73,9 +73,12 @@ If you ordered additional CTs to monitor more than 3 branch circuits, you'll fin
 
 The device comes with **two wires already connected** to the internal power terminal: a **brown wire (Line)** and a **blue wire (Neutral)**. You only need to connect the free ends of these wires to the **nearest Line and Neutral references** in the panel.
 
-1. Connect the **brown wire (Line)** to the nearest available Line reference, typically the Line side of any breaker in the panel.
+1. Connect the **brown wire (Line)** to a protected Line reference: the **output (bottom) side of a breaker**, so the device is protected by that breaker. **Do not** tap the unprotected input bus on top.
 2. Connect the **blue wire (Neutral)** to the **Neutral bar** of the panel (the common neutral terminal block).
 3. Tighten the screws firmly.
+
+> **ⓘ NOTE: Upstream breaker (recommended)**  
+> The device has an internal 500 mA fuse, so a dedicated breaker is **not mandatory**. As best practice, you can fit a **1-2 A breaker** upstream of the device.
 
 > **ⓘ NOTE: Custom wiring**  
 > If the provided wiring is not suitable for your application, it is possible to use your own wires.
