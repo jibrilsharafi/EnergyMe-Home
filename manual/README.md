@@ -1,12 +1,10 @@
-<div class="cover">
-  <img src="assets/logo_horizontal.png" alt="EnergyMe">
-  <div class="cover-sub">Installation Manual</div>
-  <div class="cover-meta">Revision {{MANUAL_VERSION}} - {{MANUAL_DATE}}</div>
-</div>
+<img src="assets/logo_horizontal.png" alt="EnergyMe" width="280">
 
-# EnergyMe Home: Installation Manual
+# EnergyMe-Home: Setup & Usage Guide
 
-*Manual revision {{MANUAL_VERSION}} - {{MANUAL_DATE}}*
+A practical guide to wiring, configuring, and using the open-source EnergyMe-Home board: electrical installation, Wi-Fi and web-interface setup, channel mapping, and troubleshooting.
+
+> ⓘ **Maker / community guide.** This covers the open-source board you build or run yourself. If you bought a ready-made unit, the official product Installation Manual and safety & compliance documentation are on our [website](https://www.energyme.net/product-home-en).
 
 ## Before you start: Read this page
 
@@ -30,7 +28,7 @@ Hold tight. This is going to be interesting.
 | | Clamping the CTs around the wires |
 
 > **⚠ WARNING: Electrical hazard**  
-> Do not open your electrical panel with the main breaker ON. Mains voltage can kill. If you have any doubt, **stop and call a qualified electrician**. The installation must comply with **your local electrical codes and regulations**. EnergyMe S.r.l. is not liable for installations performed by unqualified personnel or in violation of local codes.
+> Do not open your electrical panel with the main breaker ON. Mains voltage can kill. If you have any doubt, **stop and call a qualified electrician**. The installation must comply with **your local electrical codes and regulations**. You assume all responsibility for the installation.
 
 ---
 
@@ -40,4 +38,3 @@ Hold tight. This is going to be interesting.
 2. [Setup](02-setup.md) — Wi-Fi, web interface, channel configuration (end user)
 3. [Troubleshooting](03-troubleshooting.md) — symptom-driven guide for when something doesn't behave as expected
 4. [Appendices](appendices.md) — channel map, three-phase configuration, LED reference, button reference
-5. [Safety & Compliance Information](safety-and-compliance.md) — manufacturer, Declaration of Conformity, intended use, residual risks, maintenance, disposal (WEEE), warranty
