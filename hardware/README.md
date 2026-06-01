@@ -1,6 +1,6 @@
 # EnergyMe-Home Hardware Documentation
 
-This document provides detailed hardware specifications and technical information for the EnergyMe-Home PCB design. For general project information, software features, and integrations, see the [main README](../README.md).
+This document provides detailed hardware specifications and technical information for the EnergyMe-Home PCB design. For general project information, software features, and integrations, see the [main README](../README.md). For a condensed one-page specification of the PCB and firmware, see the [PCB & Firmware Datasheet](datasheet.md).
 
 Now, take a look at these beautiful renderings of the PCB design before diving into the technical details:
 

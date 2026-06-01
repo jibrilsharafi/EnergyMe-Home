@@ -16,8 +16,12 @@ jobs:
   # Job 1: Validation build on PRs (quick feedback)
   build-check:
     runs-on: ubuntu-latest
-    name: Build Check
+    name: Build Check (${{ matrix.env }})
     if: github.event_name == 'pull_request'
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [ esp32s3-dev, esp32s3-prod ]
 
     steps:
     - name: Checkout code
@@ -49,47 +53,38 @@ jobs:
         echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
         echo "📌 Detected version: $VERSION"
 
-    - name: Determine build environment
-      id: envs
-      run: |
-        if [[ "${{ github.base_ref }}" == "main" || "${{ github.head_ref }}" == *"main"* ]]; then
-          echo "ENV1=esp32s3-prod" >> $GITHUB_OUTPUT
-          echo "ENV_TYPE=prod" >> $GITHUB_OUTPUT
-          echo "📦 Building PRODUCTION environment"
-        else
-          echo "ENV1=esp32s3-dev" >> $GITHUB_OUTPUT
-          echo "ENV_TYPE=dev" >> $GITHUB_OUTPUT
-          echo "📦 Building DEVELOPMENT environment"
-        fi
-
-    - name: Build firmware (${{ steps.envs.outputs.ENV1 }})
+    - name: Build firmware (${{ matrix.env }})
       working-directory: source
       run: |
-        echo "🏗️ Building firmware for ${{ steps.envs.outputs.ENV1 }}..."
-        pio run -e ${{ steps.envs.outputs.ENV1 }}
-        echo "✅ Build completed for ${{ steps.envs.outputs.ENV1 }}!"
+        echo "🏗️ Building firmware for ${{ matrix.env }}..."
+        pio run -e ${{ matrix.env }}
+        echo "✅ Build completed for ${{ matrix.env }}!"
 
-    - name: Prepare artifacts (${{ steps.envs.outputs.ENV1 }})
+    - name: Prepare artifacts (${{ matrix.env }})
       working-directory: source
       run: |
-        mkdir -p artifacts/${{ steps.envs.outputs.ENV1 }}
-        cp .pio/build/${{ steps.envs.outputs.ENV1 }}/firmware.bin artifacts/${{ steps.envs.outputs.ENV1 }}/energyme_home_${{ steps.version.outputs.VERSION }}.bin
-        cp .pio/build/${{ steps.envs.outputs.ENV1 }}/firmware.elf artifacts/${{ steps.envs.outputs.ENV1 }}/energyme_home_${{ steps.version.outputs.VERSION }}.elf
-        cp .pio/build/${{ steps.envs.outputs.ENV1 }}/partitions.bin artifacts/${{ steps.envs.outputs.ENV1 }}/partitions.bin
-        cp .pio/build/${{ steps.envs.outputs.ENV1 }}/bootloader.bin artifacts/${{ steps.envs.outputs.ENV1 }}/bootloader.bin
+        mkdir -p artifacts/${{ matrix.env }}
+        cp .pio/build/${{ matrix.env }}/firmware.bin artifacts/${{ matrix.env }}/energyme_home_${{ steps.version.outputs.VERSION }}.bin
+        cp .pio/build/${{ matrix.env }}/firmware.elf artifacts/${{ matrix.env }}/energyme_home_${{ steps.version.outputs.VERSION }}.elf
+        cp .pio/build/${{ matrix.env }}/partitions.bin artifacts/${{ matrix.env }}/partitions.bin
+        cp .pio/build/${{ matrix.env }}/bootloader.bin artifacts/${{ matrix.env }}/bootloader.bin
 
-    - name: Upload artifacts (${{ steps.envs.outputs.ENV1 }})
+    - name: Upload artifacts (${{ matrix.env }})
       uses: actions/upload-artifact@v7
       with:
-        name: firmware-${{ steps.envs.outputs.ENV1 }}-check-${{ steps.version.outputs.VERSION }}-${{ github.sha }}
-        path: source/artifacts/${{ steps.envs.outputs.ENV1 }}/
+        name: firmware-${{ matrix.env }}-check-${{ steps.version.outputs.VERSION }}-${{ github.sha }}
+        path: source/artifacts/${{ matrix.env }}/
         retention-days: 7
 
   # Job 2: Full build on push to main/development (produces retained artifacts)
   build:
     runs-on: ubuntu-latest
-    name: Build
+    name: Build (${{ matrix.env }})
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/development')
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [ esp32s3-dev, esp32s3-prod ]
 
     steps:
     - name: Checkout code
@@ -121,40 +116,27 @@ jobs:
         echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
         echo "📌 Detected version: $VERSION"
 
-    - name: Determine build environment
-      id: envs
-      run: |
-        if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-          echo "ENV1=esp32s3-prod" >> $GITHUB_OUTPUT
-          echo "ENV_TYPE=prod" >> $GITHUB_OUTPUT
-          echo "📦 Building PRODUCTION environment"
-        else
-          echo "ENV1=esp32s3-dev" >> $GITHUB_OUTPUT
-          echo "ENV_TYPE=dev" >> $GITHUB_OUTPUT
-          echo "📦 Building DEVELOPMENT environment"
-        fi
-
-    - name: Build firmware (${{ steps.envs.outputs.ENV1 }})
+    - name: Build firmware (${{ matrix.env }})
       working-directory: source
       run: |
-        echo "🏗️ Building firmware for ${{ steps.envs.outputs.ENV1 }}..."
-        pio run -e ${{ steps.envs.outputs.ENV1 }}
-        echo "✅ Build completed for ${{ steps.envs.outputs.ENV1 }}!"
+        echo "🏗️ Building firmware for ${{ matrix.env }}..."
+        pio run -e ${{ matrix.env }}
+        echo "✅ Build completed for ${{ matrix.env }}!"
 
-    - name: Prepare artifacts (${{ steps.envs.outputs.ENV1 }})
+    - name: Prepare artifacts (${{ matrix.env }})
       working-directory: source
       run: |
-        mkdir -p artifacts/${{ steps.envs.outputs.ENV1 }}
-        cp .pio/build/${{ steps.envs.outputs.ENV1 }}/firmware.bin artifacts/${{ steps.envs.outputs.ENV1 }}/energyme_home_${{ steps.version.outputs.VERSION }}.bin
-        cp .pio/build/${{ steps.envs.outputs.ENV1 }}/firmware.elf artifacts/${{ steps.envs.outputs.ENV1 }}/energyme_home_${{ steps.version.outputs.VERSION }}.elf
-        cp .pio/build/${{ steps.envs.outputs.ENV1 }}/partitions.bin artifacts/${{ steps.envs.outputs.ENV1 }}/partitions.bin
-        cp .pio/build/${{ steps.envs.outputs.ENV1 }}/bootloader.bin artifacts/${{ steps.envs.outputs.ENV1 }}/bootloader.bin
+        mkdir -p artifacts/${{ matrix.env }}
+        cp .pio/build/${{ matrix.env }}/firmware.bin artifacts/${{ matrix.env }}/energyme_home_${{ steps.version.outputs.VERSION }}.bin
+        cp .pio/build/${{ matrix.env }}/firmware.elf artifacts/${{ matrix.env }}/energyme_home_${{ steps.version.outputs.VERSION }}.elf
+        cp .pio/build/${{ matrix.env }}/partitions.bin artifacts/${{ matrix.env }}/partitions.bin
+        cp .pio/build/${{ matrix.env }}/bootloader.bin artifacts/${{ matrix.env }}/bootloader.bin
 
-    - name: Upload firmware artifact (${{ steps.envs.outputs.ENV1 }})
+    - name: Upload firmware artifact (${{ matrix.env }})
       uses: actions/upload-artifact@v7
       with:
-        name: firmware-${{ steps.envs.outputs.ENV1 }}-${{ steps.version.outputs.VERSION }}-${{ github.sha }}
-        path: source/artifacts/${{ steps.envs.outputs.ENV1 }}/
+        name: firmware-${{ matrix.env }}-${{ steps.version.outputs.VERSION }}-${{ github.sha }}
+        path: source/artifacts/${{ matrix.env }}/
         retention-days: 30
 
     - name: Build summary
@@ -162,11 +144,11 @@ jobs:
         echo "### 🎉 Build Successful!" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "**Version**: \`${{ steps.version.outputs.VERSION }}\`" >> $GITHUB_STEP_SUMMARY
-        echo "**Environment Type**: \`${{ steps.envs.outputs.ENV_TYPE }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "**Environment**: \`${{ matrix.env }}\`" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "#### Build (${{ steps.envs.outputs.ENV1 }})" >> $GITHUB_STEP_SUMMARY
+        echo "#### Build (${{ matrix.env }})" >> $GITHUB_STEP_SUMMARY
         echo "✅ Firmware built successfully" >> $GITHUB_STEP_SUMMARY
-        echo "📦 Artifact: \`firmware-${{ steps.envs.outputs.ENV1 }}-${{ steps.version.outputs.VERSION }}-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "📦 Artifact: \`firmware-${{ matrix.env }}-${{ steps.version.outputs.VERSION }}-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
         echo "📄 Files:" >> $GITHUB_STEP_SUMMARY
         echo "  - \`energyme_home_${{ steps.version.outputs.VERSION }}.bin\`" >> $GITHUB_STEP_SUMMARY
         echo "  - \`energyme_home_${{ steps.version.outputs.VERSION }}.elf\`" >> $GITHUB_STEP_SUMMARY

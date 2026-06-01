@@ -24,13 +24,13 @@ If you ordered additional CTs to monitor more than 3 branch circuits, you'll fin
 > **ⓘ NOTE: About the CTs**  
 > The standard CTs are **30 A rated** (printed on each clamp). They work without issues for **single-phase systems up to ~7 kW at 230 V, or ~3.5 kW at 120 V**.
 >
-> Before clamping any CT, check the current rating printed on the breaker the CT will monitor; it must not exceed the CT rating. If you have circuits drawing higher current (power supply, heat pump), or a three-phase supply, you may need higher-rated CTs (75 A or 150 A). Contact us at `support@energyme.net` to order them.
+> Before clamping any CT, check the current rating printed on the breaker the CT will monitor; it must not exceed the CT rating. If you have circuits drawing higher current (power supply, heat pump), or a three-phase supply, you may need higher-rated CTs (75 A or 150 A), available from our [website store](https://www.energyme.net/product-home-en).
 
 > **ⓘ NOTE: Grid frequency**  
 > *EnergyMe Home* works on both **50 Hz** (Europe, Asia, Africa, Oceania) and **60 Hz** (North America, parts of South America and Japan) grids with no configuration needed.
 
 > **ⓘ NOTE: If anything is missing or damaged**  
-> Do not install the device. Contact support at `support@energyme.net` with a photo of the box content.
+> Do not install the device. Open a [GitHub issue](https://github.com/jibrilsharafi/EnergyMe-Home/issues) with a photo of the box content.
 
 > **⚠ Three-phase loads: read this before continuing**  
 > If your main supply is **three-phase**, or if you have **specific three-phase loads** to monitor (e.g., a three-phase EV charger), the wiring is slightly different. **Read [Appendix B](appendices.md#appendix-b-three-phase-configuration) before starting the installation.**
@@ -73,9 +73,12 @@ If you ordered additional CTs to monitor more than 3 branch circuits, you'll fin
 
 The device comes with **two wires already connected** to the internal power terminal: a **brown wire (Line)** and a **blue wire (Neutral)**. You only need to connect the free ends of these wires to the **nearest Line and Neutral references** in the panel.
 
-1. Connect the **brown wire (Line)** to the nearest available Line reference, typically the Line side of any breaker in the panel.
+1. Connect the **brown wire (Line)** to a protected Line reference: the **output (bottom) side of a breaker**, so the device is protected by that breaker. **Do not** tap the unprotected input bus on top.
 2. Connect the **blue wire (Neutral)** to the **Neutral bar** of the panel (the common neutral terminal block).
 3. Tighten the screws firmly.
+
+> **ⓘ NOTE: Upstream breaker (recommended)**  
+> The device has an internal 500 mA fuse, so a dedicated breaker is **not mandatory**. As best practice, you can fit a **1-2 A breaker** upstream of the device.
 
 > **ⓘ NOTE: Custom wiring**  
 > If the provided wiring is not suitable for your application, it is possible to use your own wires.
