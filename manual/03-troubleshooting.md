@@ -22,13 +22,13 @@ If you run into a problem that isn't covered elsewhere in this manual:
 3. Use the **button on the device** to recover from common situations (Wi-Fi reset, password reset); see [Appendix D](appendices.md#appendix-d-user-button-reference).
 4. Compare your dashboard against the **[live demo](https://demo-energyme-home.energyme.net/)** to spot any obvious differences.
 
-If none of the above helps, contact **support@energyme.net** with:
+If none of the above helps, open a [GitHub issue](https://github.com/jibrilsharafi/EnergyMe-Home/issues) with:
 
 - Your device's **batch number** (printed on the label inside the case)
 - A clear description of the problem and what you have already tried
 - A photograph or screenshot if relevant
 
-We answer every support email and use real-world feedback to expand this troubleshooting chapter.
+We follow up on every issue and use real-world feedback to expand this troubleshooting chapter.
 
 ---
 
