@@ -159,6 +159,83 @@
     </div>
 
     <div class="section-box">
+        <h2>Network Configuration</h2>
+        <p><i>Advanced network settings. By default the device uses DHCP. Changing these requires a restart to take effect.</i></p>
+
+        <!-- Current network (live, read-only) so the user knows the starting point -->
+        <div id="currentNetworkBox"
+            style="background-color: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px 15px; margin: 12px 0;">
+            <div style="font-weight: 600; margin-bottom: 8px;">Current network</div>
+            <div style="display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; font-size: 0.9em;">
+                <span style="color: #666;">Status</span><span id="curStatus">Loading...</span>
+                <span style="color: #666;">Mode</span><span id="curMode">-</span>
+                <span style="color: #666;">SSID</span><span id="curSsid">-</span>
+                <span style="color: #666;">IP address</span><span id="curIp">-</span>
+                <span style="color: #666;">Gateway</span><span id="curGateway">-</span>
+                <span style="color: #666;">Subnet mask</span><span id="curSubnet">-</span>
+                <span style="color: #666;">DNS</span><span id="curDns">-</span>
+                <span style="color: #666;">Signal</span><span id="curRssi">-</span>
+            </div>
+        </div>
+
+        <!-- Explicit either/or choice: DHCP vs Static IP -->
+        <fieldset style="border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px 15px 10px; margin: 12px 0;">
+            <legend style="padding: 0 6px; font-weight: 600;">IP address mode</legend>
+            <label style="display: block; padding: 6px 0; cursor: pointer;">
+                <input type="radio" name="ipMode" value="dhcp" onchange="onIpModeChange()" checked>
+                Automatic (DHCP) - recommended
+            </label>
+            <label style="display: block; padding: 6px 0; cursor: pointer;">
+                <input type="radio" name="ipMode" value="static" onchange="onIpModeChange()">
+                Static IP - set the address manually
+            </label>
+        </fieldset>
+
+        <div id="staticIpFields" style="display: none; flex-direction: column; gap: 10px; margin: 15px 0;">
+            <div>
+                <label for="staticIp">IP Address:</label>
+                <input type="text" id="staticIp" class="config-input" inputmode="decimal" placeholder="e.g. 192.168.1.50" maxlength="15" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+            </div>
+            <div>
+                <label for="staticGateway">Gateway (your router):</label>
+                <input type="text" id="staticGateway" class="config-input" inputmode="decimal" placeholder="e.g. 192.168.1.1" maxlength="15" onblur="prefillDnsFromGateway()" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+            </div>
+            <div>
+                <label for="staticSubnet">Subnet Mask:</label>
+                <input type="text" id="staticSubnet" class="config-input" inputmode="decimal" placeholder="e.g. 255.255.255.0" maxlength="15" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+            </div>
+            <div>
+                <label for="staticDns1">Primary DNS:</label>
+                <input type="text" id="staticDns1" class="config-input" inputmode="decimal" placeholder="defaults to your gateway" maxlength="15" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+                <small style="color: #666;">Leave blank to use your gateway, or set a specific server (e.g. 8.8.8.8).</small>
+            </div>
+            <div>
+                <label for="staticDns2">Secondary DNS (optional):</label>
+                <input type="text" id="staticDns2" class="config-input" inputmode="decimal" placeholder="e.g. 1.1.1.1" maxlength="15" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+            </div>
+            <div>
+                <input type="checkbox" id="fallbackToDhcp" class="config-input" onchange="updateRiskWarning()" checked>
+                <label for="fallbackToDhcp">Auto-recover to DHCP if this static IP fails (recommended)</label>
+                <small style="display: block; color: #666; margin-top: 4px;">
+                    After restart the device checks the static IP. If it can't reach the internet, it reboots
+                    once back into automatic (DHCP) so the device stays reachable. A separate boot-failure
+                    safeguard also reverts to DHCP if the device can't start on the static IP - that one is always on.
+                </small>
+            </div>
+        </div>
+
+        <!-- Shown only when the user disables auto-recovery on a static IP -->
+        <div id="networkRiskWarning" role="alert"
+            style="display: none; background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; margin: 10px 0;">
+            ⚠️ Warning - auto-recovery is off. If this static IP is wrong or conflicts with another device,
+            the device may become unreachable and you would have to recover it through the WiFi setup portal.
+            Keep auto-recovery on unless you are sure the address is correct.
+        </div>
+
+        <button class="buttonForm" onclick="setNetworkConfiguration()" id="setNetworkConfigButton">🌐 Apply & restart</button>
+    </div>
+
+    <div class="section-box">
         <h2>Switch WiFi Network</h2>
         <p><i>Enter new WiFi credentials to switch to a different network. The device will save the credentials and restart to connect to the new network.</i></p>
         <div style="display: flex; flex-direction: column; gap: 10px; margin: 15px 0;">
@@ -597,6 +674,178 @@
             output.innerHTML = percentage + "%";
         }
 
+        // Live network snapshot, used to prefill static fields with the working values.
+        var currentNetwork = null;
+
+        function getSelectedIpMode() {
+            var checked = document.querySelector('input[name="ipMode"]:checked');
+            return checked ? checked.value : "dhcp";
+        }
+
+        function setSelectedIpMode(mode) {
+            var radio = document.querySelector('input[name="ipMode"][value="' + mode + '"]');
+            if (radio) radio.checked = true;
+        }
+
+        function updateRiskWarning() {
+            var show = getSelectedIpMode() === "static" && !document.getElementById("fallbackToDhcp").checked;
+            document.getElementById("networkRiskWarning").style.display = show ? "block" : "none";
+        }
+
+        function prefillDnsFromGateway() {
+            var gateway = document.getElementById("staticGateway").value.trim();
+            var dns1 = document.getElementById("staticDns1");
+            if (gateway && !dns1.value.trim()) dns1.value = gateway;
+        }
+
+        // When switching to static with empty fields, seed them from the current working
+        // network so "static" becomes "pin my current address" - the safe, common case.
+        function prefillStaticFromCurrent() {
+            if (!currentNetwork || !currentNetwork.wifiConnected) return;
+            var ip = document.getElementById("staticIp");
+            var gw = document.getElementById("staticGateway");
+            var sn = document.getElementById("staticSubnet");
+            var d1 = document.getElementById("staticDns1");
+            var valid = function (v) { return v && v !== "0.0.0.0"; };
+            if (!ip.value.trim() && valid(currentNetwork.wifiLocalIp)) ip.value = currentNetwork.wifiLocalIp;
+            if (!gw.value.trim() && valid(currentNetwork.wifiGatewayIp)) gw.value = currentNetwork.wifiGatewayIp;
+            if (!sn.value.trim() && valid(currentNetwork.wifiSubnetMask)) sn.value = currentNetwork.wifiSubnetMask;
+            if (!d1.value.trim() && valid(currentNetwork.wifiDnsIp)) d1.value = currentNetwork.wifiDnsIp;
+        }
+
+        function onIpModeChange() {
+            var isStatic = getSelectedIpMode() === "static";
+            document.getElementById("staticIpFields").style.display = isStatic ? "flex" : "none";
+            if (isStatic) prefillStaticFromCurrent();
+            updateRiskWarning();
+        }
+
+        function loadCurrentNetwork() {
+            return energyApi.getSystemInfo()
+                .then(data => {
+                    var net = (data && data.dynamic && data.dynamic.network) || {};
+                    currentNetwork = net;
+                    var set = function (id, val) { document.getElementById(id).textContent = val || "N/A"; };
+                    if (net.wifiConnected) {
+                        document.getElementById("curStatus").textContent = "Connected";
+                        document.getElementById("curStatus").style.color = "var(--green, #2e7d32)";
+                    } else {
+                        document.getElementById("curStatus").textContent = "Disconnected";
+                        document.getElementById("curStatus").style.color = "#c62828";
+                    }
+                    set("curSsid", net.wifiSsid);
+                    set("curIp", net.wifiLocalIp);
+                    set("curGateway", net.wifiGatewayIp);
+                    set("curSubnet", net.wifiSubnetMask);
+                    set("curDns", net.wifiDnsIp);
+                    document.getElementById("curRssi").textContent =
+                        net.wifiRssi ? (net.wifiRssi + " dBm " + signalQualityLabel(net.wifiRssi)) : "N/A";
+                })
+                .catch(error => {
+                    document.getElementById("curStatus").textContent = "Unavailable";
+                    console.log("Error getting current network info. Response: " + error.message);
+                });
+        }
+
+        function signalQualityLabel(rssi) {
+            if (rssi > -50) return "(Excellent)";
+            if (rssi > -60) return "(Good)";
+            if (rssi > -70) return "(Fair)";
+            return "(Poor)";
+        }
+
+        function isValidIpv4(value) {
+            if (!value) return false;
+            var parts = value.split(".");
+            if (parts.length !== 4) return false;
+            for (var i = 0; i < parts.length; i++) {
+                if (!/^\d{1,3}$/.test(parts[i])) return false;
+                var n = parseInt(parts[i], 10);
+                if (n < 0 || n > 255) return false;
+            }
+            return true;
+        }
+
+        function getNetworkConfiguration() {
+            return energyApi.getNetworkConfig()
+                .then(data => {
+                    setSelectedIpMode(data.useStaticIp ? "static" : "dhcp");
+                    document.getElementById("curMode").textContent = data.useStaticIp ? "Static IP" : "DHCP (automatic)";
+                    document.getElementById("staticIp").value = data.ip || "";
+                    document.getElementById("staticGateway").value = data.gateway || "";
+                    document.getElementById("staticSubnet").value = data.subnet || "";
+                    document.getElementById("staticDns1").value = data.dns1 || "";
+                    document.getElementById("staticDns2").value = data.dns2 || "";
+                    document.getElementById("fallbackToDhcp").checked = data.fallbackToDhcp !== false;
+                    onIpModeChange();
+                })
+                .catch(error => {
+                    setSelectedIpMode("dhcp");
+                    onIpModeChange();
+                    console.log("Error getting network configuration. Response: " + error.message);
+                });
+        }
+
+        async function setNetworkConfiguration() {
+            const useStaticIp = getSelectedIpMode() === "static";
+            const ip = document.getElementById("staticIp").value.trim();
+            const gateway = document.getElementById("staticGateway").value.trim();
+            const subnet = document.getElementById("staticSubnet").value.trim();
+            // Primary DNS must never be empty for a static config (empty DNS breaks name resolution),
+            // so default it to the gateway when the user leaves it blank.
+            const dns1 = document.getElementById("staticDns1").value.trim() || gateway;
+            const dns2 = document.getElementById("staticDns2").value.trim();
+            const fallbackToDhcp = document.getElementById("fallbackToDhcp").checked;
+
+            if (useStaticIp) {
+                if (!isValidIpv4(ip)) { showStatus('Please enter a valid IP address.', 'error'); return; }
+                if (!isValidIpv4(gateway)) { showStatus('Please enter a valid gateway address.', 'error'); return; }
+                if (!isValidIpv4(subnet)) { showStatus('Please enter a valid subnet mask.', 'error'); return; }
+                if (!isValidIpv4(dns1)) { showStatus('Primary DNS is not a valid IP address.', 'error'); return; }
+                if (dns2 && !isValidIpv4(dns2)) { showStatus('Secondary DNS is not a valid IP address.', 'error'); return; }
+            }
+
+            const userConfirmed = window.confirm("Apply network configuration? The device will restart and may be reachable at a different address.");
+            if (!userConfirmed) return;
+
+            const button = document.getElementById("setNetworkConfigButton");
+            button.disabled = true;
+            button.classList.add('loading');
+
+            try {
+                showStatus("Applying network configuration...", 'info');
+
+                await energyApi.setNetworkConfig({
+                    useStaticIp: useStaticIp,
+                    ip: ip,
+                    gateway: gateway,
+                    subnet: subnet,
+                    dns1: dns1,
+                    dns2: dns2,
+                    fallbackToDhcp: fallbackToDhcp
+                });
+
+                // After the restart the device may answer at a new address. For a static IP that is
+                // the address the user just entered; for DHCP its mDNS name (energyme.local) follows
+                // it whatever lease it gets. Auto-redirect there once the device is back; if mDNS
+                // isn't supported on this client (e.g. some Android) or a bad static IP fell back to
+                // DHCP, the user can reach it via energyme.local or the router's device list.
+                const REDIRECT_DELAY_MS = 15000;
+                const targetUrl = useStaticIp ? ("http://" + ip) : "http://energyme.local";
+                const hint = useStaticIp
+                    ? "If it doesn't load, the static IP may have been rejected - try energyme.local or your router."
+                    : "If it doesn't load, check your router for the device's new address.";
+                showStatus("Configuration saved. Device restarting - redirecting to " + targetUrl +
+                    " in ~15s. " + hint, 'success', REDIRECT_DELAY_MS);
+                setTimeout(function () { window.location.href = targetUrl; }, REDIRECT_DELAY_MS);
+                // Don't restore button - the device is restarting
+            } catch (error) {
+                button.disabled = false;
+                button.classList.remove('loading');
+                showStatus("Error setting network configuration: " + error.message, 'error');
+            }
+        }
+
         function checkHasSecrets() {
             energyApi.getSystemSecrets()
                 .then(response => {
@@ -644,6 +893,12 @@
                 await delay(DELAY_BETWEEN_REQUESTS);
 
                 await getLogLevel();
+                await delay(DELAY_BETWEEN_REQUESTS);
+
+                await loadCurrentNetwork();
+                await delay(DELAY_BETWEEN_REQUESTS);
+
+                await getNetworkConfiguration();
                 await delay(DELAY_BETWEEN_REQUESTS);
 
                 await checkHasSecrets();
