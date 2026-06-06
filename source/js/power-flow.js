@@ -187,7 +187,13 @@ const PowerFlowHelpers = {
      * Update energy flow diagram with real-time data (Simple Layout)
      */
     updateEnergyFlow(meterData, channelData) {
-        if (!meterData || meterData.length === 0 || !channelData || !Array.isArray(channelData)) return;
+        const flowSection = document.getElementById('energy-flow-section');
+
+        // Nothing to draw without data: hide the whole section instead of showing an empty box
+        if (!meterData || !Array.isArray(meterData) || meterData.length === 0 || !channelData || !Array.isArray(channelData)) {
+            if (flowSection) flowSection.style.display = 'none';
+            return;
+        }
 
         const gridChannels = ChannelCache.grid;
         const productionChannels = ChannelCache.production;
@@ -198,16 +204,39 @@ const PowerFlowHelpers = {
         const hasInverter = inverterChannels.length > 0;
         const hasBattery = batteryChannels.length > 0;
         const hasGrid = gridChannels.length > 0;
+        const hasStorage = hasInverter || hasBattery;
+        const hasAnySource = hasGrid || hasPV || hasStorage;
 
-        // Always show energy flow section
-        const flowSection = document.getElementById('energy-flow-section');
-        flowSection.classList.add('visible');
+        // Monitored loads = any channel that is not a known source
+        const sourceIndices = new Set([
+            ...gridChannels.map(ch => ch.index),
+            ...productionChannels.map(ch => ch.index),
+            ...batteryChannels.map(ch => ch.index),
+            ...inverterChannels.map(ch => ch.index)
+        ]);
+        let loadSum = 0;
+        let hasLoads = false;
+        meterData.forEach(m => {
+            if (!sourceIndices.has(m.index)) {
+                loadSum += m.data.activePower;
+                hasLoads = true;
+            }
+        });
 
-        // Show/hide nodes
+        // The house is drawn whenever there is at least one source or one load.
+        const hasHome = hasAnySource || hasLoads;
+        if (flowSection) {
+            flowSection.style.display = hasHome ? '' : 'none';
+            flowSection.classList.add('visible');
+        }
+        if (!hasHome) return;
+
+        // Show/hide nodes - only ever draw what actually exists (no ghost sources)
         const pfSolar = document.getElementById('pf-solar');
         const pfBattery = document.getElementById('pf-battery');
         const pfGrid = document.getElementById('pf-grid');
         const pfHome = document.getElementById('pf-home');
+        const pfCenter = flowSection ? flowSection.querySelector('.pf-center') : null;
 
         // Solar node: only show pure PV channels
         if (pfSolar) {
@@ -215,17 +244,16 @@ const PowerFlowHelpers = {
             const solarIcon = pfSolar.querySelector('.pf-icon');
             if (solarIcon) solarIcon.textContent = '☀️';
         }
-        
+
         // Battery/Inverter node: show inverter if available, else battery if available
         // Inverter replaces battery in the UI since it controls battery charging/discharging
         if (pfBattery) {
-            const showBatteryNode = (hasInverter || hasBattery);
-            pfBattery.style.display = showBatteryNode ? 'flex' : 'none';
-            
+            pfBattery.style.display = hasStorage ? 'flex' : 'none';
+
             // Update icon and value ID based on what we're showing
             const batteryIcon = pfBattery.querySelector('.pf-icon');
             const batteryValue = pfBattery.querySelector('.pf-value');
-            
+
             if (hasInverter && batteryIcon) {
                 batteryIcon.textContent = '⚙️';
                 if (batteryValue) batteryValue.id = 'inverter-power';
@@ -234,6 +262,28 @@ const PowerFlowHelpers = {
                 if (batteryValue) batteryValue.id = 'battery-power';
             }
         }
+
+        // Grid node: shown only with a grid channel. When absent but other sources exist we
+        // keep its (invisible) slot so the junction stays centred under the solar/battery
+        // connectors; with loads only we collapse it so the house centres on its own.
+        if (pfGrid) {
+            if (hasGrid) {
+                pfGrid.style.display = 'flex';
+                pfGrid.style.visibility = '';
+            } else if (hasAnySource) {
+                pfGrid.style.display = 'flex';
+                pfGrid.style.visibility = 'hidden';
+            } else {
+                pfGrid.style.display = 'none';
+                pfGrid.style.visibility = '';
+            }
+        }
+
+        // Home node: always shown here (we have at least one source or load)
+        if (pfHome) pfHome.style.display = 'flex';
+
+        // Center junction: only meaningful when at least one source feeds the home
+        if (pfCenter) pfCenter.style.display = hasAnySource ? 'flex' : 'none';
 
         // Calculate power values
         let gridPower = 0;
@@ -263,25 +313,18 @@ const PowerFlowHelpers = {
             if (meter) batteryPower += meter.data.activePower;
         });
 
-        // Calculate home power based on what storage devices we have
-        let homePower;
-        if (hasInverter) {
-            // If inverter exists, it handles battery internally
-            // Home power = grid + solar + inverter output
-            homePower = gridPower + solarPower + inverterPower;
-        } else {
-            // Otherwise: grid + solar + battery
-            homePower = gridPower + solarPower + batteryPower;
-        }
+        // Storage net power: inverter takes priority (it controls the battery)
+        const storagePower = hasInverter ? inverterPower : batteryPower;
+
+        // Home power = sum of available sources (all incoming energy goes to the house).
+        // With no source monitored we cannot derive it from supply, so fall back to the
+        // sum of monitored loads - all we know in that case.
+        const homePower = hasAnySource ? (gridPower + solarPower + storagePower) : loadSum;
 
         // Record history
         this.addToFlowHistory('solar', solarPower);
         this.addToFlowHistory('grid', gridPower);
-        if (hasInverter) {
-            this.addToFlowHistory('battery', inverterPower);
-        } else {
-            this.addToFlowHistory('battery', batteryPower);
-        }
+        this.addToFlowHistory('battery', storagePower);
         this.addToFlowHistory('home', Math.max(0, homePower));
 
         // Update display values
@@ -291,23 +334,23 @@ const PowerFlowHelpers = {
         const storageValueId = hasInverter ? 'inverter-power' : 'battery-power';
         const storagePowerEl = document.getElementById(storageValueId);
         
-        if (gridPowerEl) gridPowerEl.textContent = this.formatPower(gridPower);
+        if (hasGrid && gridPowerEl) gridPowerEl.textContent = this.formatPower(gridPower);
         if (homePowerEl) homePowerEl.textContent = this.formatPower(Math.max(0, homePower));
         if (hasPV && solarPowerEl) solarPowerEl.textContent = this.formatPower(solarPower);
-        if ((hasInverter || hasBattery) && storagePowerEl) {
-            const storagePower = hasInverter ? inverterPower : batteryPower;
-            storagePowerEl.textContent = this.formatPower(storagePower);
-        }
+        if (hasStorage && storagePowerEl) storagePowerEl.textContent = this.formatPower(storagePower);
 
-        // Update connectors
+        // Update connectors - a connector is hidden (display:none) when its node does not
+        // exist, so no orphan stub is left pointing at nothing. The home connector follows
+        // the sources: with loads only there is no junction flow to animate.
         this.updateConnector('pf-solar', solarPower, hasPV);
-        this.updateConnector('pf-grid', gridPower, true);
-        this.updateConnector('pf-home', homePower, true);
-        this.updateConnector('pf-battery', hasInverter ? inverterPower : batteryPower, hasInverter || hasBattery);
+        this.updateConnector('pf-grid', gridPower, hasGrid);
+        // Home flow follows the displayed (clamped) value: when net consumption is <= 0
+        // (e.g. net export, or storage charging) nothing flows into the house, so no pulse.
+        this.updateConnector('pf-home', Math.max(0, homePower), hasAnySource);
+        this.updateConnector('pf-battery', storagePower, hasStorage);
 
         // Update load breakdown
-        const storageNetPower = hasInverter ? inverterPower : batteryPower;
-        this.updateLoadBreakdown(hasGrid, hasPV, hasInverter || hasBattery, gridPower, solarPower, storageNetPower, homePower, meterData, channelData);
+        this.updateLoadBreakdown(hasGrid, hasPV, hasStorage, gridPower, solarPower, storagePower, homePower, meterData, channelData);
     },
 
     /**
@@ -320,7 +363,14 @@ const PowerFlowHelpers = {
         const connector = node.querySelector('.pf-connector');
         if (!connector) return;
 
-        if (!isVisible) return;
+        // The base connector is a static gray bar; when the node is absent we must hide the
+        // bar itself, not just stop the animation, or it dangles pointing at nothing.
+        if (!isVisible) {
+            connector.style.display = 'none';
+            connector.classList.remove('active', 'reversed');
+            return;
+        }
+        connector.style.display = '';
 
         const isActive = Math.abs(power) > PowerFlowConfig.ACTIVE_LINE_THRESHOLD;
         connector.classList.toggle('active', isActive);
