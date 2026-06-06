@@ -384,7 +384,10 @@ const DataHelpers = {
             }
         });
 
-        return Math.max(0, totalAvailable - trackedLoadConsumption);
+        // Not clamped to 0: a negative "Other" (tracked loads exceed available energy) is a
+        // real signal - calibration mismatch, mis-assigned role, double-counting or CT
+        // reversal - and the bar chart renders it below zero. See issue #169.
+        return totalAvailable - trackedLoadConsumption;
     },
 
     /**
