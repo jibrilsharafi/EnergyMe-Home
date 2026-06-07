@@ -20,7 +20,9 @@ void tearDown(void) {}
 
 // Config values mirror the firmware defaults so the tests track real behaviour.
 static const WeightConfig WCFG = {0.4f, 0.4f, 0.1f, 1.5f, 2.0f};
-static const PolarityConfig PCFG = {5, 50};
+static const float MIN_A = 0.02f;              // MINIMUM_CURRENT_FOR_VALIDATION
+static const PolarityConfig PCFG = {5, 50, MIN_A};
+static const float COND_A = 1.0f;              // a nominal "real load" current (>= MIN_A)
 
 // ============================================================================
 // updatePolarity
@@ -28,7 +30,7 @@ static const PolarityConfig PCFG = {5, 50};
 
 void test_polarity_not_armed_is_noop(void) {
     PolarityState s{false, 0, 0};
-    PolarityResult r = updatePolarity(s, -100.0f, PCFG);
+    PolarityResult r = updatePolarity(s, -100.0f, COND_A, PCFG);
     TEST_ASSERT_EQUAL(PolarityAction::Continue, r.action);
     TEST_ASSERT_FALSE(r.state.armed);
     TEST_ASSERT_EQUAL_INT8(0, r.state.voteCount);
@@ -40,7 +42,7 @@ void test_polarity_steady_reverse_flips_at_threshold(void) {
     PolarityAction action = PolarityAction::Continue;
     int reads = 0;
     for (int i = 0; i < 10; i++) {
-        PolarityResult r = updatePolarity(s, -230.0f, PCFG);
+        PolarityResult r = updatePolarity(s, -230.0f, COND_A, PCFG);
         s = r.state;
         action = r.action;
         reads++;
@@ -55,7 +57,7 @@ void test_polarity_steady_forward_confirms_without_flip(void) {
     PolarityState s{true, 0, 0};
     PolarityAction action = PolarityAction::Continue;
     for (int i = 0; i < 10; i++) {
-        PolarityResult r = updatePolarity(s, 1500.0f, PCFG);
+        PolarityResult r = updatePolarity(s, 1500.0f, COND_A, PCFG);
         s = r.state;
         action = r.action;
         if (action != PolarityAction::Continue) break;
@@ -69,7 +71,7 @@ void test_polarity_is_magnitude_independent(void) {
     PolarityState s{true, 0, 0};
     PolarityAction action = PolarityAction::Continue;
     for (int i = 0; i < 10; i++) {
-        PolarityResult r = updatePolarity(s, -0.3f, PCFG);
+        PolarityResult r = updatePolarity(s, -0.3f, COND_A, PCFG);
         s = r.state;
         action = r.action;
         if (action != PolarityAction::Continue) break;
@@ -82,7 +84,7 @@ void test_polarity_idle_is_noop_and_stays_armed(void) {
     // bound, and must leave the channel armed (waiting for load).
     PolarityState s{true, 0, 0};
     for (int i = 0; i < 500; i++) {
-        PolarityResult r = updatePolarity(s, 0.0f, PCFG);
+        PolarityResult r = updatePolarity(s, 0.0f, 0.0f, PCFG);
         s = r.state;
         TEST_ASSERT_EQUAL(PolarityAction::Continue, r.action);
     }
@@ -93,7 +95,7 @@ void test_polarity_idle_is_noop_and_stays_armed(void) {
 
 void test_polarity_nan_is_noop(void) {
     PolarityState s{true, 0, 0};
-    PolarityResult r = updatePolarity(s, NAN, PCFG);
+    PolarityResult r = updatePolarity(s, NAN, COND_A, PCFG);
     TEST_ASSERT_EQUAL(PolarityAction::Continue, r.action);
     TEST_ASSERT_TRUE(r.state.armed);
     TEST_ASSERT_EQUAL_INT8(0, r.state.voteCount);
@@ -106,13 +108,13 @@ void test_polarity_delayed_load_still_detects(void) {
     // load finally appears - and it must still be detected and flipped.
     PolarityState s{true, 0, 0};
     for (int i = 0; i < 200; i++) {
-        s = updatePolarity(s, 0.0f, PCFG).state; // idle: no load yet
+        s = updatePolarity(s, 0.0f, 0.0f, PCFG).state; // idle: no load yet
     }
     TEST_ASSERT_TRUE(s.armed); // still armed after a long wait
 
     PolarityAction action = PolarityAction::Continue;
     for (int i = 0; i < 10; i++) {
-        PolarityResult r = updatePolarity(s, -230.0f, PCFG); // load finally flows, reversed
+        PolarityResult r = updatePolarity(s, -230.0f, COND_A, PCFG); // load finally flows, reversed
         s = r.state;
         action = r.action;
         if (action != PolarityAction::Continue) break;
@@ -128,7 +130,7 @@ void test_polarity_oscillating_conducting_disarms_via_bound(void) {
     PolarityAction action = PolarityAction::Continue;
     for (int i = 0; i < 200; i++) {
         float p = (i % 2 == 0) ? -50.0f : 50.0f;
-        PolarityResult r = updatePolarity(s, p, PCFG);
+        PolarityResult r = updatePolarity(s, p, COND_A, PCFG);
         s = r.state;
         action = r.action;
         if (!s.armed) break;
@@ -141,12 +143,49 @@ void test_polarity_unbounded_oscillation_never_disarms(void) {
     // Documents why the bound exists: with maxConductingReads == 0 an oscillating
     // conducting channel never decides and never disarms.
     PolarityState s{true, 0, 0};
-    PolarityConfig unbounded{5, 0};
+    PolarityConfig unbounded{5, 0, MIN_A};
     for (int i = 0; i < 1000; i++) {
         float p = (i % 2 == 0) ? -50.0f : 50.0f;
-        s = updatePolarity(s, p, unbounded).state;
+        s = updatePolarity(s, p, COND_A, unbounded).state;
     }
     TEST_ASSERT_TRUE(s.armed);
+}
+
+// ============================================================================
+// isConductingReading  (the current gate that stops offset-noise false flips)
+// ============================================================================
+
+void test_conducting_true_for_real_load(void) {
+    TEST_ASSERT_TRUE(isConductingReading(100.0f, 5.0f, MIN_A)); // forward load
+    TEST_ASSERT_TRUE(isConductingReading(1.0f, MIN_A, MIN_A));  // exactly at the threshold
+}
+
+void test_conducting_true_for_reversed_load_with_current(void) {
+    // CRITICAL for the load/PV priority work: a reversed load reads NEGATIVE power
+    // but with REAL current, so it must still count as conducting - that is what lets
+    // a reversed CT both vote (to flip) and earn the armed boost (to resolve fast).
+    TEST_ASSERT_TRUE(isConductingReading(-100.0f, 5.0f, MIN_A));
+    TEST_ASSERT_TRUE(isConductingReading(-0.3f, 5.0f, MIN_A)); // tiny reversed power, real current
+}
+
+void test_conducting_false_for_offset_noise(void) {
+    // THE BUG: ADE7953 offset noise is a small, steady, signed power at ~0 current.
+    // On an unclamped role it must NOT conduct, or it votes a false reversal and hogs.
+    TEST_ASSERT_FALSE(isConductingReading(1.2f, 0.004f, MIN_A));  // the observed bench value
+    TEST_ASSERT_FALSE(isConductingReading(-3.5f, 0.0f, MIN_A));
+    TEST_ASSERT_FALSE(isConductingReading(1.0f, 0.0199f, MIN_A)); // just below the threshold
+}
+
+void test_conducting_false_for_zero_power_or_nan(void) {
+    TEST_ASSERT_FALSE(isConductingReading(0.0f, 5.0f, MIN_A));  // no power, current irrelevant
+    TEST_ASSERT_FALSE(isConductingReading(NAN, 5.0f, MIN_A));   // bad power read
+    TEST_ASSERT_FALSE(isConductingReading(100.0f, NAN, MIN_A)); // bad current read
+}
+
+void test_conducting_zero_threshold_degrades_to_power_only(void) {
+    // minCurrent == 0 disables the gate: any non-zero power conducts (old behaviour).
+    TEST_ASSERT_TRUE(isConductingReading(1.0f, 0.0f, 0.0f));
+    TEST_ASSERT_FALSE(isConductingReading(0.0f, 0.0f, 0.0f));
 }
 
 // ============================================================================
@@ -378,7 +417,7 @@ void test_armed_no_load_channel_does_not_starve_peers(void) {
         uint8_t pick = wdrrPick(deficits, active, N, START, &cursor);
         TEST_ASSERT_NOT_EQUAL(NO_CHANNEL, pick);
 
-        PolarityResult pr = updatePolarity(pol[pick], in[pick].activePower, PCFG);
+        PolarityResult pr = updatePolarity(pol[pick], in[pick].activePower, COND_A, PCFG);
         pol[pick] = pr.state;
 
         for (uint8_t i = START; i < N; i++) {
@@ -430,7 +469,7 @@ void test_armed_conducting_channel_resolves_quickly(void) {
         wdrrAccumulate(weights, deficits, active, N, START, 5.0f);
         uint8_t pick = wdrrPick(deficits, active, N, START, &cursor);
 
-        PolarityResult pr = updatePolarity(pol[pick], in[pick].activePower, PCFG);
+        PolarityResult pr = updatePolarity(pol[pick], in[pick].activePower, COND_A, PCFG);
         if (pr.action == PolarityAction::Flip && flipRound < 0) flipRound = r;
         pol[pick] = pr.state;
     }
@@ -475,8 +514,8 @@ void test_grid_sampled_more_often_than_load(void) {
 void test_polarity_nonpositive_threshold_is_noop(void) {
     // Misconfigured threshold must be a safe no-op, not decide on the first read.
     PolarityState s{true, 0, 0};
-    PolarityConfig zero{0, 50};
-    PolarityResult r = updatePolarity(s, -230.0f, zero);
+    PolarityConfig zero{0, 50, MIN_A};
+    PolarityResult r = updatePolarity(s, -230.0f, COND_A, zero);
     TEST_ASSERT_EQUAL(PolarityAction::Continue, r.action);
     TEST_ASSERT_TRUE(r.state.armed);
     TEST_ASSERT_EQUAL_INT8(0, r.state.voteCount);
@@ -484,16 +523,16 @@ void test_polarity_nonpositive_threshold_is_noop(void) {
 
 void test_polarity_threshold_one_decides_immediately(void) {
     PolarityState s{true, 0, 0};
-    PolarityConfig one{1, 50};
-    TEST_ASSERT_EQUAL(PolarityAction::Flip, updatePolarity(s, -100.0f, one).action);
-    TEST_ASSERT_EQUAL(PolarityAction::Disarm, updatePolarity(s, 100.0f, one).action);
+    PolarityConfig one{1, 50, MIN_A};
+    TEST_ASSERT_EQUAL(PolarityAction::Flip, updatePolarity(s, -100.0f, COND_A, one).action);
+    TEST_ASSERT_EQUAL(PolarityAction::Disarm, updatePolarity(s, 100.0f, COND_A, one).action);
 }
 
 void test_polarity_one_below_threshold_stays_armed(void) {
     PolarityState s{true, 0, 0};
     PolarityAction action = PolarityAction::Continue;
     for (int i = 0; i < 4; i++) { // threshold is 5
-        PolarityResult r = updatePolarity(s, -230.0f, PCFG);
+        PolarityResult r = updatePolarity(s, -230.0f, COND_A, PCFG);
         s = r.state;
         action = r.action;
     }
@@ -507,10 +546,10 @@ void test_polarity_flip_takes_precedence_over_bound(void) {
     // bound == threshold: a genuinely reversed CT must Flip, not Disarm, on the
     // read where both conditions are first satisfiable.
     PolarityState s{true, 0, 0};
-    PolarityConfig cfg{5, 5};
+    PolarityConfig cfg{5, 5, MIN_A};
     PolarityAction action = PolarityAction::Continue;
     for (int i = 0; i < 5; i++) {
-        PolarityResult r = updatePolarity(s, -230.0f, cfg);
+        PolarityResult r = updatePolarity(s, -230.0f, COND_A, cfg);
         s = r.state;
         action = r.action;
     }
@@ -520,11 +559,11 @@ void test_polarity_flip_takes_precedence_over_bound(void) {
 
 void test_polarity_bound_disarms_without_flip(void) {
     PolarityState s{true, 0, 0};
-    PolarityConfig cfg{5, 4};
+    PolarityConfig cfg{5, 4, MIN_A};
     PolarityAction action = PolarityAction::Continue;
     for (int i = 0; i < 4; i++) {
         float p = (i % 2 == 0) ? -50.0f : 50.0f; // net stays near 0, never reaches 5
-        PolarityResult r = updatePolarity(s, p, cfg);
+        PolarityResult r = updatePolarity(s, p, COND_A, cfg);
         s = r.state;
         action = r.action;
     }
@@ -536,10 +575,10 @@ void test_polarity_vote_recovers_and_confirms(void) {
     // Goes to -4, then a run of forward votes recovers it to +5 -> confirm (no flip).
     PolarityState s{true, 0, 0};
     PolarityAction action = PolarityAction::Continue;
-    for (int i = 0; i < 4; i++) s = updatePolarity(s, -100.0f, PCFG).state; // vote -4
+    for (int i = 0; i < 4; i++) s = updatePolarity(s, -100.0f, COND_A, PCFG).state; // vote -4
     TEST_ASSERT_EQUAL_INT8(-4, s.voteCount);
     for (int i = 0; i < 9; i++) {
-        PolarityResult r = updatePolarity(s, 100.0f, PCFG); // -3,-2,-1,0,1,2,3,4,5
+        PolarityResult r = updatePolarity(s, 100.0f, COND_A, PCFG); // -3,-2,-1,0,1,2,3,4,5
         s = r.state;
         action = r.action;
         if (action != PolarityAction::Continue) break;
@@ -551,9 +590,9 @@ void test_polarity_vote_recovers_and_flips(void) {
     // Mirror: +4 then a run of reversed votes -> reaches -5 -> flip.
     PolarityState s{true, 0, 0};
     PolarityAction action = PolarityAction::Continue;
-    for (int i = 0; i < 4; i++) s = updatePolarity(s, 100.0f, PCFG).state; // vote +4
+    for (int i = 0; i < 4; i++) s = updatePolarity(s, 100.0f, COND_A, PCFG).state; // vote +4
     for (int i = 0; i < 9; i++) {
-        PolarityResult r = updatePolarity(s, -100.0f, PCFG);
+        PolarityResult r = updatePolarity(s, -100.0f, COND_A, PCFG);
         s = r.state;
         action = r.action;
         if (action != PolarityAction::Continue) break;
@@ -563,7 +602,7 @@ void test_polarity_vote_recovers_and_flips(void) {
 
 void test_polarity_disarmed_mid_sequence_is_noop(void) {
     PolarityState s{false, -3, 3}; // disarmed but with residual counters
-    PolarityResult r = updatePolarity(s, -230.0f, PCFG);
+    PolarityResult r = updatePolarity(s, -230.0f, COND_A, PCFG);
     TEST_ASSERT_EQUAL(PolarityAction::Continue, r.action);
     TEST_ASSERT_FALSE(r.state.armed);
     TEST_ASSERT_EQUAL_INT8(-3, r.state.voteCount);     // unchanged
@@ -743,7 +782,7 @@ void test_multiple_armed_channels_both_resolve(void) {
         computeWeights(in, N, START, WCFG, weights);
         wdrrAccumulate(weights, deficits, active, N, START, 5.0f);
         uint8_t pick = wdrrPick(deficits, active, N, START, &cursor);
-        PolarityResult pr = updatePolarity(pol[pick], in[pick].activePower, PCFG);
+        PolarityResult pr = updatePolarity(pol[pick], in[pick].activePower, COND_A, PCFG);
         if (pr.action == PolarityAction::Flip && pick == 1) flipped1 = true;
         if (pr.action == PolarityAction::Flip && pick == 2) flipped2 = true;
         pol[pick] = pr.state;
@@ -818,6 +857,62 @@ void test_mixed_fleet_grid_battery_sampled_more(void) {
 }
 
 // ============================================================================
+// Current-gate integration (reproduces the bench false-flip and proves the fix)
+// ============================================================================
+
+void test_offset_noise_never_false_flips_unclamped_role(void) {
+    // THE HARDWARE REGRESSION, end to end: a grid channel (unclamped role) armed with
+    // no real load. The ADE7953 reports a small steady offset (+1.2 W) at ~0.004 A.
+    // Current-gated, every such read is non-conducting: updatePolarity no-ops, the
+    // channel never votes and stays armed - no false "CT reversal detected".
+    PolarityState s{true, 0, 0};
+    for (int i = 0; i < 1000; i++) {
+        PolarityResult r = updatePolarity(s, 1.2f, 0.004f, PCFG);
+        s = r.state;
+        TEST_ASSERT_EQUAL(PolarityAction::Continue, r.action);
+    }
+    TEST_ASSERT_TRUE(s.armed);
+    TEST_ASSERT_EQUAL_INT8(0, s.voteCount);
+    TEST_ASSERT_EQUAL_UINT16(0, s.conductingReads);
+
+    // A genuine reversed load finally flows (-2000 W at 8.7 A): now it must flip.
+    PolarityAction action = PolarityAction::Continue;
+    for (int i = 0; i < 10; i++) {
+        PolarityResult r = updatePolarity(s, -2000.0f, 8.7f, PCFG);
+        s = r.state;
+        action = r.action;
+        if (action != PolarityAction::Continue) break;
+    }
+    TEST_ASSERT_EQUAL(PolarityAction::Flip, action);
+}
+
+void test_offset_noise_earns_no_boost(void) {
+    // The other half of the regression: offset noise must not earn the armed boost,
+    // or the noisy channel hogs the scheduler. The caller derives `conducting` from
+    // isConductingReading, so an armed grid channel on offset noise gets only its
+    // normal (role-multiplied) weight - no boost.
+    bool conducting = isConductingReading(1.2f, 0.004f, MIN_A);
+    TEST_ASSERT_FALSE(conducting);
+    ChannelWeightInput in{true, 1.2f, 0.0f, true /*armed*/, CHANNEL_ROLE_GRID, conducting};
+    // base 0.1 * rolePriorityMult 2.0 = 0.2; NO armed boost.
+    TEST_ASSERT_FLOAT_WITHIN(1e-5, WCFG.minBase * WCFG.rolePriorityMult,
+                             computeChannelWeight(in, 0.0f, 0.0f, WCFG));
+}
+
+void test_low_current_noise_does_not_burn_the_bound(void) {
+    // A noisy unclamped channel that oscillates sign at ~0 current must NOT burn its
+    // conducting-read bound: it stays armed indefinitely (waiting for real load),
+    // exactly like an idle channel, rather than disarming on noise.
+    PolarityState s{true, 0, 0};
+    for (int i = 0; i < 500; i++) {
+        float p = (i % 2 == 0) ? -2.0f : 2.0f; // offset noise, both signs
+        s = updatePolarity(s, p, 0.004f, PCFG).state;
+    }
+    TEST_ASSERT_TRUE(s.armed);
+    TEST_ASSERT_EQUAL_UINT16(0, s.conductingReads);
+}
+
+// ============================================================================
 // runner
 // ============================================================================
 
@@ -833,6 +928,12 @@ int main(int, char **) {
     RUN_TEST(test_polarity_delayed_load_still_detects);
     RUN_TEST(test_polarity_oscillating_conducting_disarms_via_bound);
     RUN_TEST(test_polarity_unbounded_oscillation_never_disarms);
+
+    RUN_TEST(test_conducting_true_for_real_load);
+    RUN_TEST(test_conducting_true_for_reversed_load_with_current);
+    RUN_TEST(test_conducting_false_for_offset_noise);
+    RUN_TEST(test_conducting_false_for_zero_power_or_nan);
+    RUN_TEST(test_conducting_zero_threshold_degrades_to_power_only);
 
     RUN_TEST(test_clamp_load_and_pv_negatives);
     RUN_TEST(test_clamp_allows_grid_battery_inverter_negatives);
@@ -888,6 +989,10 @@ int main(int, char **) {
     RUN_TEST(test_multiple_armed_channels_both_resolve);
     RUN_TEST(test_full_17_channel_no_starvation);
     RUN_TEST(test_mixed_fleet_grid_battery_sampled_more);
+
+    RUN_TEST(test_offset_noise_never_false_flips_unclamped_role);
+    RUN_TEST(test_offset_noise_earns_no_boost);
+    RUN_TEST(test_low_current_noise_does_not_burn_the_bound);
 
     return UNITY_END();
 }

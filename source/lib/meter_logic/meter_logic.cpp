@@ -8,9 +8,17 @@
 namespace MeterLogic {
 
 // ----------------------------------------------------------------------------
+// Reading classification
+// ----------------------------------------------------------------------------
+bool isConductingReading(float activePower, float current, float minCurrent) {
+    return !std::isnan(activePower) && activePower != 0.0f &&
+           !std::isnan(current) && current >= minCurrent;
+}
+
+// ----------------------------------------------------------------------------
 // CT polarity detector
 // ----------------------------------------------------------------------------
-PolarityResult updatePolarity(PolarityState state, float activePower, PolarityConfig cfg) {
+PolarityResult updatePolarity(PolarityState state, float activePower, float current, PolarityConfig cfg) {
     PolarityResult result{state, PolarityAction::Continue};
 
     // Not armed: nothing to do. Defensive - callers should only invoke while armed.
@@ -21,12 +29,13 @@ PolarityResult updatePolarity(PolarityState state, float activePower, PolarityCo
     if (cfg.voteThreshold <= 0) return result;
 
     // Only conducting samples carry sign information. A non-conducting reading
-    // (no load, or a reading the validation pipeline zeroed) is a pure no-op: the
-    // channel stays armed and waits, without ever counting toward the bound. This
-    // is what lets a CT clipped on a circuit that is off at install time still be
-    // checked once load eventually flows.
-    bool conducting = (activePower != 0.0f && !std::isnan(activePower));
-    if (!conducting) return result;
+    // (no load, a reading the validation pipeline zeroed, or a small offset power at
+    // near-zero current) is a pure no-op: the channel stays armed and waits, without
+    // ever counting toward the bound. The current gate (cfg.minCurrent) is what stops
+    // ADE7953 offset noise on an unclamped role from voting a false reversal, and it
+    // is also what lets a CT clipped on a circuit that is off at install time still be
+    // checked once real load eventually flows.
+    if (!isConductingReading(activePower, current, cfg.minCurrent)) return result;
 
     result.state.conductingReads++;
     result.state.voteCount += (activePower < 0.0f) ? -1 : 1;

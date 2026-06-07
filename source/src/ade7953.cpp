@@ -3828,7 +3828,14 @@ namespace Ade7953
         // setChannelData arm/disarm is neither lost nor double-fired. (The unsynced
         // _pendingPolarityCheck pre-check is an atomic-bool fast path; it is re-tested
         // under the mutex before any state change.)
-        if (_channelData[channelIndex]._pendingPolarityCheck && activePower != 0.0f) {
+        // Current-gate "conducting" so ADE7953 offset noise at ~0 A (a small, steady,
+        // signed power) cannot vote a false reversal on an unclamped role (grid/battery)
+        // or earn the armed boost. The same signal drives _lastConducting below, so the
+        // vote and the boost always agree on whether the channel is drawing power.
+        bool conducting = MeterLogic::isConductingReading(
+            activePower, current, MINIMUM_CURRENT_FOR_VALIDATION);
+
+        if (_channelData[channelIndex]._pendingPolarityCheck && conducting) {
             bool flipped = false;
             bool newReverse = false;
             if (acquireMutex(&_channelDataMutex)) {
@@ -3840,9 +3847,10 @@ namespace Ade7953
                     };
                     MeterLogic::PolarityConfig cfg{
                         POLARITY_DETECT_VOTE_THRESHOLD,
-                        POLARITY_DETECT_MAX_CONDUCTING_READS
+                        POLARITY_DETECT_MAX_CONDUCTING_READS,
+                        MINIMUM_CURRENT_FOR_VALIDATION
                     };
-                    MeterLogic::PolarityResult res = MeterLogic::updatePolarity(state, activePower, cfg);
+                    MeterLogic::PolarityResult res = MeterLogic::updatePolarity(state, activePower, current, cfg);
                     _polarityVoteCount[channelIndex] = res.state.voteCount;
                     _polarityConductingReads[channelIndex] = res.state.conductingReads;
                     _channelData[channelIndex]._pendingPolarityCheck = res.state.armed;
@@ -3873,11 +3881,12 @@ namespace Ade7953
             }
         }
 
-        // Record whether this reading is conducting BEFORE the clamp below zeroes a
-        // reversed load/PV. The WDRR boost for an armed channel keys off this (not the
-        // stored power), so a reversed load/PV - stored as 0 but really drawing power -
-        // still gets sampled rapidly and resolves its orientation in ~1 s.
-        _lastConducting[channelIndex] = (activePower != 0.0f);
+        // Record whether this reading is conducting (computed above, current-gated)
+        // BEFORE the clamp below zeroes a reversed load/PV. The WDRR boost for an armed
+        // channel keys off this (not the stored power), so a reversed load/PV - stored
+        // as 0 but really drawing power - still gets sampled rapidly and resolves its
+        // orientation in ~1 s, while a near-zero-current offset reading earns no boost.
+        _lastConducting[channelIndex] = conducting;
 
         // Clamp negative active power to zero for load and PV channels. With the phase
         // configured correctly a load/PV should not be net-negative; a residual negative

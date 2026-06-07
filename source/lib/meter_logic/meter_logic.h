@@ -50,6 +50,7 @@ struct PolarityState {
 struct PolarityConfig {
     int8_t voteThreshold;       // net votes needed to decide (e.g. 5)
     uint16_t maxConductingReads; // give up after this many conducting reads w/o a decision (0 = no bound)
+    float minCurrent;            // a reading below this current is offset noise: no vote, no count
 };
 
 struct PolarityResult {
@@ -57,15 +58,33 @@ struct PolarityResult {
     PolarityAction action;
 };
 
-// One detector step for a single channel reading. Safe to call on every read of
-// an armed channel: a non-conducting reading is a no-op. activePower is the
-// post-validation reading; 0 or NaN means non-conducting (no vote, no count).
+// True if a reading carries usable directional information: a real, non-zero
+// power backed by enough current (current >= minCurrent) that the ADE7953's
+// offset noise - which shows up as a small, consistent-sign power at essentially
+// zero current - cannot masquerade as a genuine (possibly reversed) load. This is
+// the one definition of "conducting" used across the pipeline: updatePolarity gates
+// the vote on it, and the firmware gates the scheduler's armed boost (_lastConducting,
+// feeding computeChannelWeight) on the same call, so the two can never disagree about
+// whether a channel is drawing power. NaN power or NaN current -> false.
 //
-// PRECONDITION: feed the RAW signed reading. Do NOT pre-clamp negatives to zero
-// before calling - a reversed LOAD/PV reads negative, and clamping it to 0 first
-// would make every reading look non-conducting, so the reversal would never be
-// detected. (The firmware runs this detector before shouldClampNegative.)
-PolarityResult updatePolarity(PolarityState state, float activePower, PolarityConfig cfg);
+// A reversed load/PV reads NEGATIVE power but with REAL current, so it stays
+// conducting - that is what lets a reversed CT both vote (to flip) and earn the boost.
+bool isConductingReading(float activePower, float current, float minCurrent);
+
+// One detector step for a single channel reading. Safe to call on every read of
+// an armed channel: a non-conducting reading is a no-op. The reading votes only if
+// isConductingReading(activePower, current, cfg.minCurrent) - so 0/NaN power, or a
+// small offset power at near-zero current, never votes and never counts toward the
+// bound. activePower's sign gives the vote direction.
+//
+// PRECONDITION: feed the RAW signed reading (both power and current). Do NOT
+// pre-clamp negative power to zero before calling - a reversed LOAD/PV reads
+// negative with real current, and clamping power to 0 first would make the reading
+// look non-conducting, so the reversal would never be detected. (The firmware runs
+// this detector before shouldClampNegative.) current is the post-validation current
+// (an invalid low-current reading is already zeroed upstream, which correctly reads
+// as non-conducting here).
+PolarityResult updatePolarity(PolarityState state, float activePower, float current, PolarityConfig cfg);
 
 // ============================================================================
 // Negative-reading handling
