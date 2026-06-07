@@ -31,9 +31,10 @@ namespace Ade7953
     static float _prevActivePower[MAX_CHANNEL_COUNT] = {};   // Previous power reading for variability tracking
     static float _powerVariability[MAX_CHANNEL_COUNT] = {};  // EMA of |delta power| for variability scoring
     static uint8_t _wdrrCursor = 0;                          // Round-robin tie-break cursor for argmax
+    static int8_t _polarityVoteCount[MAX_CHANNEL_COUNT] = {}; // Net consistent-sign vote accumulator for CT-reversal detection (runtime only; reset on arm/decision)
     static float _gridFrequency = 50.0f;
 
-    // Set by the meter task when an auto-polarity flip flips the persisted reverse flag.
+    // Set by the meter task when the CT-reversal detector flips the persisted reverse flag.
     // Drained by the energy save task (internal-RAM stack, flash-capable) since the meter
     // task runs on a PSRAM stack and cannot perform NVS writes.
     static volatile bool _pendingPolaritySave[MAX_CHANNEL_COUNT] = {};
@@ -790,21 +791,25 @@ namespace Ade7953
         // re-runs the auto-polarity detection and can oscillate the persisted reverse
         // flag on channels that genuinely read negative at idle.
         if (armTransients) {
-            if (wasInactive && _channelData[channelIndex].active) {
-                _channelData[channelIndex]._pendingPolarityCheck = true;
+            bool reverseChanged = (oldReverse != _channelData[channelIndex].reverse);
+            bool activated = (wasInactive && _channelData[channelIndex].active);
+            bool roleChangedActive = (!wasInactive && _channelData[channelIndex].active && oldRole != _channelData[channelIndex].role);
+
+            if (reverseChanged) {
+                // A manual reverse change is the trusted value: disarm CT-reversal
+                // detection so it can never override the user's explicit choice, and
+                // (issue #149) read once now so the corrected sign lands immediately
+                // instead of up to 15 s away on a heavily loaded scheduler.
+                _channelData[channelIndex]._pendingPolarityCheck = false;
+                _polarityVoteCount[channelIndex] = 0;
                 if (channelIndex > 0) _channelData[channelIndex]._pendingPriorityRead = true;
-            }
-            // Re-arm polarity check on role change while channel is active (sign convention
-            // can legitimately differ between roles; let the next reading re-validate).
-            if (!wasInactive && _channelData[channelIndex].active && oldRole != _channelData[channelIndex].role) {
+            } else if (activated || roleChangedActive) {
+                // Fresh activation / role change with no explicit polarity choice: arm
+                // auto-detection from a clean vote count. The sign convention can
+                // legitimately differ between roles, so a role change re-validates.
                 _channelData[channelIndex]._pendingPolarityCheck = true;
-            }
-            // Fix for issue #149: arm priority read when the user flips the reverse
-            // flag via API. Intent is "read me now with the corrected sign" - without
-            // this, the corrected reading lands on the next normal rotation slot,
-            // which can be up to 15 s away on a heavily loaded scheduler.
-            if (channelIndex > 0 && oldReverse != _channelData[channelIndex].reverse) {
-                _channelData[channelIndex]._pendingPriorityRead = true;
+                _polarityVoteCount[channelIndex] = 0;
+                if (channelIndex > 0) _channelData[channelIndex]._pendingPriorityRead = true;
             }
         }
 
@@ -3798,61 +3803,70 @@ namespace Ade7953
 
         }
 
-        // Auto-detect a reversed CT clamp on the first meaningful reading after activation
-        // (or after a role change). If the active power is negative, toggle the persisted
-        // reverse flag, queue the NVS write for the energy save task, re-arm the priority
-        // slot so the corrected reading lands on the very next linecyc, and discard this
-        // reading. The threshold avoids flipping on noise when the circuit is essentially idle.
+        // CT-reversal detection (replaces the old one-shot auto-polarity flip).
+        // While a channel is armed (set on activation / role change without a manual
+        // reverse - see setChannelData), accumulate a NET sign vote over conducting
+        // samples. Only readings that survived the no-load / low-pf / validation
+        // filters above (activePower != 0) vote, so idle circuits and noise never
+        // flip the flag. Magnitude is irrelevant - only sign consistency matters - so
+        // a steady -4 W reversed CT is caught just like a -4 kW one, and a single
+        // transient of the wrong sign is just one vote that net-counting absorbs.
         //
-        // Hold _channelDataMutex for the test-and-clear so a concurrent setChannelData arm
-        // is neither lost nor double-fired. The block only fires once per channel after
-        // activation / role change so the contention is negligible.
-        if (abs(activePower) >= AUTO_POLARITY_MIN_POWER_W) {
+        // A decisive run of negatives past the threshold flips the persisted reverse
+        // flag once (and we negate this reading so it is stored with the corrected
+        // sign); a decisive run of positives simply confirms the CT is correct. Either
+        // way the channel disarms. Hold _channelDataMutex for the test-and-update so a
+        // concurrent setChannelData arm/disarm is neither lost nor double-fired.
+        if (activePower != 0.0f) {
             bool flipped = false;
             bool newReverse = false;
             if (acquireMutex(&_channelDataMutex)) {
                 if (_channelData[channelIndex]._pendingPolarityCheck) {
-                    _channelData[channelIndex]._pendingPolarityCheck = false;
-                    if (activePower < 0.0f) {
+                    _polarityVoteCount[channelIndex] += (activePower < 0.0f) ? -1 : 1;
+                    if (_polarityVoteCount[channelIndex] <= -POLARITY_DETECT_VOTE_THRESHOLD) {
                         _channelData[channelIndex].reverse = !_channelData[channelIndex].reverse;
                         _pendingPolaritySave[channelIndex] = true;
+                        _channelData[channelIndex]._pendingPolarityCheck = false;
+                        _polarityVoteCount[channelIndex] = 0;
                         if (channelIndex > 0) _channelData[channelIndex]._pendingPriorityRead = true;
                         flipped = true;
                         newReverse = _channelData[channelIndex].reverse;
+                    } else if (_polarityVoteCount[channelIndex] >= POLARITY_DETECT_VOTE_THRESHOLD) {
+                        _channelData[channelIndex]._pendingPolarityCheck = false;
+                        _polarityVoteCount[channelIndex] = 0;
                     }
                 }
                 releaseMutex(&_channelDataMutex);
             }
             if (flipped) {
+                // This reading was computed with the pre-flip sign; negate the signed
+                // quantities so it stores consistently with the new reverse flag
+                // (apparent power and current stay positive).
+                activePower = -activePower;
+                reactivePower = -reactivePower;
+                activeEnergy = -activeEnergy;
+                reactiveEnergy = -reactiveEnergy;
+                powerFactor = -powerFactor;
                 LOG_INFO(
-                    "%s (%u): auto-detected reversed CT (raw P=%.1fW, role=%s); reverse flag now %d, discarding this reading",
+                    "%s (%u): CT reversal detected (P now %.1fW, role=%s); reverse flag now %d",
                     channelData.label, channelIndex, activePower,
                     channelRoleToString(channelData.role), newReverse
                 );
-                _recordFailure();
-                return false;
             }
         }
 
-        // Discard negative readings for Load channels (likely CT installed backwards)
-        if (activePower < 0.0f && channelData.role == CHANNEL_ROLE_LOAD) {
+        // Clamp negative active power to zero for load and PV channels. With the phase
+        // configured correctly a load/PV should not be net-negative; a residual negative
+        // is PV inverter standby or sub-detection noise. Clamp (do NOT discard) so the
+        // data cadence is preserved - a genuinely reversed CT is corrected by the
+        // reversal detector above, not by dropping readings (which created silent gaps).
+        if (activePower < 0.0f && (channelData.role == CHANNEL_ROLE_LOAD || channelData.role == CHANNEL_ROLE_PV)) {
             LOG_DEBUG(
-                "%s (%d): Discarding negative reading (%.1fW) (Load channel, likely CT installed backwards)",
+                "%s (%d): clamping negative reading (%.1fW) to 0 (role=%s)",
                 channelData.label,
                 channelIndex,
-                activePower
-            );
-            _recordFailure();
-            return false;
-        }
-
-        // Clamp negative readings to zero for PV channels (expected inverter standby consumption, so no record failure)
-        if (activePower < 0.0f && channelData.role == CHANNEL_ROLE_PV) {
-            LOG_DEBUG(
-                "%s (%d): Clamping negative reading (%.1fW) to 0 (PV channel, likely inverter standby consumption)",
-                channelData.label,
-                channelIndex,
-                activePower
+                activePower,
+                channelRoleToString(channelData.role)
             );
             activePower = 0.0f;
             reactivePower = 0.0f;
@@ -4483,6 +4497,11 @@ namespace Ade7953
             _channelWeight[i] = WEIGHT_POWER_SHARE * powerScore
                               + WEIGHT_VARIABILITY * variabilityScore
                               + WEIGHT_MIN_BASE;
+
+            // Boost channels currently running CT-reversal detection so they are
+            // sampled rapidly and resolve in ~1-2 s. The boost clears automatically
+            // once the detector disarms, since weights are recomputed every read.
+            if (_channelData[i]._pendingPolarityCheck) _channelWeight[i] += WEIGHT_ARMED_BOOST;
         }
 
         // Channel 0 is not scheduled (always read separately)

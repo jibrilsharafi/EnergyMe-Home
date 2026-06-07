@@ -79,6 +79,7 @@
 #define VARIABILITY_EMA_ALPHA 0.3f   // Exponential moving average smoothing for variability (0-1, lower = smoother)
 #define CHANNEL_MAX_GAP_MS 15000ULL  // Watchdog: max time between successful reads before forcing a pick
 #define MAX_CHANNEL_DEFICIT_BOUND 5.0f // Symmetric clamp on per-channel deficit (safety net against arithmetic edge cases)
+#define WEIGHT_ARMED_BOOST 1.5f      // Extra weight for a channel actively running CT-reversal detection, so it is sampled rapidly and resolves in ~1-2 s
 
 // Default values for ADE7953 registers
 #define UNLOCK_OPTIMUM_REGISTER_VALUE 0xAD // Register to write to unlock the optimum register
@@ -228,7 +229,7 @@
 #define MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD 0.01f // The minimum current value for the three-phase approximation to be used as the no-load feature cannot be used
 #define MINIMUM_CURRENT_FOR_VALIDATION 0.02f // Below this current threshold, skip invalidating the reading as measurements are unreliable (noise dominates)
 #define MINIMUM_POWER_FACTOR 0.10f // Measuring such low power factors is virtually impossible with such CTs
-#define AUTO_POLARITY_MIN_POWER_W 5.0f // Below this absolute active power, the auto-polarity check stays armed (avoids flipping on noise / idle circuits)
+#define POLARITY_DETECT_VOTE_THRESHOLD 5 // Net consistent-sign votes (over conducting samples) needed to decide CT orientation. Magnitude-independent, so a steady -4 W reversed CT is caught like a -4 kW one
 #define ADE7953_MIN_LINECYC 10UL // Below this the readings are unstable (200 ms)
 #define ADE7953_MAX_LINECYC 1000UL // Above this too much time passes (20 seconds)
 #define INVALID_SPI_READ_WRITE 0xDEADDEAD // Custom, used to indicate an invalid SPI read/write operation
