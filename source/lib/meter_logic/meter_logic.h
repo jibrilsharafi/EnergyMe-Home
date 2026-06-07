@@ -84,10 +84,12 @@ bool shouldClampNegative(float activePower, ChannelRole role);
 // active channel is eventually serviced), with two priority bumps on top:
 //   - grid / battery roles get a multiplier (we want the mains and storage flow
 //     sampled more often, especially on 3-phase systems);
-//   - a channel actively running polarity detection AND currently conducting gets
-//     a flat boost so it resolves quickly. The boost is gated on conduction: an
-//     armed channel with no load gets no boost, so it cannot hog the scheduler
-//     while it waits for load (this is what prevents the no-load starvation).
+//   - a channel actively running polarity detection AND currently conducting (the
+//     `conducting` input) gets a flat boost so it resolves quickly. Gating on
+//     conduction means an armed channel with no load gets no boost and cannot hog
+//     the scheduler while it waits for load (this prevents the no-load starvation),
+//     while a reversed load/PV - whose stored power is clamped to 0 but which is
+//     genuinely conducting - still earns the boost and resolves in ~1 s.
 
 struct WeightConfig {
     float powerShare;       // contribution from |power| share
@@ -99,10 +101,15 @@ struct WeightConfig {
 
 struct ChannelWeightInput {
     bool active;
-    float activePower; // signed; only magnitude is used
-    float variability; // EMA of |delta power|
-    bool armed;        // polarity detection in progress
+    float activePower;       // signed; only the magnitude is used (for the power share)
+    float variability;       // EMA of |delta power|
+    bool armed;              // polarity detection in progress
     ChannelRole role;
+    bool conducting = false; // is the channel drawing power *right now*? Drives the
+                             // armed boost. Deliberately separate from activePower!=0:
+                             // a reversed load/PV is stored clamped to 0 yet is really
+                             // conducting, so the caller passes the pre-clamp signal -
+                             // otherwise reversed loads would never earn the boost.
 };
 
 // True if this role is sampled more often (grid + battery).

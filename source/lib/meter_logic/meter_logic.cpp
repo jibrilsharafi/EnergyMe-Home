@@ -87,12 +87,13 @@ float computeChannelWeight(const ChannelWeightInput& in, float powerShare,
     // the boost stays a fixed, role-independent priority.
     if (roleHasSchedulingPriority(in.role)) weight *= cfg.rolePriorityMult;
 
-    // Polarity-detection boost, gated on conduction. An armed channel only earns
-    // the boost while it is actually drawing power - so a CT clipped on an idle
-    // circuit waits at normal cadence (no starvation) yet is sampled rapidly the
-    // moment load appears, resolving the orientation in ~1 s.
-    bool conducting = (in.activePower != 0.0f && !std::isnan(in.activePower));
-    if (in.armed && conducting) weight += cfg.armedBoost;
+    // Polarity-detection boost, gated on conduction (in.conducting, the caller's
+    // pre-clamp "drawing power right now" signal). An armed channel only earns the
+    // boost while actually conducting - so a CT clipped on an idle circuit waits at
+    // normal cadence (no starvation) yet is sampled rapidly the moment load appears,
+    // resolving in ~1 s. Using the pre-clamp signal (not activePower, which is 0 for
+    // a clamped reversed load/PV) means reversed loads get the boost too.
+    if (in.armed && in.conducting) weight += cfg.armedBoost;
 
     return weight;
 }

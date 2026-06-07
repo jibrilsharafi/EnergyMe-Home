@@ -33,6 +33,7 @@ namespace Ade7953
     static uint8_t _wdrrCursor = 0;                          // Round-robin tie-break cursor for argmax
     static int8_t _polarityVoteCount[MAX_CHANNEL_COUNT] = {}; // Net consistent-sign vote accumulator for CT-reversal detection (runtime only; reset on arm/decision)
     static uint16_t _polarityConductingReads[MAX_CHANNEL_COUNT] = {}; // Conducting reads since arming - bounds a sign-oscillating channel (runtime only; reset on arm/decision)
+    static bool _lastConducting[MAX_CHANNEL_COUNT] = {}; // Was the channel's most recent reading conducting (pre-clamp)? Drives the CT-detection boost so a clamped reversed load/PV still gets it (meter-task only)
     static float _gridFrequency = 50.0f;
 
     // The library returns MeterLogic::NO_CHANNEL for "no channel"; the firmware
@@ -3872,6 +3873,12 @@ namespace Ade7953
             }
         }
 
+        // Record whether this reading is conducting BEFORE the clamp below zeroes a
+        // reversed load/PV. The WDRR boost for an armed channel keys off this (not the
+        // stored power), so a reversed load/PV - stored as 0 but really drawing power -
+        // still gets sampled rapidly and resolves its orientation in ~1 s.
+        _lastConducting[channelIndex] = (activePower != 0.0f);
+
         // Clamp negative active power to zero for load and PV channels. With the phase
         // configured correctly a load/PV should not be net-negative; a residual negative
         // is PV inverter standby or sub-detection noise. Clamp (do NOT discard) so the
@@ -4490,6 +4497,7 @@ namespace Ade7953
             inputs[i].variability = _powerVariability[i];
             inputs[i].armed = _channelData[i]._pendingPolarityCheck;
             inputs[i].role = _channelData[i].role;
+            inputs[i].conducting = _lastConducting[i];
         }
 
         const MeterLogic::WeightConfig cfg{

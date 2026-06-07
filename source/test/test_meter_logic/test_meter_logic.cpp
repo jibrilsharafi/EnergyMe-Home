@@ -202,17 +202,30 @@ void test_weight_grid_gets_multiplier(void) {
 }
 
 void test_weight_armed_boost_only_when_conducting(void) {
-    // Armed but idle (no load): NO boost - this is what stops a no-load armed
-    // channel from hogging the scheduler.
-    ChannelWeightInput idleArmed{true, 0.0f, 0.0f, true, CHANNEL_ROLE_LOAD};
+    // Armed but NOT conducting (no current): NO boost - this is what stops a no-load
+    // armed channel from hogging the scheduler.
+    ChannelWeightInput idleArmed{true, 0.0f, 0.0f, true, CHANNEL_ROLE_LOAD, false};
     TEST_ASSERT_EQUAL_FLOAT(WCFG.minBase, computeChannelWeight(idleArmed, 0.0f, 0.0f, WCFG));
 
     // Armed AND conducting: boost added on top of the normal weight.
-    ChannelWeightInput condArmed{true, 500.0f, 0.0f, true, CHANNEL_ROLE_LOAD};
-    ChannelWeightInput condUnarmed{true, 500.0f, 0.0f, false, CHANNEL_ROLE_LOAD};
+    ChannelWeightInput condArmed{true, 500.0f, 0.0f, true, CHANNEL_ROLE_LOAD, true};
+    ChannelWeightInput condUnarmed{true, 500.0f, 0.0f, false, CHANNEL_ROLE_LOAD, true};
     float wArmed = computeChannelWeight(condArmed, 1.0f, 0.0f, WCFG);
     float wUnarmed = computeChannelWeight(condUnarmed, 1.0f, 0.0f, WCFG);
     TEST_ASSERT_EQUAL_FLOAT(wUnarmed + WCFG.armedBoost, wArmed);
+}
+
+void test_weight_clamped_reversed_load_still_boosted(void) {
+    // The load/PV priority fix: a reversed LOAD is stored clamped to 0, but it IS
+    // conducting - so it must still earn the armed boost (driven by `conducting`,
+    // not the clamped stored power). Without this, reversed loads resolved slowly.
+    ChannelWeightInput in{true, 0.0f /*clamped*/, 0.0f, true, CHANNEL_ROLE_LOAD, true /*conducting*/};
+    TEST_ASSERT_FLOAT_WITHIN(1e-5, WCFG.minBase + WCFG.armedBoost,
+                             computeChannelWeight(in, 0.0f, 0.0f, WCFG));
+    // And a clamped reversed PV likewise.
+    ChannelWeightInput pv{true, 0.0f, 0.0f, true, CHANNEL_ROLE_PV, true};
+    TEST_ASSERT_FLOAT_WITHIN(1e-5, WCFG.minBase + WCFG.armedBoost,
+                             computeChannelWeight(pv, 0.0f, 0.0f, WCFG));
 }
 
 void test_weight_shares_contribute(void) {
@@ -356,7 +369,10 @@ void test_armed_no_load_channel_does_not_starve_peers(void) {
     const int ROUNDS = 600;
 
     for (int r = 0; r < ROUNDS; r++) {
-        for (uint8_t i = START; i < N; i++) in[i].armed = pol[i].armed;
+        for (uint8_t i = START; i < N; i++) {
+            in[i].armed = pol[i].armed;
+            in[i].conducting = (in[i].activePower != 0.0f); // pre-clamp conduction signal
+        }
         computeWeights(in, N, START, WCFG, weights);
         wdrrAccumulate(weights, deficits, active, N, START, 5.0f);
         uint8_t pick = wdrrPick(deficits, active, N, START, &cursor);
@@ -406,7 +422,10 @@ void test_armed_conducting_channel_resolves_quickly(void) {
     uint8_t cursor = 0;
     int flipRound = -1;
     for (int r = 0; r < 200; r++) {
-        for (uint8_t i = START; i < N; i++) in[i].armed = pol[i].armed;
+        for (uint8_t i = START; i < N; i++) {
+            in[i].armed = pol[i].armed;
+            in[i].conducting = (in[i].activePower != 0.0f); // pre-clamp conduction signal
+        }
         computeWeights(in, N, START, WCFG, weights);
         wdrrAccumulate(weights, deficits, active, N, START, 5.0f);
         uint8_t pick = wdrrPick(deficits, active, N, START, &cursor);
@@ -554,11 +573,11 @@ void test_polarity_disarmed_mid_sequence_is_noop(void) {
 void test_weight_grid_armed_conducting_all_bumps_stack(void) {
     // grid (x2) + armed + conducting + full power share: pins the arithmetic order
     // (role multiply on the base, THEN add the flat armed boost).
-    ChannelWeightInput in{true, -500.0f, 0.0f, true, CHANNEL_ROLE_GRID};
+    ChannelWeightInput in{true, -500.0f, 0.0f, true, CHANNEL_ROLE_GRID, true};
     // base = 0.4*1 + 0.4*0 + 0.1 = 0.5; *2.0 = 1.0; + 1.5 = 2.5
     TEST_ASSERT_FLOAT_WITHIN(1e-5, 2.5f, computeChannelWeight(in, 1.0f, 0.0f, WCFG));
-    // same but idle (no conduction) -> no boost: 0.5*2.0 = 1.0
-    ChannelWeightInput idle{true, 0.0f, 0.0f, true, CHANNEL_ROLE_GRID};
+    // same but not conducting -> no boost: 0.5*2.0 = 1.0
+    ChannelWeightInput idle{true, 0.0f, 0.0f, true, CHANNEL_ROLE_GRID, false};
     TEST_ASSERT_FLOAT_WITHIN(1e-5, 1.0f, computeChannelWeight(idle, 1.0f, 0.0f, WCFG));
 }
 
@@ -717,7 +736,10 @@ void test_multiple_armed_channels_both_resolve(void) {
     uint8_t cursor = 0;
     bool flipped1 = false, flipped2 = false;
     for (int r = 0; r < 200; r++) {
-        for (uint8_t i = START; i < N; i++) in[i].armed = pol[i].armed;
+        for (uint8_t i = START; i < N; i++) {
+            in[i].armed = pol[i].armed;
+            in[i].conducting = (in[i].activePower != 0.0f); // pre-clamp conduction signal
+        }
         computeWeights(in, N, START, WCFG, weights);
         wdrrAccumulate(weights, deficits, active, N, START, 5.0f);
         uint8_t pick = wdrrPick(deficits, active, N, START, &cursor);
@@ -847,6 +869,7 @@ int main(int, char **) {
     RUN_TEST(test_polarity_disarmed_mid_sequence_is_noop);
 
     RUN_TEST(test_weight_grid_armed_conducting_all_bumps_stack);
+    RUN_TEST(test_weight_clamped_reversed_load_still_boosted);
     RUN_TEST(test_computeWeights_battery_gets_multiplier);
     RUN_TEST(test_computeWeights_tiny_channel_gets_min_base);
     RUN_TEST(test_computeWeights_all_inactive_all_zeros);
