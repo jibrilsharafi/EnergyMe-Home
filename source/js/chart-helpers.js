@@ -391,7 +391,8 @@ const ChartHelpers = {
                     },
                     y: {
                         stacked: true,
-                        min: 0,
+                        // No min: 0 - lets a negative "Other" and export bars render below
+                        // zero, consistent with the balance chart. See issue #169.
                         title: { display: true, text: 'Energy (kWh)' },
                         ticks: { font: { size: isMobile ? 10 : 12 } }
                     }
@@ -813,19 +814,12 @@ const ChartHelpers = {
             });
         });
 
-        // Calculate total consumption
-        const totalConsumption = Object.values(channelTotals).reduce((sum, val) => sum + val, 0);
-
         const totalRowEl = document.getElementById('consumption-total-row');
         const valueEl = document.getElementById('consumption-total-value');
 
-        if (totalConsumption === 0) {
-            sharingSection.style.display = 'none';
-            if (totalRowEl) totalRowEl.style.display = 'none';
-            return;
-        }
-
-        // Sort channels by consumption (highest first)
+        // Sort channels by consumption (highest first). A pie slice cannot be negative, so a
+        // negative "Other" is dropped here; the total below is summed over the displayed
+        // slices only, keeping the percentages and total consistent (see issue #169).
         const sortedChannels = Object.entries(channelTotals)
             .sort(([, a], [, b]) => b - a)
             .filter(([, value]) => value > 0);
@@ -835,6 +829,9 @@ const ChartHelpers = {
             if (totalRowEl) totalRowEl.style.display = 'none';
             return;
         }
+
+        // Total over the displayed (positive) slices only
+        const totalConsumption = sortedChannels.reduce((sum, [, value]) => sum + value, 0);
 
         // Prepare data for pie chart
         const labels = sortedChannels.map(([channelKey]) => this.getDisplayLabel(channelKey, channelData));
