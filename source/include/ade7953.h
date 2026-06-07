@@ -26,6 +26,9 @@
 #include "utils.h"
 #include "hardware_profile.h"
 
+#include "channel_types.h"   // ChannelRole (shared, Arduino-free - see lib/meter_logic)
+#include "meter_logic.h"     // pure CT-polarity / clamp / WDRR decisions (host-testable)
+
 // SPI
 #define ADE7953_SPI_FREQUENCY 2000000 // The maximum SPI frequency for the ADE7953 is 2MHz
 #define ADE7953_SPI_MUTEX_TIMEOUT_MS 100
@@ -79,7 +82,8 @@
 #define VARIABILITY_EMA_ALPHA 0.3f   // Exponential moving average smoothing for variability (0-1, lower = smoother)
 #define CHANNEL_MAX_GAP_MS 15000ULL  // Watchdog: max time between successful reads before forcing a pick
 #define MAX_CHANNEL_DEFICIT_BOUND 5.0f // Symmetric clamp on per-channel deficit (safety net against arithmetic edge cases)
-#define WEIGHT_ARMED_BOOST 1.5f      // Extra weight for a channel actively running CT-reversal detection, so it is sampled rapidly and resolves in ~1-2 s
+#define WEIGHT_ARMED_BOOST 1.5f      // Extra weight for a channel running CT-reversal detection WHILE CONDUCTING, so it is sampled rapidly and resolves in ~1-2 s
+#define WEIGHT_ROLE_PRIORITY_MULT 2.0f // Weight multiplier for grid / battery roles - mains and storage flow are sampled more often (matters most on 3-phase)
 
 // Default values for ADE7953 registers
 #define UNLOCK_OPTIMUM_REGISTER_VALUE 0xAD // Register to write to unlock the optimum register
@@ -230,6 +234,7 @@
 #define MINIMUM_CURRENT_FOR_VALIDATION 0.02f // Below this current threshold, skip invalidating the reading as measurements are unreliable (noise dominates)
 #define MINIMUM_POWER_FACTOR 0.10f // Measuring such low power factors is virtually impossible with such CTs
 #define POLARITY_DETECT_VOTE_THRESHOLD 5 // Net consistent-sign votes (over conducting samples) needed to decide CT orientation. Magnitude-independent, so a steady -4 W reversed CT is caught like a -4 kW one
+#define POLARITY_DETECT_MAX_CONDUCTING_READS 40 // Give up CT-reversal detection after this many CONDUCTING reads without a decision (only trips on a sign-oscillating channel; a no-load channel waits indefinitely)
 #define ADE7953_MIN_LINECYC 10UL // Below this the readings are unstable (200 ms)
 #define ADE7953_MAX_LINECYC 1000UL // Above this too much time passes (20 seconds)
 #define INVALID_SPI_READ_WRITE 0xDEADDEAD // Custom, used to indicate an invalid SPI read/write operation
@@ -419,18 +424,9 @@ struct CtSpecification
       whLsb(1.0f), varhLsb(1.0f), vahLsb(1.0f) {}
 };
 
-// Channel role enum
-enum ChannelRole : uint8_t {
-    CHANNEL_ROLE_LOAD     = 0, // Default - regular load/consumption (negatives discarded)
-    CHANNEL_ROLE_GRID     = 1, // Grid meter (+ import, - export)
-    CHANNEL_ROLE_PV       = 2, // PV/Solar production (+ generation, negatives discarded)
-    CHANNEL_ROLE_BATTERY  = 3, // Battery (+ discharge, - charge)
-    CHANNEL_ROLE_INVERTER = 4, // Hybrid inverter: PV + battery DC-coupled, AC output (negatives allowed)
-    CHANNEL_ROLE_COUNT    = 5  // Total number of roles
-};
-
-#define DEFAULT_CHANNEL_ROLE CHANNEL_ROLE_LOAD
-#define DEFAULT_CHANNEL_0_ROLE CHANNEL_ROLE_GRID // Channel 0 is typically the grid meter
+// ChannelRole and its DEFAULT_CHANNEL_*_ROLE defaults live in channel_types.h
+// (included above) so the host-testable meter_logic library can use them without
+// pulling in Arduino.
 
 struct ChannelData
 {
