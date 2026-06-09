@@ -31,9 +31,18 @@ namespace Ade7953
     static float _prevActivePower[MAX_CHANNEL_COUNT] = {};   // Previous power reading for variability tracking
     static float _powerVariability[MAX_CHANNEL_COUNT] = {};  // EMA of |delta power| for variability scoring
     static uint8_t _wdrrCursor = 0;                          // Round-robin tie-break cursor for argmax
+    static int8_t _polarityVoteCount[MAX_CHANNEL_COUNT] = {}; // Net consistent-sign vote accumulator for CT-reversal detection (runtime only; reset on arm/decision)
+    static uint16_t _polarityConductingReads[MAX_CHANNEL_COUNT] = {}; // Conducting reads since arming - bounds a sign-oscillating channel (runtime only; reset on arm/decision)
+    static bool _lastConducting[MAX_CHANNEL_COUNT] = {}; // Was the channel's most recent reading conducting (pre-clamp)? Drives the CT-detection boost so a clamped reversed load/PV still gets it (meter-task only)
     static float _gridFrequency = 50.0f;
 
-    // Set by the meter task when an auto-polarity flip flips the persisted reverse flag.
+    // The library returns MeterLogic::NO_CHANNEL for "no channel"; the firmware
+    // compares scheduler results against its own INVALID_CHANNEL macro. They must
+    // hold the same value. (The library cannot reuse the name INVALID_CHANNEL: it
+    // is an object-like macro here and would rewrite MeterLogic::INVALID_CHANNEL.)
+    static_assert(INVALID_CHANNEL == MeterLogic::NO_CHANNEL, "INVALID_CHANNEL / MeterLogic::NO_CHANNEL value mismatch");
+
+    // Set by the meter task when the CT-reversal detector flips the persisted reverse flag.
     // Drained by the energy save task (internal-RAM stack, flash-capable) since the meter
     // task runs on a PSRAM stack and cannot perform NVS writes.
     static volatile bool _pendingPolaritySave[MAX_CHANNEL_COUNT] = {};
@@ -790,21 +799,27 @@ namespace Ade7953
         // re-runs the auto-polarity detection and can oscillate the persisted reverse
         // flag on channels that genuinely read negative at idle.
         if (armTransients) {
-            if (wasInactive && _channelData[channelIndex].active) {
-                _channelData[channelIndex]._pendingPolarityCheck = true;
+            bool reverseChanged = (oldReverse != _channelData[channelIndex].reverse);
+            bool activated = (wasInactive && _channelData[channelIndex].active);
+            bool roleChangedActive = (!wasInactive && _channelData[channelIndex].active && oldRole != _channelData[channelIndex].role);
+
+            if (reverseChanged) {
+                // A manual reverse change is the trusted value: disarm CT-reversal
+                // detection so it can never override the user's explicit choice, and
+                // (issue #149) read once now so the corrected sign lands immediately
+                // instead of up to 15 s away on a heavily loaded scheduler.
+                _channelData[channelIndex]._pendingPolarityCheck = false;
+                _polarityVoteCount[channelIndex] = 0;
+                _polarityConductingReads[channelIndex] = 0;
                 if (channelIndex > 0) _channelData[channelIndex]._pendingPriorityRead = true;
-            }
-            // Re-arm polarity check on role change while channel is active (sign convention
-            // can legitimately differ between roles; let the next reading re-validate).
-            if (!wasInactive && _channelData[channelIndex].active && oldRole != _channelData[channelIndex].role) {
+            } else if (activated || roleChangedActive) {
+                // Fresh activation / role change with no explicit polarity choice: arm
+                // auto-detection from a clean vote count. The sign convention can
+                // legitimately differ between roles, so a role change re-validates.
                 _channelData[channelIndex]._pendingPolarityCheck = true;
-            }
-            // Fix for issue #149: arm priority read when the user flips the reverse
-            // flag via API. Intent is "read me now with the corrected sign" - without
-            // this, the corrected reading lands on the next normal rotation slot,
-            // which can be up to 15 s away on a heavily loaded scheduler.
-            if (channelIndex > 0 && oldReverse != _channelData[channelIndex].reverse) {
-                _channelData[channelIndex]._pendingPriorityRead = true;
+                _polarityVoteCount[channelIndex] = 0;
+                _polarityConductingReads[channelIndex] = 0;
+                if (channelIndex > 0) _channelData[channelIndex]._pendingPriorityRead = true;
             }
         }
 
@@ -3798,22 +3813,48 @@ namespace Ade7953
 
         }
 
-        // Auto-detect a reversed CT clamp on the first meaningful reading after activation
-        // (or after a role change). If the active power is negative, toggle the persisted
-        // reverse flag, queue the NVS write for the energy save task, re-arm the priority
-        // slot so the corrected reading lands on the very next linecyc, and discard this
-        // reading. The threshold avoids flipping on noise when the circuit is essentially idle.
-        //
-        // Hold _channelDataMutex for the test-and-clear so a concurrent setChannelData arm
-        // is neither lost nor double-fired. The block only fires once per channel after
-        // activation / role change so the contention is negligible.
-        if (abs(activePower) >= AUTO_POLARITY_MIN_POWER_W) {
+        // CT-reversal detection. While a channel is armed (set on activation / role
+        // change without a manual reverse - see setChannelData) AND conducting, feed
+        // each reading to the net sign-vote detector (MeterLogic::updatePolarity).
+        // Only conducting samples carry sign information, so a no-load armed channel
+        // simply waits: it is never disarmed and (the boost being conduction-gated in
+        // _recalculateWeights) never starves its peers, so a CT clipped on a circuit
+        // that is off at install time is still checked the moment load first flows.
+        // Magnitude is irrelevant - only sign consistency matters - so a steady -4 W
+        // reversed CT is caught like a -4 kW one. A decisive run of reversed votes
+        // flips the persisted reverse flag once (and we negate this reading so it is
+        // stored with the corrected sign); a decisive run of forward votes confirms
+        // the CT. Hold _channelDataMutex for the test-and-update so a concurrent
+        // setChannelData arm/disarm is neither lost nor double-fired. (The unsynced
+        // _pendingPolarityCheck pre-check is an atomic-bool fast path; it is re-tested
+        // under the mutex before any state change.)
+        // Current-gate "conducting" so ADE7953 offset noise at ~0 A (a small, steady,
+        // signed power) cannot vote a false reversal on an unclamped role (grid/battery)
+        // or earn the armed boost. The same signal drives _lastConducting below, so the
+        // vote and the boost always agree on whether the channel is drawing power.
+        bool conducting = MeterLogic::isConductingReading(
+            activePower, current, MINIMUM_CURRENT_FOR_VALIDATION);
+
+        if (_channelData[channelIndex]._pendingPolarityCheck && conducting) {
             bool flipped = false;
             bool newReverse = false;
             if (acquireMutex(&_channelDataMutex)) {
                 if (_channelData[channelIndex]._pendingPolarityCheck) {
-                    _channelData[channelIndex]._pendingPolarityCheck = false;
-                    if (activePower < 0.0f) {
+                    MeterLogic::PolarityState state{
+                        true, // armed (guarded above and re-checked here)
+                        _polarityVoteCount[channelIndex],
+                        _polarityConductingReads[channelIndex]
+                    };
+                    MeterLogic::PolarityConfig cfg{
+                        POLARITY_DETECT_VOTE_THRESHOLD,
+                        POLARITY_DETECT_MAX_CONDUCTING_READS,
+                        MINIMUM_CURRENT_FOR_VALIDATION
+                    };
+                    MeterLogic::PolarityResult res = MeterLogic::updatePolarity(state, activePower, current, cfg);
+                    _polarityVoteCount[channelIndex] = res.state.voteCount;
+                    _polarityConductingReads[channelIndex] = res.state.conductingReads;
+                    _channelData[channelIndex]._pendingPolarityCheck = res.state.armed;
+                    if (res.action == MeterLogic::PolarityAction::Flip) {
                         _channelData[channelIndex].reverse = !_channelData[channelIndex].reverse;
                         _pendingPolaritySave[channelIndex] = true;
                         if (channelIndex > 0) _channelData[channelIndex]._pendingPriorityRead = true;
@@ -3824,35 +3865,41 @@ namespace Ade7953
                 releaseMutex(&_channelDataMutex);
             }
             if (flipped) {
+                // This reading was computed with the pre-flip sign; negate the signed
+                // quantities so it stores consistently with the new reverse flag
+                // (apparent power and current stay positive).
+                activePower = -activePower;
+                reactivePower = -reactivePower;
+                activeEnergy = -activeEnergy;
+                reactiveEnergy = -reactiveEnergy;
+                powerFactor = -powerFactor;
                 LOG_INFO(
-                    "%s (%u): auto-detected reversed CT (raw P=%.1fW, role=%s); reverse flag now %d, discarding this reading",
+                    "%s (%u): CT reversal detected (P now %.1fW, role=%s); reverse flag now %d",
                     channelData.label, channelIndex, activePower,
                     channelRoleToString(channelData.role), newReverse
                 );
-                _recordFailure();
-                return false;
             }
         }
 
-        // Discard negative readings for Load channels (likely CT installed backwards)
-        if (activePower < 0.0f && channelData.role == CHANNEL_ROLE_LOAD) {
-            LOG_DEBUG(
-                "%s (%d): Discarding negative reading (%.1fW) (Load channel, likely CT installed backwards)",
-                channelData.label,
-                channelIndex,
-                activePower
-            );
-            _recordFailure();
-            return false;
-        }
+        // Record whether this reading is conducting (computed above, current-gated)
+        // BEFORE the clamp below zeroes a reversed load/PV. The WDRR boost for an armed
+        // channel keys off this (not the stored power), so a reversed load/PV - stored
+        // as 0 but really drawing power - still gets sampled rapidly and resolves its
+        // orientation in ~1 s, while a near-zero-current offset reading earns no boost.
+        _lastConducting[channelIndex] = conducting;
 
-        // Clamp negative readings to zero for PV channels (expected inverter standby consumption, so no record failure)
-        if (activePower < 0.0f && channelData.role == CHANNEL_ROLE_PV) {
+        // Clamp negative active power to zero for load and PV channels. With the phase
+        // configured correctly a load/PV should not be net-negative; a residual negative
+        // is PV inverter standby or sub-detection noise. Clamp (do NOT discard) so the
+        // data cadence is preserved - a genuinely reversed CT is corrected by the
+        // reversal detector above, not by dropping readings (which created silent gaps).
+        if (MeterLogic::shouldClampNegative(activePower, channelData.role)) {
             LOG_DEBUG(
-                "%s (%d): Clamping negative reading (%.1fW) to 0 (PV channel, likely inverter standby consumption)",
+                "%s (%d): clamping negative reading (%.1fW) to 0 (role=%s)",
                 channelData.label,
                 channelIndex,
-                activePower
+                activePower,
+                channelRoleToString(channelData.role)
             );
             activePower = 0.0f;
             reactivePower = 0.0f;
@@ -4445,48 +4492,31 @@ namespace Ade7953
      * - Minimum base: every active channel gets a minimum weight to prevent starvation
      */
     static void _recalculateWeights() {
-        float totalAbsPower = 0.0f;
-        float totalVariability = 0.0f;
+        const uint8_t count = globalHwProfile->totalChannelCount;
 
-        // Sum totals across active multiplexed channels (skip channel 0).
-        // NaN guards: a NaN reading must not poison the totals - it would
-        // make every powerScore NaN, propagating into _channelWeight[] and
-        // breaking argmax in _findNextActiveChannel.
-        for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
-            if (_channelData[i].active) {
-                float ap = _meterValues[i].activePower;
-                float pv = _powerVariability[i];
-                if (!isnan(ap)) totalAbsPower += fabsf(ap);
-                if (!isnan(pv)) totalVariability += pv;
-            }
+        // Gather the per-channel inputs for the pure WDRR weight computation
+        // (MeterLogic::computeWeights handles the power/variability shares, the
+        // grid/battery multiplier, the conduction-gated polarity boost, and the
+        // NaN guards). Reads of _meterValues / _powerVariability here are unlocked,
+        // matching the original meter-task access pattern.
+        MeterLogic::ChannelWeightInput inputs[MAX_CHANNEL_COUNT] = {};
+        for (uint8_t i = 0; i < count; i++) {
+            inputs[i].active = _channelData[i].active;
+            inputs[i].activePower = _meterValues[i].activePower;
+            inputs[i].variability = _powerVariability[i];
+            inputs[i].armed = _channelData[i]._pendingPolarityCheck;
+            inputs[i].role = _channelData[i].role;
+            inputs[i].conducting = _lastConducting[i];
         }
 
-        // Compute per-channel weights
-        for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
-            if (!_channelData[i].active) {
-                _channelWeight[i] = 0.0f;
-                continue;
-            }
+        const MeterLogic::WeightConfig cfg{
+            WEIGHT_POWER_SHARE, WEIGHT_VARIABILITY, WEIGHT_MIN_BASE,
+            WEIGHT_ARMED_BOOST, WEIGHT_ROLE_PRIORITY_MULT
+        };
 
-            float powerScore = 0.0f;
-            if (totalAbsPower > 0.0f) {
-                float ap = _meterValues[i].activePower;
-                if (!isnan(ap)) powerScore = fabsf(ap) / totalAbsPower;
-            }
-
-            float variabilityScore = 0.0f;
-            if (totalVariability > 0.0f) {
-                float pv = _powerVariability[i];
-                if (!isnan(pv)) variabilityScore = pv / totalVariability;
-            }
-
-            _channelWeight[i] = WEIGHT_POWER_SHARE * powerScore
-                              + WEIGHT_VARIABILITY * variabilityScore
-                              + WEIGHT_MIN_BASE;
-        }
-
-        // Channel 0 is not scheduled (always read separately)
-        _channelWeight[0] = 0.0f;
+        // startIndex = 1: channel 0 is read separately, outside the rotation
+        // (computeWeights zeroes its weight for us).
+        MeterLogic::computeWeights(inputs, count, 1, cfg, _channelWeight);
     }
 
     /**
@@ -4502,43 +4532,38 @@ namespace Ade7953
     uint8_t _findNextActiveChannel(uint8_t currentChannel) {
         (void)currentChannel; // No longer needed for state tracking
 
+        const uint8_t count = globalHwProfile->totalChannelCount;
+
+        // Snapshot the active flags once (atomic bool reads, unlocked - matches the
+        // original access pattern) and reuse them for every WDRR step below.
+        bool active[MAX_CHANNEL_COUNT] = {};
+        for (uint8_t i = 0; i < count; i++) active[i] = _channelData[i].active;
+
         // Starvation watchdog (fix for issue #149): hard upper bound on the time
-        // between successful reads for any active mux channel. If a channel goes
-        // CHANNEL_MAX_GAP_MS without lastMillis advancing - whether because the
-        // WDRR weights are skewed, the channel is in a discard loop, or the meter
-        // task missed cycles during OTA - force-pick it now.
-        //
-        // After firing, we set lastMillis = now and reset the deficit. The
-        // lastMillis reset throttles the watchdog to one fire per
-        // CHANNEL_MAX_GAP_MS even when the read continues to fail (e.g., a
-        // permanently misclamped CT): user gets one warning per interval, not a
-        // torrent. The deficit reset prevents the channel from immediately
-        // re-winning the argmax on the next call.
-        //
-        // Hold _meterValuesMutex around the read and the write: a 32-bit ESP32
-        // cannot atomically store a uint64_t, so a concurrent setChannelData
-        // baseline write from the web task could be torn-read here.
+        // between successful reads for any active mux channel. MeterLogic::
+        // findStarvedChannel returns the lowest-index channel past CHANNEL_MAX_GAP_MS
+        // (skipping never-baselined ones); we then stamp lastMillis = now - which
+        // throttles the watchdog to one fire per interval even if the read keeps
+        // failing - and reset its deficit so it does not immediately re-win the
+        // argmax. Hold _meterValuesMutex around the 64-bit read + write: a 32-bit
+        // ESP32 cannot atomically store a uint64_t, so a concurrent setChannelData
+        // baseline write could otherwise be torn-read here.
         uint64_t nowMillis = millis64();
         uint8_t starvedChannel = INVALID_CHANNEL;
         uint64_t starvedGap = 0;
         if (acquireMutex(&_meterValuesMutex)) {
-            for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
-                if (!_channelData[i].active) continue;
-                uint64_t lastMs = _meterValues[i].lastMillis;
-                if (lastMs == 0) continue; // never baselined - priority slot handles it
-                uint64_t gap = nowMillis - lastMs;
-                if (gap > CHANNEL_MAX_GAP_MS) {
-                    starvedChannel = i;
-                    starvedGap = gap;
-                    _meterValues[i].lastMillis = nowMillis;
-                    break;
-                }
+            uint64_t lastMs[MAX_CHANNEL_COUNT] = {};
+            for (uint8_t i = 0; i < count; i++) lastMs[i] = _meterValues[i].lastMillis;
+            starvedChannel = MeterLogic::findStarvedChannel(lastMs, active, count, 1, nowMillis, CHANNEL_MAX_GAP_MS);
+            if (starvedChannel != INVALID_CHANNEL) {
+                starvedGap = nowMillis - lastMs[starvedChannel];
+                _meterValues[starvedChannel].lastMillis = nowMillis;
             }
             releaseMutex(&_meterValuesMutex);
         }
         if (starvedChannel != INVALID_CHANNEL) {
-            // This might happen in cases of high-value loads in some channels
-            // with static 0W channels, so it is not an error per se (thus DEBUG level)
+            // Can happen with high-power channels alongside static 0 W ones, so it is
+            // not an error per se (hence DEBUG level).
             LOG_DEBUG(
                 "%s (%u): scheduler starvation, %llu ms since last read; force-picking",
                 _channelData[starvedChannel].label, starvedChannel, starvedGap
@@ -4547,34 +4572,20 @@ namespace Ade7953
             return starvedChannel;
         }
 
-        // Add each channel's weight to its deficit. Done BEFORE the priority-claim
-        // loop so that a channel taking the priority slot still has its deficit
-        // updated in this round (fix for issue #149 - previously the priority
-        // branch returned early and skipped the gain phase entirely, leaving the
-        // claiming channel one round behind in the WDRR accounting).
-        // NaN guard + symmetric clamp keeps the deficit array in a sane range even
-        // in pathological cases (NaN injection from a broken read, weight-table
-        // shock from a sudden role change, OTA-induced timing jumps).
-        for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
-            if (_channelData[i].active) {
-                _channelDeficit[i] += _channelWeight[i];
-            } else {
-                _channelDeficit[i] = 0.0f;
-            }
-            if (isnan(_channelDeficit[i])) _channelDeficit[i] = 0.0f;
-            if (_channelDeficit[i] > MAX_CHANNEL_DEFICIT_BOUND) _channelDeficit[i] = MAX_CHANNEL_DEFICIT_BOUND;
-            else if (_channelDeficit[i] < -MAX_CHANNEL_DEFICIT_BOUND) _channelDeficit[i] = -MAX_CHANNEL_DEFICIT_BOUND;
-        }
+        // Gain phase: add each active channel's weight to its deficit (NaN-guarded
+        // and symmetrically clamped). Done BEFORE the priority-claim loop so a
+        // channel taking the priority slot still has its deficit advanced this round
+        // (fix for issue #149 - the priority branch used to return early and skip the
+        // gain phase, leaving the claiming channel one round behind).
+        MeterLogic::wdrrAccumulate(_channelWeight, _channelDeficit, active, count, 1, MAX_CHANNEL_DEFICIT_BOUND);
 
         // One-shot priority override: a freshly activated channel jumps the WDRR queue
-        // for exactly one read so the user gets immediate data (and so the auto-polarity
-        // check runs without waiting for the channel to win a normal slot). Take
-        // _channelDataMutex for the test-and-clear so a concurrent re-arm from
-        // setChannelData / the polarity check cannot be lost between read and write.
-        // Priority pick is a freebie: no deficit decrement, since the channel has
-        // not "consumed" a normal scheduling slot.
-        for (uint8_t i = 1; i < globalHwProfile->totalChannelCount; i++) {
-            if (!_channelData[i].active) continue;
+        // for exactly one read so the user gets immediate data (and so the polarity
+        // check runs without waiting for a normal slot). Take _channelDataMutex for
+        // the test-and-clear so a concurrent re-arm cannot be lost. Priority pick is a
+        // freebie: no deficit decrement, since the channel has not consumed a slot.
+        for (uint8_t i = 1; i < count; i++) {
+            if (!_channelData[i].active) continue; // live read (a channel may have just activated)
             bool claim = false;
             if (acquireMutex(&_channelDataMutex)) {
                 if (_channelData[i]._pendingPriorityRead) {
@@ -4586,32 +4597,11 @@ namespace Ade7953
             if (claim) return i;
         }
 
-        // Select the channel with the highest deficit, with a round-robin
-        // tie-break (iteration starts at _wdrrCursor + 1 wrapping back to 1).
-        // Without the rotation, when every active channel sits at the same
-        // deficit (e.g., a multi-channel discard storm or post-watchdog reset),
-        // the lowest-index active channel monopolises the scheduler. The cursor
-        // moves to the winning channel so the next call starts iteration one
-        // past it.
-        uint8_t bestChannel = INVALID_CHANNEL;
-        float bestDeficit = -1e9f; // Use a very large negative value to ensure any active channel is selectable
-
-        uint8_t n = globalHwProfile->totalChannelCount;
-        for (uint8_t offset = 1; offset < n; offset++) {
-            uint8_t i = ((_wdrrCursor + offset - 1) % (n - 1)) + 1;
-            if (_channelData[i].active && _channelDeficit[i] > bestDeficit) {
-                bestDeficit = _channelDeficit[i];
-                bestChannel = i;
-            }
-        }
-
-        // Decrement the selected channel's deficit and advance the cursor.
-        if (bestChannel != INVALID_CHANNEL) {
-            _channelDeficit[bestChannel] -= 1.0f;
-            _wdrrCursor = bestChannel;
-        }
-
-        return bestChannel;
+        // Pick the highest-deficit active channel, with a round-robin tie-break so
+        // that equal deficits (e.g. a fleet of idle channels) rotate instead of the
+        // lowest index monopolising the scheduler. Decrements the winner and advances
+        // _wdrrCursor.
+        return MeterLogic::wdrrPick(_channelDeficit, active, count, 1, &_wdrrCursor);
     }
 
     // Poor man's phase shift (doing with modulus didn't work properly,
