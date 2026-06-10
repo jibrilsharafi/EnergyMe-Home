@@ -39,7 +39,7 @@ namespace IssueRegistry
     // Per-code evaluator state (tick task only - no mutex needed)
     // =========================================================
     static uint32_t _prevFlipCount[MAX_CHANNEL_COUNT] = {};
-    static uint32_t _prevConductingReads[MAX_CHANNEL_COUNT] = {};
+    static uint32_t _prevEvidenceReads[MAX_CHANNEL_COUNT] = {};
     static uint32_t _prevClampedReads[MAX_CHANNEL_COUNT] = {};
     static uint16_t _mismatchStreak[MAX_CHANNEL_COUNT] = {};
 
@@ -273,21 +273,21 @@ namespace IssueRegistry
             }
             _updateInstance(IssueLogic::Code::CtPolarityFlipped, ch, flipPulse, message);
 
-            // --- channel_polarity_mismatch (condition): conducting but clamped
-            uint32_t conductingDelta = (uint32_t)IssueLogic::counterDelta(_prevConductingReads[ch], facts.conductingReads);
-            uint32_t clampedDelta = (uint32_t)IssueLogic::counterDelta(_prevClampedReads[ch], facts.clampedConductingReads);
-            _prevConductingReads[ch] = facts.conductingReads;
-            _prevClampedReads[ch] = facts.clampedConductingReads;
+            // --- channel_polarity_mismatch (condition): real readings persistently clamped
+            uint32_t evidenceDelta = (uint32_t)IssueLogic::counterDelta(_prevEvidenceReads[ch], facts.evidenceReads);
+            uint32_t clampedDelta = (uint32_t)IssueLogic::counterDelta(_prevClampedReads[ch], facts.clampedEvidenceReads);
+            _prevEvidenceReads[ch] = facts.evidenceReads;
+            _prevClampedReads[ch] = facts.clampedEvidenceReads;
 
             IssueLogic::Evidence evidence = IssueLogic::channelMismatchEvidence(
-                conductingDelta, clampedDelta,
-                ISSUE_MISMATCH_MIN_CONDUCTING_READS, ISSUE_MISMATCH_MIN_CLAMPED_FRACTION);
+                evidenceDelta, clampedDelta,
+                ISSUE_MISMATCH_MIN_EVIDENCE_READS, ISSUE_MISMATCH_MIN_CLAMPED_FRACTION);
             _mismatchStreak[ch] = IssueLogic::updateStreak(_mismatchStreak[ch], evidence);
             bool mismatch = (_mismatchStreak[ch] >= ISSUE_STREAK_TO_RAISE);
             if (mismatch) {
                 Ade7953::getChannelLabel(ch, label, sizeof(label));
                 snprintf(message, sizeof(message),
-                         "%s: conducting but readings persistently negative and clamped to 0 W. "
+                         "%s: readings persistently negative and clamped to 0 W. "
                          "The reverse flag and the physical CT orientation disagree - fix either.",
                          label);
             } else {

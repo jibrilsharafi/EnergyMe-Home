@@ -104,10 +104,10 @@ uint16_t updateStreak(uint16_t streak, Evidence evidence) {
     }
 }
 
-Evidence channelMismatchEvidence(uint32_t conductingDelta, uint32_t clampedDelta,
-                                 uint32_t minConductingReads, float minClampedFraction) {
-    if (conductingDelta < minConductingReads) return Evidence::None;
-    float fraction = (float)clampedDelta / (float)conductingDelta;
+Evidence channelMismatchEvidence(uint32_t evidenceDelta, uint32_t clampedDelta,
+                                 uint32_t minEvidenceReads, float minClampedFraction) {
+    if (evidenceDelta < minEvidenceReads) return Evidence::None;
+    float fraction = (float)clampedDelta / (float)evidenceDelta;
     return (fraction >= minClampedFraction) ? Evidence::Bad : Evidence::Good;
 }
 

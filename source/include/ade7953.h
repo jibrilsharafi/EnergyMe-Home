@@ -251,6 +251,12 @@
 #define POLARITY_FLIP_LOG_HEADER "unix_seconds,channel,new_reverse"
 #define PENDING_FLIP_LOG_SIZE 8 // Max flip events buffered between energy-save drains
 
+// Polarity-mismatch evidence floor: a reading below the conduction gate still
+// counts as evidence when |active power| clearly exceeds the offset-noise band
+// (sign of a small but real load, e.g. 2.5 W at 24 mA). Random offset noise
+// cannot sustain a high clamped fraction at this magnitude.
+#define MISMATCH_EVIDENCE_MIN_POWER_W 1.0f
+
 // ADE7953 Critical Failure Detection (missed interrupts)
 #ifdef ENV_DEV
 #define ADE7953_MAX_CRITICAL_FAILURES_BEFORE_REBOOT (100 * 5) // 5x higher limit in dev environment
@@ -493,14 +499,14 @@ struct ChannelData
 // task and readers rely on 32-bit loads being atomic on the ESP32-S3.
 struct ChannelIssueFacts
 {
-  uint32_t conductingReads;        // conducting (pre-clamp) readings since boot
-  uint32_t clampedConductingReads; // conducting readings zeroed by the LOAD/PV negative clamp
-  uint32_t polarityFlipCount;      // CT auto-detection flips since boot
-  uint32_t lastFlipUnixSeconds;    // timestamp of the last auto-flip (0 = none)
-  bool lastFlipNewReverse;         // reverse flag value after the last flip
+  uint32_t evidenceReads;        // readings carrying polarity evidence since boot: conducting OR |P| >= MISMATCH_EVIDENCE_MIN_POWER_W (pre-clamp)
+  uint32_t clampedEvidenceReads; // evidence readings zeroed by the LOAD/PV negative clamp
+  uint32_t polarityFlipCount;    // CT auto-detection flips since boot
+  uint32_t lastFlipUnixSeconds;  // timestamp of the last auto-flip (0 = none)
+  bool lastFlipNewReverse;       // reverse flag value after the last flip
 
   ChannelIssueFacts()
-    : conductingReads(0), clampedConductingReads(0), polarityFlipCount(0),
+    : evidenceReads(0), clampedEvidenceReads(0), polarityFlipCount(0),
       lastFlipUnixSeconds(0), lastFlipNewReverse(false) {}
 };
 

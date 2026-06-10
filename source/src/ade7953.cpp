@@ -49,8 +49,8 @@ namespace Ade7953
 
     // Issue-registry facts (issue #145), RAM-only and monotonic within this boot.
     // Single writer is the meter task; the registry tick reads them as 32-bit loads.
-    static volatile uint32_t _factConductingReads[MAX_CHANNEL_COUNT] = {};
-    static volatile uint32_t _factClampedConductingReads[MAX_CHANNEL_COUNT] = {};
+    static volatile uint32_t _factEvidenceReads[MAX_CHANNEL_COUNT] = {};
+    static volatile uint32_t _factClampedEvidenceReads[MAX_CHANNEL_COUNT] = {};
     static volatile uint32_t _factPolarityFlipCount[MAX_CHANNEL_COUNT] = {};
     static volatile uint32_t _factLastFlipUnixSeconds[MAX_CHANNEL_COUNT] = {};
     static volatile bool _factLastFlipNewReverse[MAX_CHANNEL_COUNT] = {};
@@ -1623,8 +1623,8 @@ namespace Ade7953
     bool getChannelIssueFacts(uint8_t channelIndex, ChannelIssueFacts &facts) {
         if (!isChannelValid(channelIndex)) return false;
 
-        facts.conductingReads = _factConductingReads[channelIndex];
-        facts.clampedConductingReads = _factClampedConductingReads[channelIndex];
+        facts.evidenceReads = _factEvidenceReads[channelIndex];
+        facts.clampedEvidenceReads = _factClampedEvidenceReads[channelIndex];
         facts.polarityFlipCount = _factPolarityFlipCount[channelIndex];
         facts.lastFlipUnixSeconds = _factLastFlipUnixSeconds[channelIndex];
         facts.lastFlipNewReverse = _factLastFlipNewReverse[channelIndex];
@@ -4005,7 +4005,13 @@ namespace Ade7953
         // as 0 but really drawing power - still gets sampled rapidly and resolves its
         // orientation in ~1 s, while a near-zero-current offset reading earns no boost.
         _lastConducting[channelIndex] = conducting;
-        if (conducting) _factConductingReads[channelIndex] = _factConductingReads[channelIndex] + 1;
+
+        // Polarity-mismatch evidence: conducting, or sub-gate with |P| above the
+        // offset-noise floor - a persistent -2.5 W at 24 mA is a real reversed load,
+        // while idle-channel noise stays below the floor and carries no evidence.
+        // Only feeds the user-facing issue; the auto-flip detector stays current-gated.
+        bool mismatchEvidence = conducting || fabsf(activePower) >= MISMATCH_EVIDENCE_MIN_POWER_W;
+        if (mismatchEvidence) _factEvidenceReads[channelIndex] = _factEvidenceReads[channelIndex] + 1;
 
         // Clamp negative active power to zero for load and PV channels. With the phase
         // configured correctly a load/PV should not be net-negative; a residual negative
@@ -4013,9 +4019,9 @@ namespace Ade7953
         // data cadence is preserved - a genuinely reversed CT is corrected by the
         // reversal detector above, not by dropping readings (which created silent gaps).
         if (MeterLogic::shouldClampNegative(activePower, channelData.role)) {
-            // A conducting reading that gets clamped is polarity-mismatch evidence for
+            // An evidence reading that gets clamped is polarity-mismatch evidence for
             // the issue registry (reverse flag and physical CT orientation disagree)
-            if (conducting) _factClampedConductingReads[channelIndex] = _factClampedConductingReads[channelIndex] + 1;
+            if (mismatchEvidence) _factClampedEvidenceReads[channelIndex] = _factClampedEvidenceReads[channelIndex] + 1;
             LOG_DEBUG(
                 "%s (%d): clamping negative reading (%.1fW) to 0 (role=%s)",
                 channelData.label,

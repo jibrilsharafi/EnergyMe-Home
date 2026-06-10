@@ -152,7 +152,7 @@ void test_streak_saturates(void) {
 // ============================================================================
 
 void test_channel_mismatch_requires_minimum_reads(void) {
-    // 3 conducting reads with min 5: window carries no evidence either way.
+    // 3 evidence reads with min 5: window carries no evidence either way.
     TEST_ASSERT_EQUAL(Evidence::None, channelMismatchEvidence(3, 3, 5, 0.9f));
 }
 
@@ -162,7 +162,7 @@ void test_channel_mismatch_bad_when_mostly_clamped(void) {
 }
 
 void test_channel_mismatch_good_when_readings_flow(void) {
-    // Normal operation: conducting with zero (or few) clamps.
+    // Normal operation: evidence reads with zero (or few) clamps.
     TEST_ASSERT_EQUAL(Evidence::Good, channelMismatchEvidence(20, 0, 5, 0.9f));
     TEST_ASSERT_EQUAL(Evidence::Good, channelMismatchEvidence(20, 10, 5, 0.9f));
 }
@@ -234,7 +234,7 @@ void test_scenario_manual_reverse_mismatch_until_fixed(void) {
     State s = State::Inactive;
     const uint16_t raiseThreshold = 3;
 
-    // Wrong reverse: every window mostly clamped while conducting.
+    // Wrong reverse: every window mostly clamped while carrying evidence.
     for (int tick = 0; tick < 5; tick++) {
         Evidence e = channelMismatchEvidence(30, 30, 5, 0.9f);
         streak = updateStreak(streak, e);

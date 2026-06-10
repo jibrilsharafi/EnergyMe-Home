@@ -113,13 +113,14 @@ uint16_t updateStreak(uint16_t streak, Evidence evidence);
 // Per-code predicates
 // ============================================================================
 
-// Channel polarity mismatch: a LOAD/PV channel that keeps conducting while its
-// readings are clamped to zero (reverse flag and physical CT orientation
-// disagree - either side can be the fix, the symptom is the same). Evaluated
-// over one tick window of per-channel counter deltas. Windows with fewer than
-// minConductingReads conducting reads carry no evidence.
-Evidence channelMismatchEvidence(uint32_t conductingDelta, uint32_t clampedDelta,
-                                 uint32_t minConductingReads, float minClampedFraction);
+// Channel polarity mismatch: a LOAD/PV channel whose evidence-carrying readings
+// (conducting, or sub-gate with |P| above the offset-noise floor) keep getting
+// clamped to zero (reverse flag and physical CT orientation disagree - either
+// side can be the fix, the symptom is the same). Evaluated over one tick window
+// of per-channel counter deltas. Windows with fewer than minEvidenceReads
+// evidence reads carry no evidence.
+Evidence channelMismatchEvidence(uint32_t evidenceDelta, uint32_t clampedDelta,
+                                 uint32_t minEvidenceReads, float minClampedFraction);
 
 // Sustained meter read failures: bad when the failure delta in this window
 // reaches failureThreshold, good when a window stays below it.
