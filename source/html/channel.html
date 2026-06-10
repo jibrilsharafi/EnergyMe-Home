@@ -287,9 +287,14 @@
                     const powerElement = document.getElementById(`power${index}`);
                     
                     // Only show power if channel is active
-                    if (powerElement && channelData[index] && channelData[index].active && 
+                    if (powerElement && channelData[index] && channelData[index].active &&
                         channelMeterData.data && channelMeterData.data.activePower !== undefined) {
-                        powerElement.innerHTML = `${channelMeterData.data.activePower.toFixed(1)} W`;
+                        // Absolute PF: in this firmware the PF sign carries inductive/capacitive,
+                        // not flow direction (that is the sign of active power)
+                        const pfText = channelMeterData.data.apparentPower > 0
+                            ? ` &middot; PF ${Math.abs(channelMeterData.data.powerFactor).toFixed(2)}`
+                            : '';
+                        powerElement.innerHTML = `${channelMeterData.data.activePower.toFixed(1)} W${pfText}`;
                     } else if (powerElement && channelData[index] && !channelData[index].active) {
                         // Clear power display for inactive channels
                         powerElement.innerHTML = '';
