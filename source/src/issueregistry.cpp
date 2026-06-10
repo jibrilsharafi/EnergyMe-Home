@@ -33,7 +33,11 @@ namespace IssueRegistry
         char message[ISSUE_MESSAGE_BUFFER_SIZE];
     };
 
-    static IssueInstance _instances[ISSUE_MAX_INSTANCES] = {};
+    // Allocated from PSRAM in begin() (~6.6 KB that would otherwise sit in internal
+    // RAM). Safe in PSRAM: only ever accessed from tasks under _registryMutex, never
+    // from ISRs. The mutex is created only after a successful allocation, so a failed
+    // alloc disables the registry as a whole (acquireMutex on the NULL mutex fails).
+    static IssueInstance *_instances = nullptr;
     static SemaphoreHandle_t _registryMutex = NULL;
 
     // Per-code evaluator state (tick task only - no mutex needed)
@@ -79,6 +83,14 @@ namespace IssueRegistry
     void begin()
     {
         LOG_DEBUG("Setting up issue registry...");
+
+        if (_instances == nullptr) {
+            _instances = (IssueInstance*)ps_calloc(ISSUE_MAX_INSTANCES, sizeof(IssueInstance));
+            if (_instances == nullptr) {
+                LOG_ERROR("Failed to allocate issue instance table in PSRAM");
+                return;
+            }
+        }
 
         if (!createMutexIfNeeded(&_registryMutex)) return;
 
