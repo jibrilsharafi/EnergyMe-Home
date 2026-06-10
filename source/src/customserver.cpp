@@ -68,6 +68,7 @@ namespace CustomServer
 
     // API endpoint groups
     static void _serveSystemEndpoints();
+    static void _serveIssueEndpoints();
     static void _serveNetworkEndpoints();
     static void _serveLoggingEndpoints();
     static void _serveHealthEndpoints();
@@ -609,6 +610,7 @@ namespace CustomServer
     {
         // Group endpoints by functionality
         _serveSystemEndpoints();
+        _serveIssueEndpoints();
         _serveNetworkEndpoints();
         _serveLoggingEndpoints();
         _serveHealthEndpoints();
@@ -781,6 +783,9 @@ namespace CustomServer
         });
         server.on("/js/data-helpers.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "application/javascript", EMBEDDED(data_helpers_js), etag);
+        });
+        server.on("/js/issues.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "application/javascript", EMBEDDED(issues_js), etag);
         });
         server.on("/js/power-flow.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "application/javascript", EMBEDDED(power_flow_js), etag);
@@ -1633,6 +1638,56 @@ namespace CustomServer
     }
 
     // === NETWORK MANAGEMENT ENDPOINTS ===
+    // === ISSUE REGISTRY ENDPOINTS ===
+    static void _serveIssueEndpoints()
+    {
+        // Currently visible device issues (issue #145)
+        server.on("/api/v1/system/issues", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+
+            if (!IssueRegistry::issuesToJson(doc)) {
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to retrieve issues");
+                return;
+            }
+            _sendJsonResponse(request, doc); });
+
+        // Acknowledge issues: {"all": true} or {"code": "...", "channel": <optional>}
+        static AsyncCallbackJsonWebHandler *ackIssueHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/system/issues/ack",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (!_validateRequest(request, "POST", HTTP_MAX_CONTENT_LENGTH_ISSUES_ACK)) return;
+
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
+                doc.set(json);
+
+                if (doc["all"].is<bool>() && doc["all"].as<bool>()) {
+                    uint32_t ackedCount = IssueRegistry::ackAll();
+                    char message[STATUS_BUFFER_SIZE];
+                    snprintf(message, sizeof(message), "Acknowledged %lu issue(s)", (unsigned long)ackedCount);
+                    _sendSuccessResponse(request, message);
+                    return;
+                }
+
+                if (!doc["code"].is<const char*>()) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing 'code' (or 'all') parameter");
+                    return;
+                }
+
+                uint8_t channel = ISSUE_GLOBAL_SCOPE;
+                if (doc["channel"].is<uint8_t>()) channel = doc["channel"].as<uint8_t>();
+
+                if (IssueRegistry::ack(doc["code"].as<const char*>(), channel)) {
+                    _sendSuccessResponse(request, "Issue acknowledged");
+                } else {
+                    _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "No such issue instance");
+                } });
+        server.addHandler(ackIssueHandler);
+    }
+
     static void _serveNetworkEndpoints()
     {
         // WiFi reset

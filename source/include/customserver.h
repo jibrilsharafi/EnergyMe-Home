@@ -24,6 +24,7 @@
 #include "customtime.h"
 #include "mqtt.h"
 #include "influxdbclient.h"
+#include "issueregistry.h"
 #include "ade7953.h"
 #include "globals.h"
 #include "binaries.h"
@@ -81,6 +82,7 @@
 #define HTTP_MAX_CONTENT_LENGTH_MQTT_CLOUD_SERVICES 64
 #define HTTP_MAX_CONTENT_LENGTH_PASSWORD 256
 #define HTTP_MAX_CONTENT_LENGTH_NETWORK 256
+#define HTTP_MAX_CONTENT_LENGTH_ISSUES_ACK 128
 
 // Crash dump chunk sizes
 #define CRASH_DUMP_DEFAULT_CHUNK_SIZE (1 * 1024)
