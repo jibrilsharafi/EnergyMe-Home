@@ -770,10 +770,11 @@ namespace Ade7953
             return false;
         }
 
-        // Snapshot old role, active state, and reverse flag before applying new data
+        // Snapshot old role, active state, reverse flag and phase before applying new data
         ChannelRole oldRole = _channelData[channelIndex].role;
         bool wasInactive = !_channelData[channelIndex].active;
         bool oldReverse = _channelData[channelIndex].reverse;
+        Phase oldPhase = _channelData[channelIndex].phase;
 
         if (!acquireMutex(&_channelDataMutex)) {
             LOG_ERROR("Failed to acquire mutex for channel data");
@@ -802,6 +803,7 @@ namespace Ade7953
             bool reverseChanged = (oldReverse != _channelData[channelIndex].reverse);
             bool activated = (wasInactive && _channelData[channelIndex].active);
             bool roleChangedActive = (!wasInactive && _channelData[channelIndex].active && oldRole != _channelData[channelIndex].role);
+            bool phaseChangedActive = (!wasInactive && _channelData[channelIndex].active && oldPhase != _channelData[channelIndex].phase);
 
             if (reverseChanged) {
                 // A manual reverse change is the trusted value: disarm CT-reversal
@@ -812,10 +814,16 @@ namespace Ade7953
                 _polarityVoteCount[channelIndex] = 0;
                 _polarityConductingReads[channelIndex] = 0;
                 if (channelIndex > 0) _channelData[channelIndex]._pendingPriorityRead = true;
-            } else if (activated || roleChangedActive) {
-                // Fresh activation / role change with no explicit polarity choice: arm
-                // auto-detection from a clean vote count. The sign convention can
-                // legitimately differ between roles, so a role change re-validates.
+            } else if (activated || roleChangedActive || phaseChangedActive) {
+                // Fresh activation / role / phase change with no explicit polarity
+                // choice: arm auto-detection from a clean vote count. The sign
+                // convention can legitimately differ between roles, so a role change
+                // re-validates. A phase change invalidates the detector's premise
+                // outright (the sign of active power is only meaningful if the phase
+                // is right), and re-arming also self-heals the stale case where a
+                // wrong phase made a correctly-wired CT read steady-negative and the
+                // detector flipped reverse: once the user fixes the phase, the next
+                // votes flip it back within seconds (issue #174).
                 _channelData[channelIndex]._pendingPolarityCheck = true;
                 _polarityVoteCount[channelIndex] = 0;
                 _polarityConductingReads[channelIndex] = 0;
