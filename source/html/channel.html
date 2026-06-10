@@ -128,6 +128,7 @@
 </body>
 
 <script src="/js/api-client.js"></script>
+<script src="/js/issues.js"></script>
 <script src="/js/tooltip.js"></script>
 <script>
     var channelData = {};
@@ -190,7 +191,7 @@
             const activeChecked = isChannel0 ? 'checked' : (channel.active ? 'checked' : '');
 
             box.innerHTML = `
-                <h3>Channel ${index}</h3>
+                <h3>Channel ${index}<span id="issueChip${index}"></span></h3>
                 <label>
                     Label:
                     <input type="text" value="${channel.label || ''}" id="label${index}" onchange="queueChannelUpdate(${index})">
@@ -623,6 +624,30 @@
             startGlobalPowerUpdates();
         }
     }
+
+    // Channel-scoped issue chips, fed by the issues.js poll. A chip appears next
+    // to the channel title whenever the registry has a visible issue for it;
+    // clicking opens the shared issues panel.
+    window.addEventListener('energyme-issues', (event) => {
+        const issues = (event.detail && event.detail.issues) || [];
+        const severityOrder = { info: 0, warning: 1, error: 2 };
+        Object.keys(channelData).forEach(index => {
+            const chip = document.getElementById(`issueChip${index}`);
+            if (!chip) return;
+            const channelIssues = issues.filter(i => i.channel == index);
+            if (channelIssues.length === 0) {
+                chip.innerHTML = '';
+                return;
+            }
+            const hasUnacked = channelIssues.some(i => i.state !== 'active_acked');
+            const top = channelIssues.reduce((best, i) =>
+                severityOrder[i.severity] > severityOrder[best.severity] ? i : best);
+            const cls = hasUnacked ? top.severity : 'acked';
+            const titleText = channelIssues.map(i => i.message).join('\n');
+            chip.innerHTML = `<span class="issues-chip ${cls}" title="${titleText.replace(/"/g, '&quot;')}">⚠ ${channelIssues.length}</span>`;
+            chip.querySelector('.issues-chip').addEventListener('click', () => window.energymeIssues.open());
+        });
+    });
 
     async function resetChannelEnergy(channelIndex) {
         const channel = channelData[channelIndex];

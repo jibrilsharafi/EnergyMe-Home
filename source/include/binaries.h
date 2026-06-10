@@ -34,6 +34,8 @@ extern const char chart_helpers_js[]    asm("_binary_js_chart_helpers_js_start")
 extern const char chart_helpers_js_end[]asm("_binary_js_chart_helpers_js_end");
 extern const char data_helpers_js[]     asm("_binary_js_data_helpers_js_start");
 extern const char data_helpers_js_end[] asm("_binary_js_data_helpers_js_end");
+extern const char issues_js[]           asm("_binary_js_issues_js_start");
+extern const char issues_js_end[]       asm("_binary_js_issues_js_end");
 extern const char power_flow_js[]       asm("_binary_js_power_flow_js_start");
 extern const char power_flow_js_end[]   asm("_binary_js_power_flow_js_end");
 extern const char tooltip_js[]          asm("_binary_js_tooltip_js_start");
