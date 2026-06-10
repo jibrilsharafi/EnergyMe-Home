@@ -236,8 +236,6 @@ namespace CustomMqtt
 
     bool isConnected() { return _lastConnectedState; }
 
-    uint32_t getConsecutiveConnectFailures() { return _currentMqttConnectionAttempt; }
-
     bool getRuntimeStatus(char *statusBuffer, size_t statusSize, char *timestampBuffer, size_t timestampSize)
     {
         if (!_isSetupDone) {

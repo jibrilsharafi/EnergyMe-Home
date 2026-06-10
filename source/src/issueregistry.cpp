@@ -43,6 +43,7 @@ namespace IssueRegistry
     static uint32_t _prevClampedReads[MAX_CHANNEL_COUNT] = {};
     static uint16_t _mismatchStreak[MAX_CHANNEL_COUNT] = {};
 
+    static uint16_t _customMqttStreak = 0;
     static uint16_t _cloudMqttStreak = 0;
     static uint16_t _influxStreak = 0;
     static uint64_t _prevInfluxOk = 0;
@@ -313,15 +314,17 @@ namespace IssueRegistry
     {
         char message[ISSUE_MESSAGE_BUFFER_SIZE];
 
-        // --- custom_mqtt_connect_failed: the consecutive-failure counter is the
-        // module's own backoff state, so no extra windowing is needed.
+        // --- custom_mqtt_connect_failed: same connection fact + streak hysteresis
+        // as cloud MQTT, so both connectivity issues share one mechanism.
         bool customMqttEnabled = CustomMqtt::isEnabled();
-        uint32_t customMqttFailures = CustomMqtt::getConsecutiveConnectFailures();
-        bool customMqttFailing = customMqttEnabled && customMqttFailures >= ISSUE_CUSTOM_MQTT_MIN_CONNECT_FAILURES;
-        snprintf(message, sizeof(message),
-                 "Custom MQTT enabled but cannot connect (%lu consecutive failures)",
-                 (unsigned long)customMqttFailures);
-        _updateInstance(IssueLogic::Code::CustomMqttConnectFailed, ISSUE_GLOBAL_SCOPE, customMqttFailing, message);
+        IssueLogic::Evidence customMqttEvidence = (!customMqttEnabled || CustomMqtt::isConnected())
+                                                      ? IssueLogic::Evidence::Good
+                                                      : IssueLogic::Evidence::Bad;
+        _customMqttStreak = IssueLogic::updateStreak(_customMqttStreak, customMqttEvidence);
+        bool customMqttDown = (_customMqttStreak >= ISSUE_CONNECTIVITY_STREAK_TO_RAISE);
+        snprintf(message, sizeof(message), "Custom MQTT enabled but it has been disconnected for over %u s",
+                 (unsigned)(ISSUE_CONNECTIVITY_STREAK_TO_RAISE * ISSUE_REGISTRY_TICK_INTERVAL / 1000));
+        _updateInstance(IssueLogic::Code::CustomMqttConnectFailed, ISSUE_GLOBAL_SCOPE, customMqttDown, message);
 
         // --- cloud_mqtt_disconnected
         bool cloudEnabled = Mqtt::isCloudServicesEnabled();
