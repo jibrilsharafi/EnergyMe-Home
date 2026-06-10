@@ -98,6 +98,11 @@ namespace CustomMqtt
     // Runtime status
     bool getRuntimeStatus(char *statusBuffer, size_t statusSize, char *timestampBuffer, size_t timestampSize);
 
+    // Facts for the issue registry (all RAM-derived, safe to call cross-task)
+    bool isEnabled();
+    bool isConnected();
+    uint32_t getConsecutiveConnectFailures();
+
     // Task information
     TaskInfo getTaskInfo();
 }

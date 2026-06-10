@@ -20,6 +20,10 @@ namespace CustomMqtt
     static uint32_t _currentMqttConnectionAttempt = 0;
     static uint64_t _nextMqttConnectionAttemptMillis = 0;
 
+    // Connection state fact for the issue registry, updated once per task loop
+    // (the registry tick must not call _mqttClient.connected() cross-task)
+    static volatile bool _lastConnectedState = false;
+
     // Custom MQTT configuration
     static CustomMqttConfiguration _configuration;
     
@@ -223,6 +227,17 @@ namespace CustomMqtt
         return true;
     }
 
+    bool isEnabled()
+    {
+        CustomMqttConfiguration config;
+        if (!getConfiguration(config)) return false;
+        return config.enabled;
+    }
+
+    bool isConnected() { return _lastConnectedState; }
+
+    uint32_t getConsecutiveConnectFailures() { return _currentMqttConnectionAttempt; }
+
     bool getRuntimeStatus(char *statusBuffer, size_t statusSize, char *timestampBuffer, size_t timestampSize)
     {
         if (!_isSetupDone) {
@@ -279,9 +294,11 @@ namespace CustomMqtt
         while (_taskShouldRun) {
             TASK_HEARTBEAT(_heartbeat);
             getConfiguration(config);
+            bool connectedNow = false;
             if (config.enabled) { // We have the custom MQTT enabled (atomic operation, no race condition)
                 if (CustomWifi::isFullyConnected()) { // We are connected (no need to check if time is synched)
                     if (_mqttClient.connected()) { // We are connected to MQTT
+                        connectedNow = true;
                         if (_currentMqttConnectionAttempt > 0) { // If we were having problems, reset the attempt counter since we are now connected
                             LOG_DEBUG("Custom MQTT reconnected successfully after %d attempts.", _currentMqttConnectionAttempt);
                             _currentMqttConnectionAttempt = 0;
@@ -298,13 +315,14 @@ namespace CustomMqtt
                     } else { // We are not connected to MQTT
                         if (millis64() >= _nextMqttConnectionAttemptMillis) { // Enough time has passed since last attempt (in case of failures) to retry connection
                             LOG_DEBUG("Custom MQTT client not connected. Attempting to connect...");
-                            _connectMqtt(config);
+                            connectedNow = _connectMqtt(config);
                         }
                     }
                 } else { // We are not connected to WiFi
                     LOG_DEBUG("Device is not connected to WiFi. Waiting for automatic connection...");
                 }
             }
+            _lastConnectedState = connectedNow;
 
             // Wait for stop notification with timeout (blocking) - zero CPU usage while waiting
             if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(CUSTOM_MQTT_TASK_CHECK_INTERVAL)) > 0) {
@@ -314,6 +332,7 @@ namespace CustomMqtt
         }
         
         _mqttClient.disconnect();
+        _lastConnectedState = false;
         LOG_DEBUG("Custom MQTT task stopping");
         _customMqttTaskHandle = nullptr;
         vTaskDelete(nullptr);
