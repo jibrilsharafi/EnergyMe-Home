@@ -12,7 +12,7 @@
 (function () {
     'use strict';
 
-    const POLL_INTERVAL_MS = 10000;
+    const POLL_INTERVAL_MS = 5000;
     const SEVERITY_ORDER = { info: 0, warning: 1, error: 2 };
     const SEVERITY_ICON = { info: 'ℹ️', warning: '⚠️', error: '🔴' };
     const ACTIVE_ACKED_ICON = '🟠';
@@ -103,17 +103,6 @@
     panel.className = 'issues-panel';
     overlay.appendChild(panel);
 
-    function attachElements() {
-        document.body.appendChild(badge);
-        document.body.appendChild(overlay);
-    }
-    if (document.body) attachElements();
-    else document.addEventListener('DOMContentLoaded', attachElements);
-
-    function severityName(issue) {
-        return SEVERITY_ORDER[issue.severity] !== undefined ? issue.severity : 'info';
-    }
-
     function isUnacked(issue) {
         return issue.state === 'active_unacked' || issue.state === 'cleared_unacked';
     }
@@ -187,7 +176,7 @@
 
     function renderPanel(data) {
         const issues = (data && data.issues) ? data.issues.slice() : [];
-        issues.sort((a, b) => (SEVERITY_ORDER[severityName(b)] - SEVERITY_ORDER[severityName(a)]));
+        issues.sort((a, b) => (SEVERITY_ORDER[b.severity] - SEVERITY_ORDER[a.severity]));
 
         let html = '<h3>Device issues</h3>';
         if (issues.length === 0) {
@@ -203,8 +192,8 @@
                 const stateText = resolved ? 'resolved, unseen' : (activeAcked ? 'active, acknowledged' : 'active');
                 const extraClass = resolved ? ' resolved' : activeAcked ? ' active-acked' : '';
                 html += `
-                    <div class="issues-item ${severityName(issue)}${extraClass}">
-                        <div class="issues-item-title">${activeAcked ? ACTIVE_ACKED_ICON : (SEVERITY_ICON[severityName(issue)] || '')} ${titleFor(issue)}</div>
+                    <div class="issues-item ${issue.severity}${extraClass}">
+                        <div class="issues-item-title">${activeAcked ? ACTIVE_ACKED_ICON : (SEVERITY_ICON[issue.severity] || '')} ${titleFor(issue)}</div>
                         <div class="issues-item-message">${issue.message || ''}</div>
                         <div class="issues-item-meta">
                             ${stateText}${channelText} &middot; first seen ${formatTime(issue.firstSeenUnix)}
@@ -232,8 +221,7 @@
                         card.classList.add('resolving');
                         await new Promise(resolve => setTimeout(resolve, 600));
                     }
-                    await poll();
-                    if (panelOpen) renderPanel(lastData);
+                    await poll(); // re-renders the open panel with the fresh data
                 } catch (error) {
                     console.error('Failed to acknowledge issue:', error);
                     if (typeof showStatus === 'function') showStatus('Failed to acknowledge issue', 'error');
@@ -254,6 +242,7 @@
     }
 
     async function poll() {
+        if (document.hidden) return; // hidden tabs poll again on visibilitychange
         try {
             const data = await window.energyApi.get('system/issues');
             lastData = data;
@@ -272,10 +261,15 @@
         renderChip: renderChip
     };
 
-    function start() {
+    function init() {
+        document.body.appendChild(badge);
+        document.body.appendChild(overlay);
         poll();
         setInterval(poll, POLL_INTERVAL_MS);
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) poll();
+        });
     }
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
-    else start();
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+    else init();
 })();
