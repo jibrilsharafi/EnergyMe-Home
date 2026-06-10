@@ -137,26 +137,34 @@
         }
 
         const active = summary.active || 0;
-        let badgeClass, badgeText;
-        if (unacked > 0) {
+        // unacked covers both active_unacked AND cleared_unacked; split them to pick the right visual
+        const activeUnacked = (data.issues || []).filter(i => i.state === 'active_unacked').length;
+        const clearedUnacked = unacked - activeUnacked;
+        let badgeClass, badgeText, badgeTitle;
+        if (activeUnacked > 0) {
+            // Live problem not yet seen - alarming (red/yellow by severity)
             badgeClass = summary.maxUnackedSeverity || 'info';
-            badgeText = `${SEVERITY_ICON[badgeClass]} ${unacked}`;
+            badgeText = `${SEVERITY_ICON[badgeClass]} ${activeUnacked}`;
+            badgeTitle = `${activeUnacked} active unacknowledged issue(s) - click for details`;
         } else if (active > 0) {
-            // All acked but problem(s) still live - orange dot, not the severity color (not a new alarm)
+            // All active issues acked but still happening - orange dot, not a new alarm
             badgeClass = 'active-acked';
             badgeText = `${ACTIVE_ACKED_ICON} ${active}`;
+            badgeTitle = `${active} acknowledged but still-active issue(s) - click for details`;
+        } else if (clearedUnacked > 0) {
+            // Everything resolved but user hasn't dismissed the notifications yet - grey
+            badgeClass = 'acked';
+            badgeText = `✓ ${clearedUnacked}`;
+            badgeTitle = `${clearedUnacked} resolved issue(s) to dismiss - click for details`;
         } else {
             badgeClass = 'acked';
             badgeText = `✓ ${total}`;
+            badgeTitle = `${total} issue(s) - click for details`;
         }
         badge.style.display = 'flex';
         badge.className = 'issues-badge ' + badgeClass;
         badge.textContent = badgeText;
-        badge.title = unacked > 0
-            ? `${unacked} unacknowledged device issue(s) - click for details`
-            : active > 0
-                ? `${active} acknowledged but still-active issue(s) - click for details`
-                : `${total} cleared issue(s) pending acknowledgement - click for details`;
+        badge.title = badgeTitle;
     }
 
     function renderPanel(data) {
