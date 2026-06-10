@@ -243,14 +243,6 @@
 #define ADE7953_MAX_FAILURES_BEFORE_RESTART 100
 #define ADE7953_FAILURE_RESET_TIMEOUT_MS (1 * 60 * 1000)
 
-// CT polarity flip forensic log (append-only CSV on LittleFS, written by the
-// energy save task; rotated to a single previous generation at the size cap)
-#define POLARITY_FLIP_LOG_PATH "/polarity_flips.csv"
-#define POLARITY_FLIP_LOG_OLD_PATH "/polarity_flips.old.csv"
-#define POLARITY_FLIP_LOG_MAX_SIZE (4 * 1024)
-#define POLARITY_FLIP_LOG_HEADER "unix_seconds,channel,new_reverse"
-#define PENDING_FLIP_LOG_SIZE 8 // Max flip events buffered between energy-save drains
-
 // Polarity-mismatch evidence floor: a reading below the conduction gate still
 // counts as evidence when |active power| clearly exceeds the offset-noise band
 // (sign of a small but real load, e.g. 2.5 W at 24 mA). Random offset noise
@@ -502,12 +494,8 @@ struct ChannelIssueFacts
   uint32_t evidenceReads;        // readings carrying polarity evidence since boot: conducting OR |P| >= MISMATCH_EVIDENCE_MIN_POWER_W (pre-clamp)
   uint32_t clampedEvidenceReads; // evidence readings zeroed by the LOAD/PV negative clamp
   uint32_t polarityFlipCount;    // CT auto-detection flips since boot
-  uint32_t lastFlipUnixSeconds;  // timestamp of the last auto-flip (0 = none)
-  bool lastFlipNewReverse;       // reverse flag value after the last flip
 
-  ChannelIssueFacts()
-    : evidenceReads(0), clampedEvidenceReads(0), polarityFlipCount(0),
-      lastFlipUnixSeconds(0), lastFlipNewReverse(false) {}
+  ChannelIssueFacts() : evidenceReads(0), clampedEvidenceReads(0), polarityFlipCount(0) {}
 };
 
 // ADE7953 Configuration structure

@@ -276,8 +276,8 @@ namespace IssueRegistry
             if (flipPulse) {
                 Ade7953::getChannelLabel(ch, label, sizeof(label));
                 snprintf(message, sizeof(message),
-                         "%s: CT orientation auto-corrected (reverse now %s, %lu flip%s this boot)",
-                         label, facts.lastFlipNewReverse ? "on" : "off",
+                         "%s: CT orientation auto-corrected (%lu flip%s this boot)",
+                         label,
                          (unsigned long)facts.polarityFlipCount,
                          facts.polarityFlipCount == 1 ? "" : "s");
             } else {
@@ -533,15 +533,15 @@ namespace IssueRegistry
 
         // Raise logs at the issue's own severity; clear/ack are informational
         if (isRaise && severity == IssueLogic::Severity::Error) {
-            LOG_ERROR("issue %s: code=%s channel=%s severity=%s details=\"%s\"",
+            LOG_ERROR("Issue %s: code=%s channel=%s severity=%s details=\"%s\"",
                       verb, IssueLogic::codeToString(code), channelStr,
                       IssueLogic::severityToString(severity), message);
         } else if (isRaise && severity == IssueLogic::Severity::Warning) {
-            LOG_WARNING("issue %s: code=%s channel=%s severity=%s details=\"%s\"",
+            LOG_WARNING("Issue %s: code=%s channel=%s severity=%s details=\"%s\"",
                         verb, IssueLogic::codeToString(code), channelStr,
                         IssueLogic::severityToString(severity), message);
         } else {
-            LOG_INFO("issue %s: code=%s channel=%s severity=%s details=\"%s\"",
+            LOG_INFO("Issue %s: code=%s channel=%s severity=%s details=\"%s\"",
                      verb, IssueLogic::codeToString(code), channelStr,
                      IssueLogic::severityToString(severity), message);
         }
