@@ -3637,6 +3637,12 @@ namespace Ade7953
 
         Phase basePhase = _channelData[0].phase; // Not using channelData since it is only accessed here and it is an integer so very low probability of race condition
 
+        // Noise floors scale with the CT: a fixed threshold suited to a 30 A clamp is far
+        // below the offset noise of a 100 A one (and too strict for a small one), so both
+        // thresholds are fractions of the channel's CT rating. At 30 A: 15 mA / 30 mA.
+        float minCurrentThreePhaseNoLoad = channelData.ctSpecification.currentRating * MINIMUM_CURRENT_RATIO_THREE_PHASE_NO_LOAD;
+        float minCurrentValidation = channelData.ctSpecification.currentRating * MINIMUM_CURRENT_RATIO_VALIDATION;
+
         // Split-phase 240V circuits use same-phase path (only 180° shift, so only the sign changes) so we can use the accurate energy registers, but accounting for a 2x multiplier
         bool isSplitPhase240 = (channelData.phase == PHASE_SPLIT_240);
         if (channelData.phase == basePhase || isSplitPhase240) { // The phase is not necessarily PHASE_A, so use as reference the one of channel A
@@ -3749,6 +3755,18 @@ namespace Ade7953
             apparentPower = current * voltage; // S = Vrms * Irms
             activePower = current * voltage * abs(powerFactor) * (channelData.reverse ? -1.0f : 1.0f) * (isActivePowerNegative ? -1.0f : 1.0f); // P = Vrms * Irms * PF
             reactivePower = float(sqrt(pow(apparentPower, 2) - pow(activePower, 2))) * (channelData.reverse ? -1.0f : 1.0f) * (powerFactor >= 0 ? 1.0f : -1.0f); // Q = sqrt(S^2 - P^2) * sign(PF)
+
+            // Synthetic no-load: the ADE7953's no-load feature only gates the energy
+            // registers of the base-phase branch; here a sub-threshold current is offset
+            // noise reading a garbage angle, so zero the whole reading. This keeps the
+            // published contract "nonzero values are reliable" (the web UI relies on it).
+            if (current < minCurrentThreePhaseNoLoad) {
+                current = 0.0f;
+                activePower = 0.0f;
+                reactivePower = 0.0f;
+                apparentPower = 0.0f;
+                powerFactor = 0.0f;
+            }
         }
 
         apparentPower = abs(apparentPower); // Apparent power must be positive
@@ -3796,7 +3814,7 @@ namespace Ade7953
             !_validatePower(apparentPower) || 
             !_validatePowerFactor(powerFactor)
         ) {
-            if (current >= MINIMUM_CURRENT_FOR_VALIDATION) {
+            if (current >= minCurrentValidation) {
                 // If the measurement is invalid AND we have enough current flowing (thus we should be reading correct values), then discard the reading
                 LOG_WARNING("%s (%d): Invalid reading (%.1fV, %.1fW, %.3fA, %.1fVAr, %.1fVA, %.3f)", channelData.label, channelIndex, voltage, activePower, current, reactivePower, apparentPower, powerFactor);
                 _recordFailure();
@@ -3841,7 +3859,7 @@ namespace Ade7953
         // or earn the armed boost. The same signal drives _lastConducting below, so the
         // vote and the boost always agree on whether the channel is drawing power.
         bool conducting = MeterLogic::isConductingReading(
-            activePower, current, MINIMUM_CURRENT_FOR_VALIDATION);
+            activePower, current, minCurrentValidation);
 
         if (_channelData[channelIndex]._pendingPolarityCheck && conducting) {
             bool flipped = false;
@@ -3856,7 +3874,7 @@ namespace Ade7953
                     MeterLogic::PolarityConfig cfg{
                         POLARITY_DETECT_VOTE_THRESHOLD,
                         POLARITY_DETECT_MAX_CONDUCTING_READS,
-                        MINIMUM_CURRENT_FOR_VALIDATION
+                        minCurrentValidation
                     };
                     MeterLogic::PolarityResult res = MeterLogic::updatePolarity(state, activePower, current, cfg);
                     _polarityVoteCount[channelIndex] = res.state.voteCount;
@@ -3935,7 +3953,7 @@ namespace Ade7953
 
         // If the phase is not the phase of the main channel, set the energy not to 0 if the current
         // is above the threshold since we cannot use the ADE7593 no-load feature in this approximation
-        if (channelData.phase != basePhase && current > MINIMUM_CURRENT_THREE_PHASE_APPROXIMATION_NO_LOAD) {
+        if (channelData.phase != basePhase && current > minCurrentThreePhaseNoLoad) {
             activeEnergy = 1;
             reactiveEnergy = 1;
             apparentEnergy = 1;

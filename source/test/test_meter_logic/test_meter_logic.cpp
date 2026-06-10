@@ -20,7 +20,7 @@ void tearDown(void) {}
 
 // Config values mirror the firmware defaults so the tests track real behaviour.
 static const WeightConfig WCFG = {0.4f, 0.4f, 0.1f, 1.5f, 2.0f};
-static const float MIN_A = 0.02f;              // MINIMUM_CURRENT_FOR_VALIDATION
+static const float MIN_A = 0.02f;              // validation threshold (firmware: CT rating * MINIMUM_CURRENT_RATIO_VALIDATION, e.g. 20 A * 0.001)
 static const PolarityConfig PCFG = {5, 50, MIN_A};
 static const float COND_A = 1.0f;              // a nominal "real load" current (>= MIN_A)
 
