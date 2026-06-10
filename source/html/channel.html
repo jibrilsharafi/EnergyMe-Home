@@ -201,16 +201,14 @@
                     <span class="info-tooltip">
                         <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about Phase">ⓘ</button>
                         <div class="info-tooltip-popover" role="tooltip">
-                            The AC phase this CT is measuring. For single-phase or standard split-phase loads use Phase 1. For 3-phase installations, assign each CT to its matching phase so voltage and current are in sync. While the load is drawing power, the live preview below shows what each phase choice would read &ndash; the right one typically shows positive power with PF close to 1. Channel 0 carries the voltage reference, so it has no preview: every other channel's phase is measured relative to it. <strong>240V (Split Phase)</strong> is for North American 240V circuits spanning both L1 and L2 legs; the firmware automatically applies a ×2 voltage multiplier because the reference voltage is measured line-to-neutral (about 120&nbsp;V) while the circuit operates at 240&nbsp;V line-to-line.
+                            The AC phase this CT is measuring. For single-phase or standard split-phase loads use Phase 1. For 3-phase installations, assign each CT to its matching phase so voltage and current are in sync. While the load is drawing power, the live preview below shows what each phase choice would read &ndash; the right one typically shows positive power with PF close to 1. Channel 0 carries the voltage reference, so its phase is correct by definition. <strong>240V (Split Phase)</strong> is for North American 240V circuits spanning both L1 and L2 legs; the firmware automatically applies a ×2 voltage multiplier because the reference voltage is measured line-to-neutral (about 120&nbsp;V) while the circuit operates at 240&nbsp;V line-to-line.
                         </div>
                     </span>
                     <select id="phase${index}" onchange="queueChannelUpdate(${index})">
                         ${phaseOptions}
                     </select>
                 </label>
-                ${isChannel0
-                    ? '<div class="phase-preview">Voltage reference &ndash; the phases of all other channels are measured relative to this one, so its own assignment is correct by definition</div>'
-                    : `<div id="phasePreview${index}" class="phase-preview"></div>`}
+                <div id="phasePreview${index}" class="phase-preview"></div>
                 <div style="height: 10px;"></div>
                 <label>
                     <input type="checkbox" ${channel.reverse ? 'checked' : ''} id="reverse${index}" onchange="queueChannelUpdate(${index})">
@@ -297,7 +295,9 @@
     const PHASE_ANGLES_DEG = { 1: 0, 2: 120, 3: -120 }; // same convention as firmware
 
     function isThreePhaseInstall() {
-        return Object.values(channelData).some(ch => ch && ch.active && (ch.phase === 2 || ch.phase === 3));
+        const basePhase = channelData[0] ? channelData[0].phase : 1;
+        return Object.values(channelData).some(ch => ch && ch.active &&
+            (ch.phase in PHASE_ANGLES_DEG) && ch.phase !== basePhase);
     }
 
     function computePhaseCandidates(channel, basePhase, data) {
@@ -333,6 +333,13 @@
         if (!channel || !channel.active || !isThreePhaseInstall() ||
             !(channel.phase in PHASE_ANGLES_DEG) || !(basePhase in PHASE_ANGLES_DEG)) {
             el.innerHTML = '';
+            return;
+        }
+
+        // Channel 0 carries the voltage reference: its phase defines the frame the
+        // other channels are measured in, so candidates for it are meaningless.
+        if (index == 0) {
+            el.innerHTML = 'Voltage reference &ndash; defines the phases of all other channels';
             return;
         }
 
