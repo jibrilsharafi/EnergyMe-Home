@@ -201,7 +201,10 @@
                     <span class="info-tooltip">
                         <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about Phase">ⓘ</button>
                         <div class="info-tooltip-popover" role="tooltip">
-                            The AC phase this CT is measuring. For single-phase or standard split-phase loads use Phase 1. For 3-phase installations, assign each CT to its matching phase so voltage and current are in sync. While the load is drawing power, the live preview below shows what each phase choice would read &ndash; the right one typically shows positive power with PF close to 1. Channel 0 carries the voltage reference, so its phase is correct by definition. <strong>240V (Split Phase)</strong> is for North American 240V circuits spanning both L1 and L2 legs; the firmware automatically applies a ×2 voltage multiplier because the reference voltage is measured line-to-neutral (about 120&nbsp;V) while the circuit operates at 240&nbsp;V line-to-line.
+                            The AC phase this CT is measuring.<br><br>
+                            <strong>Single-phase</strong>: leave everything on Phase 1.<br><br>
+                            <strong>3-phase</strong>: assign each CT to its physical phase. While the load is drawing power, the live preview below shows what each choice would read &ndash; the right one shows positive power with PF close to 1. Channel 0 carries the voltage reference, so its phase is correct by definition.<br><br>
+                            <strong>240V (Split Phase)</strong>: North American 240V circuits spanning both legs. A ×2 voltage multiplier is applied automatically, since the reference voltage is measured line-to-neutral (about 120&nbsp;V).
                         </div>
                     </span>
                     <select id="phase${index}" onchange="queueChannelUpdate(${index})">
@@ -216,7 +219,8 @@
                     <span class="info-tooltip">
                         <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about Reverse">ⓘ</button>
                         <div class="info-tooltip-popover" role="tooltip">
-                            Inverted CT readings? Do not worry: software comes to the rescue! Check "Reverse" to flip the sign of all readings from this channel.
+                            Flips the sign of all readings from this channel. You should rarely need it: when current first flows, the firmware detects a reversed CT and sets this flag by itself.<br><br>
+                            Note that loads never display negative power (negative readings are clamped to 0&nbsp;W), so a reversed CT reads 0&nbsp;W until the auto-detection corrects it &ndash; usually within seconds of real load. Changing it manually disables auto-detection for this channel.
                         </div>
                     </span>
                 </label>
