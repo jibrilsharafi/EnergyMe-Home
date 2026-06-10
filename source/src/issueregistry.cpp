@@ -63,15 +63,15 @@ namespace IssueRegistry
     // Private declarations
     // =========================================================
     static void _registryTask(void *parameter);
-    static void _evaluateAll();
     static void _evaluateChannelCodes();
     static void _evaluateGlobalCodes();
     static void _updateInstance(IssueLogic::Code code, uint8_t channel, bool conditionTrue, const char *message);
     static IssueInstance* _findInstance(IssueLogic::Code code, uint8_t channel);
     static IssueInstance* _allocateInstance();
+    static void _ackInstanceLocked(IssueInstance &inst);
     static const char* _stateToString(IssueLogic::State state);
     static bool _codeFromString(const char *codeStr, IssueLogic::Code &code);
-    static void _logTransition(const char *verb, IssueLogic::Code code, uint8_t channel, const char *message);
+    static void _logTransition(const char *verb, bool raise, IssueLogic::Code code, uint8_t channel, const char *message);
 
     // Public API
     // =========================================================
@@ -162,7 +162,6 @@ namespace IssueRegistry
         if (!_codeFromString(codeStr, code)) return false;
 
         bool acked = false;
-        char message[ISSUE_MESSAGE_BUFFER_SIZE] = {0};
 
         if (!acquireMutex(&_registryMutex)) {
             LOG_ERROR("Failed to acquire registry mutex for ack");
@@ -170,15 +169,12 @@ namespace IssueRegistry
         }
         IssueInstance *inst = _findInstance(code, channel);
         if (inst != nullptr && IssueLogic::isUnacked(inst->state)) {
-            inst->state = IssueLogic::applyAck(inst->state);
-            inst->lastChangeUnix = (uint32_t)CustomTime::getUnixTime();
-            snprintf(message, sizeof(message), "%s", inst->message);
-            if (inst->state == IssueLogic::State::Inactive) memset(inst, 0, sizeof(*inst));
+            _ackInstanceLocked(*inst);
             acked = true;
         }
         releaseMutex(&_registryMutex);
 
-        if (acked) _logTransition("acked", code, channel, message);
+        if (acked) _logTransition("acked", false, code, channel, "");
         return acked;
     }
 
@@ -199,14 +195,12 @@ namespace IssueRegistry
             ackedCodes[ackedCount] = inst.code;
             ackedChannels[ackedCount] = inst.channel;
             ackedCount++;
-            inst.state = IssueLogic::applyAck(inst.state);
-            inst.lastChangeUnix = (uint32_t)CustomTime::getUnixTime();
-            if (inst.state == IssueLogic::State::Inactive) memset(&inst, 0, sizeof(inst));
+            _ackInstanceLocked(inst);
         }
         releaseMutex(&_registryMutex);
 
         for (uint32_t i = 0; i < ackedCount; i++) {
-            _logTransition("acked", ackedCodes[i], ackedChannels[i], "");
+            _logTransition("acked", false, ackedCodes[i], ackedChannels[i], "");
         }
         return ackedCount;
     }
@@ -227,7 +221,8 @@ namespace IssueRegistry
         while (_taskShouldRun) {
             TASK_HEARTBEAT(_heartbeat);
 
-            _evaluateAll();
+            _evaluateChannelCodes();
+            _evaluateGlobalCodes();
             _firstTick = false;
 
             if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(ISSUE_REGISTRY_TICK_INTERVAL)) > 0) {
@@ -239,12 +234,6 @@ namespace IssueRegistry
         LOG_DEBUG("Issue registry task stopping");
         _taskHandle = NULL;
         vTaskDelete(NULL);
-    }
-
-    static void _evaluateAll()
-    {
-        _evaluateChannelCodes();
-        _evaluateGlobalCodes();
     }
 
     static void _evaluateChannelCodes()
@@ -312,6 +301,8 @@ namespace IssueRegistry
 
     static void _evaluateGlobalCodes()
     {
+        // Messages are only consumed on a raise edge, so each block formats its
+        // message only when its condition is true (same idiom as the channel codes).
         char message[ISSUE_MESSAGE_BUFFER_SIZE];
 
         // --- custom_mqtt_connect_failed: same connection fact + streak hysteresis
@@ -322,8 +313,11 @@ namespace IssueRegistry
                                                       : IssueLogic::Evidence::Bad;
         _customMqttStreak = IssueLogic::updateStreak(_customMqttStreak, customMqttEvidence);
         bool customMqttDown = (_customMqttStreak >= ISSUE_CONNECTIVITY_STREAK_TO_RAISE);
-        snprintf(message, sizeof(message), "Custom MQTT enabled but it has been disconnected for over %u s",
-                 (unsigned)(ISSUE_CONNECTIVITY_STREAK_TO_RAISE * ISSUE_REGISTRY_TICK_INTERVAL / 1000));
+        message[0] = '\0';
+        if (customMqttDown) {
+            snprintf(message, sizeof(message), "Custom MQTT enabled but it has been disconnected for over %u s",
+                     (unsigned)(ISSUE_CONNECTIVITY_STREAK_TO_RAISE * ISSUE_REGISTRY_TICK_INTERVAL / 1000));
+        }
         _updateInstance(IssueLogic::Code::CustomMqttConnectFailed, ISSUE_GLOBAL_SCOPE, customMqttDown, message);
 
         // --- cloud_mqtt_disconnected
@@ -333,8 +327,11 @@ namespace IssueRegistry
                                                  : IssueLogic::Evidence::Bad;
         _cloudMqttStreak = IssueLogic::updateStreak(_cloudMqttStreak, cloudEvidence);
         bool cloudDown = (_cloudMqttStreak >= ISSUE_CONNECTIVITY_STREAK_TO_RAISE);
-        snprintf(message, sizeof(message), "Cloud services enabled but AWS MQTT has been disconnected for over %u s",
-                 (unsigned)(ISSUE_CONNECTIVITY_STREAK_TO_RAISE * ISSUE_REGISTRY_TICK_INTERVAL / 1000));
+        message[0] = '\0';
+        if (cloudDown) {
+            snprintf(message, sizeof(message), "Cloud services enabled but AWS MQTT has been disconnected for over %u s",
+                     (unsigned)(ISSUE_CONNECTIVITY_STREAK_TO_RAISE * ISSUE_REGISTRY_TICK_INTERVAL / 1000));
+        }
         _updateInstance(IssueLogic::Code::CloudMqttDisconnected, ISSUE_GLOBAL_SCOPE, cloudDown, message);
 
         // --- influxdb_upload_failing: windowed deltas of the global statistics counters
@@ -348,14 +345,17 @@ namespace IssueRegistry
                                                   : IssueLogic::Evidence::Good;
         _influxStreak = IssueLogic::updateStreak(_influxStreak, influxEvidence);
         bool influxFailing = (_influxStreak >= ISSUE_STREAK_TO_RAISE);
-        snprintf(message, sizeof(message), "InfluxDB enabled but uploads keep failing (%u consecutive bad windows)",
-                 (unsigned)_influxStreak);
+        message[0] = '\0';
+        if (influxFailing) {
+            snprintf(message, sizeof(message), "InfluxDB enabled but uploads keep failing (%u consecutive bad windows)",
+                     (unsigned)_influxStreak);
+        }
         _updateInstance(IssueLogic::Code::InfluxDbUploadFailing, ISSUE_GLOBAL_SCOPE, influxFailing, message);
 
         // --- ntp_not_synced (boot grace so a normal cold boot never alarms)
         bool ntpNotSynced = (millis64() > ISSUE_NTP_BOOT_GRACE_MS) && !CustomTime::isTimeSynched();
-        snprintf(message, sizeof(message), "Time never synced via NTP - timestamps are unreliable");
-        _updateInstance(IssueLogic::Code::NtpNotSynced, ISSUE_GLOBAL_SCOPE, ntpNotSynced, message);
+        _updateInstance(IssueLogic::Code::NtpNotSynced, ISSUE_GLOBAL_SCOPE, ntpNotSynced,
+                        "Time never synced via NTP - timestamps are unreliable");
 
         // --- panic_reboot (event): pulse once on the first tick after a crash reboot
         bool panicPulse = _firstTick && (CrashMonitor::isLastResetDueToCrash() || CrashMonitor::getConsecutiveCrashCount() > 0);
@@ -373,8 +373,8 @@ namespace IssueRegistry
 
         // --- safe_mode_active
         bool safeMode = CrashMonitor::isInSafeMode();
-        snprintf(message, sizeof(message), "Safe mode active - restart protection engaged after rapid restarts");
-        _updateInstance(IssueLogic::Code::SafeModeActive, ISSUE_GLOBAL_SCOPE, safeMode, message);
+        _updateInstance(IssueLogic::Code::SafeModeActive, ISSUE_GLOBAL_SCOPE, safeMode,
+                        "Safe mode active - restart protection engaged after rapid restarts");
 
         // --- heap_low
         uint32_t freeHeap = ESP.getFreeHeap();
@@ -383,8 +383,11 @@ namespace IssueRegistry
                                                 : IssueLogic::Evidence::Good;
         _heapStreak = IssueLogic::updateStreak(_heapStreak, heapEvidence);
         bool heapLow = (_heapStreak >= ISSUE_STREAK_TO_RAISE);
-        snprintf(message, sizeof(message), "Free internal heap low (%lu bytes, threshold %u)",
-                 (unsigned long)freeHeap, (unsigned)ISSUE_HEAP_LOW_THRESHOLD_BYTES);
+        message[0] = '\0';
+        if (heapLow) {
+            snprintf(message, sizeof(message), "Free internal heap low (%lu bytes, threshold %u)",
+                     (unsigned long)freeHeap, (unsigned)ISSUE_HEAP_LOW_THRESHOLD_BYTES);
+        }
         _updateInstance(IssueLogic::Code::HeapLow, ISSUE_GLOBAL_SCOPE, heapLow, message);
 
         // --- littlefs_near_full (raise/clear thresholds differ: simple hysteresis)
@@ -393,8 +396,11 @@ namespace IssueRegistry
         float fsFraction = (fsTotal > 0) ? ((float)fsUsed / (float)fsTotal) : 0.0f;
         if (fsFraction > ISSUE_LITTLEFS_USED_FRACTION_RAISE) _littleFsCondition = true;
         else if (fsFraction < ISSUE_LITTLEFS_USED_FRACTION_CLEAR) _littleFsCondition = false;
-        snprintf(message, sizeof(message), "LittleFS %.0f%% full (%u of %u KB)",
-                 fsFraction * 100.0f, (unsigned)(fsUsed / 1024), (unsigned)(fsTotal / 1024));
+        message[0] = '\0';
+        if (_littleFsCondition) {
+            snprintf(message, sizeof(message), "LittleFS %.0f%% full (%u of %u KB)",
+                     fsFraction * 100.0f, (unsigned)(fsUsed / 1024), (unsigned)(fsTotal / 1024));
+        }
         _updateInstance(IssueLogic::Code::LittleFsNearFull, ISSUE_GLOBAL_SCOPE, _littleFsCondition, message);
 
         // --- voltage_out_of_range (channel 0 carries the only voltage measurement)
@@ -404,8 +410,11 @@ namespace IssueRegistry
         IssueLogic::Evidence voltageEv = IssueLogic::voltageEvidence(voltage, ISSUE_VOLTAGE_TOLERANCE_FRACTION);
         _voltageStreak = IssueLogic::updateStreak(_voltageStreak, voltageEv);
         bool voltageBad = (_voltageStreak >= ISSUE_STREAK_TO_RAISE);
-        snprintf(message, sizeof(message), "Mains voltage %.1f V is over %.0f%% away from nominal %.0f V",
-                 voltage, ISSUE_VOLTAGE_TOLERANCE_FRACTION * 100.0f, IssueLogic::nearestNominalVoltage(voltage));
+        message[0] = '\0';
+        if (voltageBad) {
+            snprintf(message, sizeof(message), "Mains voltage %.1f V is over %.0f%% away from nominal %.0f V",
+                     voltage, ISSUE_VOLTAGE_TOLERANCE_FRACTION * 100.0f, IssueLogic::nearestNominalVoltage(voltage));
+        }
         _updateInstance(IssueLogic::Code::VoltageOutOfRange, ISSUE_GLOBAL_SCOPE, voltageBad, message);
 
         // --- grid_frequency_out_of_range
@@ -413,8 +422,11 @@ namespace IssueRegistry
         IssueLogic::Evidence frequencyEv = IssueLogic::frequencyEvidence(gridFrequency, ISSUE_FREQUENCY_TOLERANCE_HZ);
         _frequencyStreak = IssueLogic::updateStreak(_frequencyStreak, frequencyEv);
         bool frequencyBad = (_frequencyStreak >= ISSUE_STREAK_TO_RAISE);
-        snprintf(message, sizeof(message), "Grid frequency %.2f Hz is over %.1f Hz away from nominal %.0f Hz",
-                 gridFrequency, ISSUE_FREQUENCY_TOLERANCE_HZ, IssueLogic::nearestNominalFrequency(gridFrequency));
+        message[0] = '\0';
+        if (frequencyBad) {
+            snprintf(message, sizeof(message), "Grid frequency %.2f Hz is over %.1f Hz away from nominal %.0f Hz",
+                     gridFrequency, ISSUE_FREQUENCY_TOLERANCE_HZ, IssueLogic::nearestNominalFrequency(gridFrequency));
+        }
         _updateInstance(IssueLogic::Code::GridFrequencyOutOfRange, ISSUE_GLOBAL_SCOPE, frequencyBad, message);
 
         // --- ade7953_read_failures
@@ -423,8 +435,11 @@ namespace IssueRegistry
         IssueLogic::Evidence failureEvidence = IssueLogic::readFailureEvidence(failureDelta, ISSUE_ADE7953_FAILURES_PER_WINDOW);
         _readFailureStreak = IssueLogic::updateStreak(_readFailureStreak, failureEvidence);
         bool readsFailing = (_readFailureStreak >= ISSUE_STREAK_TO_RAISE);
-        snprintf(message, sizeof(message), "Sustained ADE7953 reading failures (%llu in the last window)",
-                 failureDelta);
+        message[0] = '\0';
+        if (readsFailing) {
+            snprintf(message, sizeof(message), "Sustained ADE7953 reading failures (%llu in the last window)",
+                     failureDelta);
+        }
         _updateInstance(IssueLogic::Code::Ade7953ReadFailures, ISSUE_GLOBAL_SCOPE, readsFailing, message);
     }
 
@@ -475,13 +490,13 @@ namespace IssueRegistry
             raised = true;
         }
         if (transition.cleared) cleared = true;
-        snprintf(logMessage, sizeof(logMessage), "%s", inst->message);
+        if (raised || cleared) snprintf(logMessage, sizeof(logMessage), "%s", inst->message);
         if (inst->state == IssueLogic::State::Inactive) memset(inst, 0, sizeof(*inst));
 
         releaseMutex(&_registryMutex);
 
-        if (raised) _logTransition("raised", code, channel, logMessage);
-        if (cleared) _logTransition("cleared", code, channel, logMessage);
+        if (raised) _logTransition("raised", true, code, channel, logMessage);
+        if (cleared) _logTransition("cleared", false, code, channel, logMessage);
     }
 
     static IssueInstance* _findInstance(IssueLogic::Code code, uint8_t channel)
@@ -499,6 +514,14 @@ namespace IssueRegistry
             if (!IssueLogic::isVisible(_instances[i].state)) return &_instances[i];
         }
         return nullptr;
+    }
+
+    // Apply an acknowledgement to one instance. Caller must hold _registryMutex.
+    static void _ackInstanceLocked(IssueInstance &inst)
+    {
+        inst.state = IssueLogic::applyAck(inst.state);
+        inst.lastChangeUnix = (uint32_t)CustomTime::getUnixTime();
+        if (inst.state == IssueLogic::State::Inactive) memset(&inst, 0, sizeof(inst));
     }
 
     static const char* _stateToString(IssueLogic::State state)
@@ -525,28 +548,21 @@ namespace IssueRegistry
 
     // Uniform transition log line: the firmware log is the forensic record, so
     // every raise / clear / ack is grep-able as "issue <verb>: code=".
-    static void _logTransition(const char *verb, IssueLogic::Code code, uint8_t channel, const char *message)
+    static void _logTransition(const char *verb, bool raise, IssueLogic::Code code, uint8_t channel, const char *message)
     {
         char channelStr[8];
         if (channel == ISSUE_GLOBAL_SCOPE) snprintf(channelStr, sizeof(channelStr), "none");
         else snprintf(channelStr, sizeof(channelStr), "%u", channel);
 
         IssueLogic::Severity severity = IssueLogic::codeSeverity(code);
-        bool isRaise = (strcmp(verb, "raised") == 0);
+        char line[ISSUE_MESSAGE_BUFFER_SIZE + 96];
+        snprintf(line, sizeof(line), "Issue %s: code=%s channel=%s severity=%s details=\"%s\"",
+                 verb, IssueLogic::codeToString(code), channelStr,
+                 IssueLogic::severityToString(severity), message);
 
         // Raise logs at the issue's own severity; clear/ack are informational
-        if (isRaise && severity == IssueLogic::Severity::Error) {
-            LOG_ERROR("Issue %s: code=%s channel=%s severity=%s details=\"%s\"",
-                      verb, IssueLogic::codeToString(code), channelStr,
-                      IssueLogic::severityToString(severity), message);
-        } else if (isRaise && severity == IssueLogic::Severity::Warning) {
-            LOG_WARNING("Issue %s: code=%s channel=%s severity=%s details=\"%s\"",
-                        verb, IssueLogic::codeToString(code), channelStr,
-                        IssueLogic::severityToString(severity), message);
-        } else {
-            LOG_INFO("Issue %s: code=%s channel=%s severity=%s details=\"%s\"",
-                     verb, IssueLogic::codeToString(code), channelStr,
-                     IssueLogic::severityToString(severity), message);
-        }
+        if (raise && severity == IssueLogic::Severity::Error) LOG_ERROR("%s", line);
+        else if (raise && severity == IssueLogic::Severity::Warning) LOG_WARNING("%s", line);
+        else LOG_INFO("%s", line);
     }
 }
