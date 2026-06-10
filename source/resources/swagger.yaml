@@ -523,6 +523,91 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
 
+  /api/v1/system/issues:
+    get:
+      summary: Get device issues
+      description: List current device issues (runtime-derived, ISA-18.2-lite lifecycle). Issues disappear only when the condition is gone and the user acknowledged them.
+      tags:
+        - System
+      responses:
+        '200':
+          description: Device issues
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issues:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        code:
+                          type: string
+                          description: Issue code (snake_case)
+                          example: "channel_polarity_mismatch"
+                        channel:
+                          type: integer
+                          description: Channel index (omitted for global issues)
+                          example: 0
+                        state:
+                          type: string
+                          enum: [active_unacked, active_acked, cleared_unacked]
+                          example: "active_unacked"
+                        severity:
+                          type: string
+                          enum: [info, warning, error]
+                          example: "error"
+                        firstSeenUnix:
+                          type: integer
+                          description: Unix timestamp when the issue was first raised
+                          example: 1781099726
+                        lastChangeUnix:
+                          type: integer
+                          description: Unix timestamp of the last state change
+                          example: 1781099726
+                        occurrences:
+                          type: integer
+                          description: Number of times the issue was raised this boot
+                          example: 1
+                        message:
+                          type: string
+                          description: Human-readable description
+                          example: "Channel 0: readings persistently negative and clamped to 0 W. The reverse flag and the physical CT orientation disagree - fix either."
+
+  /api/v1/system/issues/ack:
+    post:
+      summary: Acknowledge device issues
+      description: Acknowledge a single issue (by code, plus channel for channel-scoped codes) or all issues at once. Acknowledged active issues stay listed until their condition clears; acknowledged cleared issues are removed.
+      tags:
+        - System
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                all:
+                  type: boolean
+                  description: Acknowledge every unacknowledged issue
+                  example: true
+                code:
+                  type: string
+                  description: Issue code to acknowledge (alternative to all)
+                  example: "channel_polarity_mismatch"
+                channel:
+                  type: integer
+                  description: Channel index (required for channel-scoped codes)
+                  example: 0
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
   /api/v1/firmware/update-info:
     get:
       summary: Get firmware update information

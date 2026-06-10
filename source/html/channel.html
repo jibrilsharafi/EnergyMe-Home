@@ -128,6 +128,7 @@
 </body>
 
 <script src="/js/api-client.js"></script>
+<script src="/js/issues.js"></script>
 <script src="/js/tooltip.js"></script>
 <script>
     var channelData = {};
@@ -190,7 +191,7 @@
             const activeChecked = isChannel0 ? 'checked' : (channel.active ? 'checked' : '');
 
             box.innerHTML = `
-                <h3>Channel ${index}</h3>
+                <h3>Channel ${index}<span id="issueChip${index}"></span></h3>
                 <label>
                     Label:
                     <input type="text" value="${channel.label || ''}" id="label${index}" onchange="queueChannelUpdate(${index})">
@@ -203,7 +204,7 @@
                         <div class="info-tooltip-popover" role="tooltip">
                             The AC phase this CT is measuring.<br><br>
                             <strong>Single-phase</strong>: leave everything on Phase 1.<br><br>
-                            <strong>3-phase</strong>: assign each CT to its physical phase. While the load is drawing power, the live preview below shows what each choice would read &ndash; the right one shows positive power with PF close to 1. Channel 0 carries the voltage reference, so its phase is correct by definition.<br><br>
+                            <strong>3-phase</strong>: assign each CT to its physical phase. While the load is drawing power, the live preview below shows what each choice would read &ndash; the right one has PF close to 1 (the power sign is irrelevant, it just flips with the CT orientation). Channel 0 carries the voltage reference, so its phase is correct by definition.<br><br>
                             <strong>240V (Split Phase)</strong>: North American 240V circuits spanning both legs. A ×2 voltage multiplier is applied automatically, since the reference voltage is measured line-to-neutral (about 120&nbsp;V).
                         </div>
                     </span>
@@ -293,9 +294,10 @@
     // math on the measured angle between voltage and current: the firmware rotates
     // it by 0/+120/-120 degrees (phase 1/2/3, see _calculatePhaseShift in
     // src/ade7953.cpp). So from one published reading (P, Q, S) we can reconstruct
-    // that angle and show what active power and PF every phase choice would yield -
-    // the installer picks the one that looks like a real load (PF near 1, plausible
-    // sign) instead of guessing from the breaker panel.
+    // that angle and show what |active power| and PF every phase choice would yield -
+    // the installer picks the one that looks like a real load (PF near 1) instead of
+    // guessing from the breaker panel. The power sign is omitted: it is always
+    // flippable via the reverse flag, so it says nothing about the right phase.
     const PHASE_ANGLES_DEG = { 1: 0, 2: 120, 3: -120 }; // same convention as firmware
 
     function isThreePhaseInstall() {
@@ -358,7 +360,9 @@
             res.candidates[c].pf > res.candidates[best].pf ? c : best, 1);
         el.innerHTML = [1, 2, 3].map(c => {
             const cand = res.candidates[c];
-            const text = `L${c}: ${cand.power.toFixed(1)} W (PF ${cand.pf.toFixed(2)})`;
+            // Show |power|: the sign is always flippable via the reverse flag, so it
+            // carries no information about which phase is correct - PF magnitude does.
+            const text = `L${c}: ${Math.abs(cand.power).toFixed(1)} W (PF ${cand.pf.toFixed(2)})`;
             return c === bestPhase ? `<strong>${text}</strong>` : text;
         }).join('<br>');
     }
@@ -623,6 +627,17 @@
             startGlobalPowerUpdates();
         }
     }
+
+    // Channel-scoped issue chips, fed by the issues.js poll. A chip appears next
+    // to the channel title whenever the registry has a visible issue for it;
+    // clicking opens the shared issues panel.
+    window.addEventListener('energyme-issues', (event) => {
+        const issues = (event.detail && event.detail.issues) || [];
+        Object.keys(channelData).forEach(index => {
+            const chip = document.getElementById(`issueChip${index}`);
+            if (chip) window.energymeIssues.renderChip(chip, issues.filter(i => i.channel == index));
+        });
+    });
 
     async function resetChannelEnergy(channelIndex) {
         const channel = channelData[channelIndex];

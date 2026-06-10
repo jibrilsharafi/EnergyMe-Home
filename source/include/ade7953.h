@@ -243,6 +243,12 @@
 #define ADE7953_MAX_FAILURES_BEFORE_RESTART 100
 #define ADE7953_FAILURE_RESET_TIMEOUT_MS (1 * 60 * 1000)
 
+// Polarity-mismatch evidence floor: a reading below the conduction gate still
+// counts as evidence when |active power| clearly exceeds the offset-noise band
+// (sign of a small but real load, e.g. 2.5 W at 24 mA). Random offset noise
+// cannot sustain a high clamped fraction at this magnitude.
+#define MISMATCH_EVIDENCE_MIN_POWER_W 1.0f
+
 // ADE7953 Critical Failure Detection (missed interrupts)
 #ifdef ENV_DEV
 #define ADE7953_MAX_CRITICAL_FAILURES_BEFORE_REBOOT (100 * 5) // 5x higher limit in dev environment
@@ -480,6 +486,18 @@ struct ChannelData
     }
 };
 
+// Per-channel runtime facts for the issue registry (issue #145). All values are
+// RAM-only and monotonic within the current boot; the single writer is the meter
+// task and readers rely on 32-bit loads being atomic on the ESP32-S3.
+struct ChannelIssueFacts
+{
+  uint32_t evidenceReads;        // readings carrying polarity evidence since boot: conducting OR |P| >= MISMATCH_EVIDENCE_MIN_POWER_W (pre-clamp)
+  uint32_t clampedEvidenceReads; // evidence readings zeroed by the LOAD/PV negative clamp
+  uint32_t polarityFlipCount;    // CT auto-detection flips since boot
+
+  ChannelIssueFacts() : evidenceReads(0), clampedEvidenceReads(0), polarityFlipCount(0) {}
+};
+
 // ADE7953 Configuration structure
 struct Ade7953Configuration
 {
@@ -632,6 +650,9 @@ namespace Ade7953
 
     // Grid frequency
     float getGridFrequency();
+
+    // Issue registry facts (RAM-only, safe to call cross-task)
+    bool getChannelIssueFacts(uint8_t channelIndex, ChannelIssueFacts &facts);
 
     // Task information
     TaskInfo getMeterReadingTaskInfo();

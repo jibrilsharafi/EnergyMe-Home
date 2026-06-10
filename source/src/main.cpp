@@ -22,6 +22,7 @@
 #include "mqtt.h"
 #include "custommqtt.h"
 #include "influxdbclient.h"
+#include "issueregistry.h"
 #include "multiplexer.h"
 #include "customlog.h"
 #include "taskprofiler.h"
@@ -183,6 +184,10 @@ void setup()
   LOG_DEBUG("Setting up InfluxDB client...");
   InfluxDbClient::begin();
   LOG_INFO("InfluxDB client setup done");
+
+  LOG_DEBUG("Setting up issue registry...");
+  IssueRegistry::begin();
+  LOG_INFO("Issue registry setup done");
 
   LOG_DEBUG("Starting maintenance task...");
   startMaintenanceTask();

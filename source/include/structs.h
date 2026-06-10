@@ -233,6 +233,7 @@ struct SystemDynamicInfo {
     TaskInfo ade7953EnergySaveTaskInfo;
     TaskInfo ade7953HourlyCsvTaskInfo;
     TaskInfo maintenanceTaskInfo;
+    TaskInfo issueRegistryTaskInfo;
 
     SystemDynamicInfo() {
         memset(this, 0, sizeof(*this));

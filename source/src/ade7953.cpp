@@ -47,6 +47,12 @@ namespace Ade7953
     // task runs on a PSRAM stack and cannot perform NVS writes.
     static volatile bool _pendingPolaritySave[MAX_CHANNEL_COUNT] = {};
 
+    // Issue-registry facts (issue #145), RAM-only and monotonic within this boot.
+    // Single writer is the meter task; the registry tick reads them as 32-bit loads.
+    static volatile uint32_t _factEvidenceReads[MAX_CHANNEL_COUNT] = {};
+    static volatile uint32_t _factClampedEvidenceReads[MAX_CHANNEL_COUNT] = {};
+    static volatile uint32_t _factPolarityFlipCount[MAX_CHANNEL_COUNT] = {};
+
     // Voltage-to-LSB conversion factors, computed once in begin() from globalHwProfile voltage divider.
     static float _voltPerLsb = 0.0f;
     static float _voltPerLsbInstantaneous = 0.0f;
@@ -1600,8 +1606,17 @@ namespace Ade7953
     // Grid frequency
     // ==============
 
-    float getGridFrequency() { 
-        return _gridFrequency; 
+    float getGridFrequency() {
+        return _gridFrequency;
+    }
+
+    bool getChannelIssueFacts(uint8_t channelIndex, ChannelIssueFacts &facts) {
+        if (!isChannelValid(channelIndex)) return false;
+
+        facts.evidenceReads = _factEvidenceReads[channelIndex];
+        facts.clampedEvidenceReads = _factClampedEvidenceReads[channelIndex];
+        facts.polarityFlipCount = _factPolarityFlipCount[channelIndex];
+        return true;
     }
 
     // Private function implementations
@@ -3891,6 +3906,9 @@ namespace Ade7953
                 releaseMutex(&_channelDataMutex);
             }
             if (flipped) {
+                // Record the flip fact for the issue registry (single-writer volatile)
+                _factPolarityFlipCount[channelIndex] = _factPolarityFlipCount[channelIndex] + 1;
+
                 // This reading was computed with the pre-flip sign; negate the signed
                 // quantities so it stores consistently with the new reverse flag
                 // (apparent power and current stay positive).
@@ -3914,12 +3932,22 @@ namespace Ade7953
         // orientation in ~1 s, while a near-zero-current offset reading earns no boost.
         _lastConducting[channelIndex] = conducting;
 
+        // Polarity-mismatch evidence: conducting, or sub-gate with |P| above the
+        // offset-noise floor - a persistent -2.5 W at 24 mA is a real reversed load,
+        // while idle-channel noise stays below the floor and carries no evidence.
+        // Only feeds the user-facing issue; the auto-flip detector stays current-gated.
+        bool mismatchEvidence = conducting || fabsf(activePower) >= MISMATCH_EVIDENCE_MIN_POWER_W;
+        if (mismatchEvidence) _factEvidenceReads[channelIndex] = _factEvidenceReads[channelIndex] + 1;
+
         // Clamp negative active power to zero for load and PV channels. With the phase
         // configured correctly a load/PV should not be net-negative; a residual negative
         // is PV inverter standby or sub-detection noise. Clamp (do NOT discard) so the
         // data cadence is preserved - a genuinely reversed CT is corrected by the
         // reversal detector above, not by dropping readings (which created silent gaps).
         if (MeterLogic::shouldClampNegative(activePower, channelData.role)) {
+            // An evidence reading that gets clamped is polarity-mismatch evidence for
+            // the issue registry (reverse flag and physical CT orientation disagree)
+            if (mismatchEvidence) _factClampedEvidenceReads[channelIndex] = _factClampedEvidenceReads[channelIndex] + 1;
             LOG_DEBUG(
                 "%s (%d): clamping negative reading (%.1fW) to 0 (role=%s)",
                 channelData.label,

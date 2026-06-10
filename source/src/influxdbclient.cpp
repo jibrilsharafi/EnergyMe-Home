@@ -288,6 +288,9 @@ namespace InfluxDbClient
         return true;
     }
 
+    // Reading one aligned bool is atomic on the ESP32-S3 - no mutex or config copy needed
+    bool isEnabled() { return _isSetupDone && _configuration.enabled; }
+
     // Private function implementations
     // ================================
 

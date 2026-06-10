@@ -202,6 +202,7 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
     info.ade7953EnergySaveTaskInfo = Ade7953::getEnergySaveTaskInfo();
     info.ade7953HourlyCsvTaskInfo = Ade7953::getHourlyCsvTaskInfo();
     info.maintenanceTaskInfo = getMaintenanceTaskInfo();
+    info.issueRegistryTaskInfo = IssueRegistry::getTaskInfo();
 
     LOG_DEBUG("Dynamic system info populated");
 }
@@ -360,6 +361,7 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument &doc) {
     addTask("ade7953EnergySave", info.ade7953EnergySaveTaskInfo);
     addTask("ade7953HourlyCsv", info.ade7953HourlyCsvTaskInfo);
     addTask("maintenance", info.maintenanceTaskInfo);
+    addTask("issueRegistry", info.issueRegistryTaskInfo);
 
     LOG_DEBUG("Dynamic system info converted to JSON");
 }
@@ -571,6 +573,7 @@ static void _restartTask(void* parameter) {
 
     // 2. Stop all services (best effort, don't wait forever for each)
     LOG_DEBUG("Stopping services before restart...");
+    IssueRegistry::stop();
     CustomServer::stop();
     Ade7953::stop();
     ModbusTcp::stop();

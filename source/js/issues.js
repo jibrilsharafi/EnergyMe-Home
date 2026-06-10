@@ -1,0 +1,275 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later
+    Copyright (C) 2025 Jibril Sharafi */
+
+/**
+ * EnergyMe device issues widget (issue #145).
+ * Self-contained: injects a badge fixed to the top-right corner on every page
+ * that includes it (after api-client.js), polls /api/v1/system/issues and
+ * opens an overlay panel with the issue list and acknowledge actions.
+ * Dispatches a window 'energyme-issues' CustomEvent on every poll so pages
+ * can render their own channel-scoped chips (see channel.html).
+ */
+(function () {
+    'use strict';
+
+    const POLL_INTERVAL_MS = 5000;
+    const SEVERITY_ORDER = { info: 0, warning: 1, error: 2 };
+    const SEVERITY_ICON = { info: 'ℹ️', warning: '⚠️', error: '🔴' };
+    const ACTIVE_ACKED_ICON = '🟠';
+
+    let lastData = null;
+    let panelOpen = false;
+
+    const style = document.createElement('style');
+    style.textContent = `
+        .issues-badge {
+            position: fixed; top: 12px; right: 12px; z-index: 1000;
+            display: none; align-items: center; gap: 6px;
+            padding: 6px 12px; border-radius: 16px; cursor: pointer;
+            font-family: inherit; font-size: 14px; font-weight: bold; color: #fff;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.25); user-select: none;
+        }
+        .issues-badge.error { background-color: #dc3545; color: #fff; }
+        .issues-badge.warning { background-color: #ffc107; color: #333; }
+        .issues-badge.info { background-color: #0d6efd; color: #fff; }
+        .issues-badge.active-acked { background-color: #fd7e14; color: #fff; }
+        .issues-badge.acked { background-color: #6c757d; color: #fff; }
+        .issues-overlay {
+            position: fixed; inset: 0; z-index: 1001;
+            display: none; background: rgba(0,0,0,0.4);
+        }
+        .issues-panel {
+            position: absolute; top: 50px; right: 12px;
+            width: min(440px, calc(100vw - 24px)); max-height: 75vh; overflow-y: auto;
+            background: #fff; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+            padding: 12px; font-size: 14px; text-align: left;
+        }
+        .issues-panel h3 { margin: 4px 4px 10px 4px; font-size: 16px; }
+        .issues-item {
+            border: 1px solid #e0e0e0; border-left-width: 4px; border-radius: 6px;
+            padding: 8px 10px; margin-bottom: 8px; background: #fafafa;
+        }
+        .issues-item.error { border-left-color: #dc3545; }
+        .issues-item.warning { border-left-color: #fd7e14; }
+        .issues-item.info { border-left-color: #0d6efd; }
+        .issues-item.resolved { border-left-color: #6c757d !important; background: #fff !important; }
+        /* active-acked: keep the severity border, tint the card a light shade of the same color */
+        .issues-item.active-acked.error { background: #fdecea; }
+        .issues-item.active-acked.warning { background: #fff6e5; }
+        .issues-item.active-acked.info { background: #e7f1ff; }
+        .issues-item.resolving {
+            overflow: hidden;
+            animation: issues-resolve-out 0.6s ease forwards;
+        }
+        @keyframes issues-resolve-out {
+            0%   { background: #d4edda; max-height: 200px; opacity: 1; margin-bottom: 8px; }
+            30%  { background: #d4edda; }
+            100% { max-height: 0; opacity: 0; padding-top: 0; padding-bottom: 0; margin-bottom: 0; }
+        }
+        .issues-item-title { font-weight: bold; margin-bottom: 4px; }
+        .issues-item-message { margin-bottom: 6px; word-break: break-word; }
+        .issues-item-meta { color: #666; font-size: 12px; margin-bottom: 6px; }
+        .issues-ack-button {
+            padding: 3px 10px; border: 1px solid #6c757d; border-radius: 4px;
+            background: #fff; color: #333; cursor: pointer; font-size: 12px;
+        }
+        .issues-ack-button:hover { background: #f0f0f0; }
+        .issues-ack-all { margin-bottom: 10px; }
+        .issues-empty { color: #666; padding: 8px 4px; }
+        .issues-chip {
+            display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+            padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: bold;
+            color: #fff; vertical-align: middle; margin-left: 6px;
+        }
+        .issues-chip.error { background-color: #dc3545; }
+        .issues-chip.warning { background-color: #fd7e14; }
+        .issues-chip.info { background-color: #0d6efd; }
+        .issues-chip.acked { background-color: #6c757d; }
+    `;
+    document.head.appendChild(style);
+
+    const badge = document.createElement('div');
+    badge.className = 'issues-badge';
+    badge.title = 'Device issues';
+    badge.addEventListener('click', openPanel);
+
+    const overlay = document.createElement('div');
+    overlay.className = 'issues-overlay';
+    overlay.addEventListener('click', (event) => {
+        if (event.target === overlay) closePanel();
+    });
+
+    const panel = document.createElement('div');
+    panel.className = 'issues-panel';
+    overlay.appendChild(panel);
+
+    function isUnacked(issue) {
+        return issue.state === 'active_unacked' || issue.state === 'cleared_unacked';
+    }
+
+    function topSeverity(issues) {
+        return issues.reduce((best, i) =>
+            SEVERITY_ORDER[i.severity] > SEVERITY_ORDER[best.severity] ? i : best).severity;
+    }
+
+    // Render a channel-scoped chip into the given element (used by channel.html).
+    // Owns the severity/state mapping so pages never duplicate it.
+    function renderChip(element, channelIssues) {
+        let html = '';
+        if (channelIssues.length > 0) {
+            const cls = channelIssues.some(isUnacked) ? topSeverity(channelIssues) : 'acked';
+            const titleText = channelIssues.map(i => i.message).join('\n').replace(/"/g, '&quot;');
+            html = `<span class="issues-chip ${cls}" title="${titleText}">⚠ ${channelIssues.length}</span>`;
+        }
+        if (element._issuesChipHtml === html) return; // unchanged - skip the DOM write
+        element._issuesChipHtml = html;
+        element.innerHTML = html;
+        const chip = element.querySelector('.issues-chip');
+        if (chip) chip.onclick = openPanel;
+    }
+
+    function formatTime(unixSeconds) {
+        if (!unixSeconds) return 'unknown';
+        return new Date(unixSeconds * 1000).toLocaleString();
+    }
+
+    function titleFor(issue) {
+        // code is snake_case; humanize it
+        const text = issue.code.replace(/_/g, ' ');
+        return text.charAt(0).toUpperCase() + text.slice(1);
+    }
+
+    function updateBadge(data) {
+        const issues = (data && data.issues) || [];
+        if (issues.length === 0) {
+            badge.style.display = 'none';
+            return;
+        }
+
+        // Every visible issue is in exactly one of these three states
+        const activeUnacked = issues.filter(i => i.state === 'active_unacked');
+        const activeAcked = issues.filter(i => i.state === 'active_acked');
+        const clearedUnacked = issues.filter(i => i.state === 'cleared_unacked');
+
+        let badgeClass, badgeText, badgeTitle;
+        if (activeUnacked.length > 0) {
+            // Live problem not yet seen - alarming (red/yellow by severity)
+            badgeClass = topSeverity(activeUnacked);
+            badgeText = `${SEVERITY_ICON[badgeClass]} ${activeUnacked.length}`;
+            badgeTitle = `${activeUnacked.length} active unacknowledged issue(s) - click for details`;
+        } else if (activeAcked.length > 0) {
+            // All active issues acked but still happening - orange dot, not a new alarm
+            badgeClass = 'active-acked';
+            badgeText = `${ACTIVE_ACKED_ICON} ${activeAcked.length}`;
+            badgeTitle = `${activeAcked.length} acknowledged but still-active issue(s) - click for details`;
+        } else {
+            // Everything resolved but user hasn't dismissed the notifications yet - grey
+            badgeClass = 'acked';
+            badgeText = `✓ ${clearedUnacked.length}`;
+            badgeTitle = `${clearedUnacked.length} resolved issue(s) to dismiss - click for details`;
+        }
+        badge.style.display = 'flex';
+        badge.className = 'issues-badge ' + badgeClass;
+        badge.textContent = badgeText;
+        badge.title = badgeTitle;
+    }
+
+    function renderPanel(data) {
+        const issues = (data && data.issues) ? data.issues.slice() : [];
+        issues.sort((a, b) => (SEVERITY_ORDER[b.severity] - SEVERITY_ORDER[a.severity]));
+
+        let html = '<h3>Device issues</h3>';
+        if (issues.length === 0) {
+            html += '<div class="issues-empty">No active issues. All good! ✨</div>';
+        } else {
+            if (issues.some(isUnacked)) {
+                html += '<button class="issues-ack-button issues-ack-all" data-ack-all="1">Acknowledge all</button>';
+            }
+            issues.forEach((issue) => {
+                const resolved = issue.state === 'cleared_unacked';
+                const activeAcked = issue.state === 'active_acked';
+                const channelText = issue.channel !== undefined ? ` &middot; channel ${issue.channel}` : '';
+                const stateText = resolved ? 'resolved, unseen' : (activeAcked ? 'active, acknowledged' : 'active');
+                const extraClass = resolved ? ' resolved' : activeAcked ? ' active-acked' : '';
+                html += `
+                    <div class="issues-item ${issue.severity}${extraClass}">
+                        <div class="issues-item-title">${activeAcked ? ACTIVE_ACKED_ICON : (SEVERITY_ICON[issue.severity] || '')} ${titleFor(issue)}</div>
+                        <div class="issues-item-message">${issue.message || ''}</div>
+                        <div class="issues-item-meta">
+                            ${stateText}${channelText} &middot; first seen ${formatTime(issue.firstSeenUnix)}
+                            ${issue.occurrences > 1 ? ` &middot; ${issue.occurrences} occurrences` : ''}
+                        </div>
+                        ${isUnacked(issue) ? `<button class="issues-ack-button" data-code="${issue.code}" data-channel="${issue.channel !== undefined ? issue.channel : ''}">Acknowledge</button>` : ''}
+                    </div>`;
+            });
+        }
+        panel.innerHTML = html;
+
+        panel.querySelectorAll('.issues-ack-button').forEach((button) => {
+            button.addEventListener('click', async () => {
+                const card = button.closest('.issues-item');
+                const isResolved = card && card.classList.contains('resolved');
+                try {
+                    if (button.dataset.ackAll) {
+                        await window.energyApi.post('system/issues/ack', { all: true });
+                    } else {
+                        const body = { code: button.dataset.code };
+                        if (button.dataset.channel !== '') body.channel = parseInt(button.dataset.channel, 10);
+                        await window.energyApi.post('system/issues/ack', body);
+                    }
+                    if (isResolved && card && !button.dataset.ackAll) {
+                        card.classList.add('resolving');
+                        await new Promise(resolve => setTimeout(resolve, 600));
+                    }
+                    await poll(); // re-renders the open panel with the fresh data
+                } catch (error) {
+                    console.error('Failed to acknowledge issue:', error);
+                    if (typeof showStatus === 'function') showStatus('Failed to acknowledge issue', 'error');
+                }
+            });
+        });
+    }
+
+    function openPanel() {
+        panelOpen = true;
+        renderPanel(lastData);
+        overlay.style.display = 'block';
+    }
+
+    function closePanel() {
+        panelOpen = false;
+        overlay.style.display = 'none';
+    }
+
+    async function poll() {
+        if (document.hidden) return; // hidden tabs poll again on visibilitychange
+        try {
+            const data = await window.energyApi.get('system/issues');
+            lastData = data;
+            updateBadge(data);
+            if (panelOpen) renderPanel(data);
+            window.dispatchEvent(new CustomEvent('energyme-issues', { detail: data }));
+        } catch (error) {
+            // Polling failure is not itself an issue worth surfacing; just log it
+            console.debug('Issues poll failed:', error);
+        }
+    }
+
+    // Public hooks for pages (e.g. channel chips): open the panel, render a chip
+    window.energymeIssues = {
+        open: openPanel,
+        renderChip: renderChip
+    };
+
+    function init() {
+        document.body.appendChild(badge);
+        document.body.appendChild(overlay);
+        poll();
+        setInterval(poll, POLL_INTERVAL_MS);
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) poll();
+        });
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+    else init();
+})();
