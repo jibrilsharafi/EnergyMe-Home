@@ -243,6 +243,14 @@
 #define ADE7953_MAX_FAILURES_BEFORE_RESTART 100
 #define ADE7953_FAILURE_RESET_TIMEOUT_MS (1 * 60 * 1000)
 
+// CT polarity flip forensic log (append-only CSV on LittleFS, written by the
+// energy save task; rotated to a single previous generation at the size cap)
+#define POLARITY_FLIP_LOG_PATH "/polarity_flips.csv"
+#define POLARITY_FLIP_LOG_OLD_PATH "/polarity_flips.old.csv"
+#define POLARITY_FLIP_LOG_MAX_SIZE (4 * 1024)
+#define POLARITY_FLIP_LOG_HEADER "unix_seconds,channel,new_reverse"
+#define PENDING_FLIP_LOG_SIZE 8 // Max flip events buffered between energy-save drains
+
 // ADE7953 Critical Failure Detection (missed interrupts)
 #ifdef ENV_DEV
 #define ADE7953_MAX_CRITICAL_FAILURES_BEFORE_REBOOT (100 * 5) // 5x higher limit in dev environment
@@ -480,6 +488,22 @@ struct ChannelData
     }
 };
 
+// Per-channel runtime facts for the issue registry (issue #145). All values are
+// RAM-only and monotonic within the current boot; the single writer is the meter
+// task and readers rely on 32-bit loads being atomic on the ESP32-S3.
+struct ChannelIssueFacts
+{
+  uint32_t conductingReads;        // conducting (pre-clamp) readings since boot
+  uint32_t clampedConductingReads; // conducting readings zeroed by the LOAD/PV negative clamp
+  uint32_t polarityFlipCount;      // CT auto-detection flips since boot
+  uint32_t lastFlipUnixSeconds;    // timestamp of the last auto-flip (0 = none)
+  bool lastFlipNewReverse;         // reverse flag value after the last flip
+
+  ChannelIssueFacts()
+    : conductingReads(0), clampedConductingReads(0), polarityFlipCount(0),
+      lastFlipUnixSeconds(0), lastFlipNewReverse(false) {}
+};
+
 // ADE7953 Configuration structure
 struct Ade7953Configuration
 {
@@ -632,6 +656,9 @@ namespace Ade7953
 
     // Grid frequency
     float getGridFrequency();
+
+    // Issue registry facts (RAM-only, safe to call cross-task)
+    bool getChannelIssueFacts(uint8_t channelIndex, ChannelIssueFacts &facts);
 
     // Task information
     TaskInfo getMeterReadingTaskInfo();

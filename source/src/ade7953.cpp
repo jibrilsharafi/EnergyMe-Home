@@ -47,6 +47,22 @@ namespace Ade7953
     // task runs on a PSRAM stack and cannot perform NVS writes.
     static volatile bool _pendingPolaritySave[MAX_CHANNEL_COUNT] = {};
 
+    // Issue-registry facts (issue #145), RAM-only and monotonic within this boot.
+    // Single writer is the meter task; the registry tick reads them as 32-bit loads.
+    static volatile uint32_t _factConductingReads[MAX_CHANNEL_COUNT] = {};
+    static volatile uint32_t _factClampedConductingReads[MAX_CHANNEL_COUNT] = {};
+    static volatile uint32_t _factPolarityFlipCount[MAX_CHANNEL_COUNT] = {};
+    static volatile uint32_t _factLastFlipUnixSeconds[MAX_CHANNEL_COUNT] = {};
+    static volatile bool _factLastFlipNewReverse[MAX_CHANNEL_COUNT] = {};
+
+    // Pending forensic flip-log lines: the meter task (PSRAM stack) cannot touch
+    // LittleFS, so flip events queue here and the energy save task appends them to
+    // POLARITY_FLIP_LOG_PATH. Guarded by _channelDataMutex (both sides already hold it).
+    struct PendingFlipLogEntry { uint32_t unixSeconds; uint8_t channel; bool newReverse; };
+    static PendingFlipLogEntry _pendingFlipLog[PENDING_FLIP_LOG_SIZE];
+    static uint8_t _pendingFlipLogCount = 0;
+    static void _appendPolarityFlipLog(const PendingFlipLogEntry* entries, uint8_t count);
+
     // Voltage-to-LSB conversion factors, computed once in begin() from globalHwProfile voltage divider.
     static float _voltPerLsb = 0.0f;
     static float _voltPerLsbInstantaneous = 0.0f;
@@ -1600,8 +1616,59 @@ namespace Ade7953
     // Grid frequency
     // ==============
 
-    float getGridFrequency() { 
-        return _gridFrequency; 
+    float getGridFrequency() {
+        return _gridFrequency;
+    }
+
+    bool getChannelIssueFacts(uint8_t channelIndex, ChannelIssueFacts &facts) {
+        if (!isChannelValid(channelIndex)) return false;
+
+        facts.conductingReads = _factConductingReads[channelIndex];
+        facts.clampedConductingReads = _factClampedConductingReads[channelIndex];
+        facts.polarityFlipCount = _factPolarityFlipCount[channelIndex];
+        facts.lastFlipUnixSeconds = _factLastFlipUnixSeconds[channelIndex];
+        facts.lastFlipNewReverse = _factLastFlipNewReverse[channelIndex];
+        return true;
+    }
+
+    // Append queued CT-flip events to the forensic CSV log, rotating the live file
+    // to a single previous generation when it exceeds the size cap. Runs only on
+    // the energy save task (internal-RAM stack, flash-capable).
+    static void _appendPolarityFlipLog(const PendingFlipLogEntry* entries, uint8_t count) {
+        if (count == 0) return;
+
+        File checkFile = LittleFS.open(POLARITY_FLIP_LOG_PATH, "r");
+        size_t currentSize = checkFile ? checkFile.size() : 0;
+        if (checkFile) checkFile.close();
+
+        if (currentSize > POLARITY_FLIP_LOG_MAX_SIZE) {
+            LittleFS.remove(POLARITY_FLIP_LOG_OLD_PATH);
+            if (!LittleFS.rename(POLARITY_FLIP_LOG_PATH, POLARITY_FLIP_LOG_OLD_PATH)) {
+                LOG_WARNING("Failed to rotate %s", POLARITY_FLIP_LOG_PATH);
+            }
+            currentSize = 0; // Live file starts fresh after rotation
+        }
+
+        File file = LittleFS.open(POLARITY_FLIP_LOG_PATH, "a");
+        if (!file) {
+            LOG_WARNING("Failed to open %s for append", POLARITY_FLIP_LOG_PATH);
+            return;
+        }
+
+        // Header on a fresh file. Checked via the read-mode size above: size() on an
+        // append-mode handle proved unreliable on LittleFS (header was skipped).
+        if (currentSize == 0) file.println(POLARITY_FLIP_LOG_HEADER);
+        for (uint8_t i = 0; i < count; i++) {
+            char line[48];
+            snprintf(line, sizeof(line), "%lu,%u,%u",
+                     (unsigned long)entries[i].unixSeconds,
+                     entries[i].channel,
+                     entries[i].newReverse ? 1u : 0u);
+            file.println(line);
+        }
+        file.close();
+
+        LOG_DEBUG("Appended %u CT-flip event(s) to %s", count, POLARITY_FLIP_LOG_PATH);
     }
 
     // Private function implementations
@@ -2210,6 +2277,18 @@ namespace Ade7953
                 }
                 if (drain) _saveChannelDataToPreferences(i);
             }
+
+            // Drain queued forensic flip-log lines to LittleFS (same flash-capable task).
+            // Copy out under the mutex, write the file unlocked.
+            PendingFlipLogEntry flipEntries[PENDING_FLIP_LOG_SIZE];
+            uint8_t flipEntryCount = 0;
+            if (acquireMutex(&_channelDataMutex)) {
+                flipEntryCount = _pendingFlipLogCount;
+                for (uint8_t i = 0; i < flipEntryCount; i++) flipEntries[i] = _pendingFlipLog[i];
+                _pendingFlipLogCount = 0;
+                releaseMutex(&_channelDataMutex);
+            }
+            if (flipEntryCount > 0) _appendPolarityFlipLog(flipEntries, flipEntryCount);
 
             if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(SAVE_ENERGY_INTERVAL)) > 0) {
                 _energySaveTaskShouldRun = false;
@@ -3886,11 +3965,24 @@ namespace Ade7953
                         if (channelIndex > 0) _channelData[channelIndex]._pendingPriorityRead = true;
                         flipped = true;
                         newReverse = _channelData[channelIndex].reverse;
+                        // Queue the forensic flip-log line (drained to LittleFS by the
+                        // energy save task; on overflow the in-RAM facts still record it)
+                        if (_pendingFlipLogCount < PENDING_FLIP_LOG_SIZE) {
+                            _pendingFlipLog[_pendingFlipLogCount].unixSeconds = (uint32_t)CustomTime::getUnixTime();
+                            _pendingFlipLog[_pendingFlipLogCount].channel = channelIndex;
+                            _pendingFlipLog[_pendingFlipLogCount].newReverse = newReverse;
+                            _pendingFlipLogCount++;
+                        }
                     }
                 }
                 releaseMutex(&_channelDataMutex);
             }
             if (flipped) {
+                // Record the flip facts for the issue registry (single-writer volatiles)
+                _factPolarityFlipCount[channelIndex] = _factPolarityFlipCount[channelIndex] + 1;
+                _factLastFlipUnixSeconds[channelIndex] = (uint32_t)CustomTime::getUnixTime();
+                _factLastFlipNewReverse[channelIndex] = newReverse;
+
                 // This reading was computed with the pre-flip sign; negate the signed
                 // quantities so it stores consistently with the new reverse flag
                 // (apparent power and current stay positive).
@@ -3913,6 +4005,7 @@ namespace Ade7953
         // as 0 but really drawing power - still gets sampled rapidly and resolves its
         // orientation in ~1 s, while a near-zero-current offset reading earns no boost.
         _lastConducting[channelIndex] = conducting;
+        if (conducting) _factConductingReads[channelIndex] = _factConductingReads[channelIndex] + 1;
 
         // Clamp negative active power to zero for load and PV channels. With the phase
         // configured correctly a load/PV should not be net-negative; a residual negative
@@ -3920,6 +4013,9 @@ namespace Ade7953
         // data cadence is preserved - a genuinely reversed CT is corrected by the
         // reversal detector above, not by dropping readings (which created silent gaps).
         if (MeterLogic::shouldClampNegative(activePower, channelData.role)) {
+            // A conducting reading that gets clamped is polarity-mismatch evidence for
+            // the issue registry (reverse flag and physical CT orientation disagree)
+            if (conducting) _factClampedConductingReads[channelIndex] = _factClampedConductingReads[channelIndex] + 1;
             LOG_DEBUG(
                 "%s (%d): clamping negative reading (%.1fW) to 0 (role=%s)",
                 channelData.label,
