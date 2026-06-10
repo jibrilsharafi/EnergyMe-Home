@@ -118,6 +118,27 @@
         return issue.state === 'active_unacked' || issue.state === 'cleared_unacked';
     }
 
+    function topSeverity(issues) {
+        return issues.reduce((best, i) =>
+            SEVERITY_ORDER[i.severity] > SEVERITY_ORDER[best.severity] ? i : best).severity;
+    }
+
+    // Render a channel-scoped chip into the given element (used by channel.html).
+    // Owns the severity/state mapping so pages never duplicate it.
+    function renderChip(element, channelIssues) {
+        let html = '';
+        if (channelIssues.length > 0) {
+            const cls = channelIssues.some(isUnacked) ? topSeverity(channelIssues) : 'acked';
+            const titleText = channelIssues.map(i => i.message).join('\n').replace(/"/g, '&quot;');
+            html = `<span class="issues-chip ${cls}" title="${titleText}">⚠ ${channelIssues.length}</span>`;
+        }
+        if (element._issuesChipHtml === html) return; // unchanged - skip the DOM write
+        element._issuesChipHtml = html;
+        element.innerHTML = html;
+        const chip = element.querySelector('.issues-chip');
+        if (chip) chip.onclick = openPanel;
+    }
+
     function formatTime(unixSeconds) {
         if (!unixSeconds) return 'unknown';
         return new Date(unixSeconds * 1000).toLocaleString();
@@ -144,9 +165,7 @@
         let badgeClass, badgeText, badgeTitle;
         if (activeUnacked.length > 0) {
             // Live problem not yet seen - alarming (red/yellow by severity)
-            const top = activeUnacked.reduce((best, i) =>
-                SEVERITY_ORDER[i.severity] > SEVERITY_ORDER[best.severity] ? i : best);
-            badgeClass = top.severity;
+            badgeClass = topSeverity(activeUnacked);
             badgeText = `${SEVERITY_ICON[badgeClass]} ${activeUnacked.length}`;
             badgeTitle = `${activeUnacked.length} active unacknowledged issue(s) - click for details`;
         } else if (activeAcked.length > 0) {
@@ -247,12 +266,10 @@
         }
     }
 
-    // Public hook for pages (e.g. channel chips) to open the panel programmatically
+    // Public hooks for pages (e.g. channel chips): open the panel, render a chip
     window.energymeIssues = {
         open: openPanel,
-        close: closePanel,
-        getData: () => lastData,
-        refresh: poll
+        renderChip: renderChip
     };
 
     function start() {
