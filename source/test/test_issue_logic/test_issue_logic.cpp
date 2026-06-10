@@ -37,7 +37,9 @@ void test_code_strings_are_unique_and_stable(void) {
 void test_severity_mapping(void) {
     TEST_ASSERT_EQUAL(Severity::Info, codeSeverity(Code::CtPolarityFlipped));
     TEST_ASSERT_EQUAL(Severity::Error, codeSeverity(Code::ChannelPolarityMismatch));
-    TEST_ASSERT_EQUAL(Severity::Error, codeSeverity(Code::CustomMqttConnectFailed));
+    TEST_ASSERT_EQUAL(Severity::Warning, codeSeverity(Code::CustomMqttConnectFailed));
+    TEST_ASSERT_EQUAL(Severity::Warning, codeSeverity(Code::CloudMqttDisconnected));
+    TEST_ASSERT_EQUAL(Severity::Warning, codeSeverity(Code::InfluxDbUploadFailing));
     TEST_ASSERT_EQUAL(Severity::Error, codeSeverity(Code::SafeModeActive));
     TEST_ASSERT_EQUAL(Severity::Warning, codeSeverity(Code::HeapLow));
 }

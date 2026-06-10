@@ -17,7 +17,7 @@ struct CodeDescriptor {
 static constexpr CodeDescriptor CODE_TABLE[] = {
     {"ct_polarity_flipped",         Severity::Info},    // Code::CtPolarityFlipped
     {"channel_polarity_mismatch",   Severity::Error},   // Code::ChannelPolarityMismatch
-    {"custom_mqtt_connect_failed",  Severity::Error},   // Code::CustomMqttConnectFailed
+    {"custom_mqtt_connect_failed",  Severity::Warning}, // Code::CustomMqttConnectFailed
     {"cloud_mqtt_disconnected",     Severity::Warning}, // Code::CloudMqttDisconnected
     {"influxdb_upload_failing",     Severity::Warning}, // Code::InfluxDbUploadFailing
     {"ntp_not_synced",              Severity::Warning}, // Code::NtpNotSynced
