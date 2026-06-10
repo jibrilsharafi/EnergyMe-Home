@@ -33,7 +33,18 @@
             width: 90%;
             box-sizing: border-box;
         }
-        
+
+        .phase-preview {
+            font-size: 0.85em;
+            color: #666;
+            margin-top: 6px;
+            min-height: 1em;
+        }
+
+        .phase-preview strong {
+            color: #2e7d32;
+        }
+
         /* Page-specific mobile styles */
         @media screen and (max-width: 768px) {
             .channel-columns {
@@ -190,13 +201,17 @@
                     <span class="info-tooltip">
                         <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about Phase">ⓘ</button>
                         <div class="info-tooltip-popover" role="tooltip">
-                            The AC phase this CT is measuring. For single-phase or standard split-phase loads use Phase 1. For 3-phase installations, assign each CT to its matching phase so voltage and current are in sync. <strong>240V (Split Phase)</strong> is for North American 240V circuits spanning both L1 and L2 legs; the firmware automatically applies a ×2 voltage multiplier because the reference voltage is measured line-to-neutral (about 120&nbsp;V) while the circuit operates at 240&nbsp;V line-to-line.
+                            The AC phase this CT is measuring.<br><br>
+                            <strong>Single-phase</strong>: leave everything on Phase 1.<br><br>
+                            <strong>3-phase</strong>: assign each CT to its physical phase. While the load is drawing power, the live preview below shows what each choice would read &ndash; the right one shows positive power with PF close to 1. Channel 0 carries the voltage reference, so its phase is correct by definition.<br><br>
+                            <strong>240V (Split Phase)</strong>: North American 240V circuits spanning both legs. A ×2 voltage multiplier is applied automatically, since the reference voltage is measured line-to-neutral (about 120&nbsp;V).
                         </div>
                     </span>
                     <select id="phase${index}" onchange="queueChannelUpdate(${index})">
                         ${phaseOptions}
                     </select>
                 </label>
+                <div id="phasePreview${index}" class="phase-preview"></div>
                 <div style="height: 10px;"></div>
                 <label>
                     <input type="checkbox" ${channel.reverse ? 'checked' : ''} id="reverse${index}" onchange="queueChannelUpdate(${index})">
@@ -204,7 +219,8 @@
                     <span class="info-tooltip">
                         <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about Reverse">ⓘ</button>
                         <div class="info-tooltip-popover" role="tooltip">
-                            Inverted CT readings? Do not worry: software comes to the rescue! Check "Reverse" to flip the sign of all readings from this channel.
+                            Flips the sign of all readings from this channel. You should rarely need it: when current first flows, the firmware detects a reversed CT and sets this flag by itself.<br><br>
+                            Note that loads never display negative power (negative readings are clamped to 0&nbsp;W), so a reversed CT reads 0&nbsp;W until the auto-detection corrects it &ndash; usually within seconds of real load. Changing it manually disables auto-detection for this channel.
                         </div>
                     </span>
                 </label>
@@ -271,6 +287,82 @@
         startGlobalPowerUpdates();
     }
 
+    // Live "what would each phase read" preview for 3-phase installs.
+    //
+    // The single voltage reference (L1) means a channel's phase assignment is pure
+    // math on the measured angle between voltage and current: the firmware rotates
+    // it by 0/+120/-120 degrees (phase 1/2/3, see _calculatePhaseShift in
+    // src/ade7953.cpp). So from one published reading (P, Q, S) we can reconstruct
+    // that angle and show what active power and PF every phase choice would yield -
+    // the installer picks the one that looks like a real load (PF near 1, plausible
+    // sign) instead of guessing from the breaker panel.
+    const PHASE_ANGLES_DEG = { 1: 0, 2: 120, 3: -120 }; // same convention as firmware
+
+    function isThreePhaseInstall() {
+        const basePhase = channelData[0] ? channelData[0].phase : 1;
+        return Object.values(channelData).some(ch => ch && ch.active &&
+            (ch.phase in PHASE_ANGLES_DEG) && ch.phase !== basePhase);
+    }
+
+    function computePhaseCandidates(channel, basePhase, data) {
+        const p = data.activePower, q = data.reactivePower, s = data.apparentPower;
+        if (!(s > 0)) return { state: 'noload' };
+        // Negative reading clamped to zero this cycle (load/PV): angle not recoverable
+        if (p === 0) return { state: 'clamped' };
+
+        // The two firmware measurement branches publish reactivePower with different
+        // sign conventions: the energy-register branch (configured phase == base
+        // phase) gives the chip's signed Q, while the angle branch applies sign(PF),
+        // which mirrors Q whenever active power is negative. Undo that so atan2
+        // always sees the angle in the same frame as the published active power.
+        const revSign = channel.reverse ? -1 : 1;
+        const qEff = (channel.phase === basePhase) ? q : q * Math.sign(p) * revSign;
+        const psi = Math.atan2(qEff, p);
+
+        const candidates = {};
+        [1, 2, 3].forEach(c => {
+            const deltaRad = (PHASE_ANGLES_DEG[c] - PHASE_ANGLES_DEG[channel.phase]) * Math.PI / 180;
+            const cosC = Math.cos(psi + deltaRad);
+            candidates[c] = { power: s * cosC, pf: Math.abs(cosC) };
+        });
+        return { state: 'ok', candidates };
+    }
+
+    function updatePhasePreview(index, data) {
+        const el = document.getElementById(`phasePreview${index}`);
+        if (!el) return;
+
+        const channel = channelData[index];
+        const basePhase = channelData[0] ? channelData[0].phase : 1;
+        if (!channel || !channel.active || !isThreePhaseInstall() ||
+            !(channel.phase in PHASE_ANGLES_DEG) || !(basePhase in PHASE_ANGLES_DEG)) {
+            el.innerHTML = '';
+            return;
+        }
+
+        // Channel 0 carries the voltage reference: its phase defines the frame the
+        // other channels are measured in, so candidates for it are meaningless.
+        if (index == 0) {
+            el.innerHTML = 'Voltage reference &ndash; defines the phases of all other channels';
+            return;
+        }
+
+        const res = computePhaseCandidates(channel, basePhase, data);
+        if (res.state === 'noload') {
+            el.innerHTML = 'No load &ndash; phase preview unavailable';
+            return;
+        }
+        if (res.state === 'clamped') return; // transient, keep last preview
+
+        const bestPhase = [1, 2, 3].reduce((best, c) =>
+            res.candidates[c].pf > res.candidates[best].pf ? c : best, 1);
+        el.innerHTML = [1, 2, 3].map(c => {
+            const cand = res.candidates[c];
+            const text = `L${c}: ${cand.power.toFixed(1)} W (PF ${cand.pf.toFixed(2)})`;
+            return c === bestPhase ? `<strong>${text}</strong>` : text;
+        }).join('<br>');
+    }
+
     function startGlobalPowerUpdates() {
         // Stop any existing interval
         if (powerUpdateInterval) {
@@ -287,9 +379,18 @@
                     const powerElement = document.getElementById(`power${index}`);
                     
                     // Only show power if channel is active
-                    if (powerElement && channelData[index] && channelData[index].active && 
+                    if (powerElement && channelData[index] && channelData[index].active &&
                         channelMeterData.data && channelMeterData.data.activePower !== undefined) {
-                        powerElement.innerHTML = `${channelMeterData.data.activePower.toFixed(1)} W`;
+                        // Current and absolute PF only on a genuine reading: zeroed readings
+                        // (no-load / noise / clamp) have PF 0 by design, which carries no
+                        // information. PF sign carries inductive/capacitive in this firmware,
+                        // not flow direction (that is the sign of active power).
+                        const d = channelMeterData.data;
+                        const extraText = d.apparentPower > 0
+                            ? ` &middot; ${d.current.toFixed(3)} A &middot; PF ${Math.abs(d.powerFactor).toFixed(2)}`
+                            : '';
+                        powerElement.innerHTML = `${d.activePower.toFixed(1)} W${extraText}`;
+                        updatePhasePreview(index, channelMeterData.data);
                     } else if (powerElement && channelData[index] && !channelData[index].active) {
                         // Clear power display for inactive channels
                         powerElement.innerHTML = '';
@@ -337,6 +438,10 @@
         const powerElement = document.getElementById(`power${index}`);
         if (powerElement) {
             powerElement.innerHTML = '';
+        }
+        const previewElement = document.getElementById(`phasePreview${index}`);
+        if (previewElement) {
+            previewElement.innerHTML = '';
         }
     }
 
