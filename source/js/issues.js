@@ -50,7 +50,8 @@
         .issues-item.error { border-left-color: #dc3545; }
         .issues-item.warning { border-left-color: #fd7e14; }
         .issues-item.info { border-left-color: #0d6efd; }
-        .issues-item.resolved { opacity: 0.65; border-left-color: #6c757d !important; }
+        .issues-item.resolved { border-left-color: #6c757d !important; }
+        .issues-item.active-acked { background: #fff8f0; }
         .issues-item.resolving {
             overflow: hidden;
             animation: issues-resolve-out 0.6s ease forwards;
@@ -173,10 +174,12 @@
             }
             issues.forEach((issue) => {
                 const resolved = issue.state === 'cleared_unacked';
+                const activeAcked = issue.state === 'active_acked';
                 const channelText = issue.channel !== undefined ? ` &middot; channel ${issue.channel}` : '';
-                const stateText = resolved ? 'resolved, unseen' : (issue.state === 'active_acked' ? 'active, acknowledged' : 'active');
+                const stateText = resolved ? 'resolved, unseen' : (activeAcked ? 'active, acknowledged' : 'active');
+                const extraClass = resolved ? ' resolved' : activeAcked ? ' active-acked' : '';
                 html += `
-                    <div class="issues-item ${severityName(issue)}${resolved ? ' resolved' : ''}">
+                    <div class="issues-item ${severityName(issue)}${extraClass}">
                         <div class="issues-item-title">${SEVERITY_ICON[severityName(issue)] || ''} ${titleFor(issue)}</div>
                         <div class="issues-item-message">${issue.message || ''}</div>
                         <div class="issues-item-meta">
