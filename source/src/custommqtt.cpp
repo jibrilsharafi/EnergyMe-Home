@@ -227,12 +227,8 @@ namespace CustomMqtt
         return true;
     }
 
-    bool isEnabled()
-    {
-        CustomMqttConfiguration config;
-        if (!getConfiguration(config)) return false;
-        return config.enabled;
-    }
+    // Reading one aligned bool is atomic on the ESP32-S3 - no mutex or config copy needed
+    bool isEnabled() { return _isSetupDone && _configuration.enabled; }
 
     bool isConnected() { return _lastConnectedState; }
 

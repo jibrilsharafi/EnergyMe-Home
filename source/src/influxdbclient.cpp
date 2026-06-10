@@ -288,12 +288,8 @@ namespace InfluxDbClient
         return true;
     }
 
-    bool isEnabled()
-    {
-        InfluxDbConfiguration config;
-        if (!getConfiguration(config)) return false;
-        return config.enabled;
-    }
+    // Reading one aligned bool is atomic on the ESP32-S3 - no mutex or config copy needed
+    bool isEnabled() { return _isSetupDone && _configuration.enabled; }
 
     // Private function implementations
     // ================================
