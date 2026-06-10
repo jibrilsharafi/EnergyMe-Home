@@ -255,6 +255,18 @@ namespace IssueRegistry
             ChannelIssueFacts facts;
             if (!Ade7953::getChannelIssueFacts(ch, facts)) continue;
 
+            if (!Ade7953::isChannelActive(ch)) {
+                // Channel disabled: clear streak and force condition false so any
+                // existing mismatch instance resolves on the next tick.
+                _mismatchStreak[ch] = 0;
+                _prevEvidenceReads[ch] = facts.evidenceReads;
+                _prevClampedReads[ch] = facts.clampedEvidenceReads;
+                _prevFlipCount[ch] = facts.polarityFlipCount;
+                _updateInstance(IssueLogic::Code::ChannelPolarityMismatch, ch, false, "");
+                _updateInstance(IssueLogic::Code::CtPolarityFlipped, ch, false, "");
+                continue;
+            }
+
             // --- ct_polarity_flipped (event): pulse on a new flip, then the
             // instance lands in cleared-unacked and lingers until acked. Flips
             // that happened before the first tick (boot window) still pulse,
