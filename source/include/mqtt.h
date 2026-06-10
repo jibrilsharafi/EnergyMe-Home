@@ -132,6 +132,7 @@ namespace Mqtt
     // Cloud services methods
     void setCloudServicesEnabled(bool enabled);
     bool isCloudServicesEnabled();
+    bool isConnected(); // Connection fact for the issue registry (updated once per task loop)
     
     // Public methods for requesting MQTT publications
     void requestChannelPublish();

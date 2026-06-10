@@ -31,6 +31,10 @@ namespace Mqtt
     static uint32_t _mqttConnectionAttempt = 0;
     static uint64_t _nextMqttConnectionAttemptMillis = 0;
 
+    // Connection state fact for the issue registry, updated once per task loop
+    // (the registry tick must not call _clientMqtt.connected() cross-task)
+    static volatile bool _lastConnectedState = false;
+
     // Last publish timestamps
     static uint64_t _lastMillisMeterPublished = 0;
     static uint64_t _lastMillisSystemDynamicPublished = 0;
@@ -330,6 +334,8 @@ namespace Mqtt
     }
 
     bool isCloudServicesEnabled() { return _cloudServicesEnabled; }
+
+    bool isConnected() { return _lastConnectedState; }
 
     // Public methods for requesting MQTT publications
     // ===============================================
@@ -647,13 +653,16 @@ namespace Mqtt
         {
             TASK_HEARTBEAT(_mqttHeartbeat);
 
+            bool connectedNow = false;
             if (CustomWifi::isFullyConnected()) {
                 if (_clientMqtt.connected()) {
+                    connectedNow = true;
                     _handleConnectedState();
                 } else {
                     _handleConnecting();
                 }
             }
+            _lastConnectedState = connectedNow;
 
             // If we receive a signal to stop the task, we try to publish all the data and flushing the queues so we avoid losing data
             if (_lastLoopToPublishData) {
@@ -669,6 +678,7 @@ namespace Mqtt
         }
 
         _clientMqtt.disconnect();
+        _lastConnectedState = false;
         LOG_DEBUG("MQTT task stopping");
         _taskHandle = nullptr;
         vTaskDelete(nullptr);
