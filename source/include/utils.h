@@ -34,6 +34,7 @@
 #include "crashmonitor.h"
 #include "custommqtt.h"
 #include "influxdbclient.h"
+#include "issueregistry.h"
 #include "customserver.h"
 #include "modbustcp.h"
 #include "led.h"
