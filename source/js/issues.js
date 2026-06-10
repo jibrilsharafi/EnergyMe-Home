@@ -50,7 +50,16 @@
         .issues-item.error { border-left-color: #dc3545; }
         .issues-item.warning { border-left-color: #fd7e14; }
         .issues-item.info { border-left-color: #0d6efd; }
-        .issues-item.resolved { opacity: 0.65; }
+        .issues-item.resolved { opacity: 0.65; border-left-color: #6c757d !important; }
+        .issues-item.resolving {
+            overflow: hidden;
+            animation: issues-resolve-out 0.6s ease forwards;
+        }
+        @keyframes issues-resolve-out {
+            0%   { background: #d4edda; max-height: 200px; opacity: 1; margin-bottom: 8px; }
+            30%  { background: #d4edda; }
+            100% { max-height: 0; opacity: 0; padding-top: 0; padding-bottom: 0; margin-bottom: 0; }
+        }
         .issues-item-title { font-weight: bold; margin-bottom: 4px; }
         .issues-item-message { margin-bottom: 6px; word-break: break-word; }
         .issues-item-meta { color: #666; font-size: 12px; margin-bottom: 6px; }
@@ -124,12 +133,31 @@
             return;
         }
 
+        const active = summary.active || 0;
+        let badgeClass, badgeText;
+        if (unacked > 0) {
+            badgeClass = summary.maxUnackedSeverity || 'info';
+            badgeText = `${SEVERITY_ICON[badgeClass]} ${unacked}`;
+        } else if (active > 0) {
+            // All acked but problem(s) still live - retain severity color, don't imply "ok"
+            const issues = (data.issues || []).filter(i => i.state === 'active_acked');
+            const maxSev = issues.reduce((best, i) => {
+                return (SEVERITY_ORDER[i.severity] || 0) > (SEVERITY_ORDER[best] || 0) ? i.severity : best;
+            }, 'warning');
+            badgeClass = maxSev;
+            badgeText = `${SEVERITY_ICON[maxSev] || '⚠️'} ${active}`;
+        } else {
+            badgeClass = 'acked';
+            badgeText = `✓ ${total}`;
+        }
         badge.style.display = 'flex';
-        badge.className = 'issues-badge ' + (unacked > 0 ? (summary.maxUnackedSeverity || 'info') : 'acked');
-        badge.textContent = `${SEVERITY_ICON[summary.maxUnackedSeverity] || '✓'} ${unacked > 0 ? unacked : total}`;
+        badge.className = 'issues-badge ' + badgeClass;
+        badge.textContent = badgeText;
         badge.title = unacked > 0
             ? `${unacked} unacknowledged device issue(s) - click for details`
-            : `${total} acknowledged device issue(s) still active - click for details`;
+            : active > 0
+                ? `${active} acknowledged but still-active issue(s) - click for details`
+                : `${total} cleared issue(s) pending acknowledgement - click for details`;
     }
 
     function renderPanel(data) {
@@ -163,6 +191,8 @@
 
         panel.querySelectorAll('.issues-ack-button').forEach((button) => {
             button.addEventListener('click', async () => {
+                const card = button.closest('.issues-item');
+                const isResolved = card && card.classList.contains('resolved');
                 try {
                     if (button.dataset.ackAll) {
                         await window.energyApi.post('system/issues/ack', { all: true });
@@ -170,6 +200,10 @@
                         const body = { code: button.dataset.code };
                         if (button.dataset.channel !== '') body.channel = parseInt(button.dataset.channel, 10);
                         await window.energyApi.post('system/issues/ack', body);
+                    }
+                    if (isResolved && card && !button.dataset.ackAll) {
+                        card.classList.add('resolving');
+                        await new Promise(resolve => setTimeout(resolve, 600));
                     }
                     await poll();
                     if (panelOpen) renderPanel(lastData);
