@@ -123,6 +123,10 @@ namespace CustomWifi
     bool testConnectivity(); // Test actual network connectivity (check gateway and DNS)
     void forceReconnect();   // Force immediate WiFi reconnection
 
+    // Facts for the issue registry (RAM-cached at boot, safe to call cross-task).
+    // configured && !applied means the static IP fell back to DHCP this boot.
+    void getStaticIpFacts(bool &configured, bool &applied);
+
     void resetWifi();
     bool setCredentials(const char* ssid, const char* password); // Set new WiFi credentials and trigger reconnection
 

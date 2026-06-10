@@ -84,6 +84,10 @@ namespace CustomWifi
   static bool _staticBackstopCleared = false;
   static bool _staticRecoveryResolved = false;
   static uint8_t _staticInternetFailStreak = 0;
+  // _staticIpConfigured: a static IP was enabled in NVS at boot (issue-registry fact,
+  // cached here so the registry tick never reads NVS). configured && !applied means
+  // the device fell back to DHCP (backstop or invalid addresses).
+  static bool _staticIpConfigured = false;
 
   bool begin()
   {
@@ -145,6 +149,12 @@ namespace CustomWifi
 
     if (requireInternet) return _testConnectivity();
     return true;
+  }
+
+  void getStaticIpFacts(bool &configured, bool &applied)
+  {
+    configured = _staticIpConfigured;
+    applied = _staticIpApplied;
   }
 
   bool testConnectivity()
@@ -1358,6 +1368,7 @@ namespace CustomWifi
     if (!getConfiguration(config)) return;
 
     _staticIpApplied = false;
+    _staticIpConfigured = config.useStaticIp;
 
     if (!config.useStaticIp) {
       LOG_DEBUG("Using DHCP for IP configuration");
