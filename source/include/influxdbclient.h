@@ -117,6 +117,9 @@ namespace InfluxDbClient
     // Get runtime status
     bool getRuntimeStatus(char *statusBuffer, size_t statusSize, char *timestampBuffer, size_t timestampSize);
 
+    // Fact for the issue registry (RAM-derived, safe to call cross-task)
+    bool isEnabled();
+
     // Task information
     TaskInfo getTaskInfo();
 }

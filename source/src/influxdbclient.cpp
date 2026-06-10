@@ -288,6 +288,13 @@ namespace InfluxDbClient
         return true;
     }
 
+    bool isEnabled()
+    {
+        InfluxDbConfiguration config;
+        if (!getConfiguration(config)) return false;
+        return config.enabled;
+    }
+
     // Private function implementations
     // ================================
 
