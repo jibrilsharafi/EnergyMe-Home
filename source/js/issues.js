@@ -52,8 +52,11 @@
         .issues-item.error { border-left-color: #dc3545; }
         .issues-item.warning { border-left-color: #fd7e14; }
         .issues-item.info { border-left-color: #0d6efd; }
-        .issues-item.resolved { border-left-color: #6c757d !important; }
-        .issues-item.active-acked { background: #fff8f0; }
+        .issues-item.resolved { border-left-color: #6c757d !important; background: #fff !important; }
+        /* active-acked: keep the severity border, tint the card a light shade of the same color */
+        .issues-item.active-acked.error { background: #fdecea; }
+        .issues-item.active-acked.warning { background: #fff6e5; }
+        .issues-item.active-acked.info { background: #e7f1ff; }
         .issues-item.resolving {
             overflow: hidden;
             animation: issues-resolve-out 0.6s ease forwards;
