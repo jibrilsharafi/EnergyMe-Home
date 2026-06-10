@@ -48,7 +48,7 @@ namespace IssueRegistry
     void begin();
     void stop();
 
-    // REST support. issuesToJson fills {"issues":[...],"summary":{...}}.
+    // REST support. issuesToJson fills {"issues":[...]}; clients derive any counts.
     bool issuesToJson(JsonDocument &doc);
 
     // Acknowledge one instance (channel = ISSUE_GLOBAL_SCOPE for global codes).

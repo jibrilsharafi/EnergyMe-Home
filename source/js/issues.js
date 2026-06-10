@@ -130,39 +130,35 @@
     }
 
     function updateBadge(data) {
-        const summary = data.summary || {};
-        const total = summary.total || 0;
-        const unacked = summary.unacked || 0;
-
-        if (total === 0) {
+        const issues = (data && data.issues) || [];
+        if (issues.length === 0) {
             badge.style.display = 'none';
             return;
         }
 
-        const active = summary.active || 0;
-        // unacked covers both active_unacked AND cleared_unacked; split them to pick the right visual
-        const activeUnacked = (data.issues || []).filter(i => i.state === 'active_unacked').length;
-        const clearedUnacked = unacked - activeUnacked;
+        // Every visible issue is in exactly one of these three states
+        const activeUnacked = issues.filter(i => i.state === 'active_unacked');
+        const activeAcked = issues.filter(i => i.state === 'active_acked');
+        const clearedUnacked = issues.filter(i => i.state === 'cleared_unacked');
+
         let badgeClass, badgeText, badgeTitle;
-        if (activeUnacked > 0) {
+        if (activeUnacked.length > 0) {
             // Live problem not yet seen - alarming (red/yellow by severity)
-            badgeClass = summary.maxUnackedSeverity || 'info';
-            badgeText = `${SEVERITY_ICON[badgeClass]} ${activeUnacked}`;
-            badgeTitle = `${activeUnacked} active unacknowledged issue(s) - click for details`;
-        } else if (active > 0) {
+            const top = activeUnacked.reduce((best, i) =>
+                SEVERITY_ORDER[i.severity] > SEVERITY_ORDER[best.severity] ? i : best);
+            badgeClass = top.severity;
+            badgeText = `${SEVERITY_ICON[badgeClass]} ${activeUnacked.length}`;
+            badgeTitle = `${activeUnacked.length} active unacknowledged issue(s) - click for details`;
+        } else if (activeAcked.length > 0) {
             // All active issues acked but still happening - orange dot, not a new alarm
             badgeClass = 'active-acked';
-            badgeText = `${ACTIVE_ACKED_ICON} ${active}`;
-            badgeTitle = `${active} acknowledged but still-active issue(s) - click for details`;
-        } else if (clearedUnacked > 0) {
+            badgeText = `${ACTIVE_ACKED_ICON} ${activeAcked.length}`;
+            badgeTitle = `${activeAcked.length} acknowledged but still-active issue(s) - click for details`;
+        } else {
             // Everything resolved but user hasn't dismissed the notifications yet - grey
             badgeClass = 'acked';
-            badgeText = `✓ ${clearedUnacked}`;
-            badgeTitle = `${clearedUnacked} resolved issue(s) to dismiss - click for details`;
-        } else {
-            badgeClass = 'acked';
-            badgeText = `✓ ${total}`;
-            badgeTitle = `${total} issue(s) - click for details`;
+            badgeText = `✓ ${clearedUnacked.length}`;
+            badgeTitle = `${clearedUnacked.length} resolved issue(s) to dismiss - click for details`;
         }
         badge.style.display = 'flex';
         badge.className = 'issues-badge ' + badgeClass;

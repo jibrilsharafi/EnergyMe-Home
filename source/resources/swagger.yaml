@@ -526,12 +526,12 @@ paths:
   /api/v1/system/issues:
     get:
       summary: Get device issues
-      description: List current device issues (runtime-derived, ISA-18.2-lite lifecycle) with a summary. Issues disappear only when the condition is gone and the user acknowledged them.
+      description: List current device issues (runtime-derived, ISA-18.2-lite lifecycle). Issues disappear only when the condition is gone and the user acknowledged them.
       tags:
         - System
       responses:
         '200':
-          description: Device issues and summary
+          description: Device issues
           content:
             application/json:
               schema:
@@ -573,27 +573,7 @@ paths:
                         message:
                           type: string
                           description: Human-readable description
-                          example: "Channel 0: conducting but readings persistently negative and clamped to 0 W. The reverse flag and the physical CT orientation disagree - fix either."
-                  summary:
-                    type: object
-                    properties:
-                      total:
-                        type: integer
-                        description: Total visible issues
-                        example: 1
-                      unacked:
-                        type: integer
-                        description: Issues not yet acknowledged
-                        example: 1
-                      active:
-                        type: integer
-                        description: Issues whose condition is currently true
-                        example: 1
-                      maxUnackedSeverity:
-                        type: string
-                        enum: [info, warning, error]
-                        description: Highest severity among unacknowledged issues (omitted when none)
-                        example: "error"
+                          example: "Channel 0: readings persistently negative and clamped to 0 W. The reverse flag and the physical CT orientation disagree - fix either."
 
   /api/v1/system/issues/ack:
     post:

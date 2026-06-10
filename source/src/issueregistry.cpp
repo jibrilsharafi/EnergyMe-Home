@@ -118,10 +118,6 @@ namespace IssueRegistry
         // The table is tiny (a few KB): building the document under the mutex is
         // memory-only work; network serialization happens outside, on the copy.
         JsonArray issues = doc["issues"].to<JsonArray>();
-        uint32_t total = 0, unacked = 0, active = 0;
-        IssueLogic::Severity maxUnackedSeverity = IssueLogic::Severity::Info;
-        bool hasUnacked = false;
-
         for (uint8_t i = 0; i < ISSUE_MAX_INSTANCES; i++) {
             const IssueInstance &inst = _instances[i];
             if (!IssueLogic::isVisible(inst.state)) continue;
@@ -135,22 +131,7 @@ namespace IssueRegistry
             obj["lastChangeUnix"] = inst.lastChangeUnix;
             obj["occurrences"] = inst.occurrences;
             obj["message"] = inst.message;
-
-            total++;
-            if (IssueLogic::isActive(inst.state)) active++;
-            if (IssueLogic::isUnacked(inst.state)) {
-                unacked++;
-                IssueLogic::Severity sev = IssueLogic::codeSeverity(inst.code);
-                if (!hasUnacked || (uint8_t)sev > (uint8_t)maxUnackedSeverity) maxUnackedSeverity = sev;
-                hasUnacked = true;
-            }
         }
-
-        JsonObject summary = doc["summary"].to<JsonObject>();
-        summary["total"] = total;
-        summary["unacked"] = unacked;
-        summary["active"] = active;
-        if (hasUnacked) summary["maxUnackedSeverity"] = IssueLogic::severityToString(maxUnackedSeverity);
 
         releaseMutex(&_registryMutex);
         return true;
