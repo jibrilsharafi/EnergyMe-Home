@@ -15,6 +15,7 @@
     const POLL_INTERVAL_MS = 10000;
     const SEVERITY_ORDER = { info: 0, warning: 1, error: 2 };
     const SEVERITY_ICON = { info: 'ℹ️', warning: '⚠️', error: '🔴' };
+    const ACTIVE_ACKED_ICON = '🟠';
 
     let lastData = null;
     let panelOpen = false;
@@ -28,10 +29,11 @@
             font-family: inherit; font-size: 14px; font-weight: bold; color: #fff;
             box-shadow: 0 2px 6px rgba(0,0,0,0.25); user-select: none;
         }
-        .issues-badge.error { background-color: #dc3545; }
-        .issues-badge.warning { background-color: #fd7e14; }
-        .issues-badge.info { background-color: #0d6efd; }
-        .issues-badge.acked { background-color: #6c757d; }
+        .issues-badge.error { background-color: #dc3545; color: #fff; }
+        .issues-badge.warning { background-color: #ffc107; color: #333; }
+        .issues-badge.info { background-color: #0d6efd; color: #fff; }
+        .issues-badge.active-acked { background-color: #fd7e14; color: #fff; }
+        .issues-badge.acked { background-color: #6c757d; color: #fff; }
         .issues-overlay {
             position: fixed; inset: 0; z-index: 1001;
             display: none; background: rgba(0,0,0,0.4);
@@ -140,13 +142,9 @@
             badgeClass = summary.maxUnackedSeverity || 'info';
             badgeText = `${SEVERITY_ICON[badgeClass]} ${unacked}`;
         } else if (active > 0) {
-            // All acked but problem(s) still live - retain severity color, don't imply "ok"
-            const issues = (data.issues || []).filter(i => i.state === 'active_acked');
-            const maxSev = issues.reduce((best, i) => {
-                return (SEVERITY_ORDER[i.severity] || 0) > (SEVERITY_ORDER[best] || 0) ? i.severity : best;
-            }, 'warning');
-            badgeClass = maxSev;
-            badgeText = `${SEVERITY_ICON[maxSev] || '⚠️'} ${active}`;
+            // All acked but problem(s) still live - orange dot, not the severity color (not a new alarm)
+            badgeClass = 'active-acked';
+            badgeText = `${ACTIVE_ACKED_ICON} ${active}`;
         } else {
             badgeClass = 'acked';
             badgeText = `✓ ${total}`;
@@ -180,7 +178,7 @@
                 const extraClass = resolved ? ' resolved' : activeAcked ? ' active-acked' : '';
                 html += `
                     <div class="issues-item ${severityName(issue)}${extraClass}">
-                        <div class="issues-item-title">${SEVERITY_ICON[severityName(issue)] || ''} ${titleFor(issue)}</div>
+                        <div class="issues-item-title">${activeAcked ? ACTIVE_ACKED_ICON : (SEVERITY_ICON[severityName(issue)] || '')} ${titleFor(issue)}</div>
                         <div class="issues-item-message">${issue.message || ''}</div>
                         <div class="issues-item-meta">
                             ${stateText}${channelText} &middot; first seen ${formatTime(issue.firstSeenUnix)}
