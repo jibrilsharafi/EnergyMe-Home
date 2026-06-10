@@ -21,16 +21,17 @@
 #define ISSUE_REGISTRY_TASK_NAME "issue_reg_task"
 #define ISSUE_REGISTRY_TASK_STACK_SIZE (6 * 1024) // Internal RAM: the tick reads LittleFS usage (flash I/O)
 #define ISSUE_REGISTRY_TASK_PRIORITY 1
-#define ISSUE_REGISTRY_TICK_INTERVAL (15 * 1000)
+#define ISSUE_REGISTRY_TICK_INTERVAL (5 * 1000)
 
 // Instance table
 #define ISSUE_MAX_INSTANCES 32
 #define ISSUE_MESSAGE_BUFFER_SIZE 192 // Longest catalog message (channel mismatch with label) is ~160 chars
 #define ISSUE_GLOBAL_SCOPE 255 // channel value for globally-scoped codes
 
-// Hysteresis (windows are one tick long, ~15 s)
-#define ISSUE_STREAK_TO_RAISE 4              // ~1 min of sustained bad evidence
-#define ISSUE_CONNECTIVITY_STREAK_TO_RAISE 8 // ~2 min: rides out boot/reconnect blips
+// Hysteresis (windows are one tick long, ~5 s). The thresholds encode durations,
+// so they scale with the tick: the "over X s" messages derive from streak * tick.
+#define ISSUE_STREAK_TO_RAISE 12              // ~1 min of sustained bad evidence
+#define ISSUE_CONNECTIVITY_STREAK_TO_RAISE 24 // ~2 min: rides out boot/reconnect blips
 
 // Per-code thresholds
 #define ISSUE_MISMATCH_MIN_EVIDENCE_READS 4
@@ -40,7 +41,7 @@
 #define ISSUE_LITTLEFS_USED_FRACTION_CLEAR 0.85f
 #define ISSUE_VOLTAGE_TOLERANCE_FRACTION 0.10f
 #define ISSUE_FREQUENCY_TOLERANCE_HZ 1.0f
-#define ISSUE_ADE7953_FAILURES_PER_WINDOW 20
+#define ISSUE_ADE7953_FAILURES_PER_WINDOW 7 // failures in one ~5 s window to count as bad
 #define ISSUE_NTP_BOOT_GRACE_MS (5 * 60 * 1000)
 
 namespace IssueRegistry
