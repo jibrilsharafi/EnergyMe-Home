@@ -377,12 +377,15 @@
                     // Only show power if channel is active
                     if (powerElement && channelData[index] && channelData[index].active &&
                         channelMeterData.data && channelMeterData.data.activePower !== undefined) {
-                        // Absolute PF: in this firmware the PF sign carries inductive/capacitive,
-                        // not flow direction (that is the sign of active power)
-                        const pfText = channelMeterData.data.apparentPower > 0
-                            ? ` &middot; PF ${Math.abs(channelMeterData.data.powerFactor).toFixed(2)}`
+                        // Current and absolute PF only on a genuine reading: zeroed readings
+                        // (no-load / noise / clamp) have PF 0 by design, which carries no
+                        // information. PF sign carries inductive/capacitive in this firmware,
+                        // not flow direction (that is the sign of active power).
+                        const d = channelMeterData.data;
+                        const extraText = d.apparentPower > 0
+                            ? ` &middot; ${d.current.toFixed(3)} A &middot; PF ${Math.abs(d.powerFactor).toFixed(2)}`
                             : '';
-                        powerElement.innerHTML = `${channelMeterData.data.activePower.toFixed(1)} W${pfText}`;
+                        powerElement.innerHTML = `${d.activePower.toFixed(1)} W${extraText}`;
                         updatePhasePreview(index, channelMeterData.data);
                     } else if (powerElement && channelData[index] && !channelData[index].active) {
                         // Clear power display for inactive channels
