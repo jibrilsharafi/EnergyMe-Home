@@ -7,23 +7,34 @@
 
 namespace IssueLogic {
 
+// Issue catalog: one row per Code, indexed by the enum value. The static_assert
+// makes a missing row a compile error instead of a silent "unknown" fallback.
+struct CodeDescriptor {
+    const char* str;
+    Severity severity;
+};
+
+static constexpr CodeDescriptor CODE_TABLE[] = {
+    {"ct_polarity_flipped",         Severity::Info},    // Code::CtPolarityFlipped
+    {"channel_polarity_mismatch",   Severity::Error},   // Code::ChannelPolarityMismatch
+    {"custom_mqtt_connect_failed",  Severity::Error},   // Code::CustomMqttConnectFailed
+    {"cloud_mqtt_disconnected",     Severity::Warning}, // Code::CloudMqttDisconnected
+    {"influxdb_upload_failing",     Severity::Warning}, // Code::InfluxDbUploadFailing
+    {"ntp_not_synced",              Severity::Warning}, // Code::NtpNotSynced
+    {"panic_reboot",                Severity::Warning}, // Code::PanicReboot
+    {"safe_mode_active",            Severity::Error},   // Code::SafeModeActive
+    {"heap_low",                    Severity::Warning}, // Code::HeapLow
+    {"littlefs_near_full",          Severity::Warning}, // Code::LittleFsNearFull
+    {"voltage_out_of_range",        Severity::Warning}, // Code::VoltageOutOfRange
+    {"grid_frequency_out_of_range", Severity::Warning}, // Code::GridFrequencyOutOfRange
+    {"ade7953_read_failures",       Severity::Warning}, // Code::Ade7953ReadFailures
+};
+static_assert(sizeof(CODE_TABLE) / sizeof(CODE_TABLE[0]) == (size_t)Code::Count,
+              "every IssueLogic::Code needs a CODE_TABLE row");
+
 const char* codeToString(Code code) {
-    switch (code) {
-        case Code::CtPolarityFlipped:       return "ct_polarity_flipped";
-        case Code::ChannelPolarityMismatch: return "channel_polarity_mismatch";
-        case Code::CustomMqttConnectFailed: return "custom_mqtt_connect_failed";
-        case Code::CloudMqttDisconnected:   return "cloud_mqtt_disconnected";
-        case Code::InfluxDbUploadFailing:   return "influxdb_upload_failing";
-        case Code::NtpNotSynced:            return "ntp_not_synced";
-        case Code::PanicReboot:             return "panic_reboot";
-        case Code::SafeModeActive:          return "safe_mode_active";
-        case Code::HeapLow:                 return "heap_low";
-        case Code::LittleFsNearFull:        return "littlefs_near_full";
-        case Code::VoltageOutOfRange:       return "voltage_out_of_range";
-        case Code::GridFrequencyOutOfRange: return "grid_frequency_out_of_range";
-        case Code::Ade7953ReadFailures:     return "ade7953_read_failures";
-        default:                            return "unknown";
-    }
+    if ((uint8_t)code >= (uint8_t)Code::Count) return "unknown";
+    return CODE_TABLE[(uint8_t)code].str;
 }
 
 const char* severityToString(Severity severity) {
@@ -36,22 +47,8 @@ const char* severityToString(Severity severity) {
 }
 
 Severity codeSeverity(Code code) {
-    switch (code) {
-        case Code::CtPolarityFlipped:       return Severity::Info;
-        case Code::ChannelPolarityMismatch: return Severity::Error;
-        case Code::CustomMqttConnectFailed: return Severity::Error;
-        case Code::CloudMqttDisconnected:   return Severity::Warning;
-        case Code::InfluxDbUploadFailing:   return Severity::Warning;
-        case Code::NtpNotSynced:            return Severity::Warning;
-        case Code::PanicReboot:             return Severity::Warning;
-        case Code::SafeModeActive:          return Severity::Error;
-        case Code::HeapLow:                 return Severity::Warning;
-        case Code::LittleFsNearFull:        return Severity::Warning;
-        case Code::VoltageOutOfRange:       return Severity::Warning;
-        case Code::GridFrequencyOutOfRange: return Severity::Warning;
-        case Code::Ade7953ReadFailures:     return Severity::Warning;
-        default:                            return Severity::Warning;
-    }
+    if ((uint8_t)code >= (uint8_t)Code::Count) return Severity::Warning;
+    return CODE_TABLE[(uint8_t)code].severity;
 }
 
 Transition step(State current, bool conditionTrue) {
