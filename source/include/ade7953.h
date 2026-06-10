@@ -231,7 +231,7 @@
 // Guardrails and thresholds
 #define MAXIMUM_POWER_FACTOR_CLAMP 1.10f // Values above 1 but below this are still accepted (rounding errors and similar). I noticed I still had a lot of spurious readings with PF around 1.06-1.07 (mainly close to fridge activations, probably due to the compressor)
 #define MINIMUM_CURRENT_RATIO_THREE_PHASE_NO_LOAD 0.0005f // 5/10000 of the CT rating: below this the three-phase approximation reads as no-load (the hardware no-load feature only covers the base-phase energy registers)
-#define MINIMUM_CURRENT_RATIO_VALIDATION 0.001f // 10/10000 of the CT rating: below this, measurements are noise-dominated - zero the reading instead of invalidating it, and it carries no polarity-vote/boost information
+#define MINIMUM_CURRENT_RATIO_VALIDATION 0.001f // 10/10000 of the CT rating: below this, measurements are noise-dominated, so it carries no polarity-vote/boost information
 #define MINIMUM_POWER_FACTOR 0.10f // Measuring such low power factors is virtually impossible with such CTs
 #define POLARITY_DETECT_VOTE_THRESHOLD 5 // Net consistent-sign votes (over conducting samples) needed to decide CT orientation. Magnitude-independent, so a steady -4 W reversed CT is caught like a -4 kW one
 #define POLARITY_DETECT_MAX_CONDUCTING_READS 40 // Give up CT-reversal detection after this many CONDUCTING reads without a decision (only trips on a sign-oscillating channel; a no-load channel waits indefinitely)

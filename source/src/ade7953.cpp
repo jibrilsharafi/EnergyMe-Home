@@ -3654,7 +3654,7 @@ namespace Ade7953
 
         // Noise floors scale with the CT: a fixed threshold suited to a 30 A clamp is far
         // below the offset noise of a 100 A one (and too strict for a small one), so both
-        // thresholds are fractions of the channel's CT rating. At 30 A: 15 mA / 30 mA.
+        // thresholds are fractions of the channel's CT rating.
         float minCurrentThreePhaseNoLoad = channelData.ctSpecification.currentRating * MINIMUM_CURRENT_RATIO_THREE_PHASE_NO_LOAD;
         float minCurrentValidation = channelData.ctSpecification.currentRating * MINIMUM_CURRENT_RATIO_VALIDATION;
 
