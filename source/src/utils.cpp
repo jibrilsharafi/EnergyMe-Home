@@ -253,6 +253,11 @@ void systemStaticInfoToJson(SystemStaticInfo& info, JsonDocument &doc) {
     
     // Device
     doc["device"]["id"] = info.deviceId;
+#ifdef ENV_DEV
+    doc["device"]["devBuild"] = true;
+#else
+    doc["device"]["devBuild"] = false;
+#endif
 
     // Factory provisioning (Unknown / 0 when the device was not factory-provisioned)
     doc["factory"]["serialNumber"] = info.serialNumber;

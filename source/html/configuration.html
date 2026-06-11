@@ -60,7 +60,7 @@
                 height: 20px;
                 margin: 10px 0;
             }
-            
+
             .slider::-webkit-slider-thumb {
                 width: 30px;
                 height: 30px;
@@ -71,6 +71,47 @@
                 height: 30px;
             }
 
+        }
+
+        .portal-banner {
+            display: none;
+            margin-top: 18px;
+            padding: 14px 18px;
+            background: linear-gradient(135deg, rgba(8,191,129,0.08), rgba(3,160,155,0.13));
+            border: 1px solid rgba(8,191,129,0.28);
+            border-radius: 12px;
+        }
+
+        .portal-banner p {
+            margin: 0 0 12px 0;
+            font-size: 0.88em;
+            color: #555;
+        }
+
+        .portal-cta {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 9px 22px;
+            background: linear-gradient(135deg, #08bf81, #03a09b);
+            color: #fff;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: bold;
+            font-size: 0.92em;
+            box-shadow: 0 4px 14px rgba(8,191,129,0.32);
+            transition: box-shadow 0.18s ease, transform 0.18s ease;
+            letter-spacing: 0.01em;
+        }
+
+        .portal-cta:hover {
+            box-shadow: 0 6px 20px rgba(8,191,129,0.52);
+            transform: translateY(-1px);
+        }
+
+        .portal-cta:active {
+            transform: scale(0.97);
+            box-shadow: 0 2px 8px rgba(8,191,129,0.22);
         }
     </style>
 </head>
@@ -90,6 +131,12 @@
         <label for="cloudServices">Enable cloud services</label>
         <br><br>
         <button class="buttonForm" onclick="setCloudServices()" id="setCloudServicesButton">☁️ Set cloud services</button>
+        <div id="portalBanner" class="portal-banner">
+            <p>Ready to monitor remotely? Add this meter to your EnergyMe Portal.</p>
+            <a id="portalLink" href="#" target="_blank" rel="noopener noreferrer" class="portal-cta">
+                ☁️ Add to EnergyMe Portal &#8250;
+            </a>
+        </div>
     </div>
 
     <div class="section-box">
@@ -591,6 +638,30 @@
             }
         }
 
+        let _deviceId = '';
+        let _devBuild = false;
+
+        async function loadDeviceInfo() {
+            try {
+                const data = await energyApi.getSystemInfo();
+                _deviceId = (data.static && data.static.device && data.static.device.id) || '';
+                _devBuild = (data.static && data.static.device && data.static.device.devBuild) || false;
+                updatePortalLink();
+            } catch (error) {
+                console.log('Error loading device info: ' + error.message);
+            }
+        }
+
+        function updatePortalLink() {
+            const banner = document.getElementById('portalBanner');
+            if (!_deviceId) { banner.style.display = 'none'; return; }
+            const base = _devBuild
+                ? 'https://portal-dev.energyme.net'
+                : 'https://portal.energyme.net';
+            document.getElementById('portalLink').href = base + '/devices/claim?device_id=' + _deviceId;
+            banner.style.display = 'block';
+        }
+
         function getCloudServices() {
             energyApi.getMqttCloudServices()
                 .then(data => {
@@ -886,6 +957,9 @@
 
             try {
                 console.log("Loading configuration data sequentially...");
+
+                await loadDeviceInfo();
+                await delay(DELAY_BETWEEN_REQUESTS);
 
                 await getCloudServices();
                 await delay(DELAY_BETWEEN_REQUESTS);
