@@ -21,8 +21,12 @@ void tearDown(void) {}
 // Config values mirror the firmware defaults so the tests track real behaviour.
 static const WeightConfig WCFG = {0.4f, 0.4f, 0.1f, 1.5f, 2.0f};
 static const float MIN_A = 0.02f;              // validation threshold (firmware: CT rating * MINIMUM_CURRENT_RATIO_VALIDATION, e.g. 20 A * 0.001)
+static const float COND_MIN_A = 0.006f;        // conducting gate (firmware: CT rating * MINIMUM_CURRENT_RATIO_CONDUCTING, e.g. 20 A * 0.0003)
 static const PolarityConfig PCFG = {5, 50, MIN_A};
+static const PolarityConfig PCFG_SMALL = {5, 50, COND_MIN_A}; // mirrors firmware cfg after the small-load-polarity fix
 static const float COND_A = 1.0f;              // a nominal "real load" current (>= MIN_A)
+static const float SMALL_LOAD_A = 0.009f;      // between COND_MIN_A and MIN_A: a real small load that should now vote
+static const float NOISE_A = 0.004f;           // below COND_MIN_A: offset noise that must never vote
 
 // ============================================================================
 // updatePolarity
@@ -913,6 +917,67 @@ void test_low_current_noise_does_not_burn_the_bound(void) {
 }
 
 // ============================================================================
+// Small-load conducting gate (#180: MINIMUM_CURRENT_RATIO_CONDUCTING)
+// ============================================================================
+
+void test_small_reversed_load_flips_with_conducting_gate(void) {
+    // THE REGRESSION from #180: a ~2.5 W reversed load on a 30 A CT sits below
+    // MINIMUM_CURRENT_RATIO_VALIDATION (~7 W) but above MINIMUM_CURRENT_RATIO_CONDUCTING
+    // (~2 W). With the old PCFG it was non-conducting and read a constant 0 forever.
+    // With PCFG_SMALL (the firmware's new cfg) it must vote and flip within threshold reads.
+    PolarityState s{true, 0, 0};
+    // SMALL_LOAD_A (0.009) > COND_MIN_A (0.006) but < MIN_A (0.02)
+    PolarityAction action = PolarityAction::Continue;
+    for (int i = 0; i < 10; i++) {
+        PolarityResult r = updatePolarity(s, -2.5f, SMALL_LOAD_A, PCFG_SMALL);
+        s = r.state;
+        action = r.action;
+        if (action != PolarityAction::Continue) break;
+    }
+    TEST_ASSERT_EQUAL(PolarityAction::Flip, action);
+
+    // Same load is non-conducting (and therefore never votes) with the old strict gate.
+    PolarityState s2{true, 0, 0};
+    for (int i = 0; i < 100; i++) {
+        PolarityResult r = updatePolarity(s2, -2.5f, SMALL_LOAD_A, PCFG);
+        s2 = r.state;
+        TEST_ASSERT_EQUAL(PolarityAction::Continue, r.action);
+    }
+    TEST_ASSERT_TRUE(s2.armed);
+    TEST_ASSERT_EQUAL_INT8(0, s2.voteCount);
+}
+
+void test_noise_below_conducting_gate_does_not_vote(void) {
+    // Offset noise at NOISE_A (0.004 A) is below both gates. With PCFG_SMALL it must
+    // still produce no votes (the lower gate still excludes it).
+    PolarityState s{true, 0, 0};
+    for (int i = 0; i < 1000; i++) {
+        PolarityResult r = updatePolarity(s, 1.2f, NOISE_A, PCFG_SMALL);
+        s = r.state;
+        TEST_ASSERT_EQUAL(PolarityAction::Continue, r.action);
+    }
+    TEST_ASSERT_TRUE(s.armed);
+    TEST_ASSERT_EQUAL_INT8(0, s.voteCount);
+    TEST_ASSERT_EQUAL_UINT16(0, s.conductingReads);
+}
+
+void test_small_reversed_load_earns_armed_boost(void) {
+    // isConductingReading with the new lower gate must return true for SMALL_LOAD_A,
+    // so the WDRR armed boost fires and the channel resolves quickly.
+    bool conducting = isConductingReading(-2.5f, SMALL_LOAD_A, COND_MIN_A);
+    TEST_ASSERT_TRUE(conducting);
+
+    // The same reading is non-conducting under the old strict gate.
+    bool notConductingOld = isConductingReading(-2.5f, SMALL_LOAD_A, MIN_A);
+    TEST_ASSERT_FALSE(notConductingOld);
+
+    // Verify the boost is awarded when conducting=true under the new gate.
+    ChannelWeightInput in{true, 0.0f /*clamped*/, 0.0f, true /*armed*/, CHANNEL_ROLE_LOAD, conducting};
+    float w = computeChannelWeight(in, 0.0f, 0.0f, WCFG);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, WCFG.minBase + WCFG.armedBoost, w);
+}
+
+// ============================================================================
 // runner
 // ============================================================================
 
@@ -993,6 +1058,10 @@ int main(int, char **) {
     RUN_TEST(test_offset_noise_never_false_flips_unclamped_role);
     RUN_TEST(test_offset_noise_earns_no_boost);
     RUN_TEST(test_low_current_noise_does_not_burn_the_bound);
+
+    RUN_TEST(test_small_reversed_load_flips_with_conducting_gate);
+    RUN_TEST(test_noise_below_conducting_gate_does_not_vote);
+    RUN_TEST(test_small_reversed_load_earns_armed_boost);
 
     return UNITY_END();
 }
