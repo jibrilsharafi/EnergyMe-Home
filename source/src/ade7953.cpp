@@ -3656,7 +3656,7 @@ namespace Ade7953
         // below the offset noise of a 100 A one (and too strict for a small one), so both
         // thresholds are fractions of the channel's CT rating.
         float minCurrentThreePhaseNoLoad = channelData.ctSpecification.currentRating * MINIMUM_CURRENT_RATIO_THREE_PHASE_NO_LOAD;
-        float minCurrentValidation = channelData.ctSpecification.currentRating * MINIMUM_CURRENT_RATIO_VALIDATION;
+        float minCurrentConducting = channelData.ctSpecification.currentRating * MINIMUM_CURRENT_RATIO_CONDUCTING;
 
         // Split-phase 240V circuits use same-phase path (only 180° shift, so only the sign changes) so we can use the accurate energy registers, but accounting for a 2x multiplier
         bool isSplitPhase240 = (channelData.phase == PHASE_SPLIT_240);
@@ -3869,12 +3869,14 @@ namespace Ade7953
         // setChannelData arm/disarm is neither lost nor double-fired. (The unsynced
         // _pendingPolarityCheck pre-check is an atomic-bool fast path; it is re-tested
         // under the mutex before any state change.)
-        // Current-gate "conducting" so ADE7953 offset noise at ~0 A (a small, steady,
-        // signed power) cannot vote a false reversal on an unclamped role (grid/battery)
-        // or earn the armed boost. The same signal drives _lastConducting below, so the
-        // vote and the boost always agree on whether the channel is drawing power.
+        // Current-gate "conducting" with MINIMUM_CURRENT_RATIO_CONDUCTING (lower than the
+        // old MINIMUM_CURRENT_RATIO_VALIDATION) so small real loads (~2 W on a 30 A CT)
+        // still earn votes and the WDRR boost, while ADE7953 offset noise at near-zero
+        // current (consistent-sign but well below the gate) cannot vote a false reversal
+        // or hog the scheduler on an unclamped role (grid/battery). The same signal drives
+        // _lastConducting below, so the vote and the boost always agree.
         bool conducting = MeterLogic::isConductingReading(
-            activePower, current, minCurrentValidation);
+            activePower, current, minCurrentConducting);
 
         if (_channelData[channelIndex]._pendingPolarityCheck && conducting) {
             bool flipped = false;
@@ -3889,7 +3891,7 @@ namespace Ade7953
                     MeterLogic::PolarityConfig cfg{
                         POLARITY_DETECT_VOTE_THRESHOLD,
                         POLARITY_DETECT_MAX_CONDUCTING_READS,
-                        minCurrentValidation
+                        minCurrentConducting
                     };
                     MeterLogic::PolarityResult res = MeterLogic::updatePolarity(state, activePower, current, cfg);
                     _polarityVoteCount[channelIndex] = res.state.voteCount;
