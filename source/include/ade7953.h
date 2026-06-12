@@ -231,7 +231,7 @@
 // Guardrails and thresholds
 #define MAXIMUM_POWER_FACTOR_CLAMP 1.10f // Values above 1 but below this are still accepted (rounding errors and similar). I noticed I still had a lot of spurious readings with PF around 1.06-1.07 (mainly close to fridge activations, probably due to the compressor)
 #define MINIMUM_CURRENT_RATIO_THREE_PHASE_NO_LOAD 0.0005f // 5/10000 of the CT rating: below this the three-phase approximation reads as no-load (the hardware no-load feature only covers the base-phase energy registers)
-#define MINIMUM_CURRENT_RATIO_VALIDATION 0.001f // 10/10000 of the CT rating: reserved for reference; the polarity-vote and WDRR-boost paths now use MINIMUM_CURRENT_RATIO_CONDUCTING
+#define MINIMUM_CURRENT_RATIO_VALIDATION 0.001f // 10/10000 of the CT rating: validation-discard gate - an electrically invalid reading at this current is a genuine failure worth logging
 #define MINIMUM_CURRENT_RATIO_CONDUCTING 0.0003f // 3/10000 of the CT rating: gate for the polarity-vote and WDRR-armed-boost path. Sits above the ADE7953 offset-noise floor (~0 A consistent-sign bias) yet below real small loads (~2 W on a 30 A CT = ~9 mA). Lower than MINIMUM_CURRENT_RATIO_VALIDATION so a reversed 2-3 W load still earns votes and the armed boost instead of reading a constant 0.
 #define MINIMUM_POWER_FACTOR 0.10f // Measuring such low power factors is virtually impossible with such CTs
 #define POLARITY_DETECT_VOTE_THRESHOLD 5 // Net consistent-sign votes (over conducting samples) needed to decide CT orientation. Magnitude-independent, so a steady -4 W reversed CT is caught like a -4 kW one

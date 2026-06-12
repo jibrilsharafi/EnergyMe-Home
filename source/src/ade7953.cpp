@@ -3656,7 +3656,8 @@ namespace Ade7953
         // below the offset noise of a 100 A one (and too strict for a small one), so both
         // thresholds are fractions of the channel's CT rating.
         float minCurrentThreePhaseNoLoad = channelData.ctSpecification.currentRating * MINIMUM_CURRENT_RATIO_THREE_PHASE_NO_LOAD;
-        float minCurrentConducting = channelData.ctSpecification.currentRating * MINIMUM_CURRENT_RATIO_CONDUCTING;
+        float minCurrentValidation = channelData.ctSpecification.currentRating * MINIMUM_CURRENT_RATIO_VALIDATION;   // validation discard: a reading invalid at this current is a real failure
+        float minCurrentConducting  = channelData.ctSpecification.currentRating * MINIMUM_CURRENT_RATIO_CONDUCTING;  // polarity-vote / WDRR-boost gate: lower, catches small real loads
 
         // Split-phase 240V circuits use same-phase path (only 180° shift, so only the sign changes) so we can use the accurate energy registers, but accounting for a 2x multiplier
         bool isSplitPhase240 = (channelData.phase == PHASE_SPLIT_240);
