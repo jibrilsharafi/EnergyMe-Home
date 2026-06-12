@@ -654,7 +654,8 @@
 
         function updatePortalLink() {
             const banner = document.getElementById('portalBanner');
-            if (!_deviceId) { banner.style.display = 'none'; return; }
+            const cloudEnabled = document.getElementById('cloudServices').checked;
+            if (!_deviceId || !cloudEnabled) { banner.style.display = 'none'; return; }
             const base = _devBuild
                 ? 'https://portal-dev.energyme.net'
                 : 'https://portal.energyme.net';
@@ -666,6 +667,7 @@
             energyApi.getMqttCloudServices()
                 .then(data => {
                     document.getElementById("cloudServices").checked = data.enabled;
+                    updatePortalLink();
                 })
                 .catch(error => {
                     console.log("Error getting cloud services status. Response: " + error.message);
@@ -697,6 +699,7 @@
                 await energyApi.setMqttCloudServices(isEnabled);
 
                 showStatus('Cloud services updated', 'success');
+                updatePortalLink();
             } catch (error) {
                 showStatus('Error: ' + error.message, 'error');
             } finally {
