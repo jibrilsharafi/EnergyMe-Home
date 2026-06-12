@@ -74,7 +74,6 @@
         }
 
         .portal-banner {
-            display: none;
             margin-top: 18px;
             padding: 14px 18px;
             background: linear-gradient(135deg, rgba(8,191,129,0.08), rgba(3,160,155,0.13));
@@ -113,6 +112,14 @@
             transform: scale(0.97);
             box-shadow: 0 2px 8px rgba(8,191,129,0.22);
         }
+
+        .portal-cta-disabled {
+            background: linear-gradient(135deg, #b0b0b0, #c8c8c8);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+            opacity: 0.72;
+            pointer-events: none;
+            cursor: default;
+        }
     </style>
 </head>
 
@@ -131,10 +138,10 @@
         <label for="cloudServices">Enable cloud services</label>
         <br><br>
         <button class="buttonForm" onclick="setCloudServices()" id="setCloudServicesButton">☁️ Set cloud services</button>
-        <div id="portalBanner" class="portal-banner">
-            <p>Ready to monitor remotely? Add this meter to your EnergyMe Portal.</p>
-            <a id="portalLink" href="#" target="_blank" rel="noopener noreferrer" class="portal-cta">
-                ☁️ Add to EnergyMe Portal &#8250;
+        <div id="portalBanner" class="portal-banner" style="display:none">
+            <p id="portalMsg">Enable cloud services above to unlock remote monitoring on EnergyMe Portal.</p>
+            <a id="portalLink" href="#" target="_blank" rel="noopener noreferrer" class="portal-cta portal-cta-disabled">
+                &#128274; Add to EnergyMe Portal &#8250;
             </a>
         </div>
     </div>
@@ -640,6 +647,7 @@
 
         let _deviceId = '';
         let _devBuild = false;
+        let _cloudEnabled = false;
 
         async function loadDeviceInfo() {
             try {
@@ -654,19 +662,30 @@
 
         function updatePortalLink() {
             const banner = document.getElementById('portalBanner');
-            const cloudEnabled = document.getElementById('cloudServices').checked;
-            if (!_deviceId || !cloudEnabled) { banner.style.display = 'none'; return; }
-            const base = _devBuild
-                ? 'https://portal-dev.energyme.net'
-                : 'https://portal.energyme.net';
-            document.getElementById('portalLink').href = base + '/devices/claim?device_id=' + _deviceId;
+            if (!_deviceId) { banner.style.display = 'none'; return; }
             banner.style.display = 'block';
+            const link = document.getElementById('portalLink');
+            if (_cloudEnabled) {
+                const base = _devBuild
+                    ? 'https://portal-dev.energyme.net'
+                    : 'https://portal.energyme.net';
+                link.href = base + '/devices/claim?device_id=' + _deviceId;
+                link.classList.remove('portal-cta-disabled');
+                link.textContent = '☁️ Add to EnergyMe Portal ›';
+                document.getElementById('portalMsg').textContent = 'Ready to monitor remotely? Add this meter to your EnergyMe Portal.';
+            } else {
+                link.href = '#';
+                link.classList.add('portal-cta-disabled');
+                link.textContent = '🔒 Add to EnergyMe Portal ›';
+                document.getElementById('portalMsg').textContent = 'Enable cloud services above to unlock remote monitoring on EnergyMe Portal.';
+            }
         }
 
         function getCloudServices() {
             energyApi.getMqttCloudServices()
                 .then(data => {
                     document.getElementById("cloudServices").checked = data.enabled;
+                    _cloudEnabled = data.enabled;
                     updatePortalLink();
                 })
                 .catch(error => {
@@ -699,7 +718,7 @@
                 await energyApi.setMqttCloudServices(isEnabled);
 
                 showStatus('Cloud services updated', 'success');
-                updatePortalLink();
+                getCloudServices();
             } catch (error) {
                 showStatus('Error: ' + error.message, 'error');
             } finally {
