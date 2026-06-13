@@ -10,7 +10,7 @@
 //
 // Formats a millisecond count into the most readable unit:
 //   <1 s    ->  "850 ms"
-//   <60 s   ->  "2.4 s"   (one decimal)
+//   <60 s   ->  "2 s"
 //   <60 min ->  "3 min"
 //   <24 h   ->  "5 h"
 //   >=24 h  ->  "2 d"
