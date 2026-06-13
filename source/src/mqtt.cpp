@@ -2069,7 +2069,9 @@ namespace Mqtt
 
         // Monitor for stability period (here we just wait, rollback will occur automatically on failure)
         while (millis64() - validationStartTime < OTA_VALIDATION_TIMEOUT) {
-            LOG_DEBUG("OTA validation in progress - %llu ms remaining", OTA_VALIDATION_TIMEOUT + validationStartTime - millis64());
+            char otaRemainingHuman[24];
+            DurationFormat::humanizeDuration(OTA_VALIDATION_TIMEOUT + validationStartTime - millis64(), otaRemainingHuman, sizeof(otaRemainingHuman));
+            LOG_DEBUG("OTA validation in progress - %s remaining", otaRemainingHuman);
             delay(OTA_VALIDATION_CHECK_INTERVAL);
         }
 

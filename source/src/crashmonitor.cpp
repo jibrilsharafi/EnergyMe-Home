@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "crashmonitor.h"
+#include "duration_format.h"
 
 namespace CrashMonitor
 {
@@ -112,8 +113,11 @@ namespace CrashMonitor
         
         if (isQuickRestart) {
             _quickRestartCount++;
-            LOG_WARNING("Quick restart detected (#%lu): only %llu ms since last boot (threshold: %lu ms)", 
-                _quickRestartCount, timeSinceLastBoot, QUICK_RESTART_THRESHOLD);
+            char timeSinceLastBootHuman[24], thresholdHuman[24];
+            DurationFormat::humanizeDuration(timeSinceLastBoot, timeSinceLastBootHuman, sizeof(timeSinceLastBootHuman));
+            DurationFormat::humanizeDuration(QUICK_RESTART_THRESHOLD, thresholdHuman, sizeof(thresholdHuman));
+            LOG_WARNING("Quick restart detected (#%lu): only %s since last boot (threshold: %s)",
+                _quickRestartCount, timeSinceLastBootHuman, thresholdHuman);
             
             if (_quickRestartCount >= MAX_QUICK_RESTARTS) {
                 _safeModeActive = true;
@@ -126,8 +130,10 @@ namespace CrashMonitor
         } else {
             // Not a quick restart - reset quick restart counter (but keep crash/reset counters)
             if (_quickRestartCount > 0) {
-                LOG_DEBUG("Stable boot detected (%llu ms since last boot), resetting quick restart counter (was %lu)", 
-                    timeSinceLastBoot, _quickRestartCount);
+                char timeSinceLastBootHuman[24];
+                DurationFormat::humanizeDuration(timeSinceLastBoot, timeSinceLastBootHuman, sizeof(timeSinceLastBootHuman));
+                LOG_DEBUG("Stable boot detected (%s since last boot), resetting quick restart counter (was %lu)",
+                    timeSinceLastBootHuman, _quickRestartCount);
                 _quickRestartCount = 0;
                 // Note: We intentionally keep _consecutiveCrashCount and _consecutiveResetCount
                 // Those are reset by the separate _crashResetTask after COUNTERS_RESET_TIMEOUT
@@ -135,7 +141,9 @@ namespace CrashMonitor
             
             // Exit safe mode if we had a stable restart (user fixed the issue)
             if (_safeModeActive && timeSinceLastBoot >= SAFE_MODE_MIN_UPTIME) {
-                LOG_INFO("Exiting safe mode due to stable restart (%llu ms uptime)", timeSinceLastBoot);
+                char timeSinceLastBootHuman[24];
+                DurationFormat::humanizeDuration(timeSinceLastBoot, timeSinceLastBootHuman, sizeof(timeSinceLastBootHuman));
+                LOG_INFO("Exiting safe mode due to stable restart (%s uptime)", timeSinceLastBootHuman);
                 _safeModeActive = false;
             }
         }

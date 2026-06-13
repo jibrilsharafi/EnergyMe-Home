@@ -3,6 +3,7 @@
 
 #include "ade7953.h"
 #include "taskprofiler.h"
+#include "duration_format.h"
 
 namespace Ade7953
 {
@@ -1981,8 +1982,10 @@ namespace Ade7953
             
             // Safety timeout
             if (currentMicros - _captureStartMicros >= WAVEFORM_CAPTURE_MAX_DURATION_MICROS) {
-                LOG_WARNING("Waveform capture timeout after %llu ms, captured %u samples with %u zero crossings", 
-                    (currentMicros - _captureStartMicros) / 1000, _captureSampleCount, zeroCrossingCount);
+                char captureDurHuman[24];
+                DurationFormat::humanizeDuration((currentMicros - _captureStartMicros) / 1000, captureDurHuman, sizeof(captureDurHuman));
+                LOG_WARNING("Waveform capture timeout after %s, captured %u samples with %u zero crossings",
+                    captureDurHuman, _captureSampleCount, zeroCrossingCount);
                 break;
             }
             
@@ -2035,8 +2038,10 @@ namespace Ade7953
         uint64_t totalDurationMs = (micros64() - _captureStartMicros) / 1000;
         
         _captureState = CaptureState::COMPLETE;
-        LOG_INFO("Waveform capture complete for channel %u: %u samples in %llu ms with %u zero crossings", 
-            _captureChannel, _captureSampleCount, totalDurationMs, zeroCrossingCount);
+        char captureDurHuman[24];
+        DurationFormat::humanizeDuration(totalDurationMs, captureDurHuman, sizeof(captureDurHuman));
+        LOG_INFO("Waveform capture complete for channel %u: %u samples in %s with %u zero crossings",
+            _captureChannel, _captureSampleCount, captureDurHuman, zeroCrossingCount);
     }
 
     void _handleCrcChangeInterrupt() {
@@ -2368,7 +2373,9 @@ namespace Ade7953
 
             // Calculate milliseconds until next hour using CustomTime
             uint64_t msUntilNextHour = CustomTime::getMillisecondsUntilNextHour();
-            LOG_DEBUG("Waiting for %llu ms until next hour to save the hourly energy", msUntilNextHour);
+            char msUntilNextHourHuman[24];
+            DurationFormat::humanizeDuration(msUntilNextHour, msUntilNextHourHuman, sizeof(msUntilNextHourHuman));
+            LOG_DEBUG("Waiting for %s until next hour to save the hourly energy", msUntilNextHourHuman);
 
             // Wait for the calculated time or stop notification
             if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS((uint32_t)msUntilNextHour)) > 0) { // Needs to be casted to uint32_t otherwise it will crash
@@ -4258,7 +4265,9 @@ namespace Ade7953
         
         setSampleTime(sampleTime);
 
-        LOG_DEBUG("Loaded sample time %llu ms from preferences", sampleTime);
+        char sampleTimeHuman[24];
+        DurationFormat::humanizeDuration(sampleTime, sampleTimeHuman, sizeof(sampleTimeHuman));
+        LOG_DEBUG("Loaded sample time %s from preferences", sampleTimeHuman);
     }
 
     void _saveSampleTimeToPreferences() {
@@ -4270,7 +4279,9 @@ namespace Ade7953
         preferences.putULong64(CONFIG_SAMPLE_TIME_KEY, _sampleTime);
         preferences.end();
 
-        LOG_DEBUG("Saved sample time %llu ms to preferences", _sampleTime);
+        char sampleTimeHuman[24];
+        DurationFormat::humanizeDuration(_sampleTime, sampleTimeHuman, sizeof(sampleTimeHuman));
+        LOG_DEBUG("Saved sample time %s to preferences", sampleTimeHuman);
     }
 
     void _updateSampleTime() {
@@ -4287,7 +4298,9 @@ namespace Ade7953
         uint64_t calculatedLinecyc = _sampleTime * _lineFrequency * 2 / 1000;
         _setLinecyc((uint32_t)calculatedLinecyc);
 
-        LOG_DEBUG("Successfully updated sample time to %llu ms (%llu line cycles) with grid frequency %u Hz", _sampleTime, calculatedLinecyc, _lineFrequency);
+        char sampleTimeHuman[24];
+        DurationFormat::humanizeDuration(_sampleTime, sampleTimeHuman, sizeof(sampleTimeHuman));
+        LOG_DEBUG("Successfully updated sample time to %s (%llu line cycles) with grid frequency %u Hz", sampleTimeHuman, calculatedLinecyc, _lineFrequency);
     }
 
     // ADE7953 register reading functions
@@ -4362,7 +4375,9 @@ namespace Ade7953
     void _checkForTooManyFailures() {
         
         if (millis64() - _firstFailureTime > ADE7953_FAILURE_RESET_TIMEOUT_MS && _failureCount > 0) {
-            LOG_DEBUG("Failure timeout exceeded (%lu ms). Resetting failure count (reached %d)", millis64() - _firstFailureTime, _failureCount);
+            char failureDurHuman[24];
+            DurationFormat::humanizeDuration(millis64() - _firstFailureTime, failureDurHuman, sizeof(failureDurHuman));
+            LOG_DEBUG("Failure timeout exceeded (%s). Resetting failure count (reached %d)", failureDurHuman, _failureCount);
             
             _failureCount = 0;
             _firstFailureTime = 0;
@@ -4396,8 +4411,10 @@ namespace Ade7953
 
     void _checkForTooManyCriticalFailures() {
         if (millis64() - _firstCriticalFailureTime > ADE7953_CRITICAL_FAILURE_RESET_TIMEOUT_MS && _criticalFailureCount > 0) {
-            LOG_DEBUG("Critical failure timeout exceeded (%llu ms). Resetting critical failure count (reached %lu)", 
-                millis64() - _firstCriticalFailureTime, _criticalFailureCount);
+            char critFailDurHuman[24];
+            DurationFormat::humanizeDuration(millis64() - _firstCriticalFailureTime, critFailDurHuman, sizeof(critFailDurHuman));
+            LOG_DEBUG("Critical failure timeout exceeded (%s). Resetting critical failure count (reached %lu)",
+                critFailDurHuman, _criticalFailureCount);
             
             _criticalFailureCount = 0;
             _firstCriticalFailureTime = 0;
@@ -4621,9 +4638,11 @@ namespace Ade7953
         if (starvedChannel != INVALID_CHANNEL) {
             // Can happen with high-power channels alongside static 0 W ones, so it is
             // not an error per se (hence DEBUG level).
+            char starvedGapHuman[24];
+            DurationFormat::humanizeDuration(starvedGap, starvedGapHuman, sizeof(starvedGapHuman));
             LOG_DEBUG(
-                "%s (%u): scheduler starvation, %llu ms since last read; force-picking",
-                _channelData[starvedChannel].label, starvedChannel, starvedGap
+                "%s (%u): scheduler starvation, %s since last read; force-picking",
+                _channelData[starvedChannel].label, starvedChannel, starvedGapHuman
             );
             _channelDeficit[starvedChannel] = 0.0f;
             return starvedChannel;

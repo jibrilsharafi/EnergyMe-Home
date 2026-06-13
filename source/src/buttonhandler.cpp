@@ -3,6 +3,7 @@
 
 #include "buttonhandler.h"
 #include "taskprofiler.h"
+#include "duration_format.h"
 
 namespace ButtonHandler
 {
@@ -142,7 +143,9 @@ namespace ButtonHandler
                 {
                     // Button was released - process the press
                     uint64_t pressDuration = millis64() - _buttonPressStartTime;
-                    LOG_DEBUG("Button released after %llu ms", pressDuration);
+                    char pressDurationHuman[24];
+                    DurationFormat::humanizeDuration(pressDuration, pressDurationHuman, sizeof(pressDurationHuman));
+                    LOG_DEBUG("Button released after %s", pressDurationHuman);
 
                     _processButtonPress(pressDuration);
                     _buttonPressStartTime = ZERO_START_TIME;
@@ -197,7 +200,9 @@ namespace ButtonHandler
         else
         {
             _currentPressType = ButtonPressType::NONE;
-            LOG_DEBUG("Button press duration %llu ms - no action", pressDuration);
+            char pressDurationHuman[24];
+            DurationFormat::humanizeDuration(pressDuration, pressDurationHuman, sizeof(pressDurationHuman));
+            LOG_DEBUG("Button press duration %s - no action", pressDurationHuman);
         }
     }
 

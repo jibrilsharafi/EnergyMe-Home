@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "customtime.h"
+#include "duration_format.h"
 
 namespace CustomTime {
     // Static variables to maintain state
@@ -39,14 +40,18 @@ namespace CustomTime {
         uint64_t millisUntilNextHour = 3600000ULL - millisSinceCurrentHour;
 
         // Check if we're close to either the current hour (just passed) or the next hour (approaching)
+        char toleranceHuman[24], sinceHourHuman[24], untilNextHuman[24];
+        DurationFormat::humanizeDuration(toleranceMillis, toleranceHuman, sizeof(toleranceHuman));
         if (millisSinceCurrentHour <= toleranceMillis) {
-            LOG_DEBUG("Current time is close to the current hour (within %llu ms since hour start)", toleranceMillis);
+            LOG_DEBUG("Current time is close to the current hour (within %s since hour start)", toleranceHuman);
             return true;
         } else if (millisUntilNextHour <= toleranceMillis) {
-            LOG_DEBUG("Current time is close to the next hour (within %llu ms)", toleranceMillis);
+            LOG_DEBUG("Current time is close to the next hour (within %s)", toleranceHuman);
             return true;
         } else {
-            LOG_DEBUG("Current time is not close to any hour (since hour: %llu ms, until next: %llu ms)", millisSinceCurrentHour, millisUntilNextHour);
+            DurationFormat::humanizeDuration(millisSinceCurrentHour, sinceHourHuman, sizeof(sinceHourHuman));
+            DurationFormat::humanizeDuration(millisUntilNextHour, untilNextHuman, sizeof(untilNextHuman));
+            LOG_DEBUG("Current time is not close to any hour (since hour: %s, until next: %s)", sinceHourHuman, untilNextHuman);
             return false;
         }
     }
