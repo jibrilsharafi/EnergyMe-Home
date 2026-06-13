@@ -3,6 +3,7 @@
 
 #include "mqtt.h"
 #include "taskprofiler.h"
+#include "duration_format.h"
 
 namespace Mqtt
 {
@@ -1514,7 +1515,9 @@ namespace Mqtt
 
             uint64_t backoffDelay = calculateExponentialBackoff(_mqttConnectionAttempt, MQTT_INITIAL_RETRY_INTERVAL, MQTT_MAX_RETRY_INTERVAL, MQTT_RETRY_MULTIPLIER);
             _nextMqttConnectionAttemptMillis = millis64() + backoffDelay;
-            LOG_WARNING("Failed to connect to MQTT (attempt %lu). Reason: %s. Next attempt in %llu ms", _mqttConnectionAttempt, _getMqttStateReason(currentState), backoffDelay);
+            char backoffHuman[24];
+            DurationFormat::humanizeDuration(backoffDelay, backoffHuman, sizeof(backoffHuman));
+            LOG_WARNING("Failed to connect to MQTT (attempt %lu). Reason: %s. Next attempt in %s", _mqttConnectionAttempt, _getMqttStateReason(currentState), backoffHuman);
 
             return false;
         }

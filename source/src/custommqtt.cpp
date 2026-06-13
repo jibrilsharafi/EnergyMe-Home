@@ -3,6 +3,7 @@
 
 #include "custommqtt.h"
 #include "taskprofiler.h"
+#include "duration_format.h"
 
 namespace CustomMqtt
 {
@@ -472,14 +473,16 @@ namespace CustomMqtt
             uint64_t _backoffDelay = calculateExponentialBackoff(_currentMqttConnectionAttempt, MQTT_CUSTOM_INITIAL_RECONNECT_INTERVAL, MQTT_CUSTOM_MAX_RECONNECT_INTERVAL, MQTT_CUSTOM_RECONNECT_MULTIPLIER);
             _nextMqttConnectionAttemptMillis = millis64() + _backoffDelay;
 
-            snprintf(_status, sizeof(_status), "Connection failed: %s (Attempt %lu). Retrying in %llu ms", _reason, _currentMqttConnectionAttempt, _backoffDelay);
+            char _backoffHuman[24];
+            DurationFormat::humanizeDuration(_backoffDelay, _backoffHuman, sizeof(_backoffHuman));
+            snprintf(_status, sizeof(_status), "Connection failed: %s (Attempt %lu). Retrying in %s", _reason, _currentMqttConnectionAttempt, _backoffHuman);
             _statusTimestampUnix = CustomTime::getUnixTime();
 
-            LOG_WARNING("Failed to connect to Custom MQTT (attempt %lu). Reason: %s (%ld). Retrying in %llu ms", 
+            LOG_WARNING("Failed to connect to Custom MQTT (attempt %lu). Reason: %s (%ld). Retrying in %s",
                            _currentMqttConnectionAttempt,
                            _reason,
                            currentState,
-                           _nextMqttConnectionAttemptMillis - millis64());
+                           _backoffHuman);
 
             return false;
         }
