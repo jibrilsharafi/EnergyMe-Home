@@ -3,6 +3,7 @@
 
 #include "influxdbclient.h"
 #include "taskprofiler.h"
+#include "duration_format.h"
 
 namespace InfluxDbClient
 {
@@ -677,7 +678,9 @@ namespace InfluxDbClient
             snprintf(_status, sizeof(_status), "Failed to send data (HTTP %ld - %s) - Attempt %u", httpCode, httpStatus, _currentSendAttempt);
             _statusTimestampUnix = CustomTime::getUnixTime();
 
-            LOG_WARNING("Failed to send data to InfluxDB (HTTP %ld - %s). Next attempt in %llu ms", httpCode, httpStatus, _nextSendAttemptMillis - millis64());
+            char backoffHuman[24];
+            DurationFormat::humanizeDuration(backoffDelay, backoffHuman, sizeof(backoffHuman));
+            LOG_WARNING("Failed to send data to InfluxDB (HTTP %ld - %s). Next attempt in %s", httpCode, httpStatus, backoffHuman);
         }
         
         _statusTimestampUnix = CustomTime::getUnixTime();

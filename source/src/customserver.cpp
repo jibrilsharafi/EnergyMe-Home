@@ -3,6 +3,7 @@
 
 #include "customserver.h"
 #include "taskprofiler.h"
+#include "duration_format.h"
 
 namespace CustomServer
 {
@@ -2014,7 +2015,9 @@ namespace CustomServer
 
                 if (Ade7953::setSampleTime(sampleTime))
                 {
-                    LOG_INFO("ADE7953 sample time updated to %lu ms via API", sampleTime);
+                    char sampleTimeHuman[24];
+                    DurationFormat::humanizeDuration(sampleTime, sampleTimeHuman, sizeof(sampleTimeHuman));
+                    LOG_INFO("ADE7953 sample time updated to %s via API", sampleTimeHuman);
                     _sendSuccessResponse(request, "ADE7953 sample time updated successfully");
                 }
                 else

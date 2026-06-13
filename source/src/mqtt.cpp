@@ -3,6 +3,7 @@
 
 #include "mqtt.h"
 #include "taskprofiler.h"
+#include "duration_format.h"
 
 namespace Mqtt
 {
@@ -1514,7 +1515,9 @@ namespace Mqtt
 
             uint64_t backoffDelay = calculateExponentialBackoff(_mqttConnectionAttempt, MQTT_INITIAL_RETRY_INTERVAL, MQTT_MAX_RETRY_INTERVAL, MQTT_RETRY_MULTIPLIER);
             _nextMqttConnectionAttemptMillis = millis64() + backoffDelay;
-            LOG_WARNING("Failed to connect to MQTT (attempt %lu). Reason: %s. Next attempt in %llu ms", _mqttConnectionAttempt, _getMqttStateReason(currentState), backoffDelay);
+            char backoffHuman[24];
+            DurationFormat::humanizeDuration(backoffDelay, backoffHuman, sizeof(backoffHuman));
+            LOG_WARNING("Failed to connect to MQTT (attempt %lu). Reason: %s. Next attempt in %s", _mqttConnectionAttempt, _getMqttStateReason(currentState), backoffHuman);
 
             return false;
         }
@@ -2066,7 +2069,9 @@ namespace Mqtt
 
         // Monitor for stability period (here we just wait, rollback will occur automatically on failure)
         while (millis64() - validationStartTime < OTA_VALIDATION_TIMEOUT) {
-            LOG_DEBUG("OTA validation in progress - %llu ms remaining", OTA_VALIDATION_TIMEOUT + validationStartTime - millis64());
+            char otaRemainingHuman[24];
+            DurationFormat::humanizeDuration(OTA_VALIDATION_TIMEOUT + validationStartTime - millis64(), otaRemainingHuman, sizeof(otaRemainingHuman));
+            LOG_DEBUG("OTA validation in progress - %s remaining", otaRemainingHuman);
             delay(OTA_VALIDATION_CHECK_INTERVAL);
         }
 

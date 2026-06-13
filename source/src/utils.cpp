@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "utils.h"
+#include "duration_format.h"
 
 #include "taskprofiler.h"
 
@@ -560,7 +561,9 @@ static void _startFailsafeTimer() {
     };
     if (esp_timer_create(&timerArgs, &_failsafeTimer) == ESP_OK) {
         esp_timer_start_once(_failsafeTimer, SYSTEM_RESTART_FAILSAFE_TIMEOUT * 1000ULL); // Convert ms to us
-        LOG_DEBUG("Failsafe restart timer started (%d ms)", SYSTEM_RESTART_FAILSAFE_TIMEOUT);
+        char failsafeHuman[24];
+        DurationFormat::humanizeDuration((uint64_t)SYSTEM_RESTART_FAILSAFE_TIMEOUT, failsafeHuman, sizeof(failsafeHuman));
+        LOG_DEBUG("Failsafe restart timer started (%s)", failsafeHuman);
     } else {
         LOG_WARNING("Failed to create failsafe timer - restart may hang if blocked");
     }
@@ -688,9 +691,11 @@ void printDeviceStatusDynamic()
     populateSystemDynamicInfo(*info);
 
     LOG_DEBUG("--- Dynamic System Info ---");
+    char uptimeHuman[24];
+    DurationFormat::humanizeDuration(info->uptimeMilliseconds, uptimeHuman, sizeof(uptimeHuman));
     LOG_DEBUG(
-        "Uptime: %llu s (%llu ms) | Timestamp: %s | Temperature: %.2f C", 
-        info->uptimeSeconds, info->uptimeMilliseconds, info->currentTimestampIso, info->temperatureCelsius
+        "Uptime: %s | Timestamp: %s | Temperature: %.2f C",
+        uptimeHuman, info->currentTimestampIso, info->temperatureCelsius
     );
 
     LOG_DEBUG("Heap: %lu total, %lu free (%.1f%%), %lu used (%.1f%%), %lu min free, %lu max alloc",  
