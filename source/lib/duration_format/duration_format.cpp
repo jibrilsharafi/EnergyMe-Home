@@ -17,7 +17,7 @@ void humanizeDuration(uint64_t ms, char *out, size_t outSize) {
     if (ms < MS_PER_S) {
         snprintf(out, outSize, "%llu ms", (unsigned long long)ms);
     } else if (ms < MS_PER_MIN) {
-        snprintf(out, outSize, "%.1f s", (double)ms / MS_PER_S);
+        snprintf(out, outSize, "%llu s", (unsigned long long)(ms / MS_PER_S));
     } else if (ms < MS_PER_H) {
         snprintf(out, outSize, "%llu min", (unsigned long long)(ms / MS_PER_MIN));
     } else if (ms < MS_PER_D) {

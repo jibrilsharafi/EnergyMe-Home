@@ -45,34 +45,34 @@ void test_999_ms(void) {
 // Seconds range  (1000 ms .. 59999 ms)
 // ============================================================================
 
-void test_1000_ms_is_1_0_s(void) {
+void test_1000_ms_is_1_s(void) {
     char buf[32];
     humanizeDuration(1000, buf, sizeof(buf));
-    TEST_ASSERT_EQUAL_STRING("1.0 s", buf);
+    TEST_ASSERT_EQUAL_STRING("1 s", buf);
 }
 
-void test_1500_ms_is_1_5_s(void) {
+void test_1500_ms_is_1_s(void) {
     char buf[32];
     humanizeDuration(1500, buf, sizeof(buf));
-    TEST_ASSERT_EQUAL_STRING("1.5 s", buf);
+    TEST_ASSERT_EQUAL_STRING("1 s", buf);
 }
 
-void test_2400_ms_is_2_4_s(void) {
+void test_2400_ms_is_2_s(void) {
     char buf[32];
     humanizeDuration(2400, buf, sizeof(buf));
-    TEST_ASSERT_EQUAL_STRING("2.4 s", buf);
+    TEST_ASSERT_EQUAL_STRING("2 s", buf);
 }
 
-void test_10000_ms_is_10_0_s(void) {
+void test_10000_ms_is_10_s(void) {
     char buf[32];
     humanizeDuration(10000, buf, sizeof(buf));
-    TEST_ASSERT_EQUAL_STRING("10.0 s", buf);
+    TEST_ASSERT_EQUAL_STRING("10 s", buf);
 }
 
-void test_59999_ms_is_60_0_s(void) {
+void test_59999_ms_is_59_s(void) {
     char buf[32];
     humanizeDuration(59999, buf, sizeof(buf));
-    TEST_ASSERT_EQUAL_STRING("60.0 s", buf);
+    TEST_ASSERT_EQUAL_STRING("59 s", buf);
 }
 
 // ============================================================================
@@ -179,11 +179,11 @@ int main(int argc, char **argv) {
     RUN_TEST(test_850_ms);
     RUN_TEST(test_999_ms);
 
-    RUN_TEST(test_1000_ms_is_1_0_s);
-    RUN_TEST(test_1500_ms_is_1_5_s);
-    RUN_TEST(test_2400_ms_is_2_4_s);
-    RUN_TEST(test_10000_ms_is_10_0_s);
-    RUN_TEST(test_59999_ms_is_60_0_s);
+    RUN_TEST(test_1000_ms_is_1_s);
+    RUN_TEST(test_1500_ms_is_1_s);
+    RUN_TEST(test_2400_ms_is_2_s);
+    RUN_TEST(test_10000_ms_is_10_s);
+    RUN_TEST(test_59999_ms_is_59_s);
 
     RUN_TEST(test_60000_ms_is_1_min);
     RUN_TEST(test_3_min);
