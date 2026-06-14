@@ -66,6 +66,8 @@ jobs:
         mkdir -p release
         cp .pio/build/esp32s3-prod/firmware.bin release/energyme_home_${{ steps.version.outputs.VERSION }}.bin
         cp .pio/build/esp32s3-prod/firmware.elf release/energyme_home_${{ steps.version.outputs.VERSION }}.elf
+        cp .pio/build/esp32s3-prod/bootloader.bin release/energyme_home_${{ steps.version.outputs.VERSION }}_bootloader.bin
+        cp .pio/build/esp32s3-prod/partitions.bin release/energyme_home_${{ steps.version.outputs.VERSION }}_partitions.bin
 
     - name: Create draft GitHub Release
       uses: softprops/action-gh-release@v2
@@ -76,6 +78,8 @@ jobs:
         files: |
           source/release/energyme_home_${{ steps.version.outputs.VERSION }}.bin
           source/release/energyme_home_${{ steps.version.outputs.VERSION }}.elf
+          source/release/energyme_home_${{ steps.version.outputs.VERSION }}_bootloader.bin
+          source/release/energyme_home_${{ steps.version.outputs.VERSION }}_partitions.bin
 
     - name: Release summary
       run: |
@@ -87,5 +91,7 @@ jobs:
         echo "📄 Assets:" >> $GITHUB_STEP_SUMMARY
         echo "  - \`energyme_home_${{ steps.version.outputs.VERSION }}.bin\`" >> $GITHUB_STEP_SUMMARY
         echo "  - \`energyme_home_${{ steps.version.outputs.VERSION }}.elf\`" >> $GITHUB_STEP_SUMMARY
+        echo "  - \`energyme_home_${{ steps.version.outputs.VERSION }}_bootloader.bin\`" >> $GITHUB_STEP_SUMMARY
+        echo "  - \`energyme_home_${{ steps.version.outputs.VERSION }}_partitions.bin\`" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "👉 Open the draft on GitHub, write notes, optionally tick prerelease, then Publish." >> $GITHUB_STEP_SUMMARY
