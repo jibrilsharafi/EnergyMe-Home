@@ -677,7 +677,7 @@ namespace InfluxDbClient
 
             char backoffHuman[24];
             DurationFormat::humanizeDuration(backoffDelay, backoffHuman, sizeof(backoffHuman));
-            snprintf(_status, sizeof(_status), "Failed to send data (HTTP %ld - %s) - Attempt %u. Retrying in %s", httpCode, httpStatus, _currentSendAttempt, backoffHuman);
+            snprintf(_status, sizeof(_status), "Failed to send data (HTTP %ld - %s) (Attempt %u). Retrying in %s", httpCode, httpStatus, _currentSendAttempt, backoffHuman);
             _statusTimestampUnix = CustomTime::getUnixTime();
 
             LOG_WARNING("Failed to send data to InfluxDB (HTTP %ld - %s). Next attempt in %s", httpCode, httpStatus, backoffHuman);

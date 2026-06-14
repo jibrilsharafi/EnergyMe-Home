@@ -439,13 +439,13 @@
         const AUTO_RELOAD_INTERVAL_MS = 5000;
 
         function timeAgo(isoString) {
-            if (!isoString) return "";
+            if (!isoString) return "N/A";
             const diffMs = Date.now() - new Date(isoString).getTime();
-            if (isNaN(diffMs) || diffMs < 0) return "";
-            if (diffMs < 60000) return " (" + Math.floor(diffMs / 1000) + " s ago)";
-            if (diffMs < 3600000) return " (" + Math.floor(diffMs / 60000) + " min ago)";
-            if (diffMs < 86400000) return " (" + Math.floor(diffMs / 3600000) + " h ago)";
-            return " (" + Math.floor(diffMs / 86400000) + " d ago)";
+            if (isNaN(diffMs) || diffMs < 0) return isoString;
+            if (diffMs < 60000) return Math.floor(diffMs / 1000) + " s ago";
+            if (diffMs < 3600000) return Math.floor(diffMs / 60000) + " min ago";
+            if (diffMs < 86400000) return Math.floor(diffMs / 3600000) + " h ago";
+            return Math.floor(diffMs / 86400000) + " d ago";
         }
 
         // ============================================================================
@@ -535,7 +535,7 @@
             }
 
             statusElement.textContent = status || "N/A";
-            timestampElement.textContent = (timestamp || "N/A") + timeAgo(timestamp);
+            timestampElement.textContent = timeAgo(timestamp);
 
             if (status === "Connected") {
                 timestampContainer.style.display = "none";
@@ -619,7 +619,7 @@
 
             // If enabled, proceed with normal status display
             statusElement.textContent = status || "N/A";
-            timestampElement.textContent = (timestamp || "N/A") + timeAgo(timestamp);
+            timestampElement.textContent = timeAgo(timestamp);
 
             // Show/hide timestamp based on connection status
             if (status === "Data sent successfully") {
