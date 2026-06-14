@@ -17,6 +17,8 @@ jobs:
   build-check:
     runs-on: ubuntu-latest
     name: Build Check (${{ matrix.env }})
+    permissions:
+      contents: read
     if: github.event_name == 'pull_request'
     strategy:
       fail-fast: false
@@ -80,6 +82,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     name: Build (${{ matrix.env }})
+    permissions:
+      contents: read
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/development')
     strategy:
       fail-fast: false

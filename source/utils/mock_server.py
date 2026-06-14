@@ -63,17 +63,26 @@ GET_ENDPOINTS = [
 ]
 
 
-def get_mock_file_path(api_path: str) -> str:
-    """Convert API path to mock file path."""
-    # Remove leading slash and add .json extension
-    # /api/v1/system/info -> mocks/api/v1/system/info.json
+def _safe_join(base_dir: str, relative_path: str):
+    """Join base_dir and relative_path; return None if the result escapes base_dir."""
+    base = os.path.realpath(base_dir)
+    resolved = os.path.realpath(os.path.join(base_dir, relative_path))
+    if not (resolved == base or resolved.startswith(base + os.sep)):
+        return None
+    return resolved
+
+
+def get_mock_file_path(api_path: str):
+    """Convert API path to mock file path, or None if path escapes the mocks directory."""
     relative_path = api_path.lstrip('/') + '.json'
-    return os.path.join(MOCKS_DIR, relative_path)
+    return _safe_join(MOCKS_DIR, relative_path)
 
 
 def load_mock_response(api_path: str):
     """Load mock response from JSON file."""
     file_path = get_mock_file_path(api_path)
+    if file_path is None:
+        return None
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             return json.load(f)
@@ -87,6 +96,9 @@ def load_mock_response(api_path: str):
 def save_mock_response(api_path: str, data):
     """Save response data to mock JSON file."""
     file_path = get_mock_file_path(api_path)
+    if file_path is None:
+        print(f"  Rejected unsafe path for: {api_path}")
+        return
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
     with open(file_path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=2)
@@ -441,9 +453,9 @@ class MockHandler(http.server.SimpleHTTPRequestHandler):
             # Handle file requests (/api/v1/files/...)
             if path.startswith('/api/v1/files/'):
                 file_path = unquote(path.replace('/api/v1/files/', ''))
-                local_path = os.path.join(LITTLE_FS_DIR, file_path)
-                
-                if os.path.isfile(local_path):
+                local_path = _safe_join(LITTLE_FS_DIR, file_path)
+
+                if local_path is not None and os.path.isfile(local_path):
                     # Determine content type
                     if file_path.endswith('.gz'):
                         content_type = 'application/gzip'
