@@ -649,6 +649,7 @@
         let _devBuild = false;
         let _cloudEnabled = false;
         let _hasSecrets = false;
+        let _secretsChecked = false;
 
         async function loadDeviceInfo() {
             try {
@@ -663,7 +664,7 @@
 
         function updatePortalLink() {
             const banner = document.getElementById('portalBanner');
-            if (!_deviceId) { banner.style.display = 'none'; return; }
+            if (!_deviceId || !_secretsChecked) { banner.style.display = 'none'; return; }
             banner.style.display = 'block';
             const link = document.getElementById('portalLink');
             if (!_hasSecrets) {
@@ -950,6 +951,7 @@
             energyApi.getSystemSecrets()
                 .then(response => {
                     _hasSecrets = response.hasSecrets;
+                    _secretsChecked = true;
                     updatePortalLink();
                     // If no secrets available, disable cloud services option
                     if (!response.hasSecrets) {
