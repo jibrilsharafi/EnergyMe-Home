@@ -675,11 +675,11 @@ namespace InfluxDbClient
             uint64_t backoffDelay = calculateExponentialBackoff(_currentSendAttempt, INFLUXDB_INITIAL_RETRY_INTERVAL, INFLUXDB_MAX_RETRY_INTERVAL, INFLUXDB_RETRY_MULTIPLIER);
             _nextSendAttemptMillis = millis64() + backoffDelay;
 
-            snprintf(_status, sizeof(_status), "Failed to send data (HTTP %ld - %s) - Attempt %u", httpCode, httpStatus, _currentSendAttempt);
-            _statusTimestampUnix = CustomTime::getUnixTime();
-
             char backoffHuman[24];
             DurationFormat::humanizeDuration(backoffDelay, backoffHuman, sizeof(backoffHuman));
+            snprintf(_status, sizeof(_status), "Failed to send data (HTTP %ld - %s) - Attempt %u. Retrying in %s", httpCode, httpStatus, _currentSendAttempt, backoffHuman);
+            _statusTimestampUnix = CustomTime::getUnixTime();
+
             LOG_WARNING("Failed to send data to InfluxDB (HTTP %ld - %s). Next attempt in %s", httpCode, httpStatus, backoffHuman);
         }
         
