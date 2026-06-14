@@ -529,7 +529,7 @@
                 // Shift voltage array
                 shiftedVoltageValues = new Array(voltageValues.length);
                 for (let i = 0; i < voltageValues.length; i++) {
-                    const shiftedIndex = i - shiftSamples;
+                    const shiftedIndex = i + shiftSamples;
                     if (shiftedIndex >= 0 && shiftedIndex < voltageValues.length) {
                         shiftedVoltageValues[i] = voltageValues[shiftedIndex];
                     } else {

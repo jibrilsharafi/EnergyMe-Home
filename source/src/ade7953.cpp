@@ -4916,7 +4916,7 @@ namespace Ade7953
         for (uint16_t i = 0; i < _captureSampleCount; i++) {
             voltageArray.add(roundToDecimals(float(_voltageWaveformBuffer[i]) * _voltPerLsbInstantaneous, VOLTAGE_DECIMALS));
             // HACK: computing the actual value needed for the real current instantaneous values is long. Times 2 is close enough
-            currentArray.add(roundToDecimals(float(_currentWaveformBuffer[i]) * _channelData[_captureChannel].ctSpecification.aLsb * 2, CURRENT_DECIMALS));
+            currentArray.add(roundToDecimals(float(_currentWaveformBuffer[i]) * _channelData[_captureChannel].ctSpecification.aLsb * 2 * (_channelData[_captureChannel].reverse ? -1.0f : 1.0f), CURRENT_DECIMALS));
             microsArray.add(_microsWaveformBuffer[i]);
         }
         
