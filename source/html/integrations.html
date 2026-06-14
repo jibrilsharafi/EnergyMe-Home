@@ -20,7 +20,7 @@
     <style>
         /* Mobile-specific styles */
         @media screen and (max-width: 768px) {
-            #statusContainer,
+            #customMqttStatusContainer,
             #influxDbStatusContainer {
                 flex-direction: column;
                 align-items: flex-start;
@@ -231,9 +231,7 @@
             <ol style="margin-left: 20px;">
                 <li>Install the integration via <a href="https://hacs.xyz/" target="_blank">HACS</a> (recommended) or manually.
                     <ul style="margin-top: 8px;">
-                        <li><strong>HACS:</strong> HACS &rarr; Integrations &rarr; ⋮ &rarr; Custom repositories &rarr;
-                            add <code>https://github.com/jibrilsharafi/homeassistant-energyme</code> as an Integration,
-                            then install "EnergyMe".</li>
+                        <li><strong>HACS:</strong> HACS &rarr; Integrations &rarr; search for "EnergyMe" &rarr; install.</li>
                         <li><strong>Manual:</strong> download the latest release, extract the <code>energyme</code> folder
                             into your <code>custom_components</code> directory.</li>
                     </ul>
@@ -440,6 +438,16 @@
         var influxDbAutoReloadInterval = null;
         const AUTO_RELOAD_INTERVAL_MS = 5000;
 
+        function timeAgo(isoString) {
+            if (!isoString) return "";
+            const diffMs = Date.now() - new Date(isoString).getTime();
+            if (isNaN(diffMs) || diffMs < 0) return "";
+            if (diffMs < 60000) return " (" + Math.floor(diffMs / 1000) + " s ago)";
+            if (diffMs < 3600000) return " (" + Math.floor(diffMs / 60000) + " min ago)";
+            if (diffMs < 86400000) return " (" + Math.floor(diffMs / 3600000) + " h ago)";
+            return " (" + Math.floor(diffMs / 86400000) + " d ago)";
+        }
+
         // ============================================================================
         // CUSTOM MQTT FUNCTIONS
         // ============================================================================
@@ -527,7 +535,7 @@
             }
 
             statusElement.textContent = status || "N/A";
-            timestampElement.textContent = timestamp || "N/A";
+            timestampElement.textContent = (timestamp || "N/A") + timeAgo(timestamp);
 
             if (status === "Connected") {
                 timestampContainer.style.display = "none";
@@ -611,7 +619,7 @@
 
             // If enabled, proceed with normal status display
             statusElement.textContent = status || "N/A";
-            timestampElement.textContent = timestamp || "N/A";
+            timestampElement.textContent = (timestamp || "N/A") + timeAgo(timestamp);
 
             // Show/hide timestamp based on connection status
             if (status === "Data sent successfully") {
