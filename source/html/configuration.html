@@ -648,6 +648,8 @@
         let _deviceId = '';
         let _devBuild = false;
         let _cloudEnabled = false;
+        let _hasSecrets = false;
+        let _secretsChecked = false;
 
         async function loadDeviceInfo() {
             try {
@@ -662,10 +664,15 @@
 
         function updatePortalLink() {
             const banner = document.getElementById('portalBanner');
-            if (!_deviceId) { banner.style.display = 'none'; return; }
+            if (!_deviceId || !_secretsChecked) { banner.style.display = 'none'; return; }
             banner.style.display = 'block';
             const link = document.getElementById('portalLink');
-            if (_cloudEnabled) {
+            if (!_hasSecrets) {
+                link.href = '#';
+                link.classList.add('portal-cta-disabled');
+                link.textContent = '🔒 Add to EnergyMe Portal ›';
+                document.getElementById('portalMsg').textContent = 'Cloud services are not available on this device (community build - no provisioning secrets).';
+            } else if (_cloudEnabled) {
                 const base = _devBuild
                     ? 'https://portal-dev.energyme.net'
                     : 'https://portal.energyme.net';
@@ -943,6 +950,9 @@
         function checkHasSecrets() {
             energyApi.getSystemSecrets()
                 .then(response => {
+                    _hasSecrets = response.hasSecrets;
+                    _secretsChecked = true;
+                    updatePortalLink();
                     // If no secrets available, disable cloud services option
                     if (!response.hasSecrets) {
                         var cloudServicesCheckbox = document.getElementById("cloudServices");

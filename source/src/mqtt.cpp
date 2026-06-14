@@ -1515,7 +1515,7 @@ namespace Mqtt
 
             uint64_t backoffDelay = calculateExponentialBackoff(_mqttConnectionAttempt, MQTT_INITIAL_RETRY_INTERVAL, MQTT_MAX_RETRY_INTERVAL, MQTT_RETRY_MULTIPLIER);
             _nextMqttConnectionAttemptMillis = millis64() + backoffDelay;
-            char backoffHuman[24];
+            char backoffHuman[DURATION_FORMAT_BUFFER_SIZE];
             DurationFormat::humanizeDuration(backoffDelay, backoffHuman, sizeof(backoffHuman));
             LOG_WARNING("Failed to connect to MQTT (attempt %lu). Reason: %s. Next attempt in %s", _mqttConnectionAttempt, _getMqttStateReason(currentState), backoffHuman);
 
@@ -2069,7 +2069,7 @@ namespace Mqtt
 
         // Monitor for stability period (here we just wait, rollback will occur automatically on failure)
         while (millis64() - validationStartTime < OTA_VALIDATION_TIMEOUT) {
-            char otaRemainingHuman[24];
+            char otaRemainingHuman[DURATION_FORMAT_BUFFER_SIZE];
             DurationFormat::humanizeDuration(OTA_VALIDATION_TIMEOUT + validationStartTime - millis64(), otaRemainingHuman, sizeof(otaRemainingHuman));
             LOG_DEBUG("OTA validation in progress - %s remaining", otaRemainingHuman);
             delay(OTA_VALIDATION_CHECK_INTERVAL);

@@ -20,7 +20,7 @@
     <style>
         /* Mobile-specific styles */
         @media screen and (max-width: 768px) {
-            #statusContainer,
+            #customMqttStatusContainer,
             #influxDbStatusContainer {
                 flex-direction: column;
                 align-items: flex-start;
@@ -131,12 +131,12 @@
         </div>
         <div id="customMqttStatus"
             style="margin-top: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9;">
-            <div id="statusContainer" style="display: flex; align-items: center;">
-                <span id="statusIcon" class="status-icon" style="font-size: 1.5em; margin-right: 10px;">⚪</span>
+            <div id="customMqttStatusContainer" style="display: flex; align-items: center;">
+                <span id="customMqttStatusIcon" class="status-icon" style="font-size: 1.5em; margin-right: 10px;">⚪</span>
                 <div>
-                    <strong>Status: </strong><span id="lastConnectionStatus">Loading...</span><br>
-                    <span id="timestampContainer"><strong>Last Attempt: </strong><span
-                            id="lastConnectionAttemptTimestamp">Loading...</span></span>
+                    <strong>Status: </strong><span id="customMqttLastConnectionStatus">Loading...</span><br>
+                    <span id="customMqttTimestampContainer"><strong>Last Attempt: </strong><span
+                            id="customMqttLastConnectionAttemptTimestamp">Loading...</span></span>
                 </div>
             </div>
         </div>
@@ -231,9 +231,7 @@
             <ol style="margin-left: 20px;">
                 <li>Install the integration via <a href="https://hacs.xyz/" target="_blank">HACS</a> (recommended) or manually.
                     <ul style="margin-top: 8px;">
-                        <li><strong>HACS:</strong> HACS &rarr; Integrations &rarr; ⋮ &rarr; Custom repositories &rarr;
-                            add <code>https://github.com/jibrilsharafi/homeassistant-energyme</code> as an Integration,
-                            then install "EnergyMe".</li>
+                        <li><strong>HACS:</strong> HACS &rarr; Integrations &rarr; search for "EnergyMe" &rarr; install.</li>
                         <li><strong>Manual:</strong> download the latest release, extract the <code>energyme</code> folder
                             into your <code>custom_components</code> directory.</li>
                     </ul>
@@ -440,6 +438,16 @@
         var influxDbAutoReloadInterval = null;
         const AUTO_RELOAD_INTERVAL_MS = 5000;
 
+        function timeAgo(isoString) {
+            if (!isoString) return "N/A";
+            const diffMs = Date.now() - new Date(isoString).getTime();
+            if (isNaN(diffMs) || diffMs < 0) return isoString;
+            if (diffMs < 60000) return Math.floor(diffMs / 1000) + " s ago";
+            if (diffMs < 3600000) return Math.floor(diffMs / 60000) + " min ago";
+            if (diffMs < 86400000) return Math.floor(diffMs / 3600000) + " h ago";
+            return Math.floor(diffMs / 86400000) + " d ago";
+        }
+
         // ============================================================================
         // CUSTOM MQTT FUNCTIONS
         // ============================================================================
@@ -508,46 +516,43 @@
         }
 
         function updateStatusDisplay(status, timestamp, isEnabled) {
-            const statusElement = document.getElementById("lastConnectionStatus");
-            const timestampElement = document.getElementById("lastConnectionAttemptTimestamp");
-            const timestampContainer = document.getElementById("timestampContainer");
-            const statusIcon = document.getElementById("statusIcon");
-            const statusContainer = document.getElementById("statusContainer");
+            const statusElement = document.getElementById("customMqttLastConnectionStatus");
+            const timestampElement = document.getElementById("customMqttLastConnectionAttemptTimestamp");
+            const timestampContainer = document.getElementById("customMqttTimestampContainer");
+            const statusIcon = document.getElementById("customMqttStatusIcon");
+            const statusContainer = document.getElementById("customMqttStatusContainer");
 
             // Reset styles
             statusContainer.style.color = "";
             statusElement.style.fontWeight = "";
 
-            // If MQTT is disabled, show disabled status
             if (!isEnabled) {
                 statusElement.textContent = "Disabled";
                 timestampContainer.style.display = "none";
-                statusIcon.innerHTML = "⚫"; // Black circle for disabled
-                statusElement.style.color = "#757575"; // Gray color
+                statusIcon.innerHTML = "⚫";
+                statusElement.style.color = "#757575";
                 return;
             }
 
-            // If enabled, proceed with normal status display
             statusElement.textContent = status || "N/A";
-            timestampElement.textContent = timestamp || "N/A";
+            timestampElement.textContent = timeAgo(timestamp);
 
-            // Show/hide timestamp based on connection status
             if (status === "Connected") {
                 timestampContainer.style.display = "none";
-                statusIcon.innerHTML = "🟢"; // Green circle for connected
-                statusElement.style.color = "#2e7d32"; // Dark green
+                statusIcon.innerHTML = "🟢";
+                statusElement.style.color = "#2e7d32";
                 statusElement.style.fontWeight = "bold";
-            } else if (status === "Disconnected") {
+            } else if (status && status.toLowerCase().includes("failed")) {
                 timestampContainer.style.display = "block";
-                statusIcon.innerHTML = "🔴"; // Red circle for disconnected
-                statusElement.style.color = "#c62828"; // Dark red
-            } else if (status && status.startsWith("Error")) {
+                statusIcon.innerHTML = "🔴";
+                statusElement.style.color = "#c62828";
+            } else if (status && status.includes("Error")) {
                 timestampContainer.style.display = "block";
-                statusIcon.innerHTML = "⚠️"; // Warning for errors
-                statusElement.style.color = "#e65100"; // Orange
+                statusIcon.innerHTML = "⚠️";
+                statusElement.style.color = "#e65100";
             } else {
                 timestampContainer.style.display = "block";
-                statusIcon.innerHTML = "⚪"; // Default neutral circle
+                statusIcon.innerHTML = "⚪";
             }
         }
 
@@ -559,9 +564,6 @@
             try {
                 showStatus('Setting MQTT configuration...', 'info');
 
-                var currentStatus = customMqttConfig ? customMqttConfig.lastConnectionStatus : "Unknown";
-                var currentTimestamp = customMqttConfig ? customMqttConfig.lastConnectionAttemptTimestamp : "";
-
                 var newCustomMqttConfig = {
                     "enabled": document.getElementById("customMqttEnabled").checked,
                     "server": document.getElementById("customMqttServer").value,
@@ -571,9 +573,7 @@
                     "frequency": parseInt(document.getElementById("customMqttFrequency").value),
                     "useCredentials": document.getElementById("customMqttUseCredentials").checked,
                     "username": document.getElementById("customMqttUsername").value,
-                    "password": document.getElementById("customMqttPassword").value,
-                    "lastConnectionStatus": currentStatus,
-                    "lastConnectionAttemptTimestamp": currentTimestamp
+                    "password": document.getElementById("customMqttPassword").value
                 };
 
                 await energyApi.setCustomMqttConfig(newCustomMqttConfig);
@@ -619,10 +619,10 @@
 
             // If enabled, proceed with normal status display
             statusElement.textContent = status || "N/A";
-            timestampElement.textContent = timestamp || "N/A";
+            timestampElement.textContent = timeAgo(timestamp);
 
             // Show/hide timestamp based on connection status
-            if (status === "Upload successful" || status === "Connection successful" || status === "Credentials valid" || status == "Data sent successfully") {
+            if (status === "Data sent successfully") {
                 timestampContainer.style.display = "none"; // Hide timestamp for successful connections
                 statusIcon.innerHTML = "🟢"; // Green circle for successful
                 statusElement.style.color = "#2e7d32"; // Dark green
@@ -731,9 +731,6 @@
             try {
                 showStatus('Setting InfluxDB configuration...', 'info');
 
-                var currentStatus = influxDbConfig ? influxDbConfig.lastConnectionStatus : "Unknown";
-                var currentTimestamp = influxDbConfig ? influxDbConfig.lastConnectionAttemptTimestamp : "";
-
                 var newInfluxDbConfig = {
                     "enabled": document.getElementById("influxDbEnabled").checked,
                     "server": document.getElementById("influxDbServer").value,
@@ -747,9 +744,7 @@
                     "token": document.getElementById("influxDbToken").value,
                     "measurement": document.getElementById("influxDbMeasurement").value,
                     "frequency": Math.max(1, Math.min(3600, parseInt(document.getElementById("influxDbFrequency").value))),
-                    "useSsl": document.getElementById("influxDbUseSsl").checked,
-                    "lastConnectionStatus": currentStatus,
-                    "lastConnectionAttemptTimestamp": currentTimestamp
+                    "useSsl": document.getElementById("influxDbUseSsl").checked
                 };
 
                 await energyApi.setInfluxDbConfig(newInfluxDbConfig);

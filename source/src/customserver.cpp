@@ -2015,7 +2015,7 @@ namespace CustomServer
 
                 if (Ade7953::setSampleTime(sampleTime))
                 {
-                    char sampleTimeHuman[24];
+                    char sampleTimeHuman[DURATION_FORMAT_BUFFER_SIZE];
                     DurationFormat::humanizeDuration(sampleTime, sampleTimeHuman, sizeof(sampleTimeHuman));
                     LOG_INFO("ADE7953 sample time updated to %s via API", sampleTimeHuman);
                     _sendSuccessResponse(request, "ADE7953 sample time updated successfully");

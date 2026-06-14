@@ -337,10 +337,10 @@ namespace IssueRegistry
                                                   ? IssueLogic::rateEvidence(influxOkDelta, influxErrorDelta)
                                                   : IssueLogic::Evidence::Good;
         _influxStreak = IssueLogic::updateStreak(_influxStreak, influxEvidence);
-        bool influxFailing = (_influxStreak >= ISSUE_STREAK_TO_RAISE);
+        bool influxFailing = (_influxStreak >= ISSUE_INFLUXDB_STREAK_TO_RAISE);
         message[0] = '\0';
         if (influxFailing) {
-            snprintf(message, sizeof(message), "InfluxDB enabled but uploads keep failing (%u consecutive bad windows)",
+            snprintf(message, sizeof(message), "InfluxDB enabled but uploads keep failing (%u consecutive failed attempts)",
                      (unsigned)_influxStreak);
         }
         _updateInstance(IssueLogic::Code::InfluxDbUploadFailing, ISSUE_GLOBAL_SCOPE, influxFailing, message);

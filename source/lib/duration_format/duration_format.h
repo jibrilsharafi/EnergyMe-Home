@@ -15,8 +15,15 @@
 //   <24 h   ->  "5 h"
 //   >=24 h  ->  "2 d"
 //
-// Output is ASCII-only and null-terminated. If `outSize` is 0 the call
-// is a no-op. A minimum buffer of 16 bytes covers all representable values.
+// Output is ASCII-only and null-terminated. If `outSize` is 0 the call is a no-op.
+// Use DURATION_FORMAT_BUFFER_SIZE for the local char buffer at every call site.
+
+// "999 ms" is the widest sub-day output (6 chars + null = 7 bytes). The days branch
+// is unbounded for huge uint64_t values but no real firmware duration exceeds a few
+// hundred days ("999 d" = 6 bytes). 12 bytes gives comfortable headroom over the
+// 7-byte worst case without inflating every call-site buffer to 24.
+#define DURATION_FORMAT_BUFFER_SIZE 12
+
 namespace DurationFormat {
 
 void humanizeDuration(uint64_t ms, char *out, size_t outSize);

@@ -32,6 +32,9 @@
 // so they scale with the tick: the "over X s" messages derive from streak * tick.
 #define ISSUE_STREAK_TO_RAISE 12              // ~1 min of sustained bad evidence
 #define ISSUE_CONNECTIVITY_STREAK_TO_RAISE 24 // ~2 min: rides out boot/reconnect blips
+// InfluxDB uses sparse evidence (one window per attempt due to exponential backoff):
+// streak counts failed attempts, not 5s ticks. 3 consecutive failures = issue raised.
+#define ISSUE_INFLUXDB_STREAK_TO_RAISE 3
 
 // Per-code thresholds
 #define ISSUE_MISMATCH_MIN_EVIDENCE_READS 4
