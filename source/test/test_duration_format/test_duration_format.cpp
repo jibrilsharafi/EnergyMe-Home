@@ -168,6 +168,23 @@ void test_zero_size_is_safe(void) {
 }
 
 // ============================================================================
+// DURATION_FORMAT_BUFFER_SIZE adequacy
+// "999 ms" is the widest realistic output; verify the constant fits it.
+// ============================================================================
+
+void test_buffer_size_fits_999_ms(void) {
+    char buf[DURATION_FORMAT_BUFFER_SIZE];
+    humanizeDuration(999, buf, sizeof(buf));
+    TEST_ASSERT_EQUAL_STRING("999 ms", buf);
+}
+
+void test_buffer_size_fits_59_min(void) {
+    char buf[DURATION_FORMAT_BUFFER_SIZE];
+    humanizeDuration(59 * 60000ULL, buf, sizeof(buf));
+    TEST_ASSERT_EQUAL_STRING("59 min", buf);
+}
+
+// ============================================================================
 // Runner
 // ============================================================================
 
@@ -201,6 +218,9 @@ int main(int argc, char **argv) {
 
     RUN_TEST(test_null_buffer_is_safe);
     RUN_TEST(test_zero_size_is_safe);
+
+    RUN_TEST(test_buffer_size_fits_999_ms);
+    RUN_TEST(test_buffer_size_fits_59_min);
 
     return UNITY_END();
 }
