@@ -113,7 +113,7 @@ namespace CrashMonitor
         
         if (isQuickRestart) {
             _quickRestartCount++;
-            char timeSinceLastBootHuman[24], thresholdHuman[24];
+            char timeSinceLastBootHuman[DURATION_FORMAT_BUFFER_SIZE], thresholdHuman[DURATION_FORMAT_BUFFER_SIZE];
             DurationFormat::humanizeDuration(timeSinceLastBoot, timeSinceLastBootHuman, sizeof(timeSinceLastBootHuman));
             DurationFormat::humanizeDuration(QUICK_RESTART_THRESHOLD, thresholdHuman, sizeof(thresholdHuman));
             LOG_WARNING("Quick restart detected (#%lu): only %s since last boot (threshold: %s)",
@@ -130,7 +130,7 @@ namespace CrashMonitor
         } else {
             // Not a quick restart - reset quick restart counter (but keep crash/reset counters)
             if (_quickRestartCount > 0) {
-                char timeSinceLastBootHuman[24];
+                char timeSinceLastBootHuman[DURATION_FORMAT_BUFFER_SIZE];
                 DurationFormat::humanizeDuration(timeSinceLastBoot, timeSinceLastBootHuman, sizeof(timeSinceLastBootHuman));
                 LOG_DEBUG("Stable boot detected (%s since last boot), resetting quick restart counter (was %lu)",
                     timeSinceLastBootHuman, _quickRestartCount);
@@ -141,7 +141,7 @@ namespace CrashMonitor
             
             // Exit safe mode if we had a stable restart (user fixed the issue)
             if (_safeModeActive && timeSinceLastBoot >= SAFE_MODE_MIN_UPTIME) {
-                char timeSinceLastBootHuman[24];
+                char timeSinceLastBootHuman[DURATION_FORMAT_BUFFER_SIZE];
                 DurationFormat::humanizeDuration(timeSinceLastBoot, timeSinceLastBootHuman, sizeof(timeSinceLastBootHuman));
                 LOG_INFO("Exiting safe mode due to stable restart (%s uptime)", timeSinceLastBootHuman);
                 _safeModeActive = false;

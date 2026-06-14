@@ -473,7 +473,7 @@ namespace CustomMqtt
             uint64_t _backoffDelay = calculateExponentialBackoff(_currentMqttConnectionAttempt, MQTT_CUSTOM_INITIAL_RECONNECT_INTERVAL, MQTT_CUSTOM_MAX_RECONNECT_INTERVAL, MQTT_CUSTOM_RECONNECT_MULTIPLIER);
             _nextMqttConnectionAttemptMillis = millis64() + _backoffDelay;
 
-            char _backoffHuman[24];
+            char _backoffHuman[DURATION_FORMAT_BUFFER_SIZE];
             DurationFormat::humanizeDuration(_backoffDelay, _backoffHuman, sizeof(_backoffHuman));
             snprintf(_status, sizeof(_status), "Connection failed: %s (Attempt %lu). Retrying in %s", _reason, _currentMqttConnectionAttempt, _backoffHuman);
             _statusTimestampUnix = CustomTime::getUnixTime();

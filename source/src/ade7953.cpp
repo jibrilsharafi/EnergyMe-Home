@@ -1982,7 +1982,7 @@ namespace Ade7953
             
             // Safety timeout
             if (currentMicros - _captureStartMicros >= WAVEFORM_CAPTURE_MAX_DURATION_MICROS) {
-                char captureDurHuman[24];
+                char captureDurHuman[DURATION_FORMAT_BUFFER_SIZE];
                 DurationFormat::humanizeDuration((currentMicros - _captureStartMicros) / 1000, captureDurHuman, sizeof(captureDurHuman));
                 LOG_WARNING("Waveform capture timeout after %s, captured %u samples with %u zero crossings",
                     captureDurHuman, _captureSampleCount, zeroCrossingCount);
@@ -2038,7 +2038,7 @@ namespace Ade7953
         uint64_t totalDurationMs = (micros64() - _captureStartMicros) / 1000;
         
         _captureState = CaptureState::COMPLETE;
-        char captureDurHuman[24];
+        char captureDurHuman[DURATION_FORMAT_BUFFER_SIZE];
         DurationFormat::humanizeDuration(totalDurationMs, captureDurHuman, sizeof(captureDurHuman));
         LOG_INFO("Waveform capture complete for channel %u: %u samples in %s with %u zero crossings",
             _captureChannel, _captureSampleCount, captureDurHuman, zeroCrossingCount);
@@ -2373,7 +2373,7 @@ namespace Ade7953
 
             // Calculate milliseconds until next hour using CustomTime
             uint64_t msUntilNextHour = CustomTime::getMillisecondsUntilNextHour();
-            char msUntilNextHourHuman[24];
+            char msUntilNextHourHuman[DURATION_FORMAT_BUFFER_SIZE];
             DurationFormat::humanizeDuration(msUntilNextHour, msUntilNextHourHuman, sizeof(msUntilNextHourHuman));
             LOG_DEBUG("Waiting for %s until next hour to save the hourly energy", msUntilNextHourHuman);
 
@@ -4265,7 +4265,7 @@ namespace Ade7953
         
         setSampleTime(sampleTime);
 
-        char sampleTimeHuman[24];
+        char sampleTimeHuman[DURATION_FORMAT_BUFFER_SIZE];
         DurationFormat::humanizeDuration(sampleTime, sampleTimeHuman, sizeof(sampleTimeHuman));
         LOG_DEBUG("Loaded sample time %s from preferences", sampleTimeHuman);
     }
@@ -4279,7 +4279,7 @@ namespace Ade7953
         preferences.putULong64(CONFIG_SAMPLE_TIME_KEY, _sampleTime);
         preferences.end();
 
-        char sampleTimeHuman[24];
+        char sampleTimeHuman[DURATION_FORMAT_BUFFER_SIZE];
         DurationFormat::humanizeDuration(_sampleTime, sampleTimeHuman, sizeof(sampleTimeHuman));
         LOG_DEBUG("Saved sample time %s to preferences", sampleTimeHuman);
     }
@@ -4298,7 +4298,7 @@ namespace Ade7953
         uint64_t calculatedLinecyc = _sampleTime * _lineFrequency * 2 / 1000;
         _setLinecyc((uint32_t)calculatedLinecyc);
 
-        char sampleTimeHuman[24];
+        char sampleTimeHuman[DURATION_FORMAT_BUFFER_SIZE];
         DurationFormat::humanizeDuration(_sampleTime, sampleTimeHuman, sizeof(sampleTimeHuman));
         LOG_DEBUG("Successfully updated sample time to %s (%llu line cycles) with grid frequency %u Hz", sampleTimeHuman, calculatedLinecyc, _lineFrequency);
     }
@@ -4375,7 +4375,7 @@ namespace Ade7953
     void _checkForTooManyFailures() {
         
         if (millis64() - _firstFailureTime > ADE7953_FAILURE_RESET_TIMEOUT_MS && _failureCount > 0) {
-            char failureDurHuman[24];
+            char failureDurHuman[DURATION_FORMAT_BUFFER_SIZE];
             DurationFormat::humanizeDuration(millis64() - _firstFailureTime, failureDurHuman, sizeof(failureDurHuman));
             LOG_DEBUG("Failure timeout exceeded (%s). Resetting failure count (reached %d)", failureDurHuman, _failureCount);
             
@@ -4411,7 +4411,7 @@ namespace Ade7953
 
     void _checkForTooManyCriticalFailures() {
         if (millis64() - _firstCriticalFailureTime > ADE7953_CRITICAL_FAILURE_RESET_TIMEOUT_MS && _criticalFailureCount > 0) {
-            char critFailDurHuman[24];
+            char critFailDurHuman[DURATION_FORMAT_BUFFER_SIZE];
             DurationFormat::humanizeDuration(millis64() - _firstCriticalFailureTime, critFailDurHuman, sizeof(critFailDurHuman));
             LOG_DEBUG("Critical failure timeout exceeded (%s). Resetting critical failure count (reached %lu)",
                 critFailDurHuman, _criticalFailureCount);
@@ -4638,7 +4638,7 @@ namespace Ade7953
         if (starvedChannel != INVALID_CHANNEL) {
             // Can happen with high-power channels alongside static 0 W ones, so it is
             // not an error per se (hence DEBUG level).
-            char starvedGapHuman[24];
+            char starvedGapHuman[DURATION_FORMAT_BUFFER_SIZE];
             DurationFormat::humanizeDuration(starvedGap, starvedGapHuman, sizeof(starvedGapHuman));
             LOG_DEBUG(
                 "%s (%u): scheduler starvation, %s since last read; force-picking",

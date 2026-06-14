@@ -143,7 +143,7 @@ namespace ButtonHandler
                 {
                     // Button was released - process the press
                     uint64_t pressDuration = millis64() - _buttonPressStartTime;
-                    char pressDurationHuman[24];
+                    char pressDurationHuman[DURATION_FORMAT_BUFFER_SIZE];
                     DurationFormat::humanizeDuration(pressDuration, pressDurationHuman, sizeof(pressDurationHuman));
                     LOG_DEBUG("Button released after %s", pressDurationHuman);
 
@@ -200,7 +200,7 @@ namespace ButtonHandler
         else
         {
             _currentPressType = ButtonPressType::NONE;
-            char pressDurationHuman[24];
+            char pressDurationHuman[DURATION_FORMAT_BUFFER_SIZE];
             DurationFormat::humanizeDuration(pressDuration, pressDurationHuman, sizeof(pressDurationHuman));
             LOG_DEBUG("Button press duration %s - no action", pressDurationHuman);
         }

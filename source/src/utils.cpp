@@ -561,7 +561,7 @@ static void _startFailsafeTimer() {
     };
     if (esp_timer_create(&timerArgs, &_failsafeTimer) == ESP_OK) {
         esp_timer_start_once(_failsafeTimer, SYSTEM_RESTART_FAILSAFE_TIMEOUT * 1000ULL); // Convert ms to us
-        char failsafeHuman[24];
+        char failsafeHuman[DURATION_FORMAT_BUFFER_SIZE];
         DurationFormat::humanizeDuration((uint64_t)SYSTEM_RESTART_FAILSAFE_TIMEOUT, failsafeHuman, sizeof(failsafeHuman));
         LOG_DEBUG("Failsafe restart timer started (%s)", failsafeHuman);
     } else {
@@ -691,7 +691,7 @@ void printDeviceStatusDynamic()
     populateSystemDynamicInfo(*info);
 
     LOG_DEBUG("--- Dynamic System Info ---");
-    char uptimeHuman[24];
+    char uptimeHuman[DURATION_FORMAT_BUFFER_SIZE];
     DurationFormat::humanizeDuration(info->uptimeMilliseconds, uptimeHuman, sizeof(uptimeHuman));
     LOG_DEBUG(
         "Uptime: %s | Timestamp: %s | Temperature: %.2f C",

@@ -675,7 +675,7 @@ namespace InfluxDbClient
             uint64_t backoffDelay = calculateExponentialBackoff(_currentSendAttempt, INFLUXDB_INITIAL_RETRY_INTERVAL, INFLUXDB_MAX_RETRY_INTERVAL, INFLUXDB_RETRY_MULTIPLIER);
             _nextSendAttemptMillis = millis64() + backoffDelay;
 
-            char backoffHuman[24];
+            char backoffHuman[DURATION_FORMAT_BUFFER_SIZE];
             DurationFormat::humanizeDuration(backoffDelay, backoffHuman, sizeof(backoffHuman));
             snprintf(_status, sizeof(_status), "Failed to send data: HTTP %ld - %s (Attempt %u). Retrying in %s", httpCode, httpStatus, _currentSendAttempt, backoffHuman);
             _statusTimestampUnix = CustomTime::getUnixTime();
