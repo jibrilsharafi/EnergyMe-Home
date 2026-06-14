@@ -312,12 +312,7 @@ enum class Ade7953InterruptType {
 };
 
 
-enum Phase : uint32_t { // Not a class so that we can directly use it in JSON serialization
-    PHASE_1 = 1,
-    PHASE_2 = 2,
-    PHASE_3 = 3,
-    PHASE_SPLIT_240 = 4,  // North America split-phase 240V circuit (L1-L2), auto-applies 2x multiplier
-};
+#include "phase_utils.h"  // Phase enum + PhaseUtils:: helpers (Arduino-free, host-testable)
 
 enum class Ade7953Channel{
     A,

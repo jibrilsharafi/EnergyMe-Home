@@ -298,7 +298,7 @@
     // the installer picks the one that looks like a real load (PF near 1) instead of
     // guessing from the breaker panel. The power sign is omitted: it is always
     // flippable via the reverse flag, so it says nothing about the right phase.
-    const PHASE_ANGLES_DEG = { 1: 0, 2: 120, 3: -120 }; // same convention as firmware
+    const PHASE_ANGLES_DEG = { 1: 0, 2: -120, 3: 120 }; // IEC: PHASE_1=L1(0°), PHASE_2=L2(-120°), PHASE_3=L3(+120°)
 
     function isThreePhaseInstall() {
         const basePhase = channelData[0] ? channelData[0].phase : 1;

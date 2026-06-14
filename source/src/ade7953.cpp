@@ -4683,67 +4683,11 @@ namespace Ade7953
     // Poor man's phase shift (doing with modulus didn't work properly,
     // and in any case the phases will always be at most 3)
 
-    Phase _getLaggingPhase(Phase phase) {
-        // Lagging means it is behind (yes it should be trivial but this costed me a lot of time..)
-        // So if it is phase 1, the lagging phase behind is phase 3
-        switch (phase) {
-            case PHASE_1:
-                return PHASE_3;
-            case PHASE_2:
-                return PHASE_1;
-            case PHASE_3:
-                return PHASE_2;
-            case PHASE_SPLIT_240:
-                return PHASE_SPLIT_240;  // Split-phase 240V doesn't rotate
-            default:
-                return PHASE_1;
-        }
-    }
-
-    Phase _getLeadingPhase(Phase phase) {
-        switch (phase) {
-            case PHASE_1:
-                return PHASE_2;
-            case PHASE_2:
-                return PHASE_3;
-            case PHASE_3:
-                return PHASE_1;
-            case PHASE_SPLIT_240:
-                return PHASE_SPLIT_240;  // Split-phase 240V doesn't rotate
-            default:
-                return PHASE_1;
-        }
-    }
+    Phase _getLaggingPhase(Phase phase) { return PhaseUtils::getLaggingPhase(phase); }
+    Phase _getLeadingPhase(Phase phase)  { return PhaseUtils::getLeadingPhase(phase); }
 
     float _calculatePhaseShift(Phase voltagePhase, Phase currentPhase) {
-        /**
-         * Calculate phase shift to align voltage waveform with current's phase reference.
-         * 
-         * Returns angle in degrees: positive = shift forward, negative = shift backward
-         * Formula: currentPhaseAngle - voltagePhaseAngle
-         */
-        
-        // Get phase angle for voltage
-        float voltageAngle = 0.0f;
-        switch (voltagePhase) {
-            case PHASE_1: voltageAngle = 0.0f; break;      // Phase A: 0°
-            case PHASE_2: voltageAngle = 120.0f; break;    // Phase B: 120°
-            case PHASE_3: voltageAngle = -120.0f; break;   // Phase C: -120°
-            case PHASE_SPLIT_240: voltageAngle = 0.0f; break;  // Split-phase 240V: 0° (same reference as Phase 1)
-            default: return 0.0f;  // Invalid phase
-        }
-        
-        // Get phase angle for current
-        float currentAngle = 0.0f;
-        switch (currentPhase) {
-            case PHASE_1: currentAngle = 0.0f; break;      // Phase A: 0°
-            case PHASE_2: currentAngle = 120.0f; break;    // Phase B: 120°
-            case PHASE_3: currentAngle = -120.0f; break;   // Phase C: -120°
-            case PHASE_SPLIT_240: currentAngle = 0.0f; break;  // Split-phase 240V: 0° (same reference as Phase 1)
-            default: return 0.0f;  // Invalid phase
-        }
-        
-        return currentAngle - voltageAngle;
+        return PhaseUtils::calculatePhaseShiftDeg(voltagePhase, currentPhase);
     }
 
     const char* _irqstataBitName(uint32_t bit) {
