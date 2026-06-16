@@ -7,10 +7,13 @@
 #include <esp_random.h>
 #include <esp_timer.h>
 
+#include "ade7953.h"
 #include "awsconfig.h"
 #include "factory_keys.h"
 #include "globals.h"
 #include "hardware_profile.h"
+#include "issueregistry.h"
+#include "led.h"
 #include "mqtt.h"
 #include "shadow_logic.h"
 #include "utils.h"
@@ -44,6 +47,25 @@ static esp_timer_handle_t _infoRefreshTimer = nullptr;
 
 // Report/apply callbacks (defined further down, registered in begin()).
 static void _reportInfo(JsonDocument& doc);
+static void _reportIssues(JsonDocument& doc);
+static void _onIssuesChanged();
+static void _reportSystem(JsonDocument& doc);
+static bool _applySystem(JsonObjectConst delta, JsonObject reported, JsonObject desired);
+static void _reportMeter(JsonDocument& doc);
+static bool _applyMeter(JsonObjectConst delta, JsonObject reported, JsonObject desired);
+static void _reportChannels(JsonDocument& doc);
+static bool _applyChannels(JsonObjectConst delta, JsonObject reported, JsonObject desired);
+
+// system shadow: transient (VERBOSE/DEBUG) mqtt_log_level auto-revert. The timer
+// callback (esp_timer task) only flips a flag; the MQTT task does the revert +
+// report (PubSubClient is single-task). _logLevelBaseline is the persisted level
+// to restore to.
+#define SHADOW_LOG_LEVEL_REVERT_INTERVAL_US (5ULL * 60ULL * 1000000ULL) // 5 min
+static esp_timer_handle_t _logLevelRevertTimer = nullptr;
+static volatile bool _logLevelRevertPending = false;
+static int _logLevelBaseline = 2; // INFO
+static void _logLevelRevertCallback(void* arg);
+static void _checkSystemLogLevelRevert();
 
 // ============================================================================
 // Registration
@@ -86,6 +108,13 @@ void begin() {
 
     _count = 0;
     _registerShadow({"info", false, _reportInfo, nullptr});
+    _registerShadow({"issues", false, _reportIssues, nullptr});
+    _registerShadow({"system", true, _reportSystem, _applySystem});
+    _registerShadow({"meter", true, _reportMeter, _applyMeter});
+    _registerShadow({"channels", true, _reportChannels, _applyChannels});
+
+    // Refresh the issues shadow on every registry transition/ack (flag only).
+    IssueRegistry::setChangeCallback(_onIssuesChanged);
 
     // Low-priority periodic refresh so identity shadow's lastUpdated stays fresh
     // even though the values rarely change. Callback only sets a flag.
@@ -100,6 +129,19 @@ void begin() {
             esp_timer_start_periodic(_infoRefreshTimer, SHADOW_INFO_REFRESH_INTERVAL_US);
         } else {
             LOG_WARNING("Failed to create info shadow refresh timer");
+        }
+    }
+
+    // One-shot timer for the transient mqtt_log_level auto-revert (created idle).
+    if (_logLevelRevertTimer == nullptr) {
+        const esp_timer_create_args_t revertArgs = {
+            .callback = _logLevelRevertCallback,
+            .arg = nullptr,
+            .dispatch_method = ESP_TIMER_TASK,
+            .name = "shadow_loglevel_revert",
+            .skip_unhandled_events = true};
+        if (esp_timer_create(&revertArgs, &_logLevelRevertTimer) != ESP_OK) {
+            LOG_WARNING("Failed to create mqtt_log_level revert timer");
         }
     }
 
@@ -290,6 +332,7 @@ static void _publishLocalEditDoc(uint8_t idx, const char* payload) {
 // ============================================================================
 
 void checkPublish() {
+    _checkSystemLogLevelRevert(); // transient mqtt_log_level revert (flag set by timer task)
     for (uint8_t i = 0; i < _count; i++) {
         char* delta = nullptr;
         char* localEdit = nullptr;
@@ -402,6 +445,290 @@ static void _reportInfo(JsonDocument& doc) {
     rep["serial_number"] = serial;
     rep["pcb_revision"] = pcbRev;
     rep["manufacturing_unix"] = mfgTs;
+}
+
+// ============================================================================
+// issues shadow (reported-only): runtime issue registry mirror
+// ============================================================================
+
+static void _onIssuesChanged() {
+    requestReport("issues"); // flag only; the MQTT task publishes
+}
+
+static void _reportIssues(JsonDocument& doc) {
+    JsonObject rep = doc["state"]["reported"].to<JsonObject>();
+    rep["active_count"] = IssueRegistry::activeCount();
+
+    SpiRamAllocator allocator;
+    JsonDocument tmp(&allocator);
+    if (IssueRegistry::issuesToJson(tmp)) {
+        rep["issues"] = tmp["issues"]; // deep-copied into doc's pool
+    } else {
+        rep["issues"].to<JsonArray>(); // empty array if the registry was busy
+    }
+}
+
+// ============================================================================
+// system shadow (writable): behavioural config + mqtt_log_level auto-revert
+// ============================================================================
+
+// esp_timer task: flag only. PubSubClient is single-task, so the MQTT task does
+// the actual revert + report (in _checkSystemLogLevelRevert).
+static void _logLevelRevertCallback(void* arg) {
+    (void)arg;
+    _logLevelRevertPending = true;
+}
+
+static void _checkSystemLogLevelRevert() {
+    if (!_logLevelRevertPending) return;
+    _logLevelRevertPending = false;
+    Mqtt::setRuntimeLogLevel(_logLevelBaseline);
+    LOG_INFO("mqtt_log_level auto-reverted to baseline %s", ShadowLogic::logLevelToString(_logLevelBaseline));
+    requestReport("system");
+}
+
+static void _applyMqttLogLevel(int level) {
+    if (ShadowLogic::isTransientLogLevel(level)) {
+        // Capture the persisted baseline once: if the current runtime level is
+        // itself transient we are already inside a window, so keep the stored
+        // baseline rather than overwriting it with another transient.
+        int current = Mqtt::getMqttLogLevel();
+        if (!ShadowLogic::isTransientLogLevel(current)) _logLevelBaseline = current;
+        _logLevelRevertPending = false;       // (re)entering transient
+        Mqtt::setRuntimeLogLevel(level);       // runtime only, not persisted
+        if (_logLevelRevertTimer != nullptr) {
+            esp_timer_stop(_logLevelRevertTimer); // harmless if not running
+            esp_timer_start_once(_logLevelRevertTimer, SHADOW_LOG_LEVEL_REVERT_INTERVAL_US);
+        }
+        LOG_INFO("mqtt_log_level transient %s (auto-revert in 5 min to %s)",
+                 ShadowLogic::logLevelToString(level), ShadowLogic::logLevelToString(_logLevelBaseline));
+    } else {
+        if (_logLevelRevertTimer != nullptr) esp_timer_stop(_logLevelRevertTimer);
+        _logLevelBaseline = level;    // track the new baseline so a late timer flag is a no-op
+        _logLevelRevertPending = false;
+        Mqtt::setMqttLogLevel(ShadowLogic::logLevelToString(level)); // persisted baseline
+    }
+}
+
+static void _reportSystem(JsonDocument& doc) {
+    JsonObject rep = doc["state"]["reported"].to<JsonObject>();
+    rep["led_brightness"] = Led::getBrightness();
+    rep["send_power_data"] = Mqtt::getSendPowerData();
+    rep["mqtt_log_level"] = ShadowLogic::logLevelToString(Mqtt::getMqttLogLevel());
+    rep["log_level_print"] = AdvancedLogger::logLevelToString(AdvancedLogger::getPrintLevel());
+    rep["log_level_save"] = AdvancedLogger::logLevelToString(AdvancedLogger::getSaveLevel());
+}
+
+static bool _applySystem(JsonObjectConst delta, JsonObject reported, JsonObject desired) {
+    (void)desired; // every top-level delta key is auto-nulled by the envelope backstop
+    bool applied = false;
+
+    JsonVariantConst v = delta["led_brightness"];
+    if (!v.isNull()) {
+        if (v.is<int>()) {
+            int b = v.as<int>();
+            if (b >= 0 && b <= 0xFF && Led::isBrightnessValid((uint8_t)b)) {
+                Led::setBrightness((uint8_t)b); // persists
+                reported["led_brightness"] = Led::getBrightness();
+                applied = true;
+            } else {
+                LOG_WARNING("Rejected led_brightness %d (out of range)", b);
+            }
+        } else {
+            LOG_WARNING("Rejected led_brightness: not an integer");
+        }
+    }
+
+    v = delta["send_power_data"];
+    if (!v.isNull()) {
+        if (v.is<bool>()) {
+            bool e = v.as<bool>();
+            Mqtt::setSendPowerData(e); // persists
+            reported["send_power_data"] = e;
+            applied = true;
+        } else {
+            LOG_WARNING("Rejected send_power_data: not a boolean");
+        }
+    }
+
+    v = delta["mqtt_log_level"];
+    if (!v.isNull()) {
+        int level = ShadowLogic::logLevelFromString(v.as<const char*>());
+        if (level < 0) {
+            LOG_WARNING("Rejected mqtt_log_level: unknown level");
+        } else {
+            _applyMqttLogLevel(level);
+            reported["mqtt_log_level"] = ShadowLogic::logLevelToString(Mqtt::getMqttLogLevel());
+            applied = true;
+        }
+    }
+
+    v = delta["log_level_print"];
+    if (!v.isNull()) {
+        int level = ShadowLogic::logLevelFromString(v.as<const char*>());
+        if (level < 0) {
+            LOG_WARNING("Rejected log_level_print: unknown level");
+        } else {
+            AdvancedLogger::setPrintLevel((LogLevel)level); // persists (lib-internal)
+            reported["log_level_print"] = AdvancedLogger::logLevelToString(AdvancedLogger::getPrintLevel());
+            applied = true;
+        }
+    }
+
+    v = delta["log_level_save"];
+    if (!v.isNull()) {
+        int level = ShadowLogic::logLevelFromString(v.as<const char*>());
+        if (level < 0) {
+            LOG_WARNING("Rejected log_level_save: unknown level");
+        } else {
+            AdvancedLogger::setSaveLevel((LogLevel)level); // persists (lib-internal)
+            reported["log_level_save"] = AdvancedLogger::logLevelToString(AdvancedLogger::getSaveLevel());
+            applied = true;
+        }
+    }
+
+    return applied;
+}
+
+// ============================================================================
+// meter shadow (writable): ADE7953 calibration + sample time
+// ============================================================================
+
+// The 19 calibration keys (camelCase) as serialized by getConfigurationAsJson.
+static const char* const METER_CAL_KEYS[] = {
+    "aVGain", "aIGain", "bIGain", "aIRmsOs", "bIRmsOs",
+    "aWGain", "bWGain", "aWattOs", "bWattOs",
+    "aVarGain", "bVarGain", "aVarOs", "bVarOs",
+    "aVaGain", "bVaGain", "aVaOs", "bVaOs",
+    "phCalA", "phCalB"};
+static constexpr size_t METER_CAL_KEY_COUNT = sizeof(METER_CAL_KEYS) / sizeof(METER_CAL_KEYS[0]);
+
+static void _reportMeter(JsonDocument& doc) {
+    JsonObject rep = doc["state"]["reported"].to<JsonObject>();
+    SpiRamAllocator allocator;
+    JsonDocument cfg(&allocator);
+    Ade7953::getConfigurationAsJson(cfg);
+    for (JsonPairConst kv : cfg.as<JsonObjectConst>()) rep[kv.key()] = kv.value();
+    rep["sample_time"] = Ade7953::getSampleTime();
+}
+
+static bool _applyMeter(JsonObjectConst delta, JsonObject reported, JsonObject desired) {
+    (void)desired; // top-level delta keys auto-nulled by the envelope backstop
+    bool applied = false;
+
+    // Collect the calibration fields present in the delta into a partial config.
+    SpiRamAllocator allocator;
+    JsonDocument cfg(&allocator);
+    for (size_t i = 0; i < METER_CAL_KEY_COUNT; i++) {
+        JsonVariantConst v = delta[METER_CAL_KEYS[i]];
+        if (v.isNull()) continue;
+        if (v.is<int>()) {
+            cfg[METER_CAL_KEYS[i]] = v.as<int32_t>();
+        } else {
+            LOG_WARNING("Rejected meter calibration '%s': not an integer", METER_CAL_KEYS[i]);
+        }
+    }
+    if (cfg.size() > 0) { // at least one calibration field present
+        if (Ade7953::setConfigurationFromJson(cfg, /*partial=*/true)) {
+            for (JsonPairConst kv : cfg.as<JsonObjectConst>()) reported[kv.key()] = kv.value();
+            applied = true;
+        } else {
+            LOG_WARNING("Meter calibration apply rejected by ADE7953");
+        }
+    }
+
+    // sample_time is not part of the calibration struct - applied separately.
+    JsonVariantConst st = delta["sample_time"];
+    if (!st.isNull()) {
+        if (st.is<int>() && st.as<int>() > 0 && Ade7953::setSampleTime((uint64_t)st.as<int>())) {
+            reported["sample_time"] = Ade7953::getSampleTime();
+            applied = true;
+        } else {
+            LOG_WARNING("Rejected sample_time (not a positive integer >= minimum)");
+        }
+    }
+
+    return applied;
+}
+
+// ============================================================================
+// channels shadow (writable): per-channel config, object-keyed by index
+// ============================================================================
+
+// Overlay src onto dst, recursing into nested objects (e.g. ctSpecification) so
+// a delta touching one subfield does not drop the channel's other CT params.
+static void _deepMerge(JsonObject dst, JsonObjectConst src) {
+    for (JsonPairConst kv : src) {
+        if (kv.value().is<JsonObjectConst>()) {
+            JsonObject child = dst[kv.key()].is<JsonObject>() ? dst[kv.key()].as<JsonObject>()
+                                                              : dst[kv.key()].to<JsonObject>();
+            _deepMerge(child, kv.value().as<JsonObjectConst>());
+        } else {
+            dst[kv.key()] = kv.value();
+        }
+    }
+}
+
+static void _reportChannels(JsonDocument& doc) {
+    JsonObject rep = doc["state"]["reported"].to<JsonObject>();
+    char key[4]; // up to "16" + null
+    for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
+        SpiRamAllocator allocator;
+        JsonDocument ch(&allocator);
+        if (!Ade7953::getChannelDataAsJson(ch, i)) continue;
+        ch.remove("index"); // index is the object key, not a field
+        snprintf(key, sizeof(key), "%u", i);
+        rep[key] = ch; // object-keyed so the cloud can patch one channel
+    }
+}
+
+static bool _applyChannels(JsonObjectConst delta, JsonObject reported, JsonObject desired) {
+    (void)desired; // each top-level (channel) key auto-nulled by the envelope backstop
+    bool applied = false;
+    uint8_t channelCount = globalHwProfile->totalChannelCount;
+
+    for (JsonPairConst kv : delta) {
+        uint8_t idx = 0;
+        if (!ShadowLogic::parseChannelIndex(kv.key().c_str(), channelCount, &idx)) {
+            LOG_WARNING("Rejected channel key '%s' (not a valid index)", kv.key().c_str());
+            continue;
+        }
+        if (!kv.value().is<JsonObjectConst>()) {
+            LOG_WARNING("Rejected channel %u delta (value is not an object)", idx);
+            continue;
+        }
+
+        // Start from the current channel, overlay the changed subfields, apply.
+        SpiRamAllocator mergeAlloc;
+        JsonDocument merged(&mergeAlloc);
+        if (!Ade7953::getChannelDataAsJson(merged, idx)) {
+            LOG_WARNING("Failed to read channel %u for merge", idx);
+            continue;
+        }
+        JsonObject mergedObj = merged.as<JsonObject>();
+        _deepMerge(mergedObj, kv.value().as<JsonObjectConst>());
+        merged["index"] = idx; // setChannelDataFromJson keys off this; never let a delta change it
+
+        bool roleChanged = false;
+        if (!Ade7953::setChannelDataFromJson(merged, /*partial=*/true, &roleChanged)) {
+            LOG_WARNING("Channel %u apply rejected by ADE7953", idx);
+            continue;
+        }
+
+        // Echo the channel as actually applied (e.g. channel 0 stays active even
+        // if a delta tried to disable it), keyed by index, index field dropped.
+        SpiRamAllocator afterAlloc;
+        JsonDocument after(&afterAlloc);
+        if (Ade7953::getChannelDataAsJson(after, idx)) {
+            after.remove("index");
+            char key[4];
+            snprintf(key, sizeof(key), "%u", idx);
+            reported[key] = after;
+        }
+        applied = true;
+    }
+
+    return applied;
 }
 
 } // namespace Shadow
