@@ -4,6 +4,7 @@
 #include "customserver.h"
 #include "taskprofiler.h"
 #include "duration_format.h"
+#include "shadow.h"
 
 namespace CustomServer
 {
@@ -83,6 +84,9 @@ namespace CustomServer
     static void _serveBackupEndpoints();
     static void _serveRestoreEndpoints();
     static void _serveFileEndpoints();
+#ifdef ENV_DEV
+    static void _serveShadowDevEndpoints();
+#endif
     
     // Authentication endpoints
     static void _serveAuthStatusEndpoint();
@@ -618,6 +622,9 @@ namespace CustomServer
         _serveAuthEndpoints();
         _serveOtaEndpoints();
         _serveAde7953Endpoints();
+#ifdef ENV_DEV
+        _serveShadowDevEndpoints();
+#endif
         _serveCustomMqttEndpoints();
         _serveInfluxDbEndpoints();
         _serveCrashEndpoints();
@@ -1933,6 +1940,48 @@ namespace CustomServer
             });
         server.addHandler(setUdpDestinationHandler);
     }
+
+#ifdef ENV_DEV
+    // Dev-only: feed a synthetic shadow delta through the real inbound path
+    // (routeMessage -> task drain -> ApplyFn -> ack publish) so the apply logic
+    // can be exercised on hardware without a cloud desired-state writer. Never
+    // compiled into the production firmware.
+    // Body: {"name":"system","doc":{"version":1,"state":{"led_brightness":20}}}
+    static void _serveShadowDevEndpoints() {
+        static AsyncCallbackJsonWebHandler *injectShadowDeltaHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/shadow/inject-delta",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (!_validateRequest(request, "POST", HTTP_MAX_CONTENT_LENGTH_ADE7953_CHANNEL_DATA * MAX_CHANNEL_COUNT)) return;
+
+                const char *name = json["name"].as<const char *>();
+                if (!name || json["doc"].isNull()) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Body requires 'name' and 'doc'");
+                    return;
+                }
+
+                SpiRamAllocator allocator;
+                JsonDocument deltaDoc(&allocator);
+                deltaDoc.set(json["doc"]);
+
+                size_t len = measureJson(deltaDoc) + 1;
+                char *payload = (char *)ps_malloc(len);
+                if (!payload) {
+                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Allocation failed");
+                    return;
+                }
+                serializeJson(deltaDoc, payload, len);
+
+                bool ok = Shadow::injectDelta(name, payload);
+                free(payload);
+
+                if (ok) _sendSuccessResponse(request, "Synthetic shadow delta injected");
+                else _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Unknown shadow name");
+            });
+        server.addHandler(injectShadowDeltaHandler);
+        LOG_DEBUG("Registered dev-only shadow delta injection endpoint");
+    }
+#endif
 
     // === ADE7953 ENDPOINTS ===
     static void _serveAde7953Endpoints() {
