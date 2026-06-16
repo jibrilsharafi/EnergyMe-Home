@@ -149,4 +149,11 @@ namespace Mqtt
     // topics (the shadow module builds the "shadow/name/<name>/..." suffix).
     bool subscribeReservedThings(const char* finalTopic);
     bool publishReservedThings(JsonDocument& jsonDocument, const char* finalTopic, bool retain = false);
+
+    // Config accessors used by the system shadow (04).
+    int  getMqttLogLevel();                  // current runtime level int (0..5)
+    void setMqttLogLevel(const char* level); // persisted baseline (validates the name)
+    void setRuntimeLogLevel(int level);      // runtime only - NOT persisted (transient verbose)
+    bool getSendPowerData();
+    void setSendPowerData(bool enabled);     // persisted
 }

@@ -404,6 +404,30 @@ namespace Mqtt
         return _publishJsonStreaming(jsonDocument, topic, retain);
     }
 
+    int getMqttLogLevel() { return _mqttLogLevelInt; }
+
+    void setMqttLogLevel(const char* level) { _setMqttLogLevel(level); } // validates + persists
+
+    void setRuntimeLogLevel(int level) {
+        if (level < 0 || level > 5) {
+            LOG_WARNING("Invalid runtime log level %d", level);
+            return;
+        }
+        if (!acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
+            LOG_ERROR("Failed to acquire config mutex for runtime log level");
+            return;
+        }
+        _mqttLogLevelInt = (uint8_t)level;
+        _updateMqttMinLogLevel();
+        releaseMutex(&_configMutex);
+        // Intentionally NOT persisted: this is the transient verbose window; a
+        // reboot returns to the saved baseline.
+    }
+
+    bool getSendPowerData() { return _sendPowerDataEnabled; }
+
+    void setSendPowerData(bool enabled) { _setSendPowerDataEnabled(enabled); } // persists
+
     // Private functions
     // =================
     // =================
