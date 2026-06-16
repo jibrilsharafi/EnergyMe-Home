@@ -62,6 +62,15 @@ namespace IssueRegistry
     // Acknowledge every visible instance. Returns the number acked.
     uint32_t ackAll();
 
+    // Number of currently-active instances (ActiveUnacked + ActiveAcked).
+    uint32_t activeCount();
+
+    // Observer hook: invoked from the registry task on any state transition or
+    // ack so a consumer (e.g. the issues shadow) can refresh its mirror. The
+    // callback must be cheap and non-blocking - set a flag, never publish.
+    using ChangeCallback = void (*)();
+    void setChangeCallback(ChangeCallback cb);
+
     // Task information
     TaskInfo getTaskInfo();
 }

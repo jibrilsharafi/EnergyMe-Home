@@ -40,6 +40,9 @@ namespace IssueRegistry
     static IssueInstance *_instances = nullptr;
     static SemaphoreHandle_t _registryMutex = NULL;
 
+    // Observer notified on any transition/ack (set a flag; never blocks).
+    static ChangeCallback _onChange = nullptr;
+
     // Per-code evaluator state (tick task only - no mutex needed)
     // =========================================================
     static uint32_t _prevFlipCount[MAX_CHANNEL_COUNT] = {};
@@ -167,7 +170,10 @@ namespace IssueRegistry
         }
         releaseMutex(&_registryMutex);
 
-        if (acked) _logTransition("acked", false, code, channel, "");
+        if (acked) {
+            _logTransition("acked", false, code, channel, "");
+            if (_onChange != nullptr) _onChange(); // refresh issues shadow
+        }
         return acked;
     }
 
@@ -195,8 +201,25 @@ namespace IssueRegistry
         for (uint32_t i = 0; i < ackedCount; i++) {
             _logTransition("acked", false, ackedCodes[i], ackedChannels[i], "");
         }
+        if (ackedCount > 0 && _onChange != nullptr) _onChange(); // refresh issues shadow
         return ackedCount;
     }
+
+    uint32_t activeCount()
+    {
+        if (!acquireMutex(&_registryMutex)) {
+            LOG_ERROR("Failed to acquire registry mutex for activeCount");
+            return 0;
+        }
+        uint32_t count = 0;
+        for (uint8_t i = 0; i < ISSUE_MAX_INSTANCES; i++) {
+            if (IssueLogic::isActive(_instances[i].state)) count++;
+        }
+        releaseMutex(&_registryMutex);
+        return count;
+    }
+
+    void setChangeCallback(ChangeCallback cb) { _onChange = cb; }
 
     TaskInfo getTaskInfo()
     {
@@ -490,6 +513,7 @@ namespace IssueRegistry
 
         if (raised) _logTransition("raised", true, code, channel, logMessage);
         if (cleared) _logTransition("cleared", false, code, channel, logMessage);
+        if ((raised || cleared) && _onChange != nullptr) _onChange(); // refresh issues shadow
     }
 
     static IssueInstance* _findInstance(IssueLogic::Code code, uint8_t channel)
