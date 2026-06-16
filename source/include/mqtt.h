@@ -144,4 +144,9 @@ namespace Mqtt
 
     TaskInfo getMqttTaskInfo();
     TaskInfo getMqttOtaTaskInfo();
+
+    // Shadow module helpers: subscribe/publish on reserved $aws/things/<id>/...
+    // topics (the shadow module builds the "shadow/name/<name>/..." suffix).
+    bool subscribeReservedThings(const char* finalTopic);
+    bool publishReservedThings(JsonDocument& jsonDocument, const char* finalTopic, bool retain = false);
 }

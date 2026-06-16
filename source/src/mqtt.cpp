@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "mqtt.h"
+#include "shadow.h"
 #include "taskprofiler.h"
 #include "duration_format.h"
 
@@ -207,6 +208,7 @@ namespace Mqtt
 
         _setupTopics();
         _loadConfigFromPreferences();
+        Shadow::begin();
         _initializeLogQueue();
         _initializeMeterQueue();
         
@@ -380,6 +382,26 @@ namespace Mqtt
     TaskInfo getMqttOtaTaskInfo()
     {
         return getTaskInfoSafely(_otaTaskHandle, OTA_TASK_STACK_SIZE);
+    }
+
+    // Shadow module helpers
+    // =====================
+
+    bool subscribeReservedThings(const char* finalTopic) {
+        char topic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructMqttTopicReservedThings(finalTopic, topic, sizeof(topic));
+        if (!_clientMqtt.subscribe(topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
+            LOG_WARNING("Failed to subscribe to %s", topic);
+            return false;
+        }
+        LOG_DEBUG("Subscribed to %s", topic);
+        return true;
+    }
+
+    bool publishReservedThings(JsonDocument& jsonDocument, const char* finalTopic, bool retain) {
+        char topic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructMqttTopicReservedThings(finalTopic, topic, sizeof(topic));
+        return _publishJsonStreaming(jsonDocument, topic, retain);
     }
 
     // Private functions
@@ -756,6 +778,7 @@ namespace Mqtt
     static void _subscribeToTopics() {
         _subscribeCommand();
         _subscribeAwsIotJobs();
+        Shadow::onMqttConnected(); // subscribe shadow deltas + queue initial reports
 
         LOG_DEBUG("Subscribed to topics");
     }
@@ -830,7 +853,8 @@ namespace Mqtt
 
         LOG_DEBUG("Received MQTT message from %s", topic);
 
-        if (endsWith(topic, MQTT_TOPIC_SUBSCRIBE_COMMAND)) _handleCommandMessage(message);
+        if (Shadow::routeMessage(topic, message)) { /* handled by shadow module (copy + flag only) */ }
+        else if (endsWith(topic, MQTT_TOPIC_SUBSCRIBE_COMMAND)) _handleCommandMessage(message);
         else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_JOBS)) _handleAwsIotJobMessage(message, topic);
         else LOG_WARNING("Unknown MQTT topic received: %s", topic);
         
@@ -1914,6 +1938,7 @@ namespace Mqtt
         _checkIfPublishSystemDynamicNeeded();
         _checkIfPublishStatisticsNeeded();
         _checkPublishMqtt();
+        Shadow::checkPublish(); // drain shadow deltas/local-edits/reports (MQTT task body)
     }
 
     // Utilities
