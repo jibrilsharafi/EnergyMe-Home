@@ -123,9 +123,8 @@ namespace Mqtt
     static void _subscribeCallback(const char* topic, byte *payload, uint32_t length);
     static void _handleCommandExecution(const char* topic, const char* message);
     static void _publishCommandStatus(const char* executionId, const char* status, const char* reasonCode, const char* reasonDescription);
-#ifdef ENV_DEV
-    static void _drainInjectedCommand();
-#endif
+    static void _queueCommand(const char* topic, const char* payload);
+    static void _drainPendingCommand();
     static void _handleAwsIotJobMessage(const char* message, const char* topic);
     
     // AWS IoT Jobs OTA functions
@@ -919,7 +918,7 @@ namespace Mqtt
         // also catches AWS's own .../response/rejected/json echo of our status publish,
         // which has no 'operation', gets re-rejected, and echoes again -> infinite
         // publish loop hammering the broker.
-        else if (strstr(topic, "/commands/things/") != nullptr && endsWith(topic, "/request/json")) _handleCommandExecution(topic, message);
+        else if (strstr(topic, "/commands/things/") != nullptr && endsWith(topic, "/request/json")) _queueCommand(topic, message);
         else if (strstr(topic, "/commands/things/") != nullptr) {
             // AWS echoed our own command-status publish back (e.g. rejecting a status
             // for an unknown/expired execution). Never reprocess it - just note it.
@@ -1033,58 +1032,73 @@ namespace Mqtt
         }
     }
 
-#ifdef ENV_DEV
-    // Dev-only synthetic command injection: the caller's task stashes the request
-    // (reusing _configMutex for the brief pointer handoff), the MQTT task drains
-    // it through the real handler so the status publish + reboot stay single-task.
-    static char* _injectedCmdTopic = nullptr;
-    static char* _injectedCmdPayload = nullptr;
+    // Command handoff. Both the broker RX path (_subscribeCallback) and the dev
+    // inject copy the request out + stash it here; the MQTT task body drains it
+    // through _handleCommandExecution. So the apply (per-channel NVS writes, up to
+    // ~1 s) and the status publishes run in the task body, NEVER inside the
+    // PubSubClient callback - same rule as shadow deltas (#138). Publishing inside
+    // the callback would also reuse PubSubClient's single buffer and corrupt the
+    // QoS1 PUBACK it writes right after the callback returns. Single slot is safe:
+    // loop() delivers one PUBLISH per call and we drain every iteration. Overwrite
+    // is warned, never silent, so a dropped command is always visible.
+    static char* _pendingCmdTopic = nullptr;
+    static char* _pendingCmdPayload = nullptr;
 
-    void injectCommandExecution(const char* executionId, const char* payload) {
-        if (executionId == nullptr || payload == nullptr) return;
-        char topic[MQTT_TOPIC_BUFFER_SIZE];
-        snprintf(topic, sizeof(topic), "%s/commands/things/%s/executions/%s/request/json",
-                 AWS_TOPIC, DEVICE_ID, executionId);
-
+    static void _queueCommand(const char* topic, const char* payload) {
+        if (topic == nullptr || payload == nullptr) return;
         size_t tlen = strlen(topic) + 1, plen = strlen(payload) + 1;
         char* t = (char*)ps_malloc(tlen);
         char* p = (char*)ps_malloc(plen);
         if (t == nullptr || p == nullptr) {
             if (t) free(t);
             if (p) free(p);
-            LOG_ERROR("Failed to allocate injected command buffers");
+            LOG_ERROR("Failed to allocate pending command buffers");
             return;
         }
         memcpy(t, topic, tlen);
         memcpy(p, payload, plen);
 
         if (acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
-            if (_injectedCmdTopic) free(_injectedCmdTopic);
-            if (_injectedCmdPayload) free(_injectedCmdPayload);
-            _injectedCmdTopic = t;
-            _injectedCmdPayload = p;
+            if (_pendingCmdTopic != nullptr || _pendingCmdPayload != nullptr) {
+                LOG_WARNING("Overwriting an undrained pending command; previous one dropped");
+                if (_pendingCmdTopic) free(_pendingCmdTopic);
+                if (_pendingCmdPayload) free(_pendingCmdPayload);
+            }
+            _pendingCmdTopic = t;
+            _pendingCmdPayload = p;
             releaseMutex(&_configMutex);
-            LOG_INFO("Injected synthetic command execution %s", executionId);
         } else {
             free(t);
             free(p);
-            LOG_ERROR("Failed to acquire mutex staging injected command");
+            LOG_ERROR("Failed to acquire mutex queuing command");
         }
     }
 
-    static void _drainInjectedCommand() {
+    static void _drainPendingCommand() {
         char* t = nullptr;
         char* p = nullptr;
         if (acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
-            t = _injectedCmdTopic;
-            _injectedCmdTopic = nullptr;
-            p = _injectedCmdPayload;
-            _injectedCmdPayload = nullptr;
+            t = _pendingCmdTopic;
+            _pendingCmdTopic = nullptr;
+            p = _pendingCmdPayload;
+            _pendingCmdPayload = nullptr;
             releaseMutex(&_configMutex);
         }
         if (t != nullptr && p != nullptr) _handleCommandExecution(t, p);
         if (t) free(t);
         if (p) free(p);
+    }
+
+#ifdef ENV_DEV
+    // Dev-only synthetic command injection: build the real request topic and route
+    // it through the same queue + task-body drain the broker path uses.
+    void injectCommandExecution(const char* executionId, const char* payload) {
+        if (executionId == nullptr || payload == nullptr) return;
+        char topic[MQTT_TOPIC_BUFFER_SIZE];
+        snprintf(topic, sizeof(topic), "%s/commands/things/%s/executions/%s/request/json",
+                 AWS_TOPIC, DEVICE_ID, executionId);
+        _queueCommand(topic, payload);
+        LOG_INFO("Injected synthetic command execution %s", executionId);
     }
 #endif
 
@@ -2048,9 +2062,7 @@ namespace Mqtt
         _checkIfPublishStatisticsNeeded();
         _checkPublishMqtt();
         Shadow::checkPublish(); // drain shadow deltas/local-edits/reports (MQTT task body)
-#ifdef ENV_DEV
-        _drainInjectedCommand(); // dev-only synthetic command injection
-#endif
+        _drainPendingCommand(); // process queued IoT Command (broker RX or dev inject) off the callback
     }
 
     // Utilities
