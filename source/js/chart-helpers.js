@@ -455,9 +455,11 @@ const ChartHelpers = {
             productionIndices.forEach(idx => {
                 pvProd += periodData[idx] || 0;
             });
-            // Inverter: count imported energy as production
+            // Inverter: count imported energy as production, exported energy as charge
+            let inverterCharge = 0;
             inverterIndices.forEach(idx => {
                 pvProd += periodData[idx] || 0;
+                inverterCharge += periodExport[idx] || 0;
             });
             balanceData.pv.push(pvProd);
 
@@ -470,7 +472,7 @@ const ChartHelpers = {
             balanceData.batteryCharge.push(battCharge);
             balanceData.batteryDischarge.push(battDischarge);
 
-            const home = gridImport + pvProd + battDischarge - gridExport - battCharge;
+            const home = gridImport + pvProd + battDischarge - gridExport - battCharge - inverterCharge;
             balanceData.homeConsumption.push(Math.max(0, home));
         });
 
@@ -620,9 +622,11 @@ const ChartHelpers = {
         productionIndices.forEach(idx => {
             production += rawImported[idx] || 0;
         });
-        // Inverter: imported energy counts as production
+        // Inverter: imported energy counts as production, exported energy is charge
+        let inverterCharge = 0;
         inverterIndices.forEach(idx => {
             production += rawImported[idx] || 0;
+            inverterCharge += rawExported[idx] || 0;
         });
 
         batteryIndices.forEach(idx => {
@@ -647,7 +651,7 @@ const ChartHelpers = {
                 document.getElementById('kpi-self-consumption').style.display = 'none';
             }
 
-            const totalConsumption = gridImport + production - gridExport + batteryDischarge - batteryCharge;
+            const totalConsumption = gridImport + production - gridExport + batteryDischarge - batteryCharge - inverterCharge;
             if (totalConsumption > 0) {
                 const fromOwnProduction = Math.max(0, totalConsumption - gridImport);
                 const autosufficiency = Math.min(100, (fromOwnProduction / totalConsumption) * 100);
