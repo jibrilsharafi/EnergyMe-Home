@@ -366,6 +366,11 @@ void checkPublish() {
 // ============================================================================
 
 void requestReport(const char* name) {
+    // Before begin() registers the shadows (_count == 0) callers like the
+    // ADE7953 channel-config load fire this during setup; ignore quietly - the
+    // shadow reports its full state on MQTT connect anyway, so a dropped early
+    // flag costs nothing. After init an unknown name is a real bug, so warn.
+    if (_count == 0) return;
     int idx = _findShadow(name, strlen(name));
     if (idx >= 0) _shadows[idx].reportPending = true; // benign volatile set
     else LOG_WARNING("requestReport for unknown shadow '%s'", name);
