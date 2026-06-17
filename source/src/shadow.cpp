@@ -254,28 +254,39 @@ bool routeMessage(const char* topic, const char* payload) {
 // Publishing primitives (MQTT task context only)
 // ============================================================================
 
+// Snapshot the reported object as the drift baseline (MQTT-task-only field, no
+// mutex). The periodic drift check diffs against this, so refreshing it after a
+// publish - or after a cloud-delta apply - stops that change from being treated
+// as a fresh local edit and re-published. OOM leaves the baseline stale, which
+// just costs one redundant republish on the next tick.
+static void _storeBaseline(uint8_t idx, JsonObjectConst reported) {
+    size_t len = measureJson(reported) + 1;
+    char* snap = (char*)ps_malloc(len);
+    if (snap == nullptr) return;
+    serializeJson(reported, snap, len);
+    if (_shadows[idx].lastReported != nullptr) free(_shadows[idx].lastReported);
+    _shadows[idx].lastReported = snap;
+}
+
+// Publish an already-built reported doc and refresh the drift baseline from it.
+// Split out of _publishReported so the drift check can hand over the doc it just
+// built to detect the change, instead of rebuilding the full report a second time.
+static void _publishReportedDoc(uint8_t idx, JsonDocument& doc) {
+    char topic[MQTT_TOPIC_BUFFER_SIZE];
+    _topicUpdate(_shadows[idx].desc.name, topic, sizeof(topic));
+    if (!Mqtt::publishReservedThings(doc, topic)) {
+        LOG_WARNING("Failed to publish reported state for shadow '%s'", _shadows[idx].desc.name);
+        return;
+    }
+    LOG_DEBUG("Published reported state for shadow '%s'", _shadows[idx].desc.name);
+    _storeBaseline(idx, doc["state"]["reported"].as<JsonObjectConst>());
+}
+
 static void _publishReported(uint8_t idx) {
     SpiRamAllocator allocator;
     JsonDocument doc(&allocator);
     _shadows[idx].desc.report(doc); // fills doc["state"]["reported"]
-
-    char topic[MQTT_TOPIC_BUFFER_SIZE];
-    _topicUpdate(_shadows[idx].desc.name, topic, sizeof(topic));
-    if (Mqtt::publishReservedThings(doc, topic)) {
-        LOG_DEBUG("Published reported state for shadow '%s'", _shadows[idx].desc.name);
-        // Refresh the drift baseline so the periodic check only republishes on a
-        // real change from here on (MQTT-task-only field, no mutex).
-        JsonObjectConst reported = doc["state"]["reported"].as<JsonObjectConst>();
-        size_t len = measureJson(reported) + 1;
-        char* snap = (char*)ps_malloc(len);
-        if (snap != nullptr) {
-            serializeJson(reported, snap, len);
-            if (_shadows[idx].lastReported != nullptr) free(_shadows[idx].lastReported);
-            _shadows[idx].lastReported = snap;
-        }
-    } else {
-        LOG_WARNING("Failed to publish reported state for shadow '%s'", _shadows[idx].desc.name);
-    }
+    _publishReportedDoc(idx, doc);
 }
 
 static void _addClientToken(JsonDocument& doc) {
@@ -356,7 +367,7 @@ static void _reportIfDrifted(uint8_t idx) {
     bool changed = _shadows[idx].lastReported == nullptr ||
                    strcmp(cur, _shadows[idx].lastReported) != 0;
     free(cur);
-    if (changed) _publishReported(idx); // rebuilds, publishes, refreshes baseline
+    if (changed) _publishReportedDoc(idx, doc); // reuse the doc we just built
 }
 
 void checkPublish() {
