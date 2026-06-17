@@ -2,9 +2,56 @@
 
 Legend: ⬜ not started · 🟡 in progress · ✅ done · ⛔ blocked
 
-_Last updated: 2026-06-17 (session 2: drift-detect, transient-verbose reboot
-restore, issues boot-race fix, wifi shadow, command reasonCode casing - all
-committed + hardware-verified on .174)._
+_Last updated: 2026-06-17 (session 3: real broker-delivered shadow e2e via admin-dev
+`desired` writes - full writable matrix + bulk buffer stress + reject paths verified on
+.174; surfaced the asymmetric-null cloud-contract finding below)._
+
+## Update 2026-06-17 (session 3 - REAL broker-delivered shadow e2e via admin-dev)
+
+Closed the gap #190 listed as cloud-gated: drove `desired` writes against the **dev
+shadows** with `aws iot-data update-thing-shadow` (admin-dev) - the real AWS->broker
+->device delta path the dev `inject-delta` shim could not exercise. UDP-correlated on
+.174 (build `c509e555`).
+
+- **Writable matrix (system/meter/channels), real deltas:** brightness, send_power_data,
+  log levels, sample_time, calibration (phCalB, aIRmsOs/bIRmsOs), channel label/active/
+  role, multi-field + multi-channel deltas - all apply -> persist -> report -> null
+  `desired`, ~1 s round trip. Each delta `routeMessage`-queued then `_applyDelta`'d in
+  the **task body** (deferred, not the callback) - confirmed in UDP.
+- **Reject paths all run real validation (not silent drops):** WARN observed for
+  led_brightness 200 (range), mqtt_log_level BOGUS (unknown), sample_time 50 (<min),
+  channel 0 disable (blocked), channel key 99 (invalid) - each still completes the ack
+  that nulls `desired` (no stuck delta / loop).
+- **Bulk buffer stress (06's worst case):** 16-channel delta, 63-char label+groupLabel
+  each, arrived as a single **3848-byte** inbound message and applied (<9 KB
+  `MQTT_BUFFER_SIZE`). Single-shadow channels path confirmed feasible; no cloud chunking
+  needed for label+groupLabel.
+- **Concurrency + lifecycle paths all verified:** (a) local+cloud interplay - drift(local)
+  + delta(cloud) on different fields converge, cloud-after-local wins; (b) idle 30 s - 0
+  spurious version bumps; (c) reported-only shadow write (`wifi`) inert (writable-gated
+  subscribe, confirmed `shadow.cpp:191` + UDP); (d) NVS persistence across reboot
+  (brightness/levels/sample_time/calib/labels/role); (e) transient `mqtt_log_level` full
+  lifecycle - cloud-set DEBUG -> survives reboot (restored + 5-min timer restarted,
+  baseline untouched) -> auto-reverted to INFO at exactly 5 min; (f) **offline->reconnect-
+  apply** - `desired` written while device off-broker (cloud disabled via API) applied on
+  reconnect via reported-first->re-delta (cloud-wins-on-reconnect, 00 line 82); (g) **409
+  optimistic-concurrency** forced via rapid double-writes - device re-publishes reported
+  *without* version, fresh delta applies, converges to latest; 1 conflict/round, **no loop**
+  (00 lines 96-100). All UDP-correlated.
+
+### FINDING (no firmware change) - asymmetric-null seam needs the cloud contract
+
+A cloud `desired` written **equal to** `reported` (a no-op write, or re-asserting an
+already-satisfied value) produces **no delta** (AWS only deltas on `desired != reported`).
+A no-GET device nulls `desired` only in the delta-ack, so it never sees or clears that
+`desired`. The stuck `desired` then **reverts the next local edit** to the field.
+*Reproduced on .174:* `desired.led_brightness=44` when reported already 44 -> local REST
+88 -> reverted to 44 in ~2 s. Resolution is the **cloud contract** (cloud owns clearing
+`desired`: write-to-change then `desired:null` after convergence; never write
+`desired==reported`/re-assert) - documented in `00-overview-and-contract.md`. A
+device-side drift-null was considered and rejected (trades it for a coincident-write
+race; needs the avoided GET). **Not a #190 blocker** - the trigger needs the (unbuilt)
+cloud writer; firmware is correct under the contract.
 
 ## Update 2026-06-17 (session 2 - post-MVP hardening, committed + verified on .174)
 

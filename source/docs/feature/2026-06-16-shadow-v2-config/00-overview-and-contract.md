@@ -81,15 +81,52 @@ treats `desired`:
 | Local edit (REST/UI/internal) | `{reported:{f:localVal}}` via 3 s drift poll (no `desired`) | local value reported within ~3 s; a pending cloud `desired` is **not** cleared |
 | Reconnect (reported-first) | `{reported:<full>}` (does **not** null desired) | any pending cloud `desired` survives -> AWS re-sends delta -> **cloud value re-applied** |
 
-So: the delta path clears intent on every cloud write. Local edits publish
-reported-only (no `desired:null`) - **safe in the current field set** because the
-delta path already clears `desired` on each cloud write, so no locally-editable
-field carries a standing cloud `desired` to conflict with. **If** a future design
-has the cloud hold a standing `desired` on a locally-editable field, a local edit
-would be re-overridden by the next delta (cloud-wins); to restore
-local-wins-when-active for such a field, add a per-field `desired:null` to the
-drift publish. Across a reconnect, a still-pending cloud `desired` wins
-(reported-first does not clear it).
+So: the delta path clears intent on each cloud write **that produces a delta**.
+Local edits publish reported-only (no `desired:null`), so a `desired` left equal to
+`reported` is never cleared by the device.
+
+> **DECISION (2026-06-17, verified e2e on .174): the cloud owns clearing `desired`,
+> reactively, after convergence.** This is the load-bearing contract; the device's
+> delta-ack null is only a latency optimization on top of it. `desired` is a
+> *transient remote command*, not a persistent setpoint - steady-state the local
+> value is authoritative (aligns with local-first).
+
+1. **(MUST - load-bearing) Clear `desired` after observing convergence.** The cloud
+   desired-state writer writes a field only to *command* a change, then publishes
+   `desired:{f:null}` once it observes `reported` match the value it wrote -
+   **including the immediate case where `reported` already equalled it** (a no-op
+   write -> null it right away). This is *reactive* (it watches the actual reported
+   shadow), so it is robust even when the writer's own `reported` view lags the
+   device.
+2. **(SHOULD - optimization, NOT the safety mechanism) Avoid writing
+   `desired == reported`** and avoid declarative "full desired state" re-syncs. This
+   only saves shadow churn. It is *predictive* (compares against the writer's
+   possibly-stale `reported` cache), so it is best-effort; clause 1 is what
+   guarantees correctness, and it cleans up any no-op that slips through.
+
+**Failure mode if clause 1 is skipped:** AWS emits a delta **only when
+`desired != reported`**, and a no-GET device nulls `desired` only in the delta-ack.
+So a `desired` written equal to (or left equal to) `reported` produces **no delta**,
+the device never sees it, and it stays. That stuck `desired` then reverts the next
+*local* edit to the field: the local edit moves `reported`, `desired` now differs,
+AWS emits a delta, and the device applies the stale `desired` over the local change.
+*Reproduced on .174 (2026-06-17):* wrote `desired.led_brightness=44` when `reported`
+was already 44 -> local REST set 88 -> device reverted to 44 within ~2 s.
+
+**Why the fix is the cloud, not the device:** the device cannot see a
+`desired == reported` without a GET (no diff -> no delta -> no notification), and the
+design deliberately avoids GET / `/update/accepted`. A device-side "drift also nulls
+`desired`" alternative was considered and **rejected** - it trades this (sustained)
+bug for a coincident-write race, where a local edit firing while a fresh cloud
+`desired` is still in flight would wipe the cloud intent at AWS with no re-trigger.
+The cloud already ingests `reported` and can watch convergence, so it is the natural
+owner. (A periodic device GET to sweep stuck `desired` was also rejected: it
+re-introduces the avoided GET + `/get/accepted` subscriptions/buffer, needs
+version-conditional nulls to avoid the same race, and only bounds the harm window to
+the poll interval.)
+
+Across a reconnect, a still-pending cloud `desired` wins (reported-first does not
+clear it) - consistent with the cloud-wins-on-reconnect policy.
 
 ### Version / clientToken
 
