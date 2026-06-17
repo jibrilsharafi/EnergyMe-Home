@@ -143,6 +143,14 @@ the authoritative schema.
    camelCase keys, NVS `ade7953_ns`) + `sample_time`. See 05.
 5. **channels** (writable) - per-channel object keyed by index 0-16, nested
    `ctSpecification`, `_channelDataMutex`, channel-0 invariant. See 06.
+6. **wifi** (reported-only) - non-secret network state: `connected`, `ssid`,
+   `ip`, `gateway`, `subnet`, `dns`, `mac`, plus `static_ip`/`fallback_to_dhcp`
+   mode flags. Read from `WiFi.*` + `CustomWifi::getConfiguration`. Published on
+   (re)connect like the other reported-only shadows. **RSSI is excluded** (volatile,
+   already on `system/dynamic`). **No writable network config**: static IP is set
+   locally via REST only - a bad remote static IP would risk a LAN lock-out, and
+   the local path already has boot-fail/DHCP backstops. WiFi credentials are never
+   in a shadow.
 
 ## Cloud-side required changes (REFERENCE ONLY - not implemented in this repo)
 
@@ -202,9 +210,10 @@ The first cut ships the config surface that already exists on-device. Once the
 mechanism is live we optimize and add remaining endpoints. Known candidates to
 revisit in the payload review:
 
-- **WiFi info** (non-secret): connected SSID, RSSI, IP - reportable in `info` or a
-  WiFi shadow. (RSSI is already in `system/dynamic` telemetry today.) **Creds stay
-  local-only.**
+- ~~**WiFi info** (non-secret)~~ **DONE:** shipped as the reported-only `wifi`
+  shadow (connected/ssid/ip/gateway/subnet/dns/mac + static_ip/fallback_to_dhcp).
+  RSSI stays on `system/dynamic`. Creds remain local-only. Writable network config
+  (static IP/DHCP from cloud) deliberately **not** added - LAN lock-out risk.
 - **WiFi actions**: reconnect / rescan / forget - candidate IoT Commands.
 - Any config currently exposed via REST but not yet mirrored to a shadow.
 - `issues` ack wiring (decision 3) once the cloud desired-writer exists.
