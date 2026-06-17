@@ -709,7 +709,7 @@ namespace Ade7953
 
     bool setSampleTime(uint64_t sampleTime) {
         if (sampleTime < MINIMUM_SAMPLE_TIME) {
-            LOG_WARNING("Sample time %lu is below minimum %lu", sampleTime, MINIMUM_SAMPLE_TIME);
+            LOG_WARNING("Sample time %llu is below minimum %llu", sampleTime, MINIMUM_SAMPLE_TIME);
             return false;
         }
 
