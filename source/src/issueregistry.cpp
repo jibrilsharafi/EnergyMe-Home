@@ -125,6 +125,16 @@ namespace IssueRegistry
 
     bool issuesToJson(JsonDocument &doc)
     {
+        // Always present, even when empty, so callers get a valid shape.
+        JsonArray issues = doc["issues"].to<JsonArray>();
+
+        // NULL mutex = registry not initialized yet (early boot, before begin())
+        // or disabled (PSRAM alloc failed). Report an empty set, not an error:
+        // acquireMutex would just fail on the NULL handle. (begin() now runs before
+        // the web server, so this window is essentially closed; this also covers
+        // the permanent alloc-failure case gracefully.)
+        if (_registryMutex == NULL) return true;
+
         if (!acquireMutex(&_registryMutex)) {
             LOG_ERROR("Failed to acquire registry mutex for issuesToJson");
             return false;
@@ -132,7 +142,6 @@ namespace IssueRegistry
 
         // The table is tiny (a few KB): building the document under the mutex is
         // memory-only work; network serialization happens outside, on the copy.
-        JsonArray issues = doc["issues"].to<JsonArray>();
         for (uint8_t i = 0; i < ISSUE_MAX_INSTANCES; i++) {
             const IssueInstance &inst = _instances[i];
             if (!IssueLogic::isVisible(inst.state)) continue;
