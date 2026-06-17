@@ -52,7 +52,12 @@
 #define MQTT_PREFERENCES_OTA_EXPECTED_SHA256_KEY "ota_sha256" // Expected firmware SHA256 for validation
 
 // MQTT buffer sizes - all moved to PSRAM for better memory utilization
-#define MQTT_BUFFER_SIZE (5 * 1024) // Needs to be at least 4 kB for the certificates
+// 9 KB sized for the worst-case inbound shadow /update/delta (changed desired
+// fields + per-field metadata) now that /update/accepted is intentionally not
+// subscribed. This static PubSubClient RX/TX buffer lives in internal RAM and
+// adds pressure at the TLS handshake (see the 2.0.0 esp-aes alloc memory) -
+// verify free internal heap after connect on real hardware.
+#define MQTT_BUFFER_SIZE (9 * 1024)
 #define MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE (32 * 1024) // PSRAM buffer for MQTT subscribe messages (reduced for efficiency)
 #define CERTIFICATE_BUFFER_SIZE (16 * 1024)   // PSRAM buffer for certificate storage (was 4KB)
 #define MINIMUM_CERTIFICATE_LENGTH 128 // Minimum length for valid certificates (to avoid empty strings)
@@ -91,35 +96,33 @@
 #define MQTT_PREFERENCES_MQTT_LOG_LEVEL_KEY "log_level_int"
 
 // MQTT topic suffixes (application-level; see awsconfig.h for the namespace prefix)
-// Publish topics
+// Publish topics. system/static + channel retired (-> info + channels shadows);
+// configurable state lives in shadows, telemetry topics carry runtime data only.
 #define MQTT_TOPIC_METER "meter"
-#define MQTT_TOPIC_SYSTEM_STATIC "system/static"
 #define MQTT_TOPIC_SYSTEM_DYNAMIC "system/dynamic"
-#define MQTT_TOPIC_CHANNEL "channel"
 #define MQTT_TOPIC_STATISTICS "statistics"
 #define MQTT_TOPIC_CRASH "crash"
 #define MQTT_TOPIC_LOG "log"
-// Subscribe topics
-#define MQTT_TOPIC_SUBSCRIBE_COMMAND "command"
+// Subscribe topics. The legacy `command` topic is retired (-> IoT Commands +
+// system shadow); only AWS IoT Jobs (OTA) and shadow/command reserved topics remain.
 #define MQTT_TOPIC_SUBSCRIBE_JOBS "jobs"
 #define MQTT_TOPIC_SUBSCRIBE_QOS 1
+
+// AWS IoT Commands (transient operations): reject any request older than this.
+#define COMMAND_MAX_AGE_SECONDS 300 // 5 minutes
 
 struct PublishMqtt
 {
   bool meter;
   bool systemDynamic;
-  bool systemStatic;
-  bool channel;
   bool statistics;
   bool crash;
   bool requestOta;
 
-  PublishMqtt() : 
+  PublishMqtt() :
     meter(false), // Need to fill queue first
-    systemDynamic(true), 
-    systemStatic(true), 
-    channel(true), 
-    statistics(true), 
+    systemDynamic(true),
+    statistics(true),
     crash(false), // May not be present
     requestOta(true) {} // Always require on connection
 };
@@ -156,4 +159,10 @@ namespace Mqtt
     void setRuntimeLogLevel(int level);      // runtime only - NOT persisted (transient verbose)
     bool getSendPowerData();
     void setSendPowerData(bool enabled);     // persisted
+
+#ifdef ENV_DEV
+    // Dev-only: inject a synthetic IoT Command execution through the real handler
+    // (staged from the caller's task, dispatched on the MQTT task). Never in prod.
+    void injectCommandExecution(const char* executionId, const char* payload);
+#endif
 }
