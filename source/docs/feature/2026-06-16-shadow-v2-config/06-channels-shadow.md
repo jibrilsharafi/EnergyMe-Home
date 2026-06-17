@@ -86,11 +86,13 @@ inside `setChannelDataFromJson`/`setChannelData`. ApplyFn must not hold
 `role` change side effects (`roleChanged`, transient re-read flags) are handled by
 `setChannelData` (`armTransients` default true). Pass through unchanged.
 
-## Local-edit hook
+## Local-edit propagation (drift-detect)
 
-`PUT/PATCH /api/v1/ade7953/channel` and `PUT /api/v1/ade7953/channels`
-(customserver.cpp) -> `Shadow::publishLocalEdit("channels", {"<idx>": changed})`.
-For the bulk endpoint, include each changed index.
+No per-handler hook. Local edits via `PUT/PATCH /api/v1/ade7953/channel` and
+`PUT /api/v1/ade7953/channels` (customserver.cpp, bulk included) are picked up by
+`Shadow::checkPublish()`, which drift-detects the changed channel object(s) every
+3 s and republishes (reported-only). See 04 / 00. (The earlier per-handler
+`publishLocalEdit` was removed.)
 
 ## Tests
 

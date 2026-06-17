@@ -52,10 +52,13 @@ Mutex: `setConfigurationFromJson` / `setSampleTime` already acquire
 `_configMutex` (ade7953.cpp) internally. ApplyFn must NOT hold `_shadowMutex`
 while calling them (call after releasing) to avoid lock-order inversion.
 
-## Local-edit hook
+## Local-edit propagation (drift-detect)
 
-`PUT/PATCH /api/v1/ade7953/config` and `PUT /api/v1/ade7953/sample-time`
-(customserver.cpp) -> `Shadow::publishLocalEdit("meter", changed)`.
+No per-handler hook. Local edits via `PUT/PATCH /api/v1/ade7953/config` and
+`PUT /api/v1/ade7953/sample-time` (customserver.cpp) are picked up by
+`Shadow::checkPublish()`, which drift-detects the changed `reported` every 3 s and
+republishes (reported-only, no `desired:null`). See 04 / 00. (The earlier
+per-handler `publishLocalEdit` was removed.)
 
 ## Tests
 

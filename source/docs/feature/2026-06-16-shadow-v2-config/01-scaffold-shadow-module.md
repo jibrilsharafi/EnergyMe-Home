@@ -34,8 +34,8 @@ namespace Shadow {
     bool routeMessage(const char* topic, const char* payload); // true if handled
     void publishReported(const char* name);                    // one shadow
 
-    // Called by modules on local edit (clears pending desired for changed fields):
-    void publishLocalEdit(const char* name, JsonObjectConst changedFields);
+    // Called by the mqtt.cpp task loop (drift-detect local edits + drain queued deltas):
+    void checkPublish();   // every ~3 s: republish any writable shadow whose reported drifted
 }
 ```
 
@@ -133,13 +133,19 @@ desc.report(doc)                            // module fills reported
 publish(doc -> <name>/update)
 ```
 
-## `publishLocalEdit(name, changedFields)`
+## `checkPublish()` - local-edit drift-detect (replaced `publishLocalEdit`)
 
 ```
-doc = {state:{reported: changedFields, desired:{<each changed key>: null}}}
-doc["clientToken"] = _newToken()
-publish(doc -> <name>/update)               // local wins: nulls pending desired
+for each writable shadow:
+  doc = {state:{reported:{}}}; desc.report(doc)   // rebuild current reported
+  if reported changed since last published snapshot:
+    publish(doc -> <name>/update)                 // reported-only: NO version, NO desired:null
 ```
+
+Source-agnostic: any local change (REST/UI/internal) reaches the shadow within ~3 s.
+Reported-only by design - it does **not** null `desired` (that would race in-flight
+cloud deltas); the cloud owns clearing `desired` (see 00, asymmetric desired-null
+decision). This replaced the original per-handler `publishLocalEdit`.
 
 ## clientToken / version helpers
 
