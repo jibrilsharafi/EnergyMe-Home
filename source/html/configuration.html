@@ -138,10 +138,10 @@
         <label for="cloudServices">Enable cloud services</label>
         <br><br>
         <button class="buttonForm" onclick="setCloudServices()" id="setCloudServicesButton">☁️ Set cloud services</button>
-        <div id="portalBanner" class="portal-banner" style="display:none">
-            <p id="portalMsg">Enable cloud services above to unlock remote monitoring on EnergyMe Portal.</p>
+        <div id="portalBanner" class="portal-banner">
+            <p id="portalMsg">&#128269; Checking certificates...</p>
             <a id="portalLink" href="#" target="_blank" rel="noopener noreferrer" class="portal-cta portal-cta-disabled">
-                &#128274; Add to EnergyMe Portal &#8250;
+                &#9203; Add to EnergyMe Portal &#8250;
             </a>
         </div>
     </div>
@@ -664,8 +664,12 @@
 
         function updatePortalLink() {
             const banner = document.getElementById('portalBanner');
-            if (!_deviceId || !_secretsChecked) { banner.style.display = 'none'; return; }
             banner.style.display = 'block';
+            // Keep the banner visible from first paint. Until both the device id
+            // and the secrets check have resolved, leave the "Checking
+            // certificates..." placeholder showing rather than hiding the whole
+            // banner - avoids the ~1s blank-then-pop-in while the config loads.
+            if (!_deviceId || !_secretsChecked) { return; }
             const link = document.getElementById('portalLink');
             if (!_hasSecrets) {
                 link.href = '#';
