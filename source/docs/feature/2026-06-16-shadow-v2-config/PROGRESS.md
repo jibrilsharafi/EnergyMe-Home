@@ -3,7 +3,29 @@
 Legend: ⬜ not started · 🟡 in progress · ✅ done · ⛔ blocked
 
 _Last updated: 2026-06-17 (all 8 phases implemented + committed; MQTT storm
-root-caused + fixed; cutover build hardware-verified stable on dev .174)._
+root-caused + fixed; IoT Commands subscribe topic corrected + verified on .174)._
+
+## Update 2026-06-17 (corrected root cause + topic fix - SUPERSEDES the banner below)
+
+The CLIENT_ERROR storm was NOT caused by IoT Commands being unprovisioned. Real
+cause: the device subscribed to `.../executions/+/request/+` - a `+` at the
+PAYLOAD-FORMAT segment, an unsupported AWS reserved-topic subscribe (AWS docs:
+"Unsupported ... subscribe operations to reserved topics can result in a terminated
+connection"). The documented form allows `+` only at the execution-id position. The
+"not provisioned" reading was an artifact of the local AWS CLI 2.15.38 lacking
+`list-commands`; the cloud side confirmed IoT Commands IS available in eu-west-1.
+
+Fix `a9fbce8`: subscribe to `.../executions/+/request/json` (flag stays ON). Coupling:
+the cloud dispatcher must create commands with contentType application/json.
+
+Verified on dev .174 (build `e338ab8f`, commands subscription ACTIVE): single stable
+MQTT connection >4 min, 68 telemetry publishes / 0 errors, **0 CLIENT_ERROR** at the
+connectivity-handler since connect. Storm fix proven; the round-trip (device RECEIVES
+a command) is pending the cloud CreateCommand + StartCommandExecution dispatcher.
+
+Known follow-up (fix during the reject-path round-trip): device reject/fail
+`reasonCode`s are lowercase but AWS requires `[A-Z0-9_-]+`; uppercase them. Happy path
+(restart IN_PROGRESS -> SUCCEEDED) sends no statusReason, so unaffected.
 
 ## RESOLVED - MQTT reconnect storm root cause (2026-06-17)
 
@@ -16,10 +38,12 @@ CONNACK, connect/drop every ~1.2 s, zero stable session) was traced - via the
 identity, non-shadow firmware) holds 1 connection for 40 h with 0 errors, so the
 broker/account/network are healthy - the fault was **.174-firmware-specific**.
 
-**Cause:** the device subscribed to the `$aws/commands/things/<id>/executions/+/request/+`
-reserved topic, but **AWS IoT Commands is not provisioned** in this account (no
-dispatcher; `list-commands` is not even a valid API here). Subscribing to an
-unrecognized reserved topic makes the broker reject the session with CLIENT_ERROR.
+**Cause (SUPERSEDED - see Update at top):** the device subscribed to
+`$aws/commands/things/<id>/executions/+/request/+`. The original reading below blamed
+"IoT Commands not provisioned" (an artifact of the local CLI lacking `list-commands`);
+the real cause is the `+` at the payload-format segment - an unsupported reserved-topic
+subscribe that makes the broker terminate the session with CLIENT_ERROR. IoT Commands
+IS available in eu-west-1.
 A secondary `AdvancedLogTask` panic crash-loop was just the log firehose from the
 storm (stopped the instant cloud was disabled).
 
@@ -57,7 +81,7 @@ is retained as correct sizing for the worst-case inbound shadow delta.
 | 04 | `system` shadow | ✅ | inject led_brightness -> applied -> AWS | 5 fields + mqtt_log_level auto-revert |
 | 05 | `meter` shadow | ✅ | reports; version inc | ADE7953 calibration |
 | 06 | `channels` shadow | ✅ | reports; version inc | dropped `channel` topic |
-| 07 | Commands | ✅ (subscribe gated OFF) | native tests; broker e2e blocked on provisioning | gate flips ON when IoT Commands is live |
+| 07 | Commands | ✅ subscribe fixed (`a9fbce8`, /request/json) + verified | storm gone on .174 (0 CLIENT_ERROR, sub ACTIVE); round-trip pending cloud dispatcher | reasonCode casing follow-up |
 | 08 | config-topic retirement | ✅ (`41f8bf8`) | telemetry stable, no config topics published | 9 KB buffer + removals; NO fw version bump here |
 
 ## Decisions log (resolved)
@@ -105,10 +129,10 @@ contract is validated end-to-end.
 | Item | Status | Blocks |
 |------|--------|--------|
 | `$aws/commands/things/<thing>/*` policy statement | ✅ present in policy | - |
-| **IoT Commands feature provisioned** (account not set up; `list-commands` invalid) | ⬜ | **device commands subscribe is gated OFF until this exists** |
+| **IoT Commands available in eu-west-1** | ✅ confirmed cloud-side (`list-commands` responds) | resolved - was a topic-shape bug, not provisioning |
 | Shadow ingestion Lambda + rule -> existing `device-ops` table (no new table) | ⬜ | reading reported cloud-side |
 | Desired-state writer ("Intelligence" backend) | ⬜ | real broker-delivered delta test (inject path already proven) |
-| 3 command templates + `StartCommandExecution` dispatcher | ⬜ | 07 end-to-end test |
+| Command(s) + `StartCommandExecution` dispatcher (contentType application/json) | ⬜ | 07 round-trip test (storm fix already proven on .174) |
 | Retire idle `system/static`/`command`/`channel` rules (whenever) | ⬜ | cleanup only |
 
 ## Hardware-verify items
@@ -119,8 +143,8 @@ contract is validated end-to-end.
   metadata, ~2x state) fits `MQTT_BUFFER_SIZE` 9 KB; else cloud must chunk. Not
   yet exercised at worst case (no cloud desired-writer). See 06.
 - ⬜ (Final review) Commands request carries a server timestamp for the staleness
-  guard; backend clears `desired` on `factory_reset`. Blocked on IoT Commands
-  provisioning. See 07.
+  guard; backend clears `desired` on `factory_reset`. Blocked on the cloud command
+  dispatcher. See 07.
 
 ## Final gate + post-MVP
 
@@ -135,7 +159,8 @@ contract is validated end-to-end.
 Firmware MVP is implemented + committed + hardware-stable on dev .174. Remaining:
 1. Push `feat/iot-shadow-config` + open PR -> `development` (gated on Jibril's go-ahead).
 2. Cloud side (energyme-infra): shadow ingestion + desired-state writer to test the
-   real broker-delivered delta; provision IoT Commands, then flip
-   `MQTT_IOT_COMMANDS_SUBSCRIBE_ENABLED` ON for the commands e2e.
+   real broker-delivered delta; build the `restart` command + StartCommandExecution
+   dispatcher (contentType application/json) for the commands round-trip. The subscribe
+   topic fix (`a9fbce8`) is done + verified on .174; the flag is already ON.
 3. Separate release step on `development`: bump firmware version to 2.1.0 (NOT in
    this branch).
