@@ -94,6 +94,7 @@
 #define MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY "en_cloud"
 #define MQTT_PREFERENCES_SEND_POWER_DATA_KEY "send_power"
 #define MQTT_PREFERENCES_MQTT_LOG_LEVEL_KEY "log_level_int"
+#define MQTT_PREFERENCES_TRANSIENT_LOG_LEVEL_KEY "transient_log" // active transient (VERBOSE/DEBUG) level, persisted so a debug session survives a reboot; absent = none
 
 // MQTT topic suffixes (application-level; see awsconfig.h for the namespace prefix)
 // Publish topics. system/static + channel retired (-> info + channels shadows);
@@ -168,6 +169,11 @@ namespace Mqtt
     int  getMqttLogLevel();                  // current runtime level int (0..5)
     void setMqttLogLevel(const char* level); // persisted baseline (validates the name)
     void setRuntimeLogLevel(int level);      // runtime only - NOT persisted (transient verbose)
+    // Transient (VERBOSE/DEBUG) reboot-restore marker. Persisted separately from
+    // the baseline so a debug session keeps boot-time logs across a reboot.
+    void saveTransientLogLevel(int level);   // persist active transient level (no-op if unchanged)
+    void clearTransientLogLevel();           // clear the marker (revert / persistent set)
+    int  getTransientLogLevel();             // persisted transient level, or -1 if none
     bool getSendPowerData();
     void setSendPowerData(bool enabled);     // persisted
 

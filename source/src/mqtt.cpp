@@ -421,8 +421,41 @@ namespace Mqtt
         _mqttLogLevelInt = (uint8_t)level;
         _updateMqttMinLogLevel();
         releaseMutex(&_configMutex);
-        // Intentionally NOT persisted: this is the transient verbose window; a
-        // reboot returns to the saved baseline.
+        // Intentionally NOT persisted here: the runtime int stays transient. The
+        // separate transient marker (saveTransientLogLevel) is what survives a
+        // reboot; the persisted baseline key is never touched by a transient.
+    }
+
+    void saveTransientLogLevel(int level) {
+        if (level < 0 || level > 5) return;
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
+            LOG_WARNING("Failed to open preferences to save transient log level");
+            return;
+        }
+        // Write only on change: a long cloud-held verbose window re-asserts the
+        // same level every <5 min, and we must not wear flash for a no-op.
+        if (prefs.getUChar(MQTT_PREFERENCES_TRANSIENT_LOG_LEVEL_KEY, 0xFF) != (uint8_t)level) {
+            prefs.putUChar(MQTT_PREFERENCES_TRANSIENT_LOG_LEVEL_KEY, (uint8_t)level);
+        }
+        prefs.end();
+    }
+
+    void clearTransientLogLevel() {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) return;
+        if (prefs.isKey(MQTT_PREFERENCES_TRANSIENT_LOG_LEVEL_KEY)) {
+            prefs.remove(MQTT_PREFERENCES_TRANSIENT_LOG_LEVEL_KEY);
+        }
+        prefs.end();
+    }
+
+    int getTransientLogLevel() {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) return -1;
+        uint8_t v = prefs.getUChar(MQTT_PREFERENCES_TRANSIENT_LOG_LEVEL_KEY, 0xFF);
+        prefs.end();
+        return (v == 0xFF) ? -1 : (int)v;
     }
 
     bool getSendPowerData() { return _sendPowerDataEnabled; }

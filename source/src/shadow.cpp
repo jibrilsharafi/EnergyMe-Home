@@ -74,6 +74,7 @@ static volatile bool _logLevelRevertPending = false;
 static int _logLevelBaseline = 2; // INFO
 static void _logLevelRevertCallback(void* arg);
 static void _checkSystemLogLevelRevert();
+static void _applyMqttLogLevel(int level); // defined below; called from begin() for reboot-restore
 
 // ============================================================================
 // Registration
@@ -151,6 +152,18 @@ void begin() {
         if (esp_timer_create(&revertArgs, &_logLevelRevertTimer) != ESP_OK) {
             LOG_WARNING("Failed to create mqtt_log_level revert timer");
         }
+    }
+
+    // Restore a transient (VERBOSE/DEBUG) mqtt_log_level across a reboot so a debug
+    // session keeps boot-time logs. Mqtt::begin() loaded the persisted baseline
+    // before this, so _applyMqttLogLevel captures the correct baseline and restarts
+    // the 5-min timer. Persistent levels never write the marker, so this only fires
+    // for a genuine transient window.
+    int transientLevel = Mqtt::getTransientLogLevel();
+    if (transientLevel >= 0 && ShadowLogic::isTransientLogLevel(transientLevel)) {
+        LOG_INFO("Restoring transient mqtt_log_level %s after reboot",
+                 ShadowLogic::logLevelToString(transientLevel));
+        _applyMqttLogLevel(transientLevel);
     }
 
     LOG_DEBUG("Shadow module initialized with %u shadow(s)", _count);
@@ -478,6 +491,7 @@ static void _checkSystemLogLevelRevert() {
     if (!_logLevelRevertPending) return;
     _logLevelRevertPending = false;
     Mqtt::setRuntimeLogLevel(_logLevelBaseline);
+    Mqtt::clearTransientLogLevel(); // window closed; nothing to restore on next boot
     LOG_INFO("mqtt_log_level auto-reverted to baseline %s", ShadowLogic::logLevelToString(_logLevelBaseline));
     requestReport("system");
 }
@@ -495,12 +509,17 @@ static void _applyMqttLogLevel(int level) {
             esp_timer_stop(_logLevelRevertTimer); // harmless if not running
             esp_timer_start_once(_logLevelRevertTimer, SHADOW_LOG_LEVEL_REVERT_INTERVAL_US);
         }
+        // Persist a marker so a reboot mid-window restores the transient level and
+        // restarts the timer - a debug session keeps boot-time logs (the baseline
+        // key is left untouched).
+        Mqtt::saveTransientLogLevel(level);
         LOG_INFO("mqtt_log_level transient %s (auto-revert in 5 min to %s)",
                  ShadowLogic::logLevelToString(level), ShadowLogic::logLevelToString(_logLevelBaseline));
     } else {
         if (_logLevelRevertTimer != nullptr) esp_timer_stop(_logLevelRevertTimer);
         _logLevelBaseline = level;    // track the new baseline so a late timer flag is a no-op
         _logLevelRevertPending = false;
+        Mqtt::clearTransientLogLevel(); // leaving the transient window
         Mqtt::setMqttLogLevel(ShadowLogic::logLevelToString(level)); // persisted baseline
     }
 }
