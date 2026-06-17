@@ -2,8 +2,40 @@
 
 Legend: ⬜ not started · 🟡 in progress · ✅ done · ⛔ blocked
 
-_Last updated: 2026-06-17 (all 8 phases implemented + committed; MQTT storm
-root-caused + fixed; IoT Commands subscribe topic corrected + verified on .174)._
+_Last updated: 2026-06-17 (session 2: drift-detect, transient-verbose reboot
+restore, issues boot-race fix, wifi shadow, command reasonCode casing - all
+committed + hardware-verified on .174)._
+
+## Update 2026-06-17 (session 2 - post-MVP hardening, committed + verified on .174)
+
+On top of the 01-08 MVP (now **6 shadows**):
+- **Local-change propagation is source-agnostic:** `checkPublish()` drift-detects
+  any writable-shadow change every 3 s and republishes, replacing the per-REST
+  `publishLocalEdit` hook (removed). Local edits reach the cloud within ~3 s; they
+  publish reported-only (no `desired:null`) - see 00 for the conflict-policy note.
+- **Transient `mqtt_log_level` survives reboot:** a separate NVS marker
+  (`mqtt_ns/transient_log`) restores the VERBOSE/DEBUG level + restarts the 5-min
+  timer on boot, so a debug session keeps boot-time logs. Persistent-set and
+  auto-revert clear it. Restore + clear both verified on .174.
+- **`wifi` shadow (6th, reported-only):** connected/ssid/ip/gateway/subnet/dns/mac +
+  static_ip/fallback_to_dhcp; read back from AWS (version 1). No writable network
+  config, no creds, RSSI stays on `system/dynamic`.
+- **`issues` boot-race fixed:** `IssueRegistry::begin()` moved before
+  `CustomServer::begin()`, and `issuesToJson` returns empty-200 on a null mutex
+  (was HTTP 500 on early boot). Verified: 40/40 200s post-reboot, 0 mutex errors.
+- **Command `reasonCode` casing fixed:** uppercased to AWS `[A-Z0-9_-]+` (resolves
+  the known follow-up noted below).
+- **Command rejected-echo loop fixed (found during command testing on .174):** the
+  MQTT RX router treated *any* `/commands/things/.../executions/...` topic as a
+  command, so AWS's `.../response/rejected/json` echo of a rejected status publish
+  was reprocessed (no `operation` -> re-rejected -> echoed -> **infinite ~110 ms
+  publish loop** hammering the broker). Now only `.../request/json` (the subscribed
+  topic) routes to the handler; other `/commands/things/` topics are logged +
+  ignored. Verified on .174: each injected command processes exactly once, 14
+  publishes / 14 ignores (1:1, bounded), no repeats. NB: a lowercase reasonCode (the
+  bug above) would have *triggered* this loop in production - both fixes needed.
+  Real broker-delivered command on `/request/json` still pending the cloud dispatcher
+  (inject bypasses the RX router, so that match condition is not yet hardware-exercised).
 
 ## Update 2026-06-17 (corrected root cause + topic fix - SUPERSEDES the banner below)
 
@@ -23,9 +55,10 @@ MQTT connection >4 min, 68 telemetry publishes / 0 errors, **0 CLIENT_ERROR** at
 connectivity-handler since connect. Storm fix proven; the round-trip (device RECEIVES
 a command) is pending the cloud CreateCommand + StartCommandExecution dispatcher.
 
-Known follow-up (fix during the reject-path round-trip): device reject/fail
-`reasonCode`s are lowercase but AWS requires `[A-Z0-9_-]+`; uppercase them. Happy path
-(restart IN_PROGRESS -> SUCCEEDED) sends no statusReason, so unaffected.
+~~Known follow-up~~ **RESOLVED (session 2):** device reject/fail `reasonCode`s
+uppercased to AWS `[A-Z0-9_-]+` (BAD_PAYLOAD, MISSING_OPERATION, STALE_COMMAND,
+CONFIRM_MISMATCH, BAD_CHANNELS, UNKNOWN_OPERATION). Happy path
+(IN_PROGRESS -> SUCCEEDED) sends no statusReason, so was already unaffected.
 
 ## RESOLVED - MQTT reconnect storm root cause (2026-06-17)
 
@@ -156,8 +189,9 @@ contract is validated end-to-end.
 
 ## Next step
 
-Firmware MVP is implemented + committed + hardware-stable on dev .174. Remaining:
-1. Push `feat/iot-shadow-config` + open PR -> `development` (gated on Jibril's go-ahead).
+Firmware MVP + session-2 hardening implemented + committed + hardware-stable on
+dev .174. Remaining:
+1. PR `feat/iot-shadow-config` -> `development` opened (not merged - awaiting review).
 2. Cloud side (energyme-infra): shadow ingestion + desired-state writer to test the
    real broker-delivered delta; build the `restart` command + StartCommandExecution
    dispatcher (contentType application/json) for the commands round-trip. The subscribe

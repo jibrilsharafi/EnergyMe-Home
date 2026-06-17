@@ -47,23 +47,38 @@ thing when issuing `factory_reset` (also noted as a cloud-writer constraint in 0
 ```json
 { "status":"IN_PROGRESS" }
 { "status":"SUCCEEDED" }
-{ "status":"FAILED",   "statusReason":{"reasonCode":"...","reasonDescription":"..."} }
-{ "status":"REJECTED", "statusReason":{"reasonCode":"stale_command",...} }
+{ "status":"FAILED",   "statusReason":{"reasonCode":"BAD_PAYLOAD","reasonDescription":"..."} }
+{ "status":"REJECTED", "statusReason":{"reasonCode":"STALE_COMMAND",...} }
 ```
 
 States: CREATED(cloud) -> IN_PROGRESS -> SUCCEEDED/FAILED/REJECTED/TIMED_OUT.
 Publish IN_PROGRESS on accept, terminal status when done.
 
+**`reasonCode` MUST be uppercase** - AWS requires the pattern `[A-Z0-9_-]+` and
+rejects the status update otherwise. Device codes: `BAD_PAYLOAD`,
+`MISSING_OPERATION`, `STALE_COMMAND`, `CONFIRM_MISMATCH`, `BAD_CHANNELS`,
+`UNKNOWN_OPERATION`. `reasonDescription` is free text. (The happy path
+IN_PROGRESS->SUCCEEDED sends no `statusReason`.)
+
 ## Handler routing
 
-In `_subscribeCallback` (mqtt.cpp:833), before the legacy `command` check:
+In `_subscribeCallback`, match the **request topic precisely** - only
+`.../request/json` (the subscribed topic) is an inbound command:
 
 ```cpp
-if (strstr(topic,"/commands/things/") && strstr(topic,"/executions/")) {
-    _handleCommandExecution(topic, message);   // parse execId from topic
-    return;
-}
+else if (strstr(topic,"/commands/things/") && endsWith(topic,"/request/json"))
+    _handleCommandExecution(topic, message);
+else if (strstr(topic,"/commands/things/"))
+    /* AWS echoed our own status publish (e.g. .../response/rejected/json). Ignore -
+       never reprocess. */ ;
 ```
+
+**Do NOT** match the broad `strstr("/commands/things/") && strstr("/executions/")`:
+it also catches AWS's `.../response/rejected/json` echo of a status publish AWS
+rejected (e.g. unknown/expired execution, or a malformed status). That echo has no
+`operation`, so the handler re-rejects it -> publishes again -> AWS echoes again ->
+**infinite ~110 ms publish loop**. A lowercase `reasonCode` (see above) would have
+triggered the same loop in production. Found + fixed during command testing on .174.
 
 `_handleCommandExecution`: extract `<execId>` between `/executions/` and
 `/request/`; parse JSON; staleness check; dispatch on `operation`; publish status.
