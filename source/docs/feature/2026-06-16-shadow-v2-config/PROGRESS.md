@@ -2,20 +2,26 @@
 
 Legend: ⬜ not started · 🟡 in progress · ✅ done · ⛔ blocked
 
-_Last updated: 2026-06-16 (planning complete, validated with cloud side)._
+_Last updated: 2026-06-17 (01-07 implemented + hardware-verified on dev .174; 08 buffer bump done, removals pending)._
 
 ## Phases (firmware)
 
-| # | Phase | Status | PR | Provable without cloud? | Notes |
-|---|-------|--------|----|-------------------------|-------|
-| 01 | scaffold `shadow` module | ⬜ | - | yes (native unit tests) | core protocol; build first |
-| 02 | `info` shadow | ⬜ | - | **yes** (AWS console) | retire `system/static` deferred to 08 |
-| 03 | `issues` shadow | ⬜ | - | **yes** (AWS console) | ack path wired later |
-| 04 | `system` shadow | ⬜ | - | no (needs desired writer) | 5 fields + mqtt_log_level auto-revert |
-| 05 | `meter` shadow | ⬜ | - | no | ADE7953 calibration |
-| 06 | `channels` shadow | ⬜ | - | no | drops `channel` topic |
-| 07 | Commands | ⬜ | - | no (needs dispatcher) | restart/factory_reset/energy_reset |
-| 08 | config-topic retirement + fw 2.1.0 | ⬜ | - | n/a | topic stays v1; remove command/static/channel, buffer bump |
+Inbound apply path is verified on real hardware via an ENV_DEV-only synthetic
+delta/command injection (`POST /api/v1/shadow/inject-delta`, `.../inject-command`),
+which feeds the real `routeMessage -> drain -> apply -> ack` path with no cloud
+desired-writer. Outbound verified by reading shadows with `aws iot-data
+get-thing-shadow` (admin-dev).
+
+| # | Phase | Status | PR | Verified on dev .174 | Notes |
+|---|-------|--------|----|----------------------|-------|
+| 01 | scaffold `shadow` module | ✅ | - | yes (25 native tests + on-device) | core protocol |
+| 02 | `info` shadow | ✅ | - | yes (AWS read: identity + sketch_md5) | retire `system/static` deferred to 08 |
+| 03 | `issues` shadow | ✅ | - | yes (registry observer + active_count) | ack path wired later |
+| 04 | `system` shadow | ✅ | - | yes (inject led_brightness -> applied) | 5 fields + mqtt_log_level auto-revert |
+| 05 | `meter` shadow | ✅ | - | yes (inject sample_time -> applied/restored) | ADE7953 calibration |
+| 06 | `channels` shadow | ✅ | - | yes (deep-merge + channel-0 invariant) | drops `channel` topic in 08 |
+| 07 | Commands | ✅ | - | code + native tests; e2e needs cloud dispatcher | restart/factory_reset/energy_reset; policy already allows `$aws/commands/*` |
+| 08 | config-topic retirement | 🟡 | - | buffer bump 9 KB verified (heap ~42 KB min free, connects) | removals pending (isolated commit); NO fw version bump here |
 
 ## Decisions log (resolved)
 
