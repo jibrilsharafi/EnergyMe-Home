@@ -216,6 +216,12 @@ namespace IssueRegistry
 
     uint32_t activeCount()
     {
+        // NULL mutex = registry not initialized yet (early boot) or disabled
+        // (PSRAM alloc failed). Report zero, not an error: acquireMutex would just
+        // fail on the NULL handle and log noise on every issues-shadow publish.
+        // (Mirrors the guard in issuesToJson; both are read by _reportIssues.)
+        if (_registryMutex == NULL) return 0;
+
         if (!acquireMutex(&_registryMutex)) {
             LOG_ERROR("Failed to acquire registry mutex for activeCount");
             return 0;
