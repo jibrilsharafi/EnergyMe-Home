@@ -340,6 +340,14 @@ static void _applyDelta(uint8_t idx, const char* payload) {
     _topicUpdate(_shadows[idx].desc.name, topic, sizeof(topic));
     if (Mqtt::publishReservedThings(outDoc, topic)) {
         LOG_INFO("Applied delta for shadow '%s' (version %lu)", _shadows[idx].desc.name, (unsigned long)version);
+        // Refresh the drift baseline so the 3 s drift check does not see this
+        // cloud-applied change as a fresh local edit and republish it. The ack
+        // above carries only the changed fields (partial), so rebuild the full
+        // report here rather than reusing outDoc.
+        SpiRamAllocator repAllocator;
+        JsonDocument repDoc(&repAllocator);
+        _shadows[idx].desc.report(repDoc);
+        _storeBaseline(idx, repDoc["state"]["reported"].as<JsonObjectConst>());
     } else {
         LOG_WARNING("Failed to publish delta ack for shadow '%s'", _shadows[idx].desc.name);
     }
