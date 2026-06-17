@@ -67,11 +67,22 @@ In `_subscribeCallback`, match the **request topic precisely** - only
 
 ```cpp
 else if (strstr(topic,"/commands/things/") && endsWith(topic,"/request/json"))
-    _handleCommandExecution(topic, message);
+    _queueCommand(topic, message);            // copy + flag only; drained in task body
 else if (strstr(topic,"/commands/things/"))
     /* AWS echoed our own status publish (e.g. .../response/rejected/json). Ignore -
        never reprocess. */ ;
 ```
+
+**Process commands in the task body, not the callback.** `_subscribeCallback` only
+queues (`_queueCommand` copies the request into a single mutex-guarded slot);
+`_drainPendingCommand()` in the MQTT task loop calls `_handleCommandExecution`. The
+apply (per-channel NVS writes, up to ~1 s) and the status publishes must not run
+inside the PubSubClient callback - same rule as shadow deltas (#138), and publishing
+there also reuses PubSubClient's buffer, corrupting the QoS1 PUBACK it writes after
+the callback. `loop()` delivers one PUBLISH per call and the body drains every
+iteration, so one slot suffices; an overwrite is logged (never silently dropped).
+The dev `inject-command` shim routes through the same queue + drain, so it exercises
+the real processing path.
 
 **Do NOT** match the broad `strstr("/commands/things/") && strstr("/executions/")`:
 it also catches AWS's `.../response/rejected/json` echo of a status publish AWS

@@ -36,6 +36,14 @@ On top of the 01-08 MVP (now **6 shadows**):
   bug above) would have *triggered* this loop in production - both fixes needed.
   Real broker-delivered command on `/request/json` still pending the cloud dispatcher
   (inject bypasses the RX router, so that match condition is not yet hardware-exercised).
+- **Commands now processed in the task body, not the PubSubClient callback:**
+  `_subscribeCallback` queues the request (`_queueCommand`, single mutex-guarded slot,
+  warn-on-overwrite); `_drainPendingCommand()` in the MQTT loop runs the apply +
+  status publishes. Avoids blocking the callback on per-channel NVS writes (#138) and
+  the QoS1-PUBACK buffer corruption from publishing inside `loop()`. The dev inject
+  now shares this queue+drain, so the inject suite exercises the real processing path
+  (only the RX-callback enqueue itself stays cloud-gated). factory_reset verified
+  end-to-end on .174 (IN_PROGRESS->SUCCEEDED->wipe->reboot; confirm-guard rejects).
 
 ## Update 2026-06-17 (corrected root cause + topic fix - SUPERSEDES the banner below)
 
