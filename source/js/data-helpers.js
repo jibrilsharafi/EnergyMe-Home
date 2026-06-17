@@ -373,8 +373,9 @@ const DataHelpers = {
             const inverterImport = ChannelCache.inverter.reduce((sum, ch) => sum + (periodData[ch.index] || 0), 0);
             totalAvailable = gridImport - gridExport + solarImport + inverterImport;
         } else {
-            const batteryImport = ChannelCache.battery.reduce((sum, ch) => sum + (periodData[ch.index] || 0), 0);
-            totalAvailable = gridImport - gridExport + solarImport + batteryImport;
+            const batteryDischarge = ChannelCache.battery.reduce((sum, ch) => sum + (periodData[ch.index] || 0), 0);
+            const batteryCharge = ChannelCache.battery.reduce((sum, ch) => sum + (periodExportData[ch.index] || 0), 0);
+            totalAvailable = gridImport - gridExport + solarImport + batteryDischarge - batteryCharge;
         }
 
         let trackedLoadConsumption = 0;
