@@ -19,10 +19,11 @@
 //  - routeMessage()  runs inside the PubSubClient callback (MQTT task): it only
 //    copies the inbound payload out and flags it, never applies or publishes.
 //  - checkPublish()  runs in the MQTT task body: it drains pending deltas
-//    (apply -> ack publish), pending local edits and pending reports.
-//  - requestReport() / publishLocalEdit() may be called from other tasks
-//    (issue registry, esp_timer, web server); they only set a flag / stage a
-//    buffer under _shadowMutex - the MQTT task does the actual publishing.
+//    (apply -> ack publish) and pending reports, and republishes any writable
+//    shadow whose reported state drifted from its last publish (so a local
+//    config change from any source reaches the cloud without a per-call hook).
+//  - requestReport() may be called from other tasks (issue registry, esp_timer,
+//    web server); it only sets a flag - the MQTT task does the actual publishing.
 namespace Shadow {
 
 // Fill doc["state"]["reported"] with the shadow's full current state.
@@ -62,12 +63,6 @@ void checkPublish();
 
 // Queue a full reported publish for one shadow (flag only; cross-task safe).
 void requestReport(const char* name);
-
-// A local (REST/UI) edit just changed `changedFields` for shadow `name`. Stages
-// a combined {reported:changedFields, desired:{each key:null}} publish so the
-// local value wins and clears any pending cloud desired for those keys. Safe to
-// call from the web task (stages under mutex; MQTT task publishes).
-void publishLocalEdit(const char* name, JsonObjectConst changedFields);
 
 #ifdef ENV_DEV
 // Dev-only: feed a synthetic delta document (e.g. {"version":1,"state":{...}})

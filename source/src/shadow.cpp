@@ -24,20 +24,28 @@ namespace Shadow {
 #define SHADOW_MAX_COUNT 5
 #define SHADOW_NAME_PREFIX "shadow/name/"
 #define SHADOW_INFO_REFRESH_INTERVAL_US (24ULL * 60ULL * 60ULL * 1000000ULL) // 24 h
+// Drift-detect cadence: each writable shadow's reported state is rebuilt and
+// compared to its last publish on this interval; any change (REST, command,
+// internal, the log-level revert timer) is republished. Replaces per-call-site
+// notify hooks, which can't cover lib-owned fields like the log levels.
+#define SHADOW_DRIFT_CHECK_INTERVAL_MS 3000
 
 // Per-shadow runtime state.
 //  - reportPending: benign volatile flag; any task may set it true, the MQTT
 //    task clears it in checkPublish(). No mutex needed (idempotent set; a lost
 //    race just defers one publish by one loop).
-//  - pendingDelta / pendingLocalEdit: ps_malloc'd payload copies handed from the
-//    RX callback / web task to the MQTT task. Pointer ownership is swapped under
-//    _mutex (the only genuinely cross-task shared state here).
+//  - pendingDelta: ps_malloc'd payload copy handed from the RX callback to the
+//    MQTT task. Pointer ownership is swapped under _mutex (the only genuinely
+//    cross-task shared state here).
+//  - version / lastReported: MQTT-task-only (touched only in the checkPublish
+//    drain), so no mutex. lastReported holds the serialized reported state at the
+//    last publish; the drift check diffs against it to catch local changes.
 struct ShadowEntry {
     Descriptor    desc;
     uint32_t      version;
     volatile bool reportPending;
     char*         pendingDelta;
-    char*         pendingLocalEdit;
+    char*         lastReported;
 };
 
 static ShadowEntry _shadows[SHADOW_MAX_COUNT];
@@ -238,6 +246,16 @@ static void _publishReported(uint8_t idx) {
     _topicUpdate(_shadows[idx].desc.name, topic, sizeof(topic));
     if (Mqtt::publishReservedThings(doc, topic)) {
         LOG_DEBUG("Published reported state for shadow '%s'", _shadows[idx].desc.name);
+        // Refresh the drift baseline so the periodic check only republishes on a
+        // real change from here on (MQTT-task-only field, no mutex).
+        JsonObjectConst reported = doc["state"]["reported"].as<JsonObjectConst>();
+        size_t len = measureJson(reported) + 1;
+        char* snap = (char*)ps_malloc(len);
+        if (snap != nullptr) {
+            serializeJson(reported, snap, len);
+            if (_shadows[idx].lastReported != nullptr) free(_shadows[idx].lastReported);
+            _shadows[idx].lastReported = snap;
+        }
     } else {
         LOG_WARNING("Failed to publish reported state for shadow '%s'", _shadows[idx].desc.name);
     }
@@ -299,50 +317,40 @@ static void _applyDelta(uint8_t idx, const char* payload) {
     }
 }
 
-static void _publishLocalEditDoc(uint8_t idx, const char* payload) {
-    SpiRamAllocator inAllocator;
-    JsonDocument changed(&inAllocator);
-    if (deserializeJson(changed, payload)) {
-        LOG_WARNING("Failed to parse staged local edit for shadow '%s'", _shadows[idx].desc.name);
-        return;
-    }
-
-    SpiRamAllocator outAllocator;
-    JsonDocument outDoc(&outAllocator);
-    JsonObject reported = outDoc["state"]["reported"].to<JsonObject>();
-    JsonObject desired = outDoc["state"]["desired"].to<JsonObject>();
-    for (JsonPairConst kv : changed.as<JsonObjectConst>()) {
-        reported[kv.key()] = kv.value(); // local value wins
-        desired[kv.key()] = nullptr;     // clear any pending cloud intent
-    }
-    // No version: a local edit is an unconditional report+clear (never 409).
-    _addClientToken(outDoc);
-
-    char topic[MQTT_TOPIC_BUFFER_SIZE];
-    _topicUpdate(_shadows[idx].desc.name, topic, sizeof(topic));
-    if (Mqtt::publishReservedThings(outDoc, topic)) {
-        LOG_DEBUG("Published local edit for shadow '%s'", _shadows[idx].desc.name);
-    } else {
-        LOG_WARNING("Failed to publish local edit for shadow '%s'", _shadows[idx].desc.name);
-    }
-}
-
 // ============================================================================
 // Drain (MQTT task body)
 // ============================================================================
+
+// Republish a writable shadow if its reported state changed since the last
+// publish (any source: REST, command, internal logic, the log-level revert
+// timer). Build a fresh report, compare its serialized reported object to the
+// stored baseline; on a difference, publish (which refreshes the baseline).
+static void _reportIfDrifted(uint8_t idx) {
+    SpiRamAllocator allocator;
+    JsonDocument doc(&allocator);
+    _shadows[idx].desc.report(doc);
+
+    JsonObjectConst reported = doc["state"]["reported"].as<JsonObjectConst>();
+    size_t len = measureJson(reported) + 1;
+    char* cur = (char*)ps_malloc(len);
+    if (cur == nullptr) return; // out of PSRAM; retry next tick
+    serializeJson(reported, cur, len);
+
+    bool changed = _shadows[idx].lastReported == nullptr ||
+                   strcmp(cur, _shadows[idx].lastReported) != 0;
+    free(cur);
+    if (changed) _publishReported(idx); // rebuilds, publishes, refreshes baseline
+}
 
 void checkPublish() {
     _checkSystemLogLevelRevert(); // transient mqtt_log_level revert (flag set by timer task)
     for (uint8_t i = 0; i < _count; i++) {
         char* delta = nullptr;
-        char* localEdit = nullptr;
         bool report = false;
 
         if (acquireMutex(&_mutex)) {
             delta = _shadows[i].pendingDelta;
             _shadows[i].pendingDelta = nullptr;
-            localEdit = _shadows[i].pendingLocalEdit;
-            _shadows[i].pendingLocalEdit = nullptr;
             releaseMutex(&_mutex);
         }
         // reportPending is a benign volatile flag; read+clear without the mutex.
@@ -353,11 +361,18 @@ void checkPublish() {
             _applyDelta(i, delta);
             free(delta);
         }
-        if (localEdit != nullptr) {
-            _publishLocalEditDoc(i, localEdit);
-            free(localEdit);
-        }
         if (report) _publishReported(i);
+    }
+
+    // Drift detect (gated): republish any writable shadow whose reported state
+    // changed since its last publish, regardless of source. One periodic diff
+    // replaces per-call-site notify hooks and covers lib-owned fields too.
+    static uint64_t lastDriftCheck = 0;
+    if ((millis64() - lastDriftCheck) > SHADOW_DRIFT_CHECK_INTERVAL_MS) {
+        lastDriftCheck = millis64();
+        for (uint8_t i = 0; i < _count; i++) {
+            if (_shadows[i].desc.writable) _reportIfDrifted(i);
+        }
     }
 }
 
@@ -374,31 +389,6 @@ void requestReport(const char* name) {
     int idx = _findShadow(name, strlen(name));
     if (idx >= 0) _shadows[idx].reportPending = true; // benign volatile set
     else LOG_WARNING("requestReport for unknown shadow '%s'", name);
-}
-
-void publishLocalEdit(const char* name, JsonObjectConst changedFields) {
-    int idx = _findShadow(name, strlen(name));
-    if (idx < 0) {
-        LOG_WARNING("publishLocalEdit for unknown shadow '%s'", name);
-        return;
-    }
-
-    size_t len = measureJson(changedFields) + 1;
-    char* copy = (char*)ps_malloc(len);
-    if (copy == nullptr) {
-        LOG_ERROR("Failed to allocate local edit buffer for shadow '%s'", name);
-        return;
-    }
-    serializeJson(changedFields, copy, len);
-
-    if (acquireMutex(&_mutex)) {
-        if (_shadows[idx].pendingLocalEdit != nullptr) free(_shadows[idx].pendingLocalEdit);
-        _shadows[idx].pendingLocalEdit = copy;
-        releaseMutex(&_mutex);
-    } else {
-        free(copy);
-        LOG_ERROR("Failed to acquire shadow mutex staging local edit for '%s'", name);
-    }
 }
 
 #ifdef ENV_DEV
