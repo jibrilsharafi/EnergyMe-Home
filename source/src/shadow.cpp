@@ -9,6 +9,7 @@
 
 #include "ade7953.h"
 #include "awsconfig.h"
+#include "customwifi.h"
 #include "factory_keys.h"
 #include "globals.h"
 #include "hardware_profile.h"
@@ -20,8 +21,9 @@
 
 namespace Shadow {
 
-// Up to 5 named shadows: info, issues, system, meter, channels.
-#define SHADOW_MAX_COUNT 5
+// Up to 6 named shadows: info, issues, wifi (reported-only), system, meter,
+// channels (writable).
+#define SHADOW_MAX_COUNT 6
 #define SHADOW_NAME_PREFIX "shadow/name/"
 #define SHADOW_INFO_REFRESH_INTERVAL_US (24ULL * 60ULL * 60ULL * 1000000ULL) // 24 h
 // Drift-detect cadence: each writable shadow's reported state is rebuilt and
@@ -56,6 +58,7 @@ static esp_timer_handle_t _infoRefreshTimer = nullptr;
 // Report/apply callbacks (defined further down, registered in begin()).
 static void _reportInfo(JsonDocument& doc);
 static void _reportIssues(JsonDocument& doc);
+static void _reportWifi(JsonDocument& doc);
 static void _onIssuesChanged();
 static void _reportSystem(JsonDocument& doc);
 static bool _applySystem(JsonObjectConst delta, JsonObject reported, JsonObject desired);
@@ -118,6 +121,7 @@ void begin() {
     _count = 0;
     _registerShadow({"info", false, _reportInfo, nullptr});
     _registerShadow({"issues", false, _reportIssues, nullptr});
+    _registerShadow({"wifi", false, _reportWifi, nullptr});
     _registerShadow({"system", true, _reportSystem, _applySystem});
     _registerShadow({"meter", true, _reportMeter, _applyMeter});
     _registerShadow({"channels", true, _reportChannels, _applyChannels});
@@ -453,6 +457,43 @@ static void _reportInfo(JsonDocument& doc) {
     rep["serial_number"] = serial;
     rep["pcb_revision"] = pcbRev;
     rep["manufacturing_unix"] = mfgTs;
+}
+
+// ============================================================================
+// wifi shadow (reported-only): non-secret network state + mode
+// ============================================================================
+
+static void _reportWifi(JsonDocument& doc) {
+    JsonObject rep = doc["state"]["reported"].to<JsonObject>();
+    char buf[64]; // SSID <=32, IP <=15, MAC 17 - all fit; reused (ArduinoJson copies char[])
+
+    rep["connected"] = WiFi.isConnected();
+
+    // SSID only - the WiFi password is never placed in a shadow (AWS forbids
+    // secrets in shadow docs, and we keep credentials local-only).
+    snprintf(buf, sizeof(buf), "%s", WiFi.SSID().c_str());
+    rep["ssid"] = buf;
+    snprintf(buf, sizeof(buf), "%s", WiFi.localIP().toString().c_str());
+    rep["ip"] = buf;
+    snprintf(buf, sizeof(buf), "%s", WiFi.gatewayIP().toString().c_str());
+    rep["gateway"] = buf;
+    snprintf(buf, sizeof(buf), "%s", WiFi.subnetMask().toString().c_str());
+    rep["subnet"] = buf;
+    snprintf(buf, sizeof(buf), "%s", WiFi.dnsIP().toString().c_str());
+    rep["dns"] = buf;
+    snprintf(buf, sizeof(buf), "%s", WiFi.macAddress().c_str());
+    rep["mac"] = buf;
+
+    // Network mode (DHCP vs static) for visibility. Reported-only: static IP is
+    // configured locally via REST, never written from the cloud - a bad remote
+    // static IP would risk locking the device off the LAN (see customwifi.h).
+    WifiConfiguration cfg;
+    if (CustomWifi::getConfiguration(cfg)) {
+        rep["static_ip"] = cfg.useStaticIp;
+        rep["fallback_to_dhcp"] = cfg.fallbackToDhcp;
+    }
+    // RSSI is intentionally omitted: it's volatile (would churn the shadow
+    // version) and is already on the system/dynamic telemetry topic.
 }
 
 // ============================================================================
