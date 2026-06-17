@@ -668,7 +668,11 @@ static bool _applySystem(JsonObjectConst delta, JsonObject reported, JsonObject 
 // meter shadow (writable): ADE7953 calibration + sample time
 // ============================================================================
 
-// The 19 calibration keys (camelCase) as serialized by getConfigurationAsJson.
+// The 19 calibration keys (camelCase) as serialized by getConfigurationAsJson and
+// accepted by Ade7953::configurationFromJson - keep this list in sync with that
+// setter's key set. Kept as an explicit allow-list (rather than handing the raw
+// delta to setConfigurationFromJson) so the meter delta's sample_time - applied
+// separately below - is filtered out before it reaches _validateJsonConfiguration.
 static const char* const METER_CAL_KEYS[] = {
     "aVGain", "aIGain", "bIGain", "aIRmsOs", "bIRmsOs",
     "aWGain", "bWGain", "aWattOs", "bWattOs",
