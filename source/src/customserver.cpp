@@ -1979,7 +1979,42 @@ namespace CustomServer
                 else _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Unknown shadow name");
             });
         server.addHandler(injectShadowDeltaHandler);
-        LOG_DEBUG("Registered dev-only shadow delta injection endpoint");
+
+        // Dev-only: inject a synthetic IoT Command execution through the real
+        // handler (no cloud dispatcher needed). The device acts on the operation;
+        // the response publish targets a synthetic execution id.
+        // Body: {"executionId":"dev-1","payload":{"operation":"energy_reset","channels":[3]}}
+        static AsyncCallbackJsonWebHandler *injectCommandHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/shadow/inject-command",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (!_validateRequest(request, "POST", HTTP_MAX_CONTENT_LENGTH_ADE7953_CHANNEL_DATA)) return;
+
+                const char *execId = json["executionId"].as<const char *>();
+                if (!execId || json["payload"].isNull()) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Body requires 'executionId' and 'payload'");
+                    return;
+                }
+
+                SpiRamAllocator allocator;
+                JsonDocument payloadDoc(&allocator);
+                payloadDoc.set(json["payload"]);
+
+                size_t len = measureJson(payloadDoc) + 1;
+                char *payload = (char *)ps_malloc(len);
+                if (!payload) {
+                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Allocation failed");
+                    return;
+                }
+                serializeJson(payloadDoc, payload, len);
+
+                Mqtt::injectCommandExecution(execId, payload);
+                free(payload);
+                _sendSuccessResponse(request, "Synthetic command injected");
+            });
+        server.addHandler(injectCommandHandler);
+
+        LOG_DEBUG("Registered dev-only shadow delta + command injection endpoints");
     }
 #endif
 
