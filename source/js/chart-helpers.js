@@ -464,8 +464,8 @@ const ChartHelpers = {
             let battCharge = 0;
             let battDischarge = 0;
             batteryIndices.forEach(idx => {
-                battCharge += periodData[idx] || 0;
-                battDischarge += (periodExport[idx] || 0);
+                battCharge += (periodExport[idx] || 0);
+                battDischarge += periodData[idx] || 0;
             });
             balanceData.batteryCharge.push(battCharge);
             balanceData.batteryDischarge.push(battDischarge);
@@ -626,8 +626,8 @@ const ChartHelpers = {
         });
 
         batteryIndices.forEach(idx => {
-            batteryCharge += rawImported[idx] || 0;
-            batteryDischarge += rawExported[idx] || 0;
+            batteryCharge += rawExported[idx] || 0;
+            batteryDischarge += rawImported[idx] || 0;
         });
 
         document.getElementById('kpi-grid-import-value').textContent = gridImport.toFixed(1);
