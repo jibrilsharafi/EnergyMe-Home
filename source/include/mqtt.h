@@ -111,6 +111,16 @@
 // AWS IoT Commands (transient operations): reject any request older than this.
 #define COMMAND_MAX_AGE_SECONDS 300 // 5 minutes
 
+// AWS IoT Commands subscription gate. The "$aws/commands/..." reserved topic
+// namespace must be provisioned account-side (the IoT Commands feature) before
+// a device may subscribe to it. Subscribing to an unrecognized reserved topic
+// makes the broker close the connection with disconnectReason CLIENT_ERROR -
+// observed on dev .174 as a ~1.2 s connect/drop storm (zero stable session).
+// The cloud command dispatcher is not live yet, so keep this OFF until IoT
+// Commands is provisioned end-to-end; the handler code stays compiled and
+// tested, it just isn't wired to the broker until the cloud side exists.
+#define MQTT_IOT_COMMANDS_SUBSCRIBE_ENABLED false
+
 struct PublishMqtt
 {
   bool meter;

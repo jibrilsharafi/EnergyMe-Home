@@ -798,7 +798,11 @@ namespace Mqtt
 
     static void _subscribeToTopics() {
         _subscribeAwsIotJobs();
-        _subscribeIotCommands();
+        // Gated OFF until AWS IoT Commands is provisioned account-side - see
+        // MQTT_IOT_COMMANDS_SUBSCRIBE_ENABLED. Subscribing to the unprovisioned
+        // "$aws/commands/..." reserved topic triggers a broker CLIENT_ERROR
+        // disconnect (connect/drop storm).
+        if (MQTT_IOT_COMMANDS_SUBSCRIBE_ENABLED) _subscribeIotCommands();
         Shadow::onMqttConnected(); // subscribe shadow deltas + queue initial reports
 
         LOG_DEBUG("Subscribed to topics");
