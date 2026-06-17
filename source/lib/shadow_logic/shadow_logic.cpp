@@ -51,4 +51,29 @@ size_t formatClientToken(char* out, size_t outSize, uint32_t r1, uint32_t r2) {
     return 16;
 }
 
+bool extractExecutionId(const char* topic, char* out, size_t outSize) {
+    if (topic == nullptr || out == nullptr || outSize == 0) return false;
+
+    static const char marker[] = "/executions/";
+    const char* start = strstr(topic, marker);
+    if (start == nullptr) return false;
+    start += sizeof(marker) - 1; // advance past "/executions/"
+
+    const char* end = strchr(start, '/');
+    if (end == nullptr || end == start) return false; // missing trailing "/request/..." or empty id
+
+    size_t len = (size_t)(end - start);
+    if (len + 1 > outSize) return false; // would truncate -> wrong response topic
+
+    memcpy(out, start, len);
+    out[len] = '\0';
+    return true;
+}
+
+bool isCommandStale(uint64_t createdAtUnix, uint64_t nowUnix, uint64_t maxAgeSeconds) {
+    if (createdAtUnix == 0) return false;       // no timestamp: cannot judge
+    if (nowUnix <= createdAtUnix) return false; // future/equal (clock skew): not stale
+    return (nowUnix - createdAtUnix) > maxAgeSeconds;
+}
+
 } // namespace ShadowLogic

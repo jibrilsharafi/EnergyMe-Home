@@ -164,6 +164,57 @@ void test_should_send_version(void) {
 }
 
 // ============================================================================
+// extractExecutionId
+// ============================================================================
+
+void test_exec_id_basic(void) {
+    char id[64];
+    TEST_ASSERT_TRUE(extractExecutionId(
+        "$aws/commands/things/907069875394/executions/abc123/request/json", id, sizeof(id)));
+    TEST_ASSERT_EQUAL_STRING("abc123", id);
+}
+
+void test_exec_id_uuid(void) {
+    char id[64];
+    TEST_ASSERT_TRUE(extractExecutionId(
+        "$aws/commands/things/dev/executions/7f3e-1a2b-99cd/request/cbor", id, sizeof(id)));
+    TEST_ASSERT_EQUAL_STRING("7f3e-1a2b-99cd", id);
+}
+
+void test_exec_id_malformed(void) {
+    char id[64];
+    TEST_ASSERT_FALSE(extractExecutionId("$aws/commands/things/dev/no-exec-segment", id, sizeof(id)));
+    TEST_ASSERT_FALSE(extractExecutionId("$aws/commands/things/dev/executions/", id, sizeof(id))); // empty id, no trailing /
+    TEST_ASSERT_FALSE(extractExecutionId("$aws/commands/things/dev/executions//request/json", id, sizeof(id))); // empty id
+    TEST_ASSERT_FALSE(extractExecutionId(nullptr, id, sizeof(id)));
+}
+
+void test_exec_id_truncation_rejected(void) {
+    char id[5]; // too small for "abc123" (6 chars + null)
+    TEST_ASSERT_FALSE(extractExecutionId(
+        "$aws/commands/things/dev/executions/abc123/request/json", id, sizeof(id)));
+}
+
+// ============================================================================
+// isCommandStale
+// ============================================================================
+
+void test_command_stale(void) {
+    TEST_ASSERT_TRUE(isCommandStale(1000, 1000 + 301, 300));  // 301s old, 5-min limit
+    TEST_ASSERT_FALSE(isCommandStale(1000, 1000 + 299, 300)); // 299s old
+    TEST_ASSERT_FALSE(isCommandStale(1000, 1000 + 300, 300)); // exactly at limit (not over)
+}
+
+void test_command_stale_no_timestamp(void) {
+    TEST_ASSERT_FALSE(isCommandStale(0, 1781650000, 300)); // no timestamp -> cannot judge
+}
+
+void test_command_stale_clock_skew(void) {
+    TEST_ASSERT_FALSE(isCommandStale(2000, 1000, 300)); // created "in the future" -> not stale
+    TEST_ASSERT_FALSE(isCommandStale(1000, 1000, 300)); // same instant
+}
+
+// ============================================================================
 // Runner
 // ============================================================================
 
@@ -193,6 +244,15 @@ int main(int argc, char **argv) {
     RUN_TEST(test_client_token_buffer_too_small);
 
     RUN_TEST(test_should_send_version);
+
+    RUN_TEST(test_exec_id_basic);
+    RUN_TEST(test_exec_id_uuid);
+    RUN_TEST(test_exec_id_malformed);
+    RUN_TEST(test_exec_id_truncation_rejected);
+
+    RUN_TEST(test_command_stale);
+    RUN_TEST(test_command_stale_no_timestamp);
+    RUN_TEST(test_command_stale_clock_skew);
 
     return UNITY_END();
 }

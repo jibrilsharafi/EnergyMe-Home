@@ -50,4 +50,23 @@ size_t formatClientToken(char* out, size_t outSize, uint32_t r1, uint32_t r2);
 // omitted to avoid a spurious 409 on the reconnect reported-first publish.
 inline bool shouldSendVersion(uint32_t version) { return version != 0; }
 
+// ----------------------------------------------------------------------------
+// AWS IoT Commands helpers
+// ----------------------------------------------------------------------------
+
+// Extract the executionId from a Commands request topic:
+//   $aws/commands/things/<thing>/executions/<execId>/request/<format>
+// Writes <execId> (null-terminated) into out. Returns false for a null/malformed
+// topic or if the id would not fit (a truncated id would publish the response to
+// the wrong topic and the command would never be acked).
+bool extractExecutionId(const char* topic, char* out, size_t outSize);
+
+// A command is stale when it was created more than maxAgeSeconds ago (guards
+// against acting on one queued during an offline window). createdAtUnix == 0
+// means "no server timestamp available" -> not treated as stale (the caller
+// logs and proceeds; the timestamp must come from the command payload since
+// MQTT 3.1.1 carries no user properties). A future/equal timestamp (clock skew)
+// is also not stale.
+bool isCommandStale(uint64_t createdAtUnix, uint64_t nowUnix, uint64_t maxAgeSeconds);
+
 } // namespace ShadowLogic
