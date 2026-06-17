@@ -48,28 +48,39 @@ add thin public wrappers in the `Mqtt` namespace.
 ## `mqtt_log_level` auto-revert (the one stateful sub-feature)
 
 - **Persistent levels** (`INFO`/`WARNING`/`ERROR`/`FATAL`): persist to NVS as new
-  baseline (existing `_saveMqttLogLevelToPreferences`). Cancel any revert timer.
-- **Transient levels** (`VERBOSE`/`DEBUG`): apply at runtime, **do not persist**.
-  Start/reset a 5-min one-shot `esp_timer`.
-- **Timer fires:** revert the runtime level to the persisted baseline, then **set
-  a `reportPending` flag for the `system` shadow** so the MQTT task publishes
-  `{reported:{mqtt_log_level:<baseline>}, desired:{mqtt_log_level:null}}`.
-  **Do NOT publish from the esp_timer task** - PubSubClient is not thread-safe;
-  the timer callback only flips state + flag (same rule as the `issues` registry
-  tick, 03). The MQTT-task `_checkPublishShadows()` drains the publish.
-- **Reboot while verbose:** comes back at persisted baseline (because not persisted).
+  baseline (existing `_saveMqttLogLevelToPreferences`). Cancel any revert timer and
+  **clear the reboot-restore marker**.
+- **Transient levels** (`VERBOSE`/`DEBUG`): apply at runtime (baseline NVS key
+  untouched), start/reset a 5-min one-shot `esp_timer`, **and persist a separate
+  reboot-restore marker** (`mqtt_ns/transient_log`, write-only-on-change so a
+  cloud-held verbose window doesn't wear flash).
+- **Timer fires:** revert the runtime level to the persisted baseline, **clear the
+  marker**, then **set a `reportPending` flag for the `system` shadow** so the MQTT
+  task republishes `mqtt_log_level=<baseline>`. **Do NOT publish from the esp_timer
+  task** - PubSubClient is not thread-safe; the timer callback only flips state +
+  flag (same rule as the `issues` registry tick, 03). The MQTT-task drains it.
+- **Reboot while verbose:** the marker survives, so on boot `Shadow::begin()`
+  restores the transient level and **restarts the 5-min timer** - a debug session
+  keeps boot-time logs. The persisted baseline is never overwritten by a transient.
+  (Tradeoff: a device that crash-loops faster than 5 min stays verbose until it
+  stabilizes; accepted, since a crash loop is exactly when boot logs are wanted.)
 - Backend holds verbose by re-writing `desired.mqtt_log_level="DEBUG"` every <5 min.
 
 Implement with `esp_timer_create` one-shot, `esp_timer_start_once(5*60*1e6)`;
 restart on each transient set. Mirrors the existing remote-log-level workflow
 (repo memory: remote log level via MQTT/CloudWatch).
 
-## Local-edit hook
+## Local-edit propagation (drift-detect)
 
-`/api/v1/led/brightness` (customserver.cpp:2717) and `/api/v1/logs/level`
-(customserver.cpp:1800) PUT handlers -> after applying, call
-`Shadow::publishLocalEdit("system", {changed field})` so a local change nulls any
-pending cloud desired (local-wins-when-active, 00).
+Local changes (REST/UI, or any internal write) are **not** hooked per-handler.
+`Shadow::checkPublish()` runs a source-agnostic drift check every
+`SHADOW_DRIFT_CHECK_INTERVAL_MS` (3 s) over the writable shadows: rebuild each
+`reported` doc, diff it against the last published snapshot, and republish on any
+change (reported-only, no `version`, **no `desired:null`**). A local edit therefore
+reaches the shadow within ~3 s. This replaced the earlier per-handler
+`publishLocalEdit` hook (removed). Implication: local edits no longer null
+`desired` - see 00 ("asymmetric desired-null semantic") for why that is safe in the
+current field set.
 
 ## Tests
 
@@ -78,12 +89,16 @@ pending cloud desired (local-wins-when-active, 00).
 - On-device (needs cloud writer): write `desired.led_brightness=20` -> device
   applies, LED dims, reported=20, desired cleared. Write `desired.mqtt_log_level
   ="DEBUG"` -> verbose for 5 min -> auto-revert to baseline + shadow reflects it.
-- Local: PUT brightness via REST -> shadow reported updates, pending desired cleared.
+  Reboot while verbose -> device restores DEBUG + restarts the 5-min timer.
+- Local: change brightness via REST/UI -> shadow reported updates within ~3 s
+  (drift-detect); reported-only, no `desired:null`.
 
 ## Acceptance
 
 - [ ] Trimmed schema only; backend contract notes excluded fields.
 - [ ] All 5 fields apply from delta, persist, echo reported + null desired.
-- [ ] `mqtt_log_level` transient auto-reverts after 5 min; persistent does not.
-- [ ] Local REST edits publish `{reported, desired:null}`.
+- [ ] `mqtt_log_level` transient auto-reverts after 5 min; persistent does not;
+      transient survives a reboot (restored + timer restarted); persistent-set and
+      auto-revert clear the marker.
+- [ ] Local edits reach the shadow within ~3 s via drift-detect (reported-only).
 - [ ] Invalid values skipped + WARN, not applied.

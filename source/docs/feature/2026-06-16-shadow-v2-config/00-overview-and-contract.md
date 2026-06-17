@@ -71,18 +71,25 @@ per named shadow `<name>`, on every MQTT (re)connect:
 
 ### The asymmetric desired-null semantic (conflict policy = "cloud wins on reconnect")
 
-The combined `{reported, desired:null}` publish is the **same shape** for both the
-cloud-delta path and the local-edit path. The difference is *when* desired is nulled:
+Only the **cloud-delta path** nulls `desired` (the ack/clear). The local-edit path
+goes through the 3 s drift poll and publishes **reported-only**. How each trigger
+treats `desired`:
 
 | Trigger | Publish | Effect |
 |---------|---------|--------|
 | Cloud delta | `{reported:{f:cloudVal}, desired:{f:null}}` | apply cloud value, clear intent |
-| Local UI edit | `{reported:{f:localVal}, desired:{f:null}}` | local value wins, clears any pending cloud intent for `f` |
+| Local edit (REST/UI/internal) | `{reported:{f:localVal}}` via 3 s drift poll (no `desired`) | local value reported within ~3 s; a pending cloud `desired` is **not** cleared |
 | Reconnect (reported-first) | `{reported:<full>}` (does **not** null desired) | any pending cloud `desired` survives -> AWS re-sends delta -> **cloud value re-applied** |
 
-So: **a local edit wins only when actively made** (it nulls desired). **Across a
-reconnect, a still-pending cloud desired wins** (reported-first does not clear it).
-Cloud must re-assert `desired` to override a value the user changed locally while online.
+So: the delta path clears intent on every cloud write. Local edits publish
+reported-only (no `desired:null`) - **safe in the current field set** because the
+delta path already clears `desired` on each cloud write, so no locally-editable
+field carries a standing cloud `desired` to conflict with. **If** a future design
+has the cloud hold a standing `desired` on a locally-editable field, a local edit
+would be re-overridden by the next delta (cloud-wins); to restore
+local-wins-when-active for such a field, add a per-field `desired:null` to the
+drift publish. Across a reconnect, a still-pending cloud `desired` wins
+(reported-first does not clear it).
 
 ### Version / clientToken
 
