@@ -798,10 +798,10 @@ namespace Mqtt
 
     static void _subscribeToTopics() {
         _subscribeAwsIotJobs();
-        // Gated OFF until AWS IoT Commands is provisioned account-side - see
-        // MQTT_IOT_COMMANDS_SUBSCRIBE_ENABLED. Subscribing to the unprovisioned
-        // "$aws/commands/..." reserved topic triggers a broker CLIENT_ERROR
-        // disconnect (connect/drop storm).
+        // IoT Commands request topic (payload-format pinned to "json"; see
+        // MQTT_IOT_COMMANDS_SUBSCRIBE_ENABLED). The earlier '+' at the payload-format
+        // position was an unsupported reserved-topic subscribe -> broker CLIENT_ERROR
+        // reconnect storm; the corrected topic is safe even before a dispatcher exists.
         if (MQTT_IOT_COMMANDS_SUBSCRIBE_ENABLED) _subscribeIotCommands();
         Shadow::onMqttConnected(); // subscribe shadow deltas + queue initial reports
 
@@ -809,11 +809,15 @@ namespace Mqtt
     }
 
     static void _subscribeIotCommands() {
-        // AWS IoT Commands: wildcard request topic (executionId + payload-format
-        // are parsed from the received topic). Policy AllowSubscribe covers
+        // AWS IoT Commands request topic. '+' is the execution-id wildcard only;
+        // the payload-format segment must be a concrete value ("json"), NOT a '+'
+        // wildcard. A '+' there is an unsupported reserved-topic subscribe and the
+        // broker drops the whole session with CLIENT_ERROR (the ~1.2 s reconnect
+        // storm we hit). The cloud dispatcher must create commands with contentType
+        // application/json to match. Policy AllowSubscribe covers
         // $aws/commands/things/<thing>/*.
         char topic[MQTT_TOPIC_BUFFER_SIZE];
-        snprintf(topic, sizeof(topic), "%s/commands/things/%s/executions/+/request/+", AWS_TOPIC, DEVICE_ID);
+        snprintf(topic, sizeof(topic), "%s/commands/things/%s/executions/+/request/json", AWS_TOPIC, DEVICE_ID);
         if (_clientMqtt.subscribe(topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
             LOG_DEBUG("Subscribed to IoT Commands: %s", topic);
         } else {

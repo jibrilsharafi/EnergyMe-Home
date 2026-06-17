@@ -111,14 +111,15 @@
 // AWS IoT Commands (transient operations): reject any request older than this.
 #define COMMAND_MAX_AGE_SECONDS 300 // 5 minutes
 
-// AWS IoT Commands subscription gate.
-// WARNING - FLEET HAZARD WHEN ON BUT CLOUD NOT READY: enabling this subscribes to
-// "$aws/commands/things/<id>/executions/+/request/+". If AWS IoT Commands is not
-// live/accepted in the account + region (eu-west-1), the broker closes the session
-// with disconnectReason CLIENT_ERROR ~30 ms after connect - a ~1.2 s reconnect
-// storm on EVERY device that runs it (observed on dev .174). Do NOT cut a fleet
-// release with this ON until IoT Commands is verified end-to-end in eu-west-1
-// (reserved topic accepted + a StartCommandExecution dispatcher exists).
+// AWS IoT Commands subscription gate (compile-time feature flag).
+// The device subscribes to "$aws/commands/things/<id>/executions/+/request/json"
+// - '+' is the execution-id wildcard only; the payload-format segment is the
+// concrete "json", never a '+'. An earlier build used '+' at the payload-format
+// position, an unsupported reserved-topic subscribe that made the broker drop the
+// session with CLIENT_ERROR (~1.2 s reconnect storm, observed on dev .174). The
+// corrected topic is safe to subscribe even before a dispatcher exists. For the
+// device to RECEIVE commands, the cloud must create them with contentType
+// application/json (so AWS publishes to .../request/json, matching this subscribe).
 #define MQTT_IOT_COMMANDS_SUBSCRIBE_ENABLED true
 
 struct PublishMqtt
