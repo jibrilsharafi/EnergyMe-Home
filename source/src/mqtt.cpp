@@ -914,7 +914,17 @@ namespace Mqtt
         LOG_DEBUG("Received MQTT message from %s", topic);
 
         if (Shadow::routeMessage(topic, message)) { /* handled by shadow module (copy + flag only) */ }
-        else if (strstr(topic, "/commands/things/") != nullptr && strstr(topic, "/executions/") != nullptr) _handleCommandExecution(topic, message);
+        // Only the subscribed request topic (.../executions/<id>/request/json) is an
+        // inbound command. Match it precisely - matching any "/commands/things/" topic
+        // also catches AWS's own .../response/rejected/json echo of our status publish,
+        // which has no 'operation', gets re-rejected, and echoes again -> infinite
+        // publish loop hammering the broker.
+        else if (strstr(topic, "/commands/things/") != nullptr && endsWith(topic, "/request/json")) _handleCommandExecution(topic, message);
+        else if (strstr(topic, "/commands/things/") != nullptr) {
+            // AWS echoed our own command-status publish back (e.g. rejecting a status
+            // for an unknown/expired execution). Never reprocess it - just note it.
+            LOG_DEBUG("Ignoring non-request command topic: %s", topic);
+        }
         else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_JOBS)) _handleAwsIotJobMessage(message, topic);
         else LOG_WARNING("Unknown MQTT topic received: %s", topic);
         
@@ -925,6 +935,8 @@ namespace Mqtt
     // AWS IoT Commands (transient operations)
     // =======================================
 
+    // reasonCode MUST match the AWS IoT Commands pattern [A-Z0-9_-]+ (uppercase);
+    // a lowercase code makes AWS reject the status update. reasonDescription is free text.
     static void _publishCommandStatus(const char* executionId, const char* status,
                                        const char* reasonCode, const char* reasonDescription) {
         char topic[MQTT_TOPIC_BUFFER_SIZE];
@@ -958,14 +970,14 @@ namespace Mqtt
         DeserializationError error = deserializeJson(doc, message);
         if (error) {
             LOG_ERROR("Failed to parse command %s payload (%s)", executionId, error.c_str());
-            _publishCommandStatus(executionId, "FAILED", "bad_payload", "Could not parse command JSON");
+            _publishCommandStatus(executionId, "FAILED", "BAD_PAYLOAD", "Could not parse command JSON");
             return;
         }
 
         const char* operation = doc["operation"].as<const char*>();
         if (operation == nullptr) {
             LOG_WARNING("Command %s missing 'operation'", executionId);
-            _publishCommandStatus(executionId, "REJECTED", "missing_operation", "No 'operation' field");
+            _publishCommandStatus(executionId, "REJECTED", "MISSING_OPERATION", "No 'operation' field");
             return;
         }
 
@@ -975,7 +987,7 @@ namespace Mqtt
         uint64_t createdAt = doc["created_at"] | 0ULL;
         if (ShadowLogic::isCommandStale(createdAt, CustomTime::getUnixTime(), COMMAND_MAX_AGE_SECONDS)) {
             LOG_WARNING("Command %s (%s) is stale (created %llu); rejecting", executionId, operation, createdAt);
-            _publishCommandStatus(executionId, "REJECTED", "stale_command", "Command older than the staleness window");
+            _publishCommandStatus(executionId, "REJECTED", "STALE_COMMAND", "Command older than the staleness window");
             return;
         }
         if (createdAt == 0) LOG_DEBUG("Command %s has no created_at; staleness guard skipped", executionId);
@@ -991,7 +1003,7 @@ namespace Mqtt
             const char* confirm = doc["confirm"].as<const char*>();
             if (confirm == nullptr || strcmp(confirm, DEVICE_ID) != 0) {
                 LOG_WARNING("Command %s factory_reset confirm mismatch", executionId);
-                _publishCommandStatus(executionId, "REJECTED", "confirm_mismatch", "confirm must equal the device id");
+                _publishCommandStatus(executionId, "REJECTED", "CONFIRM_MISMATCH", "confirm must equal the device id");
                 return;
             }
             _publishCommandStatus(executionId, "SUCCEEDED", nullptr, nullptr);
@@ -1011,13 +1023,13 @@ namespace Mqtt
                 }
                 LOG_INFO("Command %s: reset energy for listed channels", executionId);
             } else {
-                _publishCommandStatus(executionId, "REJECTED", "bad_channels", "channels must be an array of indices or \"all\"");
+                _publishCommandStatus(executionId, "REJECTED", "BAD_CHANNELS", "channels must be an array of indices or \"all\"");
                 return;
             }
             _publishCommandStatus(executionId, "SUCCEEDED", nullptr, nullptr);
         } else {
             LOG_WARNING("Unknown command operation: %s", operation);
-            _publishCommandStatus(executionId, "REJECTED", "unknown_operation", operation);
+            _publishCommandStatus(executionId, "REJECTED", "UNKNOWN_OPERATION", operation);
         }
     }
 
