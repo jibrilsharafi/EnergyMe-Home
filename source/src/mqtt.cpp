@@ -812,6 +812,15 @@ namespace Mqtt
         LOG_DEBUG("Constructing MQTT topic for %s | %s", finalTopic, topicBuffer);
     }
 
+    // AWS IoT Commands execution topic: $aws/commands/things/<thing>/executions/
+    // <executionId>/<verb>. executionId is "+" for the subscribe wildcard; verb is
+    // "request/json" or "response/json".
+    static void _constructCommandTopic(const char* executionId, const char* verb,
+                                       char* topicBuffer, size_t topicBufferSize) {
+        snprintf(topicBuffer, topicBufferSize, "%s/commands/things/%s/executions/%s/%s",
+                 AWS_TOPIC, DEVICE_ID, executionId, verb);
+    }
+
     static void _setupTopics() {
         _setTopicMeter();
         _setTopicSystemDynamic();
@@ -849,7 +858,7 @@ namespace Mqtt
         // application/json to match. Policy AllowSubscribe covers
         // $aws/commands/things/<thing>/*.
         char topic[MQTT_TOPIC_BUFFER_SIZE];
-        snprintf(topic, sizeof(topic), "%s/commands/things/%s/executions/+/request/json", AWS_TOPIC, DEVICE_ID);
+        _constructCommandTopic("+", "request/json", topic, sizeof(topic));
         if (_clientMqtt.subscribe(topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
             LOG_DEBUG("Subscribed to IoT Commands: %s", topic);
         } else {
@@ -939,8 +948,7 @@ namespace Mqtt
     static void _publishCommandStatus(const char* executionId, const char* status,
                                        const char* reasonCode, const char* reasonDescription) {
         char topic[MQTT_TOPIC_BUFFER_SIZE];
-        snprintf(topic, sizeof(topic), "%s/commands/things/%s/executions/%s/response/json",
-                 AWS_TOPIC, DEVICE_ID, executionId);
+        _constructCommandTopic(executionId, "response/json", topic, sizeof(topic));
 
         SpiRamAllocator allocator;
         JsonDocument doc(&allocator);
@@ -1095,8 +1103,7 @@ namespace Mqtt
     void injectCommandExecution(const char* executionId, const char* payload) {
         if (executionId == nullptr || payload == nullptr) return;
         char topic[MQTT_TOPIC_BUFFER_SIZE];
-        snprintf(topic, sizeof(topic), "%s/commands/things/%s/executions/%s/request/json",
-                 AWS_TOPIC, DEVICE_ID, executionId);
+        _constructCommandTopic(executionId, "request/json", topic, sizeof(topic));
         _queueCommand(topic, payload);
         LOG_INFO("Injected synthetic command execution %s", executionId);
     }
