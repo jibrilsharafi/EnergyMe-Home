@@ -31,11 +31,12 @@ using ReportFn = void (*)(JsonDocument& doc);
 
 // Apply one cloud delta. `delta` holds the changed desired fields (the AWS
 // /update/delta "state" object). Fill `reported` with the values actually
-// applied (echoed back to confirm). `desired` may be used to null specific
-// (possibly nested) keys; any top-level delta key left untouched here is
-// auto-nulled by the envelope so every cloud-sent field is acked/cleared.
-// Return true if at least one field was applied (informational only).
-using ApplyFn = bool (*)(JsonObjectConst delta, JsonObject reported, JsonObject desired);
+// applied (echoed back to confirm). The envelope auto-nulls every top-level
+// delta key in `desired` after this returns, so the delta clears - callbacks
+// never touch desired (whole-key nulling avoids a re-trigger storm for fields
+// the device cannot converge). Return true if at least one field was applied
+// (informational only).
+using ApplyFn = bool (*)(JsonObjectConst delta, JsonObject reported);
 
 struct Descriptor {
     const char* name;     // "info", "system", ... (named-shadow name)

@@ -61,11 +61,11 @@ static void _reportIssues(JsonDocument& doc);
 static void _reportWifi(JsonDocument& doc);
 static void _onIssuesChanged();
 static void _reportSystem(JsonDocument& doc);
-static bool _applySystem(JsonObjectConst delta, JsonObject reported, JsonObject desired);
+static bool _applySystem(JsonObjectConst delta, JsonObject reported);
 static void _reportMeter(JsonDocument& doc);
-static bool _applyMeter(JsonObjectConst delta, JsonObject reported, JsonObject desired);
+static bool _applyMeter(JsonObjectConst delta, JsonObject reported);
 static void _reportChannels(JsonDocument& doc);
-static bool _applyChannels(JsonObjectConst delta, JsonObject reported, JsonObject desired);
+static bool _applyChannels(JsonObjectConst delta, JsonObject reported);
 
 // system shadow: transient (VERBOSE/DEBUG) mqtt_log_level auto-revert. The timer
 // callback (esp_timer task) only flips a flag; the MQTT task does the revert +
@@ -324,13 +324,15 @@ static void _applyDelta(uint8_t idx, const char* payload) {
     JsonObject reported = outDoc["state"]["reported"].to<JsonObject>();
     JsonObject desired = outDoc["state"]["desired"].to<JsonObject>();
 
-    _shadows[idx].desc.apply(delta, reported, desired);
+    _shadows[idx].desc.apply(delta, reported);
 
-    // Ack/clear invariant: every top-level field the cloud sent must be nulled
-    // in desired. The apply callback may have nulled keys granularly (nested
-    // object) - leave those; null any it did not touch.
+    // Ack/clear: null every top-level field the cloud sent so the delta clears
+    // (the cloud owns any further desired lifecycle). Channels are object-keyed,
+    // so this nulls the whole channel object - intentional: keeping a partial
+    // desired would re-trigger a delta storm for any field the device cannot
+    // converge (e.g. channel 0 stays active even if a delta tried to disable it).
     for (JsonPairConst kv : delta) {
-        if (!desired[kv.key()].is<JsonObject>()) desired[kv.key()] = nullptr;
+        desired[kv.key()] = nullptr;
     }
 
     if (ShadowLogic::shouldSendVersion(version)) outDoc["version"] = version;
@@ -593,8 +595,7 @@ static void _reportSystem(JsonDocument& doc) {
     rep["log_level_save"] = AdvancedLogger::logLevelToString(AdvancedLogger::getSaveLevel());
 }
 
-static bool _applySystem(JsonObjectConst delta, JsonObject reported, JsonObject desired) {
-    (void)desired; // every top-level delta key is auto-nulled by the envelope backstop
+static bool _applySystem(JsonObjectConst delta, JsonObject reported) {
     bool applied = false;
 
     JsonVariantConst v = delta["led_brightness"];
@@ -690,8 +691,7 @@ static void _reportMeter(JsonDocument& doc) {
     rep["sample_time"] = Ade7953::getSampleTime();
 }
 
-static bool _applyMeter(JsonObjectConst delta, JsonObject reported, JsonObject desired) {
-    (void)desired; // top-level delta keys auto-nulled by the envelope backstop
+static bool _applyMeter(JsonObjectConst delta, JsonObject reported) {
     bool applied = false;
 
     // Collect the calibration fields present in the delta into a partial config.
@@ -760,8 +760,7 @@ static void _reportChannels(JsonDocument& doc) {
     }
 }
 
-static bool _applyChannels(JsonObjectConst delta, JsonObject reported, JsonObject desired) {
-    (void)desired; // each top-level (channel) key auto-nulled by the envelope backstop
+static bool _applyChannels(JsonObjectConst delta, JsonObject reported) {
     bool applied = false;
     uint8_t channelCount = globalHwProfile->totalChannelCount;
 
