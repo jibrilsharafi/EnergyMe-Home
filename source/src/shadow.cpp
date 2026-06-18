@@ -595,6 +595,17 @@ static void _reportSystem(JsonDocument& doc) {
     rep["log_level_save"] = AdvancedLogger::logLevelToString(AdvancedLogger::getSaveLevel());
 }
 
+// Parse a string log-level delta field. Returns the level (>=0) to apply, or -1
+// if the field is absent or invalid (warns on an unknown level). Shared by the
+// three log-level fields below, which differ only in their setter/getter.
+static int _parseLogLevelDelta(JsonObjectConst delta, const char* key) {
+    JsonVariantConst v = delta[key];
+    if (v.isNull()) return -1;
+    int level = ShadowLogic::logLevelFromString(v.as<const char*>());
+    if (level < 0) LOG_WARNING("Rejected %s: unknown level", key);
+    return level;
+}
+
 static bool _applySystem(JsonObjectConst delta, JsonObject reported) {
     bool applied = false;
 
@@ -626,40 +637,25 @@ static bool _applySystem(JsonObjectConst delta, JsonObject reported) {
         }
     }
 
-    v = delta["mqtt_log_level"];
-    if (!v.isNull()) {
-        int level = ShadowLogic::logLevelFromString(v.as<const char*>());
-        if (level < 0) {
-            LOG_WARNING("Rejected mqtt_log_level: unknown level");
-        } else {
-            _applyMqttLogLevel(level);
-            reported["mqtt_log_level"] = ShadowLogic::logLevelToString(Mqtt::getMqttLogLevel());
-            applied = true;
-        }
+    int level = _parseLogLevelDelta(delta, "mqtt_log_level");
+    if (level >= 0) {
+        _applyMqttLogLevel(level);
+        reported["mqtt_log_level"] = ShadowLogic::logLevelToString(Mqtt::getMqttLogLevel());
+        applied = true;
     }
 
-    v = delta["log_level_print"];
-    if (!v.isNull()) {
-        int level = ShadowLogic::logLevelFromString(v.as<const char*>());
-        if (level < 0) {
-            LOG_WARNING("Rejected log_level_print: unknown level");
-        } else {
-            AdvancedLogger::setPrintLevel((LogLevel)level); // persists (lib-internal)
-            reported["log_level_print"] = AdvancedLogger::logLevelToString(AdvancedLogger::getPrintLevel());
-            applied = true;
-        }
+    level = _parseLogLevelDelta(delta, "log_level_print");
+    if (level >= 0) {
+        AdvancedLogger::setPrintLevel((LogLevel)level); // persists (lib-internal)
+        reported["log_level_print"] = AdvancedLogger::logLevelToString(AdvancedLogger::getPrintLevel());
+        applied = true;
     }
 
-    v = delta["log_level_save"];
-    if (!v.isNull()) {
-        int level = ShadowLogic::logLevelFromString(v.as<const char*>());
-        if (level < 0) {
-            LOG_WARNING("Rejected log_level_save: unknown level");
-        } else {
-            AdvancedLogger::setSaveLevel((LogLevel)level); // persists (lib-internal)
-            reported["log_level_save"] = AdvancedLogger::logLevelToString(AdvancedLogger::getSaveLevel());
-            applied = true;
-        }
+    level = _parseLogLevelDelta(delta, "log_level_save");
+    if (level >= 0) {
+        AdvancedLogger::setSaveLevel((LogLevel)level); // persists (lib-internal)
+        reported["log_level_save"] = AdvancedLogger::logLevelToString(AdvancedLogger::getSaveLevel());
+        applied = true;
     }
 
     return applied;
