@@ -163,6 +163,15 @@ void setup()
   if (CustomTime::begin()) LOG_INFO("Initial time sync successful");
   else LOG_ERROR("Initial time sync failed! Will retry later.");
 
+  // Before the web server: the /api/v1/system/issues endpoint reads the registry
+  // mutex, so the registry must exist before requests can arrive (else early polls
+  // hit a NULL mutex -> HTTP 500). Deps are ready here: hw profile (initHardwareProfile)
+  // and ADE7953 (channel facts) init earlier; time is up for issue timestamps. The
+  // task's cloud/influx checks read safe default flags until those modules begin().
+  LOG_DEBUG("Setting up issue registry...");
+  IssueRegistry::begin();
+  LOG_INFO("Issue registry setup done");
+
   LOG_DEBUG("Setting up server...");
   CustomServer::begin();
   LOG_INFO("Server setup done");
@@ -184,10 +193,6 @@ void setup()
   LOG_DEBUG("Setting up InfluxDB client...");
   InfluxDbClient::begin();
   LOG_INFO("InfluxDB client setup done");
-
-  LOG_DEBUG("Setting up issue registry...");
-  IssueRegistry::begin();
-  LOG_INFO("Issue registry setup done");
 
   LOG_DEBUG("Starting maintenance task...");
   startMaintenanceTask();

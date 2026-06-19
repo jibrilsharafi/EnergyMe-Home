@@ -52,7 +52,12 @@
 #define MQTT_PREFERENCES_OTA_EXPECTED_SHA256_KEY "ota_sha256" // Expected firmware SHA256 for validation
 
 // MQTT buffer sizes - all moved to PSRAM for better memory utilization
-#define MQTT_BUFFER_SIZE (5 * 1024) // Needs to be at least 4 kB for the certificates
+// 9 KB sized for the worst-case inbound shadow /update/delta (changed desired
+// fields + per-field metadata) now that /update/accepted is intentionally not
+// subscribed. This static PubSubClient RX/TX buffer lives in internal RAM and
+// adds pressure at the TLS handshake (see the 2.0.0 esp-aes alloc memory) -
+// verify free internal heap after connect on real hardware.
+#define MQTT_BUFFER_SIZE (9 * 1024)
 #define MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE (32 * 1024) // PSRAM buffer for MQTT subscribe messages (reduced for efficiency)
 #define CERTIFICATE_BUFFER_SIZE (16 * 1024)   // PSRAM buffer for certificate storage (was 4KB)
 #define MINIMUM_CERTIFICATE_LENGTH 128 // Minimum length for valid certificates (to avoid empty strings)
@@ -89,37 +94,47 @@
 #define MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY "en_cloud"
 #define MQTT_PREFERENCES_SEND_POWER_DATA_KEY "send_power"
 #define MQTT_PREFERENCES_MQTT_LOG_LEVEL_KEY "log_level_int"
+#define MQTT_PREFERENCES_TRANSIENT_LOG_LEVEL_KEY "transient_log" // active transient (VERBOSE/DEBUG) level, persisted so a debug session survives a reboot; absent = none
 
 // MQTT topic suffixes (application-level; see awsconfig.h for the namespace prefix)
-// Publish topics
+// Publish topics. system/static + channel retired (-> info + channels shadows);
+// configurable state lives in shadows, telemetry topics carry runtime data only.
 #define MQTT_TOPIC_METER "meter"
-#define MQTT_TOPIC_SYSTEM_STATIC "system/static"
 #define MQTT_TOPIC_SYSTEM_DYNAMIC "system/dynamic"
-#define MQTT_TOPIC_CHANNEL "channel"
 #define MQTT_TOPIC_STATISTICS "statistics"
 #define MQTT_TOPIC_CRASH "crash"
 #define MQTT_TOPIC_LOG "log"
-// Subscribe topics
-#define MQTT_TOPIC_SUBSCRIBE_COMMAND "command"
+// Subscribe topics. The legacy `command` topic is retired (-> IoT Commands +
+// system shadow); only AWS IoT Jobs (OTA) and shadow/command reserved topics remain.
 #define MQTT_TOPIC_SUBSCRIBE_JOBS "jobs"
 #define MQTT_TOPIC_SUBSCRIBE_QOS 1
+
+// AWS IoT Commands (transient operations): reject any request older than this.
+#define COMMAND_MAX_AGE_SECONDS 300 // 5 minutes
+
+// AWS IoT Commands subscription gate (compile-time feature flag).
+// The device subscribes to "$aws/commands/things/<id>/executions/+/request/json"
+// - '+' is the execution-id wildcard only; the payload-format segment is the
+// concrete "json", never a '+'. An earlier build used '+' at the payload-format
+// position, an unsupported reserved-topic subscribe that made the broker drop the
+// session with CLIENT_ERROR (~1.2 s reconnect storm, observed on dev .174). The
+// corrected topic is safe to subscribe even before a dispatcher exists. For the
+// device to RECEIVE commands, the cloud must create them with contentType
+// application/json (so AWS publishes to .../request/json, matching this subscribe).
+#define MQTT_IOT_COMMANDS_SUBSCRIBE_ENABLED true
 
 struct PublishMqtt
 {
   bool meter;
   bool systemDynamic;
-  bool systemStatic;
-  bool channel;
   bool statistics;
   bool crash;
   bool requestOta;
 
-  PublishMqtt() : 
+  PublishMqtt() :
     meter(false), // Need to fill queue first
-    systemDynamic(true), 
-    systemStatic(true), 
-    channel(true), 
-    statistics(true), 
+    systemDynamic(true),
+    statistics(true),
     crash(false), // May not be present
     requestOta(true) {} // Always require on connection
 };
@@ -144,4 +159,27 @@ namespace Mqtt
 
     TaskInfo getMqttTaskInfo();
     TaskInfo getMqttOtaTaskInfo();
+
+    // Shadow module helpers: subscribe/publish on reserved $aws/things/<id>/...
+    // topics (the shadow module builds the "shadow/name/<name>/..." suffix).
+    bool subscribeReservedThings(const char* finalTopic);
+    bool publishReservedThings(JsonDocument& jsonDocument, const char* finalTopic, bool retain = false);
+
+    // Config accessors used by the system shadow (04).
+    int  getMqttLogLevel();                  // current runtime level int (0..5)
+    void setMqttLogLevel(const char* level); // persisted baseline (validates the name)
+    void setRuntimeLogLevel(int level);      // runtime only - NOT persisted (transient verbose)
+    // Transient (VERBOSE/DEBUG) reboot-restore marker. Persisted separately from
+    // the baseline so a debug session keeps boot-time logs across a reboot.
+    void saveTransientLogLevel(int level);   // persist active transient level (no-op if unchanged)
+    void clearTransientLogLevel();           // clear the marker (revert / persistent set)
+    int  getTransientLogLevel();             // persisted transient level, or -1 if none
+    bool getSendPowerData();
+    void setSendPowerData(bool enabled);     // persisted
+
+#ifdef ENV_DEV
+    // Dev-only: inject a synthetic IoT Command execution through the real handler
+    // (staged from the caller's task, dispatched on the MQTT task). Never in prod.
+    void injectCommandExecution(const char* executionId, const char* payload);
+#endif
 }

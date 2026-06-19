@@ -1,0 +1,258 @@
+# AWS IoT Device Shadow config (v2.1.0) - overview & contract
+
+Tracking issue: #159. This doc set is the device<->cloud contract both repos
+(`EnergyMe-Home` firmware, `energyme-infra` cloud) validate against before coding.
+
+## Doc index
+
+| # | Doc | Scope | Cloud writer needed to test? |
+|---|-----|-------|------------------------------|
+| 00 | this | contract, apply logic, cloud checklist, open decisions | - |
+| 01 | `01-scaffold-shadow-module.md` | `shadow.cpp/.h`: subscribe, publish-reported, delta dispatch, version/clientToken, mutex | no |
+| 02 | `02-info-shadow.md` | reported-only identity; retires `system/static` | **no** (console-verifiable) |
+| 03 | `03-issues-shadow.md` | reported-only issue registry; transition-triggered | **no** (console-verifiable) |
+| 04 | `04-system-shadow.md` | writable behavioural config (trimmed set) + `mqtt_log_level` auto-revert | yes |
+| 05 | `05-meter-shadow.md` | writable ADE7953 calibration + sample time | yes |
+| 06 | `06-channels-shadow.md` | writable per-channel config, object-keyed | yes |
+| 07 | `07-commands.md` | IoT Commands: restart, factory_reset, energy_reset | yes |
+| 08 | `08-v2-cutover.md` | retire config topics (`command`/`system/static`/`channel`), buffer bump, fw 2.1.0 (topic stays v1) | n/a |
+
+**Build/test order:** 01 -> 02 -> 03 give on-device, cloud-independent proof
+(reported-only shadows are verifiable by inspecting shadow state in the AWS
+console with zero cloud backend). 04-07 need a cloud `desired`/command writer to
+exercise the inbound path. 08 is the breaking cut, last.
+
+## Scope decisions (locked)
+
+- Deliverable now: this contract doc set. No infra issues opened.
+- **No topic-version bump: `MQTT_TOPIC_VERSION` stays `"v1"`.** No surviving topic
+  changes payload, so a version would be ceremony. Migration is additive (shadows
+  + Commands on net-new `$aws/...` topics) + subtractive (3 config topics stop
+  being published). Keeping v1 avoids rule duplication, a rollout window,
+  device-policy ARN migration, and the "delete v1 early = data loss" footgun.
+  Surviving telemetry is untouched, so **zero ingest gap** for any fleet mix.
+  Firmware release still bumps to 2.1.0 (firmware semver, not the topic string).
+- Secrets stay local-only (WiFi, CustomMQTT creds, InfluxDB token, web password).
+- Energy counters / instantaneous power stay on telemetry topics (shadow writes
+  would burn the 20 RPS/thing budget).
+- Secrets stay local-only (WiFi, CustomMQTT creds, InfluxDB token, web password).
+- Energy counters / instantaneous power stay on telemetry topics (shadow writes
+  would burn the 20 RPS/thing budget).
+
+## Verified AWS facts (load-bearing)
+
+- **Shadow doc size cap = 8 KB, state only; metadata (timestamps) excluded.**
+  Worst-case `channels` reported (17 ch x ~200 B) ~= 3.4 KB. Single shadow is fine.
+- **Named-shadow + Commands topics are plain MQTT sub/pub**, MQTT 3.1.1 /
+  PubSubClient-compatible, available eu-west-1. No AWS device SDK required.
+- Shadow RPS limit 20/thing; in-flight unacked 10/thing.
+
+## Protocol: publish-reported-first, no GET (the apply logic)
+
+The device **never** publishes `/get`. A GET returns the full document
+*including* the metadata block (a timestamp per field) -> large payload that can
+overflow the inbound buffer. **For the same reason the device does NOT subscribe
+to `/update/accepted`**: its response echoes the full reported state *plus* a
+per-field metadata block, which for `channels` is the single largest inbound
+message and would stress the RX buffer. The device subscribes only to
+`/update/delta` (small: changed fields + minimal metadata) and `/update/rejected`
+(tiny). `version` is sourced from the delta payload, not from `/accepted`. Flow,
+per named shadow `<name>`, on every MQTT (re)connect:
+
+1. Subscribe `update/delta`, `update/rejected`. (NOT `update/accepted`.)
+2. Publish `{state:{reported:<full current NVS config>}}` to `update`.
+3. AWS stores reported. If a `desired` exists and differs, AWS auto-pushes
+   `update/delta` (no GET needed).
+4. On `delta`: apply each field -> persist NVS -> publish **one combined**
+   `{state:{reported:{<applied>}, desired:{<field>:null}}}`. The `desired:null`
+   removes the pending intent; that publish *is* the ack.
+5. The delta payload carries `version`; record it for the next
+   optimistic-concurrency check (no `/accepted` subscription needed).
+
+### The asymmetric desired-null semantic (conflict policy = "cloud wins on reconnect")
+
+Only the **cloud-delta path** nulls `desired` (the ack/clear). The local-edit path
+goes through the 3 s drift poll and publishes **reported-only**. How each trigger
+treats `desired`:
+
+| Trigger | Publish | Effect |
+|---------|---------|--------|
+| Cloud delta | `{reported:{f:cloudVal}, desired:{f:null}}` | apply cloud value, clear intent |
+| Local edit (REST/UI/internal) | `{reported:{f:localVal}}` via 3 s drift poll (no `desired`) | local value reported within ~3 s; a pending cloud `desired` is **not** cleared |
+| Reconnect (reported-first) | `{reported:<full>}` (does **not** null desired) | any pending cloud `desired` survives -> AWS re-sends delta -> **cloud value re-applied** |
+
+So: the delta path clears intent on each cloud write **that produces a delta**.
+Local edits publish reported-only (no `desired:null`), so a `desired` left equal to
+`reported` is never cleared by the device.
+
+> **DECISION (2026-06-17, verified e2e on .174): the cloud owns clearing `desired`,
+> reactively, after convergence.** This is the load-bearing contract; the device's
+> delta-ack null is only a latency optimization on top of it. `desired` is a
+> *transient remote command*, not a persistent setpoint - steady-state the local
+> value is authoritative (aligns with local-first).
+
+1. **(MUST - load-bearing) Clear `desired` after observing convergence.** The cloud
+   desired-state writer writes a field only to *command* a change, then publishes
+   `desired:{f:null}` once it observes `reported` match the value it wrote -
+   **including the immediate case where `reported` already equalled it** (a no-op
+   write -> null it right away). This is *reactive* (it watches the actual reported
+   shadow), so it is robust even when the writer's own `reported` view lags the
+   device.
+2. **(SHOULD - optimization, NOT the safety mechanism) Avoid writing
+   `desired == reported`** and avoid declarative "full desired state" re-syncs. This
+   only saves shadow churn. It is *predictive* (compares against the writer's
+   possibly-stale `reported` cache), so it is best-effort; clause 1 is what
+   guarantees correctness, and it cleans up any no-op that slips through.
+
+**Failure mode if clause 1 is skipped:** AWS emits a delta **only when
+`desired != reported`**, and a no-GET device nulls `desired` only in the delta-ack.
+So a `desired` written equal to (or left equal to) `reported` produces **no delta**,
+the device never sees it, and it stays. That stuck `desired` then reverts the next
+*local* edit to the field: the local edit moves `reported`, `desired` now differs,
+AWS emits a delta, and the device applies the stale `desired` over the local change.
+*Reproduced on .174 (2026-06-17):* wrote `desired.led_brightness=44` when `reported`
+was already 44 -> local REST set 88 -> device reverted to 44 within ~2 s.
+
+**Why the fix is the cloud, not the device:** the device cannot see a
+`desired == reported` without a GET (no diff -> no delta -> no notification), and the
+design deliberately avoids GET / `/update/accepted`. A device-side "drift also nulls
+`desired`" alternative was considered and **rejected** - it trades this (sustained)
+bug for a coincident-write race, where a local edit firing while a fresh cloud
+`desired` is still in flight would wipe the cloud intent at AWS with no re-trigger.
+The cloud already ingests `reported` and can watch convergence, so it is the natural
+owner. (A periodic device GET to sweep stuck `desired` was also rejected: it
+re-introduces the avoided GET + `/get/accepted` subscriptions/buffer, needs
+version-conditional nulls to avoid the same race, and only bounds the harm window to
+the poll interval.)
+
+Across a reconnect, a still-pending cloud `desired` wins (reported-first does not
+clear it) - consistent with the cloud-wins-on-reconnect policy.
+
+### Version / clientToken
+
+- Track `version` from each `update/delta` payload (it includes the doc version).
+  Echo it on the combined delta-ack publish for optimistic locking. On
+  `update/rejected` code 409 (version conflict): re-publish reported **without**
+  version and wait for a fresh delta. (Verify `version` is present in the delta
+  payload during impl - it is in the standard shadow delta document.)
+- Do **not** send `version` on the reconnect reported-first publish (avoids
+  spurious 409 on reconnect).
+- `clientToken`: per-publish token (from `esp_random()`) included on outbound
+  updates for cloud-side traceability and correlation on `/rejected`. The device
+  does **not** use it for dedup (no `/accepted` subscription). Optional; drop if
+  it adds no value once the cloud side is settled.
+
+### Unknown desired field
+
+Do not apply; still null it (`{desired:{unknownField:null}}`) and `LOG_WARNING`.
+Forward-compat, not an error.
+
+### Contract constraints on the cloud writer
+
+(This repo can't enforce these on-device; they are part of the cloud contract.)
+
+- **Chunk `channels` desired writes.** A single delta that sets `desired` for many
+  channels with max-length labels + per-field metadata can exceed the device RX
+  buffer (`MQTT_BUFFER_SIZE`, 9 KB) and be silently dropped. The backend must
+  write channel `desired` in batches of **<= N channels per update** (N chosen so
+  worst-case wire delta < buffer; see 06). Other shadows are small, no constraint.
+- **Clear `desired` on `factory_reset`.** After a reset the device reports
+  defaults; any still-pending `desired` would be delta'd back and partially undo
+  the reset. The backend must clear all shadows' `desired` for the thing when it
+  issues `factory_reset` (07).
+
+## Shadow catalog (schemas corrected against actual firmware)
+
+Field names below match the **current firmware JSON** (the existing
+`*ToJson` serializers), not the issue's illustrative names. Each shadow doc has
+the authoritative schema.
+
+1. **info** (reported-only) - identity. Source: `systemStaticInfoToJson` fields
+   flattened (`utils.cpp`). Replaces `_publishSystemStatic`. See 02.
+2. **issues** (reported-only) - `IssueRegistry::issuesToJson` output verbatim,
+   plus derived `active_count`. See 03.
+3. **system** (writable) - exactly 5 fields, the ones configurable + persisted
+   today: `led_brightness`, `send_power_data`, `mqtt_log_level`,
+   `log_level_print`, `log_level_save`. `ntp_server`/`timezone` are out (NTP/TZ
+   work automatically once cloud-connected; device runs UTC internally).
+   `modbus_*` is out (hardcoded in firmware, not configurable). See 04.
+4. **meter** (writable) - ADE7953 calibration (struct `Ade7953Configuration`,
+   camelCase keys, NVS `ade7953_ns`) + `sample_time`. See 05.
+5. **channels** (writable) - per-channel object keyed by index 0-16, nested
+   `ctSpecification`, `_channelDataMutex`, channel-0 invariant. See 06.
+6. **wifi** (reported-only) - non-secret network state: `connected`, `ssid`,
+   `ip`, `gateway`, `subnet`, `dns`, `mac`, plus `static_ip`/`fallback_to_dhcp`
+   mode flags. Read from `WiFi.*` + `CustomWifi::getConfiguration`. Published on
+   (re)connect like the other reported-only shadows. **RSSI is excluded** (volatile,
+   already on `system/dynamic`). **No writable network config**: static IP is set
+   locally via REST only - a bad remote static IP would risk a LAN lock-out, and
+   the local path already has boot-fail/DHCP backstops. WiFi credentials are never
+   in a shadow.
+
+## Cloud-side required changes (REFERENCE ONLY - not implemented in this repo)
+
+**This repo does not touch `energyme-infra`.** The list below is the
+coordination contract: it is implemented and tracked on the cloud side
+separately. It is here only so the firmware contract is validated end-to-end.
+These do **not** exist today (infra ADR-001 defers shadows to "Phase 2"):
+
+1. **Device policy** (`energyme-home-{env}-device-policy`): add a statement for
+   **`$aws/commands/things/${iot:Connection.Thing.ThingName}/*`** (subscribe +
+   receive + publish) - Commands topics are NOT under `$aws/things/*`, so the
+   current policy does not cover them. Shadow topics (`$aws/things/.../shadow/*`)
+   ARE already covered by the existing `AllowSubscribe`/`AllowReceive`/`AllowPublishShadow`.
+2. **Shadow read/write backend** ("Intelligence backend"): the desired-state
+   writer + reported-state reader (one ingestion Lambda + rule). Net-new; nothing
+   writes `desired` today. Reuses the existing `device-ops` DynamoDB table
+   (schemaless - add a map per shadow on the per-device item; no new table). It
+   replaces what `system_static` + `channel_handler` write today.
+3. **IoT Commands**: create 3 command templates (restart, factory_reset,
+   energy_reset) + a `StartCommandExecution` dispatcher. Net-new.
+4. **No v2 rules / no policy-ARN migration**: topic stays `v1`, so existing
+   telemetry rules + policy publish ARNs are unchanged. The 3 retired topics'
+   rules (`system/static`, `command`, `channel`) just go idle once firmware stops
+   publishing; delete them whenever convenient. Only the `$aws/commands/*` policy
+   statement (item 1) is added.
+
+## Open decisions (for joint cloud review)
+
+1. ~~`system` shadow scope~~ **RESOLVED:** ship the 5 configurable fields.
+   `ntp_server`/`timezone` out (auto via cloud/NTP, device is UTC). `modbus_*` out
+   (not configurable in firmware). No follow-up needed for this work.
+2. ~~`channels` source of truth~~ **RESOLVED:** shadow is the single source of
+   truth for all configurable state. The device **stops publishing the `channel`
+   topic** (was config, not telemetry); cloud reads channel
+   config from the `channels` shadow and retires `channel`-topic ingestion. Same
+   principle retires `system/static` (-> `info` shadow). **Guiding rule:**
+   telemetry topics carry only measurements/statistics/dynamic runtime; all
+   configurable state lives in shadows. (WiFi credentials are the one carve-out:
+   local-only, never in a shadow - AWS forbids secrets in shadow docs.)
+3. ~~`issues` ack path~~ **RESOLVED:** via shadow **desired/delta**. Cloud writes
+   `desired.ack=[codes]`; device acks those, reports new states, nulls
+   `desired.ack`. `issues` is partially-writable (only the `ack` key). See 03.
+4. ~~`git_commit` in `info`~~ **RESOLVED:** publish `sketch_md5`
+   (`ESP.getSketchMD5()`), NOT git commit. The binary hash proves whether the
+   running firmware is the published build or a modified/recompiled one; a git
+   SHA can lie (uncommitted/dirty tree). See 02.
+
+## Final payload-shape review (gate before "done")
+
+After 01-08 are implemented, do a **joint review of every shadow + command
+payload** (firmware + cloud together) to confirm each carries exactly what's
+needed - nothing missing, nothing extra. Capture the agreed final schemas here.
+
+## Deferred / post-MVP (after the core is up)
+
+The first cut ships the config surface that already exists on-device. Once the
+mechanism is live we optimize and add remaining endpoints. Known candidates to
+revisit in the payload review:
+
+- ~~**WiFi info** (non-secret)~~ **DONE:** shipped as the reported-only `wifi`
+  shadow (connected/ssid/ip/gateway/subnet/dns/mac + static_ip/fallback_to_dhcp).
+  RSSI stays on `system/dynamic`. Creds remain local-only. Writable network config
+  (static IP/DHCP from cloud) deliberately **not** added - LAN lock-out risk.
+- **WiFi actions**: reconnect / rescan / forget - candidate IoT Commands.
+- Any config currently exposed via REST but not yet mirrored to a shadow.
+- `issues` ack wiring (decision 3) once the cloud desired-writer exists.
+
+These are explicitly **not** in the 01-08 scope; they are the next iteration.

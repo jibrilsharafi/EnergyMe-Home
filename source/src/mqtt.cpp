@@ -2,6 +2,8 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "mqtt.h"
+#include "shadow.h"
+#include "shadow_logic.h"
 #include "taskprofiler.h"
 #include "duration_format.h"
 
@@ -54,9 +56,7 @@ namespace Mqtt
     
     // Topic buffers
     static char _mqttTopicMeter[MQTT_TOPIC_BUFFER_SIZE];
-    static char _mqttTopicSystemStatic[MQTT_TOPIC_BUFFER_SIZE];
     static char _mqttTopicSystemDynamic[MQTT_TOPIC_BUFFER_SIZE];
-    static char _mqttTopicChannel[MQTT_TOPIC_BUFFER_SIZE];
     static char _mqttTopicStatistics[MQTT_TOPIC_BUFFER_SIZE];
     static char _mqttTopicCrash[MQTT_TOPIC_BUFFER_SIZE];
     static char _mqttTopicLog[MQTT_TOPIC_BUFFER_SIZE];
@@ -109,26 +109,23 @@ namespace Mqtt
 
     // Publish topics
     static void _setTopicMeter();
-    static void _setTopicSystemStatic();
     static void _setTopicSystemDynamic();
-    static void _setTopicChannel();
     static void _setTopicStatistics();
     static void _setTopicCrash();
     static void _setTopicLog();
 
     // Subscription management
     static void _subscribeToTopics();
-    static bool _subscribeToTopic(const char* topicSuffix);
-    static void _subscribeCommand();
     static void _subscribeAwsIotJobs();
-    
+    static void _subscribeIotCommands();
+
     // Subscription callback handler
     static void _subscribeCallback(const char* topic, byte *payload, uint32_t length);
-    static void _handleCommandMessage(const char* message);
+    static void _handleCommandExecution(const char* topic, const char* message);
+    static void _publishCommandStatus(const char* executionId, const char* status, const char* reasonCode, const char* reasonDescription);
+    static void _queueCommand(const char* topic, const char* payload);
+    static void _drainPendingCommand();
     static void _handleAwsIotJobMessage(const char* message, const char* topic);
-    static void _handleRestartMessage();
-    static void _handleSetSendPowerDataMessage(JsonDocument &dataDoc);
-    static void _handleSetMqttLogLevelMessage(JsonDocument &dataDoc);
     
     // AWS IoT Jobs OTA functions
     static bool _validateAwsIotJobMessage(const char* message, const char* topic);
@@ -147,9 +144,7 @@ namespace Mqtt
 
     // Publishing functions
     static void _publishMeter();
-    static void _publishSystemStatic();
     static void _publishSystemDynamic();
-    static void _publishChannel();
     static void _publishStatistics();
     static void _publishCrash();
     static void _publishLog(const LogEntry& entry);
@@ -200,13 +195,17 @@ namespace Mqtt
         }
 
         // Static and permanent config
-        _clientMqtt.setBufferSize(MQTT_BUFFER_SIZE);
+        if (!_clientMqtt.setBufferSize(MQTT_BUFFER_SIZE)) {
+            LOG_ERROR("Failed to allocate %d-byte MQTT buffer; cloud connection may be unstable", MQTT_BUFFER_SIZE);
+        }
+        LOG_DEBUG("MQTT buffer set to %d bytes; free internal heap now %u bytes", MQTT_BUFFER_SIZE, (unsigned)ESP.getFreeHeap());
         _clientMqtt.setKeepAlive(MQTT_OVERRIDE_KEEPALIVE);
         _clientMqtt.setServer(AWS_IOT_CORE_ENDPOINT, AWS_IOT_CORE_PORT);
         _clientMqtt.setCallback(_subscribeCallback);
 
         _setupTopics();
         _loadConfigFromPreferences();
+        Shadow::begin();
         _initializeLogQueue();
         _initializeMeterQueue();
         
@@ -341,7 +340,10 @@ namespace Mqtt
     // Public methods for requesting MQTT publications
     // ===============================================
 
-    void requestChannelPublish() {_publishMqtt.channel = true; }
+    // Channel config now lives in the channels shadow; a channel change (REST,
+    // auto-polarity, etc.) refreshes the shadow's reported state instead of
+    // publishing the retired `channel` topic.
+    void requestChannelPublish() { Shadow::requestReport("channels"); }
     void requestCrashPublish() {_publishMqtt.crash = true; }
 
     // Public methods for pushing data to queues
@@ -381,6 +383,83 @@ namespace Mqtt
     {
         return getTaskInfoSafely(_otaTaskHandle, OTA_TASK_STACK_SIZE);
     }
+
+    // Shadow module helpers
+    // =====================
+
+    bool subscribeReservedThings(const char* finalTopic) {
+        char topic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructMqttTopicReservedThings(finalTopic, topic, sizeof(topic));
+        if (!_clientMqtt.subscribe(topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
+            LOG_WARNING("Failed to subscribe to %s", topic);
+            return false;
+        }
+        LOG_DEBUG("Subscribed to %s", topic);
+        return true;
+    }
+
+    bool publishReservedThings(JsonDocument& jsonDocument, const char* finalTopic, bool retain) {
+        char topic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructMqttTopicReservedThings(finalTopic, topic, sizeof(topic));
+        return _publishJsonStreaming(jsonDocument, topic, retain);
+    }
+
+    int getMqttLogLevel() { return _mqttLogLevelInt; }
+
+    void setMqttLogLevel(const char* level) { _setMqttLogLevel(level); } // validates + persists
+
+    void setRuntimeLogLevel(int level) {
+        if (level < 0 || level > 5) {
+            LOG_WARNING("Invalid runtime log level %d", level);
+            return;
+        }
+        if (!acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
+            LOG_ERROR("Failed to acquire config mutex for runtime log level");
+            return;
+        }
+        _mqttLogLevelInt = (uint8_t)level;
+        _updateMqttMinLogLevel();
+        releaseMutex(&_configMutex);
+        // Intentionally NOT persisted here: the runtime int stays transient. The
+        // separate transient marker (saveTransientLogLevel) is what survives a
+        // reboot; the persisted baseline key is never touched by a transient.
+    }
+
+    void saveTransientLogLevel(int level) {
+        if (level < 0 || level > 5) return;
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
+            LOG_WARNING("Failed to open preferences to save transient log level");
+            return;
+        }
+        // Write only on change: a long cloud-held verbose window re-asserts the
+        // same level every <5 min, and we must not wear flash for a no-op.
+        if (prefs.getUChar(MQTT_PREFERENCES_TRANSIENT_LOG_LEVEL_KEY, 0xFF) != (uint8_t)level) {
+            prefs.putUChar(MQTT_PREFERENCES_TRANSIENT_LOG_LEVEL_KEY, (uint8_t)level);
+        }
+        prefs.end();
+    }
+
+    void clearTransientLogLevel() {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) return;
+        if (prefs.isKey(MQTT_PREFERENCES_TRANSIENT_LOG_LEVEL_KEY)) {
+            prefs.remove(MQTT_PREFERENCES_TRANSIENT_LOG_LEVEL_KEY);
+        }
+        prefs.end();
+    }
+
+    int getTransientLogLevel() {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) return -1;
+        uint8_t v = prefs.getUChar(MQTT_PREFERENCES_TRANSIENT_LOG_LEVEL_KEY, 0xFF);
+        prefs.end();
+        return (v == 0xFF) ? -1 : (int)v;
+    }
+
+    bool getSendPowerData() { return _sendPowerDataEnabled; }
+
+    void setSendPowerData(bool enabled) { _setSendPowerDataEnabled(enabled); } // persists
 
     // Private functions
     // =================
@@ -733,11 +812,18 @@ namespace Mqtt
         LOG_DEBUG("Constructing MQTT topic for %s | %s", finalTopic, topicBuffer);
     }
 
+    // AWS IoT Commands execution topic: $aws/commands/things/<thing>/executions/
+    // <executionId>/<verb>. executionId is "+" for the subscribe wildcard; verb is
+    // "request/json" or "response/json".
+    static void _constructCommandTopic(const char* executionId, const char* verb,
+                                       char* topicBuffer, size_t topicBufferSize) {
+        snprintf(topicBuffer, topicBufferSize, "%s/commands/things/%s/executions/%s/%s",
+                 AWS_TOPIC, DEVICE_ID, executionId, verb);
+    }
+
     static void _setupTopics() {
         _setTopicMeter();
-        _setTopicSystemStatic();
         _setTopicSystemDynamic();
-        _setTopicChannel();
         _setTopicStatistics();
         _setTopicCrash();
         _setTopicLog();
@@ -746,34 +832,39 @@ namespace Mqtt
     }
 
     static void _setTopicMeter() { _constructMqttTopicWithRule(AWS_IOT_CORE_RULE_METER, MQTT_TOPIC_METER, _mqttTopicMeter, sizeof(_mqttTopicMeter)); }
-    static void _setTopicSystemStatic() { _constructMqttTopic(MQTT_TOPIC_SYSTEM_STATIC, _mqttTopicSystemStatic, sizeof(_mqttTopicSystemStatic)); }
     static void _setTopicSystemDynamic() { _constructMqttTopic(MQTT_TOPIC_SYSTEM_DYNAMIC, _mqttTopicSystemDynamic, sizeof(_mqttTopicSystemDynamic)); }
-    static void _setTopicChannel() { _constructMqttTopic(MQTT_TOPIC_CHANNEL, _mqttTopicChannel, sizeof(_mqttTopicChannel)); }
     static void _setTopicStatistics() { _constructMqttTopic(MQTT_TOPIC_STATISTICS, _mqttTopicStatistics, sizeof(_mqttTopicStatistics)); }
     static void _setTopicCrash() { _constructMqttTopic(MQTT_TOPIC_CRASH, _mqttTopicCrash, sizeof(_mqttTopicCrash)); }
     static void _setTopicLog() { _constructMqttTopicWithRule(AWS_IOT_CORE_RULE_LOG, MQTT_TOPIC_LOG, _mqttTopicLog, sizeof(_mqttTopicLog)); }
 
     static void _subscribeToTopics() {
-        _subscribeCommand();
         _subscribeAwsIotJobs();
+        // IoT Commands request topic (payload-format pinned to "json"; see
+        // MQTT_IOT_COMMANDS_SUBSCRIBE_ENABLED). The earlier '+' at the payload-format
+        // position was an unsupported reserved-topic subscribe -> broker CLIENT_ERROR
+        // reconnect storm; the corrected topic is safe even before a dispatcher exists.
+        if (MQTT_IOT_COMMANDS_SUBSCRIBE_ENABLED) _subscribeIotCommands();
+        Shadow::onMqttConnected(); // subscribe shadow deltas + queue initial reports
 
         LOG_DEBUG("Subscribed to topics");
     }
 
-    static bool _subscribeToTopic(const char* topicSuffix) {
+    static void _subscribeIotCommands() {
+        // AWS IoT Commands request topic. '+' is the execution-id wildcard only;
+        // the payload-format segment must be a concrete value ("json"), NOT a '+'
+        // wildcard. A '+' there is an unsupported reserved-topic subscribe and the
+        // broker drops the whole session with CLIENT_ERROR (the ~1.2 s reconnect
+        // storm we hit). The cloud dispatcher must create commands with contentType
+        // application/json to match. Policy AllowSubscribe covers
+        // $aws/commands/things/<thing>/*.
         char topic[MQTT_TOPIC_BUFFER_SIZE];
-        _constructMqttTopic(topicSuffix, topic, sizeof(topic));
-        
-        if (!_clientMqtt.subscribe(topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
-            LOG_WARNING("Failed to subscribe to %s", topicSuffix);
-            return false;
+        _constructCommandTopic("+", "request/json", topic, sizeof(topic));
+        if (_clientMqtt.subscribe(topic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
+            LOG_DEBUG("Subscribed to IoT Commands: %s", topic);
+        } else {
+            LOG_WARNING("Failed to subscribe to IoT Commands: %s", topic);
         }
-
-        LOG_DEBUG("Subscribed to topic: %s", topicSuffix);
-        return true;
     }
-
-    static void _subscribeCommand() { _subscribeToTopic(MQTT_TOPIC_SUBSCRIBE_COMMAND); }
 
     static void _subscribeAwsIotJobs() {
         char jobNotifyTopic[MQTT_TOPIC_BUFFER_SIZE];
@@ -830,7 +921,18 @@ namespace Mqtt
 
         LOG_DEBUG("Received MQTT message from %s", topic);
 
-        if (endsWith(topic, MQTT_TOPIC_SUBSCRIBE_COMMAND)) _handleCommandMessage(message);
+        if (Shadow::routeMessage(topic, message)) { /* handled by shadow module (copy + flag only) */ }
+        // Only the subscribed request topic (.../executions/<id>/request/json) is an
+        // inbound command. Match it precisely - matching any "/commands/things/" topic
+        // also catches AWS's own .../response/rejected/json echo of our status publish,
+        // which has no 'operation', gets re-rejected, and echoes again -> infinite
+        // publish loop hammering the broker.
+        else if (strstr(topic, "/commands/things/") != nullptr && endsWith(topic, "/request/json")) _queueCommand(topic, message);
+        else if (strstr(topic, "/commands/things/") != nullptr) {
+            // AWS echoed our own command-status publish back (e.g. rejecting a status
+            // for an unknown/expired execution). Never reprocess it - just note it.
+            LOG_DEBUG("Ignoring non-request command topic: %s", topic);
+        }
         else if (strstr(topic, MQTT_TOPIC_SUBSCRIBE_JOBS)) _handleAwsIotJobMessage(message, topic);
         else LOG_WARNING("Unknown MQTT topic received: %s", topic);
         
@@ -838,79 +940,174 @@ namespace Mqtt
         free(message);
     }
 
-    static void _handleCommandMessage(const char* message)
-    {
-        // Expected JSON format: {"command": "command_name", "data": {...}}
+    // AWS IoT Commands (transient operations)
+    // =======================================
+
+    // reasonCode MUST match the AWS IoT Commands pattern [A-Z0-9_-]+ (uppercase);
+    // a lowercase code makes AWS reject the status update. reasonDescription is free text.
+    static void _publishCommandStatus(const char* executionId, const char* status,
+                                       const char* reasonCode, const char* reasonDescription) {
+        char topic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructCommandTopic(executionId, "response/json", topic, sizeof(topic));
+
+        SpiRamAllocator allocator;
+        JsonDocument doc(&allocator);
+        doc["status"] = status;
+        if (reasonCode != nullptr) {
+            doc["statusReason"]["reasonCode"] = reasonCode;
+            if (reasonDescription != nullptr) doc["statusReason"]["reasonDescription"] = reasonDescription;
+        }
+
+        if (_publishJsonStreaming(doc, topic)) LOG_DEBUG("Command %s status '%s' published", executionId, status);
+        else LOG_WARNING("Failed to publish command %s status '%s'", executionId, status);
+    }
+
+    // Parses the executionId from the topic, validates, dispatches the operation
+    // and publishes IN_PROGRESS then a terminal status. Runs on the MQTT task
+    // (from the RX callback or the dev injection drain) so publishing is safe.
+    static void _handleCommandExecution(const char* topic, const char* message) {
+        char executionId[NAME_BUFFER_SIZE];
+        if (!ShadowLogic::extractExecutionId(topic, executionId, sizeof(executionId))) {
+            LOG_WARNING("Could not extract executionId from command topic: %s", topic);
+            return;
+        }
+
         SpiRamAllocator allocator;
         JsonDocument doc(&allocator);
         DeserializationError error = deserializeJson(doc, message);
         if (error) {
-            LOG_ERROR("Failed to parse command JSON message (%s): %s", error.c_str(), message);
+            LOG_ERROR("Failed to parse command %s payload (%s)", executionId, error.c_str());
+            _publishCommandStatus(executionId, "FAILED", "BAD_PAYLOAD", "Could not parse command JSON");
             return;
         }
 
-        if (!doc["command"].is<const char*>()) {
-            LOG_ERROR("Invalid command message: missing or invalid 'command' field");
+        const char* operation = doc["operation"].as<const char*>();
+        if (operation == nullptr) {
+            LOG_WARNING("Command %s missing 'operation'", executionId);
+            _publishCommandStatus(executionId, "REJECTED", "MISSING_OPERATION", "No 'operation' field");
             return;
         }
 
-        const char* command = doc["command"].as<const char*>();
-        SpiRamAllocator allocatorData;
-        JsonDocument docCommandMessage(&allocatorData);
-        docCommandMessage = doc["data"].as<JsonObject>();
-
-        LOG_DEBUG("Processing MQTT command: %s", command);
-
-        if (strcmp(command, "restart") == 0) {
-            _handleRestartMessage();
-        } else if (strcmp(command, "set_send_power_data") == 0) {
-            _handleSetSendPowerDataMessage(docCommandMessage);
-        } else if (strcmp(command, "set_mqtt_log_level") == 0) {
-            _handleSetMqttLogLevelMessage(docCommandMessage);
-        } else {
-            LOG_WARNING("Unknown command received: %s", command);
+        // Staleness guard. MQTT 3.1.1 carries no server timestamp, so this relies
+        // on the command payload providing 'created_at' (unix seconds); absent it,
+        // the guard is skipped (logged) - see the cloud contract in doc 07.
+        uint64_t createdAt = doc["created_at"] | 0ULL;
+        if (ShadowLogic::isCommandStale(createdAt, CustomTime::getUnixTime(), COMMAND_MAX_AGE_SECONDS)) {
+            LOG_WARNING("Command %s (%s) is stale (created %llu); rejecting", executionId, operation, createdAt);
+            _publishCommandStatus(executionId, "REJECTED", "STALE_COMMAND", "Command older than the staleness window");
+            return;
         }
-    }
+        if (createdAt == 0) LOG_DEBUG("Command %s has no created_at; staleness guard skipped", executionId);
 
-    static void _handleRestartMessage()
-    {
-        setRestartSystem("Restart requested from MQTT");
-    }
+        LOG_INFO("Processing command %s: %s", executionId, operation);
+        _publishCommandStatus(executionId, "IN_PROGRESS", nullptr, nullptr);
 
-    static void _handleSetSendPowerDataMessage(JsonDocument &dataDoc)
-    {
-        // Expected data format: {"sendPowerData": true}
-        if (dataDoc["sendPowerData"].is<bool>()) {
-            bool sendPowerData = dataDoc["sendPowerData"].as<bool>();
-            _setSendPowerDataEnabled(sendPowerData);
-        } else {
-            char buffer[STATUS_BUFFER_SIZE];
-            safeSerializeJson(dataDoc, buffer, sizeof(buffer), true);
-            LOG_ERROR("Invalid send power data JSON message: %s", buffer);
-        }
-    }
-
-    static void _handleSetMqttLogLevelMessage(JsonDocument &dataDoc)
-    {
-        // Expected data format: {"level": "INFO"}
-        if (dataDoc["level"].is<const char*>()) {
-            const char* level = dataDoc["level"].as<const char*>();
-            
-            // Validate log level
-            if (strcmp(level, "VERBOSE") == 0 || strcmp(level, "DEBUG") == 0 || 
-                strcmp(level, "INFO") == 0 || strcmp(level, "WARNING") == 0 || 
-                strcmp(level, "ERROR") == 0 || strcmp(level, "FATAL") == 0) {
-                _setMqttLogLevel(level);
-                LOG_INFO("MQTT log level set to %s", level);
-            } else {
-                LOG_ERROR("Invalid log level: %s. Valid levels: VERBOSE, DEBUG, INFO, WARNING, ERROR, FATAL", level);
+        if (strcmp(operation, "restart") == 0) {
+            _publishCommandStatus(executionId, "SUCCEEDED", nullptr, nullptr);
+            delay(2000); // let the status flush before the reboot (same pattern as OTA)
+            setRestartSystem("Command: restart");
+        } else if (strcmp(operation, "factory_reset") == 0) {
+            const char* confirm = doc["confirm"].as<const char*>();
+            if (confirm == nullptr || strcmp(confirm, DEVICE_ID) != 0) {
+                LOG_WARNING("Command %s factory_reset confirm mismatch", executionId);
+                _publishCommandStatus(executionId, "REJECTED", "CONFIRM_MISMATCH", "confirm must equal the device id");
+                return;
             }
+            _publishCommandStatus(executionId, "SUCCEEDED", nullptr, nullptr);
+            delay(2000);
+            setRestartSystem("Command: factory_reset", true); // wipe user NVS, keep factory, reboot
+        } else if (strcmp(operation, "energy_reset") == 0) {
+            JsonVariantConst channels = doc["channels"];
+            if (channels.is<const char*>() && strcmp(channels.as<const char*>(), "all") == 0) {
+                Ade7953::resetEnergyValues();
+                LOG_INFO("Command %s: reset energy for all channels", executionId);
+            } else if (channels.is<JsonArrayConst>()) {
+                for (JsonVariantConst ch : channels.as<JsonArrayConst>()) {
+                    if (!ch.is<int>()) continue;
+                    uint8_t idx = (uint8_t)ch.as<int>();
+                    if (isChannelValid(idx)) Ade7953::resetChannelEnergyValues(idx);
+                    else LOG_WARNING("Command %s: invalid channel %u in energy_reset", executionId, idx);
+                }
+                LOG_INFO("Command %s: reset energy for listed channels", executionId);
+            } else {
+                _publishCommandStatus(executionId, "REJECTED", "BAD_CHANNELS", "channels must be an array of indices or \"all\"");
+                return;
+            }
+            _publishCommandStatus(executionId, "SUCCEEDED", nullptr, nullptr);
         } else {
-            char buffer[STATUS_BUFFER_SIZE];
-            safeSerializeJson(dataDoc, buffer, sizeof(buffer), true);
-            LOG_ERROR("Invalid set MQTT log level JSON message: %s", buffer);
+            LOG_WARNING("Unknown command operation: %s", operation);
+            _publishCommandStatus(executionId, "REJECTED", "UNKNOWN_OPERATION", operation);
         }
     }
+
+    // Command handoff. Both the broker RX path (_subscribeCallback) and the dev
+    // inject copy the request out + stash it here; the MQTT task body drains it
+    // through _handleCommandExecution. So the apply (per-channel NVS writes, up to
+    // ~1 s) and the status publishes run in the task body, NEVER inside the
+    // PubSubClient callback - same rule as shadow deltas (#138). Publishing inside
+    // the callback would also reuse PubSubClient's single buffer and corrupt the
+    // QoS1 PUBACK it writes right after the callback returns. Single slot is safe:
+    // loop() delivers one PUBLISH per call and we drain every iteration. Overwrite
+    // is warned, never silent, so a dropped command is always visible.
+    static char* _pendingCmdTopic = nullptr;
+    static char* _pendingCmdPayload = nullptr;
+
+    static void _queueCommand(const char* topic, const char* payload) {
+        if (topic == nullptr || payload == nullptr) return;
+        size_t tlen = strlen(topic) + 1, plen = strlen(payload) + 1;
+        char* t = (char*)ps_malloc(tlen);
+        char* p = (char*)ps_malloc(plen);
+        if (t == nullptr || p == nullptr) {
+            if (t) free(t);
+            if (p) free(p);
+            LOG_ERROR("Failed to allocate pending command buffers");
+            return;
+        }
+        memcpy(t, topic, tlen);
+        memcpy(p, payload, plen);
+
+        if (acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
+            if (_pendingCmdTopic != nullptr || _pendingCmdPayload != nullptr) {
+                LOG_WARNING("Overwriting an undrained pending command; previous one dropped");
+                if (_pendingCmdTopic) free(_pendingCmdTopic);
+                if (_pendingCmdPayload) free(_pendingCmdPayload);
+            }
+            _pendingCmdTopic = t;
+            _pendingCmdPayload = p;
+            releaseMutex(&_configMutex);
+        } else {
+            free(t);
+            free(p);
+            LOG_ERROR("Failed to acquire mutex queuing command");
+        }
+    }
+
+    static void _drainPendingCommand() {
+        char* t = nullptr;
+        char* p = nullptr;
+        if (acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
+            t = _pendingCmdTopic;
+            _pendingCmdTopic = nullptr;
+            p = _pendingCmdPayload;
+            _pendingCmdPayload = nullptr;
+            releaseMutex(&_configMutex);
+        }
+        if (t != nullptr && p != nullptr) _handleCommandExecution(t, p);
+        if (t) free(t);
+        if (p) free(p);
+    }
+
+#ifdef ENV_DEV
+    // Dev-only synthetic command injection: build the real request topic and route
+    // it through the same queue + task-body drain the broker path uses.
+    void injectCommandExecution(const char* executionId, const char* payload) {
+        if (executionId == nullptr || payload == nullptr) return;
+        char topic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructCommandTopic(executionId, "request/json", topic, sizeof(topic));
+        _queueCommand(topic, payload);
+        LOG_INFO("Injected synthetic command execution %s", executionId);
+    }
+#endif
 
     // AWS IoT Jobs OTA functions
     // ==========================
@@ -1274,26 +1471,6 @@ namespace Mqtt
         if (_publishMeterJson()) _lastMillisMeterPublished = millis64();
     }
     
-    static void _publishSystemStatic() {
-        SpiRamAllocator allocator;
-        JsonDocument doc(&allocator);
-        doc["unixTime"] = CustomTime::getUnixTimeMilliseconds();
-
-        SpiRamAllocator allocatorSystemStatic;
-        JsonDocument docSystemStatic(&allocatorSystemStatic);
-        SystemStaticInfo systemStaticInfo;
-        populateSystemStaticInfo(systemStaticInfo);
-        systemStaticInfoToJson(systemStaticInfo, docSystemStatic);
-        doc["data"] = docSystemStatic;
-
-        if (_publishJsonStreaming(doc, _mqttTopicSystemStatic, true)) { // retain static info since it is idempotent
-            _publishMqtt.systemStatic = false; 
-            LOG_DEBUG("System static info published to MQTT");
-        } else {
-            LOG_ERROR("Failed to publish system static info");
-        }
-    }
-
     static void _publishSystemDynamic() {
         SpiRamAllocator allocator;
         JsonDocument doc(&allocator);
@@ -1312,25 +1489,6 @@ namespace Mqtt
             LOG_DEBUG("System dynamic info published to MQTT");
         } else {
             LOG_ERROR("Failed to publish system dynamic info");
-        }
-    }
-
-    static void _publishChannel() {
-        SpiRamAllocator allocator;
-        JsonDocument doc(&allocator);
-        doc["unixTime"] = CustomTime::getUnixTimeMilliseconds();
-
-        SpiRamAllocator allocatorData;
-        JsonDocument docChannelData(&allocatorData);
-        Ade7953::getAllChannelDataAsJson(docChannelData);
-
-        doc["data"] = docChannelData;
-
-        if (_publishJsonStreaming(doc, _mqttTopicChannel, true)) { // retain channel info since it is idempotent
-            _publishMqtt.channel = false;
-            LOG_DEBUG("Channel data published to MQTT");
-        } else {
-            LOG_ERROR("Failed to publish channel data");
         }
     }
 
@@ -1396,9 +1554,7 @@ namespace Mqtt
 
     static void _checkPublishMqtt() {
         if (_publishMqtt.meter) {_publishMeter();}
-        if (_publishMqtt.systemStatic) {_publishSystemStatic();}
         if (_publishMqtt.systemDynamic) {_publishSystemDynamic();}
-        if (_publishMqtt.channel) {_publishChannel();}
         if (_publishMqtt.statistics) {_publishStatistics();}
         if (_publishMqtt.crash) {_publishCrash();}
         if (_publishMqtt.requestOta) {_publishOtaJobsRequest();}
@@ -1482,10 +1638,8 @@ namespace Mqtt
             _subscribeToTopics();
 
             // Publish data on connection (except meter and crash)
-            _publishMqtt.systemStatic = true;
             _publishMqtt.systemDynamic = true;
             _publishMqtt.statistics = true;
-            _publishMqtt.channel = true;
             _publishMqtt.requestOta = true;
 
             return true;
@@ -1914,6 +2068,8 @@ namespace Mqtt
         _checkIfPublishSystemDynamicNeeded();
         _checkIfPublishStatisticsNeeded();
         _checkPublishMqtt();
+        Shadow::checkPublish(); // drain shadow deltas/local-edits/reports (MQTT task body)
+        _drainPendingCommand(); // process queued IoT Command (broker RX or dev inject) off the callback
     }
 
     // Utilities

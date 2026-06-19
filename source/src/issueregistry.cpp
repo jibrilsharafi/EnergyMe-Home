@@ -40,6 +40,9 @@ namespace IssueRegistry
     static IssueInstance *_instances = nullptr;
     static SemaphoreHandle_t _registryMutex = NULL;
 
+    // Observer notified on any transition/ack (set a flag; never blocks).
+    static ChangeCallback _onChange = nullptr;
+
     // Per-code evaluator state (tick task only - no mutex needed)
     // =========================================================
     static uint32_t _prevFlipCount[MAX_CHANNEL_COUNT] = {};
@@ -122,6 +125,16 @@ namespace IssueRegistry
 
     bool issuesToJson(JsonDocument &doc)
     {
+        // Always present, even when empty, so callers get a valid shape.
+        JsonArray issues = doc["issues"].to<JsonArray>();
+
+        // NULL mutex = registry not initialized yet (early boot, before begin())
+        // or disabled (PSRAM alloc failed). Report an empty set, not an error:
+        // acquireMutex would just fail on the NULL handle. (begin() now runs before
+        // the web server, so this window is essentially closed; this also covers
+        // the permanent alloc-failure case gracefully.)
+        if (_registryMutex == NULL) return true;
+
         if (!acquireMutex(&_registryMutex)) {
             LOG_ERROR("Failed to acquire registry mutex for issuesToJson");
             return false;
@@ -129,7 +142,6 @@ namespace IssueRegistry
 
         // The table is tiny (a few KB): building the document under the mutex is
         // memory-only work; network serialization happens outside, on the copy.
-        JsonArray issues = doc["issues"].to<JsonArray>();
         for (uint8_t i = 0; i < ISSUE_MAX_INSTANCES; i++) {
             const IssueInstance &inst = _instances[i];
             if (!IssueLogic::isVisible(inst.state)) continue;
@@ -167,7 +179,10 @@ namespace IssueRegistry
         }
         releaseMutex(&_registryMutex);
 
-        if (acked) _logTransition("acked", false, code, channel, "");
+        if (acked) {
+            _logTransition("acked", false, code, channel, "");
+            if (_onChange != nullptr) _onChange(); // refresh issues shadow
+        }
         return acked;
     }
 
@@ -195,8 +210,31 @@ namespace IssueRegistry
         for (uint32_t i = 0; i < ackedCount; i++) {
             _logTransition("acked", false, ackedCodes[i], ackedChannels[i], "");
         }
+        if (ackedCount > 0 && _onChange != nullptr) _onChange(); // refresh issues shadow
         return ackedCount;
     }
+
+    uint32_t activeCount()
+    {
+        // NULL mutex = registry not initialized yet (early boot) or disabled
+        // (PSRAM alloc failed). Report zero, not an error: acquireMutex would just
+        // fail on the NULL handle and log noise on every issues-shadow publish.
+        // (Mirrors the guard in issuesToJson; both are read by _reportIssues.)
+        if (_registryMutex == NULL) return 0;
+
+        if (!acquireMutex(&_registryMutex)) {
+            LOG_ERROR("Failed to acquire registry mutex for activeCount");
+            return 0;
+        }
+        uint32_t count = 0;
+        for (uint8_t i = 0; i < ISSUE_MAX_INSTANCES; i++) {
+            if (IssueLogic::isActive(_instances[i].state)) count++;
+        }
+        releaseMutex(&_registryMutex);
+        return count;
+    }
+
+    void setChangeCallback(ChangeCallback cb) { _onChange = cb; }
 
     TaskInfo getTaskInfo()
     {
@@ -490,6 +528,7 @@ namespace IssueRegistry
 
         if (raised) _logTransition("raised", true, code, channel, logMessage);
         if (cleared) _logTransition("cleared", false, code, channel, logMessage);
+        if ((raised || cleared) && _onChange != nullptr) _onChange(); // refresh issues shadow
     }
 
     static IssueInstance* _findInstance(IssueLogic::Code code, uint8_t channel)
