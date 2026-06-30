@@ -29,4 +29,3 @@ These values are fleet-wide infrastructure constants. Changing any of them requi
 
 - `include/awsconfig.h` — endpoint, rule names, Amazon Root CA
 - `include/mqtt.h` — topic prefix constants (`MQTT_TOPIC_1`, `MQTT_TOPIC_2`)
-- `docs/plans/2026-03-08-pcb-version-handling-design.md` — factory NVS partition and certificate pre-loading at manufacturing
