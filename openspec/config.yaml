@@ -1,0 +1,21 @@
+schema: spec-driven
+
+context: |
+  EnergyMe Home - open-source residential energy monitor.
+  Hardware: ESP32-S3-N16R2 (16 MB flash, 2 MB PSRAM), ADE7953 (SPI) + 74HC4067 mux, up to 16 circuits.
+  Firmware: C++, Arduino 3.x via pioarduino + PlatformIO. Sources under source/ (src/, include/, lib/, test/).
+  Integrations: web UI + REST API, MQTT (AWS IoT + local), InfluxDB, Modbus TCP.
+  Conventions: Conventional Commits; one concern per commit, no mega-commits; code is the documentation
+  (write docs only when strictly necessary - ADRs, contracts). No String class (char[] + snprintf); no try/catch.
+  Tests: native Unity unit tests in test/ run via `pio test -e native` from WSL (Windows native compile is broken).
+  Branching: off `development`; `main` is release-only.
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
