@@ -76,4 +76,41 @@ bool isCommandStale(uint64_t createdAtUnix, uint64_t nowUnix, uint64_t maxAgeSec
     return (nowUnix - createdAtUnix) > maxAgeSeconds;
 }
 
+size_t parseChannelList(const char* spec, uint8_t channelCount,
+                         uint8_t* validIndices, size_t maxOut,
+                         bool* invalidTokenSeen) {
+    if (invalidTokenSeen != nullptr) *invalidTokenSeen = false;
+    if (spec == nullptr || validIndices == nullptr || maxOut == 0) return 0;
+
+    size_t written = 0;
+    const char* p = spec;
+    while (*p != '\0') {
+        while (*p == ' ') p++; // trim leading spaces
+        const char* tokenStart = p;
+        while (*p != '\0' && *p != ',') p++;
+        const char* tokenEnd = p; // exclusive
+        while (tokenEnd > tokenStart && *(tokenEnd - 1) == ' ') tokenEnd--; // trim trailing spaces
+
+        size_t tokenLen = (size_t)(tokenEnd - tokenStart);
+        if (tokenLen > 0) {
+            char tok[8]; // room for any uint8_t index ("255") with margin
+            if (tokenLen >= sizeof(tok)) {
+                if (invalidTokenSeen != nullptr) *invalidTokenSeen = true; // can't possibly be a valid index
+            } else {
+                memcpy(tok, tokenStart, tokenLen);
+                tok[tokenLen] = '\0';
+                uint8_t idx;
+                if (parseChannelIndex(tok, channelCount, &idx)) {
+                    if (written < maxOut) validIndices[written++] = idx; // beyond maxOut: silently dropped, not invalid
+                } else {
+                    if (invalidTokenSeen != nullptr) *invalidTokenSeen = true;
+                }
+            }
+        } // empty token (stray "," or trailing comma): skipped silently
+
+        if (*p == ',') p++;
+    }
+    return written;
+}
+
 } // namespace ShadowLogic
