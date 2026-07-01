@@ -1021,6 +1021,21 @@ namespace Mqtt
             if (channels.is<const char*>() && strcmp(channels.as<const char*>(), "all") == 0) {
                 Ade7953::resetEnergyValues();
                 LOG_INFO("Command %s: reset energy for all channels", executionId);
+            } else if (channels.is<const char*>()) {
+                // AWS IoT Commands params are string-typed end-to-end, so this is the
+                // only shape the cloud can actually deliver for a selective reset
+                // (e.g. "5" or "0,2,5"). See ShadowLogic::parseChannelList.
+                uint8_t indices[MAX_CHANNEL_COUNT];
+                bool invalidTokenSeen = false;
+                size_t count = ShadowLogic::parseChannelList(channels.as<const char*>(), globalHwProfile->totalChannelCount,
+                                                               indices, MAX_CHANNEL_COUNT, &invalidTokenSeen);
+                if (count == 0) {
+                    _publishCommandStatus(executionId, "REJECTED", "BAD_CHANNELS", "channels string contained no valid channel index");
+                    return;
+                }
+                if (invalidTokenSeen) LOG_WARNING("Command %s: invalid token(s) in energy_reset channels list", executionId);
+                for (size_t i = 0; i < count; i++) Ade7953::resetChannelEnergyValues(indices[i]);
+                LOG_INFO("Command %s: reset energy for listed channels", executionId);
             } else if (channels.is<JsonArrayConst>()) {
                 for (JsonVariantConst ch : channels.as<JsonArrayConst>()) {
                     if (!ch.is<int>()) continue;
@@ -1030,7 +1045,7 @@ namespace Mqtt
                 }
                 LOG_INFO("Command %s: reset energy for listed channels", executionId);
             } else {
-                _publishCommandStatus(executionId, "REJECTED", "BAD_CHANNELS", "channels must be an array of indices or \"all\"");
+                _publishCommandStatus(executionId, "REJECTED", "BAD_CHANNELS", "channels must be \"all\", a comma-separated index string, or an array of indices");
                 return;
             }
             _publishCommandStatus(executionId, "SUCCEEDED", nullptr, nullptr);
