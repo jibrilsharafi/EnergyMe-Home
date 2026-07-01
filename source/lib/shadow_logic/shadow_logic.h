@@ -69,4 +69,20 @@ bool extractExecutionId(const char* topic, char* out, size_t outSize);
 // is also not stale.
 bool isCommandStale(uint64_t createdAtUnix, uint64_t nowUnix, uint64_t maxAgeSeconds);
 
+// Parses a comma-separated channel-index list (e.g. "5" or "0,2,5") for the
+// energy_reset command's string-typed `channels` param - the only shape AWS
+// IoT Commands can actually deliver. Read-only scan: spec is never mutated or
+// copied into a fixed buffer, so there is no length limit to enforce. Leading
+// and trailing spaces around each token are trimmed; empty tokens (from a
+// stray "5," or ",,") are skipped silently. Each non-empty token is validated
+// with parseChannelIndex; an out-of-range or non-numeric token is skipped and
+// causes *invalidTokenSeen to be set to true (so the caller can log a single
+// WARNING), while parsing continues best-effort for the remaining tokens.
+// Valid indices are written to validIndices in order, up to maxOut entries
+// (extra valid tokens beyond maxOut are silently dropped - callers should size
+// maxOut to >= channelCount). Returns the number of valid indices written.
+size_t parseChannelList(const char* spec, uint8_t channelCount,
+                         uint8_t* validIndices, size_t maxOut,
+                         bool* invalidTokenSeen);
+
 } // namespace ShadowLogic

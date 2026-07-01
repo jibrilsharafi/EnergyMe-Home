@@ -215,6 +215,111 @@ void test_command_stale_clock_skew(void) {
 }
 
 // ============================================================================
+// parseChannelList
+// ============================================================================
+
+void test_parse_channel_list_single(void) {
+    uint8_t out[8];
+    bool invalid = true;
+    TEST_ASSERT_EQUAL_size_t(1, parseChannelList("5", 17, out, 8, &invalid));
+    TEST_ASSERT_EQUAL_UINT8(5, out[0]);
+    TEST_ASSERT_FALSE(invalid);
+}
+
+void test_parse_channel_list_multi(void) {
+    uint8_t out[8];
+    bool invalid = true;
+    TEST_ASSERT_EQUAL_size_t(3, parseChannelList("0,2,5", 17, out, 8, &invalid));
+    TEST_ASSERT_EQUAL_UINT8(0, out[0]);
+    TEST_ASSERT_EQUAL_UINT8(2, out[1]);
+    TEST_ASSERT_EQUAL_UINT8(5, out[2]);
+    TEST_ASSERT_FALSE(invalid);
+}
+
+void test_parse_channel_list_skips_non_numeric_token(void) {
+    uint8_t out[8];
+    bool invalid = false;
+    TEST_ASSERT_EQUAL_size_t(2, parseChannelList("0,x,5", 17, out, 8, &invalid));
+    TEST_ASSERT_EQUAL_UINT8(0, out[0]);
+    TEST_ASSERT_EQUAL_UINT8(5, out[1]);
+    TEST_ASSERT_TRUE(invalid);
+}
+
+void test_parse_channel_list_skips_out_of_range_token(void) {
+    uint8_t out[8];
+    bool invalid = false;
+    // channelCount=6 -> valid indices are 0..5; "9" is out of range
+    TEST_ASSERT_EQUAL_size_t(2, parseChannelList("0,9,2", 6, out, 8, &invalid));
+    TEST_ASSERT_EQUAL_UINT8(0, out[0]);
+    TEST_ASSERT_EQUAL_UINT8(2, out[1]);
+    TEST_ASSERT_TRUE(invalid);
+}
+
+void test_parse_channel_list_trims_spaces(void) {
+    uint8_t out[8];
+    bool invalid = true;
+    TEST_ASSERT_EQUAL_size_t(3, parseChannelList(" 0, 2 , 5 ", 17, out, 8, &invalid));
+    TEST_ASSERT_EQUAL_UINT8(0, out[0]);
+    TEST_ASSERT_EQUAL_UINT8(2, out[1]);
+    TEST_ASSERT_EQUAL_UINT8(5, out[2]);
+    TEST_ASSERT_FALSE(invalid);
+}
+
+void test_parse_channel_list_trailing_comma_tolerated(void) {
+    uint8_t out[8];
+    bool invalid = true;
+    // The empty token after the trailing comma is skipped silently (not invalid).
+    TEST_ASSERT_EQUAL_size_t(1, parseChannelList("5,", 17, out, 8, &invalid));
+    TEST_ASSERT_EQUAL_UINT8(5, out[0]);
+    TEST_ASSERT_FALSE(invalid);
+}
+
+void test_parse_channel_list_empty_string_yields_nothing(void) {
+    uint8_t out[8];
+    bool invalid = true;
+    TEST_ASSERT_EQUAL_size_t(0, parseChannelList("", 17, out, 8, &invalid));
+    TEST_ASSERT_FALSE(invalid); // genuinely empty, not "every token was invalid"
+}
+
+void test_parse_channel_list_all_invalid_yields_nothing(void) {
+    uint8_t out[8];
+    bool invalid = false;
+    TEST_ASSERT_EQUAL_size_t(0, parseChannelList("x,y", 17, out, 8, &invalid));
+    TEST_ASSERT_TRUE(invalid);
+}
+
+void test_parse_channel_list_overlong_token_is_invalid(void) {
+    uint8_t out[8];
+    bool invalid = false;
+    TEST_ASSERT_EQUAL_size_t(1, parseChannelList("99999999999,5", 17, out, 8, &invalid));
+    TEST_ASSERT_EQUAL_UINT8(5, out[0]);
+    TEST_ASSERT_TRUE(invalid);
+}
+
+void test_parse_channel_list_respects_max_out(void) {
+    uint8_t out[3] = {0, 0, 0};
+    bool invalid = true;
+    // 5 valid tokens, but only room for 3 - extras silently dropped, not "invalid".
+    TEST_ASSERT_EQUAL_size_t(3, parseChannelList("0,1,2,3,4", 17, out, 3, &invalid));
+    TEST_ASSERT_EQUAL_UINT8(0, out[0]);
+    TEST_ASSERT_EQUAL_UINT8(1, out[1]);
+    TEST_ASSERT_EQUAL_UINT8(2, out[2]);
+    TEST_ASSERT_FALSE(invalid);
+}
+
+void test_parse_channel_list_null_spec_is_safe(void) {
+    uint8_t out[8];
+    bool invalid = true;
+    TEST_ASSERT_EQUAL_size_t(0, parseChannelList(nullptr, 17, out, 8, &invalid));
+    TEST_ASSERT_FALSE(invalid);
+}
+
+void test_parse_channel_list_null_invalid_flag_is_safe(void) {
+    uint8_t out[8];
+    TEST_ASSERT_EQUAL_size_t(1, parseChannelList("5", 17, out, 8, nullptr));
+}
+
+// ============================================================================
 // Runner
 // ============================================================================
 
@@ -253,6 +358,19 @@ int main(int argc, char **argv) {
     RUN_TEST(test_command_stale);
     RUN_TEST(test_command_stale_no_timestamp);
     RUN_TEST(test_command_stale_clock_skew);
+
+    RUN_TEST(test_parse_channel_list_single);
+    RUN_TEST(test_parse_channel_list_multi);
+    RUN_TEST(test_parse_channel_list_skips_non_numeric_token);
+    RUN_TEST(test_parse_channel_list_skips_out_of_range_token);
+    RUN_TEST(test_parse_channel_list_trims_spaces);
+    RUN_TEST(test_parse_channel_list_trailing_comma_tolerated);
+    RUN_TEST(test_parse_channel_list_empty_string_yields_nothing);
+    RUN_TEST(test_parse_channel_list_all_invalid_yields_nothing);
+    RUN_TEST(test_parse_channel_list_overlong_token_is_invalid);
+    RUN_TEST(test_parse_channel_list_respects_max_out);
+    RUN_TEST(test_parse_channel_list_null_spec_is_safe);
+    RUN_TEST(test_parse_channel_list_null_invalid_flag_is_safe);
 
     return UNITY_END();
 }
