@@ -1,8 +1,5 @@
-# iot-commands Specification
+## MODIFIED Requirements
 
-## Purpose
-Transient device actions over AWS IoT Commands (restart, factory_reset, energy_reset): json-request routing only, off-callback processing, anti-fat-finger confirmation, and AWS-pattern reason codes. Jobs remain OTA-only.
-## Requirements
 ### Requirement: Three transient IoT Commands
 The device SHALL support exactly three AWS IoT Commands: `restart` (no payload), `factory_reset` (`{"confirm": "<device_id>"}`), and `energy_reset` (selective or full counter reset). Jobs remain OTA-only.
 
@@ -29,25 +26,3 @@ Parsing of the comma-separated form SHALL be best-effort per channel: an out-of-
 #### Scenario: energy_reset rejects a channel list with no valid indices
 - **WHEN** an `energy_reset` command is delivered with a `channels` string that is empty or contains no valid channel index (e.g. all tokens out-of-range or non-numeric)
 - **THEN** the device rejects the command with `BAD_CHANNELS` and resets no channels
-
-### Requirement: factory_reset requires device-id confirmation
-The device SHALL reject a `factory_reset` whose `confirm` field does not equal the device id. Only a matching `confirm` SHALL trigger the wipe of user NVS (factory NVS preserved).
-
-#### Scenario: Mismatched confirm is rejected
-- **WHEN** a `factory_reset` arrives with `confirm` not equal to the device id
-- **THEN** the device rejects it and performs no wipe
-
-### Requirement: Only the json request topic routes to the handler
-The device SHALL route only `.../request/json` to the command handler. AWS rejection echoes and any other payload-format segment SHALL be ignored, preventing an infinite status-publish loop.
-
-#### Scenario: Rejection echo is ignored
-- **WHEN** an AWS rejection echo is received on the command topic
-- **THEN** the device does not route it to the handler and does not publish a status in response
-
-### Requirement: Commands processed off the RX callback
-Command handling (per-channel NVS work and status publishes) SHALL run in the MQTT task body, not in the PubSubClient callback, to avoid corrupting the QoS1 PUBACK. Emitted `reasonCode`s SHALL be uppercased to the AWS `[A-Z0-9_-]+` pattern.
-
-#### Scenario: Status published from the task body
-- **WHEN** a command requires NVS work and a status publish
-- **THEN** that work runs in the MQTT task body and the reasonCode matches `[A-Z0-9_-]+`
-
