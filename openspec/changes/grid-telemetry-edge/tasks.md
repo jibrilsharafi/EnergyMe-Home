@@ -1,7 +1,7 @@
 ## 1. Accuracy fix (independent, lands first)
 
 - [x] 1.1 Apply Eq.36 `+1` to `_readGridFrequency()` and any other PERIOD-to-Hz conversion; adjust `GRID_FREQUENCY_CONVERSION_FACTOR` usage comments
-- [ ] 1.2 Verify on device (.174, UDP logs): reported frequency drops ~11 mHz, still validates; commit `fix(ade7953): apply datasheet eq.36 +1 to period-to-frequency conversion`
+- [x] 1.2 Verify on device (.174, UDP logs): reported frequency drops ~11 mHz, still validates; commit `fix(ade7953): apply datasheet eq.36 +1 to period-to-frequency conversion`
 
 ## 2. Pure-logic EMA (host-testable first)
 
@@ -11,11 +11,11 @@
 
 ## 3. Interrupt demux rework (metering-critical)
 
-- [ ] 3.1 Make ISR pure: remove `_interruptHandledChannelA/B` clearing from `_isrHandler()`; keep semaphore give + counters; add separate ZXV statistics counter
-- [ ] 3.2 Rework `_handleInterrupt()`: single `RSTIRQSTATA` snapshot, independent `if` per bit (ZXV -> CYCEND -> RESET -> CRC), guard flags cleared inside the CYCEND branch only; remove the single-type enum dispatch
-- [ ] 3.3 Add `_handleZxvInterrupt()`: PERIOD read -> lib EMA update (validated); wire `getGridFrequency()` to the EMA readout, keep `_updateSampleTime()` on the raw read
-- [ ] 3.4 Extend `DEFAULT_IRQENA_REGISTER` (bit 15 ZXV) and `DEFAULT_CONFIG_REGISTER` (ZX_EDGE=10b, bit 13)
-- [ ] 3.5 Bench test (.174 + UDP logs, listener started BEFORE flashing): meter heartbeat unchanged, energy values sane, ZXV counter ~50/s, no scheduler starvation, no double-read guard trips; commit demux + EMA wiring as separate commits
+- [x] 3.1 Make ISR pure: remove `_interruptHandledChannelA/B` clearing from `_isrHandler()`; keep semaphore give + counters; add separate ZXV statistics counter
+- [x] 3.2 Rework `_handleInterrupt()`: single `RSTIRQSTATA` snapshot, independent `if` per bit (ZXV -> CYCEND -> RESET -> CRC), guard flags cleared inside the CYCEND branch only; remove the single-type enum dispatch
+- [x] 3.3 Add `_handleZxvInterrupt()`: PERIOD read -> lib EMA update (validated); wire `getGridFrequency()` to the EMA readout, keep `_updateSampleTime()` on the raw read
+- [x] 3.4 Extend `DEFAULT_IRQENA_REGISTER` (bit 15 ZXV) and `DEFAULT_CONFIG_REGISTER` (ZX_EDGE=10b, bit 13)
+- [x] 3.5 Bench test (.174 + UDP logs, listener started BEFORE flashing): meter heartbeat unchanged, energy values sane, ZXV counter ~50/s, no scheduler starvation, no double-read guard trips; commit demux + EMA wiring as separate commits
 
 ## 4. Grid sampler task
 
