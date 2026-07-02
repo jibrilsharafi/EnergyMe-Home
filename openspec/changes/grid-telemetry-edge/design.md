@@ -110,5 +110,8 @@ Pure firmware addition behind the `send_grid_data` flag (default off): deploy or
 
 ## Open Questions
 
-- Final topic/rule literal (`AWS_IOT_CORE_RULE_GRID` name) - confirm against infra naming conventions at infra-PR time; placeholder fixed in `infra-handoff.md`.
 - QoS for grid publishes: QoS0 suggested (redundant data, cheapest); meter uses QoS1 today - decide at implementation.
+
+## Resolved
+
+- Rule literal: `AWS_IOT_CORE_RULE_GRID` = `energyme_home_dev_rule_grid` / `energyme_home_prod_rule_grid`, `ENV_DEV`-guarded in `include/awsconfig.h` alongside the meter/log rules.

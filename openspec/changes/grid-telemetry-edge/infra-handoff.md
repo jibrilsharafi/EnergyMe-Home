@@ -5,7 +5,7 @@
 
 ## Contract (fixed by firmware)
 
-- **Topic:** Basic Ingest, new IoT rule (working name `AWS_IOT_CORE_RULE_GRID`), device publishes to `$aws/rules/<rule>/energyme/home/<device_id>/grid` (same pattern as the existing meter/log rules). Final rule name: infra's call - sync the literal back before firmware ships.
+- **Topic:** Basic Ingest, new IoT rule `energyme_home_dev_rule_grid` / `energyme_home_prod_rule_grid` (same naming and env split as the existing meter/log rules); device publishes to `$aws/rules/<rule>/energyme/home/<device_id>/grid`.
 - **Payload:** batched, ~1 message per existing publish cadence (~30 s), bare JSON array of positional triplets:
   `[[<t unix_ms uint64>, <f Hz float 4-dec>, <v V float 1-dec>], ...]`
   e.g. `[[1751500000003, 50.0123, 230.1], [1751500000502, 50.0119, 230.2]]`
