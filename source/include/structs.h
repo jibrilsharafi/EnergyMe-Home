@@ -11,6 +11,7 @@
 struct Statistics { // This will be global and we accept the very small race condition as we only do ++ or read the value (almost atomic?)
   uint64_t ade7953TotalInterrupts;
   uint64_t ade7953TotalHandledInterrupts;
+  uint64_t ade7953ZxInterrupts; // ZXV (voltage zero-crossing) services, ~50/s - kept separate so total/handled keep their meaning
   uint64_t ade7953ReadingCount;
   uint64_t ade7953ReadingCountFailure;
 
@@ -43,7 +44,7 @@ struct Statistics { // This will be global and we accept the very small race con
   uint64_t logDropped;
 
   Statistics() 
-    : ade7953TotalInterrupts(0), ade7953TotalHandledInterrupts(0), ade7953ReadingCount(0), ade7953ReadingCountFailure(0), 
+    : ade7953TotalInterrupts(0), ade7953TotalHandledInterrupts(0), ade7953ZxInterrupts(0), ade7953ReadingCount(0), ade7953ReadingCountFailure(0),
     mqttMessagesPublished(0), mqttMessagesPublishedError(0), mqttConnections(0), mqttConnectionErrors(0), 
     customMqttMessagesPublished(0), customMqttMessagesPublishedError(0), modbusRequests(0), modbusRequestsError(0), 
     influxdbUploadCount(0), influxdbUploadCountError(0), wifiConnection(0), wifiConnectionError(0),

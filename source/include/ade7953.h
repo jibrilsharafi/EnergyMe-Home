@@ -94,8 +94,8 @@
 #define DEFAULT_DISNOLOAD_REGISTER 0 // 0x00 0b00000000 (enable all no-load detection)
 #define DEFAULT_LCYCMODE_REGISTER 0b01111111 // 0xFF 0b01111111 (enable accumulation mode for all channels, disable read with reset)
 #define DEFAULT_PGA_REGISTER 0 // PGA gain 1
-#define DEFAULT_CONFIG_REGISTER 0b1000000100001100 // Enable bit 2, bit 3 (line accumulation for PF), 8 (CRC is enabled), and 15 (keep HPF enabled, keep COMM_LOCK disabled)
-#define DEFAULT_IRQENA_REGISTER 0b001101000000000000000000 // Enable CYCEND interrupt (bit 18) and Reset (bit 20, mandatory) and CRC change (bit 21) for line cycle end detection
+#define DEFAULT_CONFIG_REGISTER 0b1010000100001100 // Enable bit 2, bit 3 (line accumulation for PF), 8 (CRC is enabled), 13:12=10b (ZX_EDGE: positive-going zero crossings only, 1 event/cycle; affects only ZX status/interrupt, not linecyc - datasheet p.43), and 15 (keep HPF enabled, keep COMM_LOCK disabled)
+#define DEFAULT_IRQENA_REGISTER 0b001101001000000000000000 // Enable ZXV (bit 15, voltage zero crossing for grid frequency), CYCEND (bit 18, line cycle end), Reset (bit 20, mandatory) and CRC change (bit 21)
 #define MINIMUM_SAMPLE_TIME 200ULL // The settling time of the ADE7953 is 200 ms, so reading faster than this makes little sense
 
 // Channel validation ranges
@@ -121,7 +121,7 @@
 // Computed once at begin(), stored as static floats in ade7953.cpp, with no per-measurement overhead.
 #define POWER_FACTOR_CONVERSION_FACTOR 0.00003052f // PF/LSB computed as 1.0f / 32768.0f (from ADE7953 datasheet). Unused but left for reference
 #define ANGLE_CONVERSION_FACTOR 0.0807f // 0.0807 °/LSB computed as 360.0f * 50.0f / 223000.0f. Unused but left for reference
-#define GRID_FREQUENCY_CONVERSION_FACTOR 223750.0f // Clock of the period measurement, in Hz. To be multiplied by the register value of 0x10E
+#define GRID_FREQUENCY_CONVERSION_FACTOR 223750.0f // Clock of the period measurement, in Hz. f = factor / (PERIOD_16 + 1) per datasheet Eq.36
 #define DEFAULT_FALLBACK_FREQUENCY 50 // Most of the world is 50 Hz
 
 // Waveform capture
@@ -301,16 +301,6 @@
 #define BIT_32 32
 
 #define INVALID_CHANNEL 255 // Invalid channel identifier, used to indicate no active channel
-
-// Enumeration for different types of ADE7953 interrupts
-enum class Ade7953InterruptType {
-  CYCEND,         // Line cycle end - normal meter reading
-  WSMP,           // Waveform sample ready - high-speed capture
-  RESET,          // Device reset detected
-  CRC_CHANGE,     // CRC register change detected
-  OTHER           // Other interrupts (SAG, etc.)
-};
-
 
 #include "phase_utils.h"  // Phase enum + PhaseUtils:: helpers (Arduino-free, host-testable)
 

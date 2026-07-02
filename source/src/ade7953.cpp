@@ -4,6 +4,7 @@
 #include "ade7953.h"
 #include "taskprofiler.h"
 #include "duration_format.h"
+#include "grid_frequency.h"
 
 namespace Ade7953
 {
@@ -35,7 +36,13 @@ namespace Ade7953
     static int8_t _polarityVoteCount[MAX_CHANNEL_COUNT] = {}; // Net consistent-sign vote accumulator for CT-reversal detection (runtime only; reset on arm/decision)
     static uint16_t _polarityConductingReads[MAX_CHANNEL_COUNT] = {}; // Conducting reads since arming - bounds a sign-oscillating channel (runtime only; reset on arm/decision)
     static bool _lastConducting[MAX_CHANNEL_COUNT] = {}; // Was the channel's most recent reading conducting (pre-clamp)? Drives the CT-detection boost so a clamped reversed load/PV still gets it (meter-task only)
-    static float _gridFrequency = 50.0f;
+    static float _gridFrequency = 50.0f; // Pre-EMA fallback: raw linecyc read, kept updated in the channel-0 path
+
+    // Per-cycle grid frequency EMA (issue #157), fed from the ZXV interrupt path.
+    // int32 state is written only by the meter task and read lock-free elsewhere
+    // (aligned 32-bit access is atomic on Xtensa).
+    static GridFrequency::State _gridFreqEma;
+    static const GridFrequency::Config _gridFreqCfg = {GRID_FREQUENCY_CONVERSION_FACTOR, VALIDATE_GRID_FREQUENCY_MIN, VALIDATE_GRID_FREQUENCY_MAX};
 
     // The library returns MeterLogic::NO_CHANNEL for "no channel"; the firmware
     // compares scheduler results against its own INVALID_CHANNEL macro. They must
@@ -142,15 +149,15 @@ namespace Ade7953
 
     // Interrupt handling
     static void _setupInterrupts();
-    static Ade7953InterruptType _handleInterrupt();
+    static void _handleInterrupt(uint64_t linecycUnix);
     static void _attachInterruptHandler();
     static void _detachInterruptHandler();
     static void IRAM_ATTR _isrHandler();
+    static void _handleZxvInterrupt();
     static void _handleCycendInterrupt(uint64_t linecycUnix);
     static void _pollWaveformSamples();
     static void _handleCrcChangeInterrupt();
     static void _handleResetInterrupt();
-    static void _handleOtherInterrupt();
     
     // Task management
     static void _startMeterReadingTask();
@@ -1608,6 +1615,10 @@ namespace Ade7953
     // ==============
 
     float getGridFrequency() {
+        // Filtered EMA once seeded (~one line cycle after task start): ~0.8 mHz
+        // resolution vs the ~11 mHz single-read quantization dither. Falls back to
+        // the raw linecyc-path value until then (and if ZXV never fires).
+        if (_gridFreqEma.seeded) return GridFrequency::frequencyHz(_gridFreqEma, _gridFreqCfg);
         return _gridFrequency;
     }
 
@@ -1821,35 +1832,65 @@ namespace Ade7953
     // ==================
 
     void _setupInterrupts() {
-        // Enable only CYCEND interrupt for line cycle end detection (bit 18)
         writeRegister(IRQENA_32, BIT_32, DEFAULT_IRQENA_REGISTER);
-        
+
         // Clear any existing interrupt status
         readRegister(RSTIRQSTATA_32, BIT_32, false);
         readRegister(RSTIRQSTATB_32, BIT_32, false);
 
-        LOG_DEBUG("ADE7953 interrupts enabled: CYCEND, RESET");
+        LOG_DEBUG("ADE7953 interrupts enabled: ZXV, CYCEND, RESET, CRC");
     }
 
-    Ade7953InterruptType _handleInterrupt() 
-    {    
+    void _handleInterrupt(uint64_t linecycUnix)
+    {
+        // The ADE7953 IRQ pin is level-active-low while the ESP32 interrupt is edge
+        // triggered, so a bit asserting while the pin is already low raises no new
+        // edge: with ZXV at line rate, co-pending bits in one wake are routine, not
+        // rare. RSTIRQSTATA is read-with-reset (one read clears ALL bits), therefore
+        // this must be a single snapshot serviced bit by bit - independent ifs, never
+        // else-if, never a second status read (it would return zeros and lose bits).
         int32_t statusA = readRegister(RSTIRQSTATA_32, BIT_32, false);
         // No need to read for channel B (only channel A has the relevant information for use)
 
-        // Check in order of priority, but ONLY check interrupts that are actually enabled
-        
-        // CYCEND is always enabled - check it first as it's the primary interrupt
-        if (statusA & (1 << IRQSTATA_CYCEND_BIT)) {
-            return Ade7953InterruptType::CYCEND;
-        } else if (statusA & (1 << IRQSTATA_RESET_BIT)) { 
-            return Ade7953InterruptType::RESET;
-        } else if (statusA & (1 << IRQSTATA_CRC_BIT)) {
-            return Ade7953InterruptType::CRC_CHANGE;
-        } else {
-            // Just log the unhandled status
-            LOG_WARNING("Unhandled ADE7953 interrupt status: 0x%08lX | %s", statusA, _irqstataBitName(statusA));
-            return Ade7953InterruptType::OTHER;
+        // ZXV first: PERIOD is transient (overwritten every cycle), the energy path is not
+        if (statusA & (1 << IRQSTATA_ZXV_BIT)) {
+            statistics.ade7953ZxInterrupts++;
+            _handleZxvInterrupt();
         }
+
+        if (statusA & (1 << IRQSTATA_CYCEND_BIT)) {
+            // Re-arm the energy double-read guard here and ONLY here: a genuine new
+            // linecyc means fresh frozen energy registers. Re-arming anywhere else
+            // (e.g. the old ISR clearing) would let a duplicate CYCEND processing
+            // read the reset-on-read energy registers twice and destroy the cycle.
+            _interruptHandledChannelA = false;
+            _interruptHandledChannelB = false;
+            _handleCycendInterrupt(linecycUnix);
+        }
+
+        if (statusA & (1 << IRQSTATA_RESET_BIT)) {
+            _handleResetInterrupt();
+        }
+
+        if (statusA & (1 << IRQSTATA_CRC_BIT)) {
+            _handleCrcChangeInterrupt();
+        }
+
+        constexpr int32_t handledIrqMask =
+            (1 << IRQSTATA_ZXV_BIT) | (1 << IRQSTATA_CYCEND_BIT) |
+            (1 << IRQSTATA_RESET_BIT) | (1 << IRQSTATA_CRC_BIT);
+        if ((statusA & handledIrqMask) == 0) {
+            LOG_WARNING("Unhandled ADE7953 interrupt status: 0x%08lX | %s", statusA, _irqstataBitName(statusA));
+        }
+    }
+
+    void _handleZxvInterrupt()
+    {
+        // One 16-bit read + integer EMA update: the entire per-cycle hot path.
+        // Validation (45-65 Hz) happens inside update(); glitch reads never touch
+        // the filter, and the update counter it advances is the freshness signal
+        // for the 500 ms grid sampler.
+        GridFrequency::update(_gridFreqEma, _gridFreqCfg, _readPeriod());
     }
 
     void _attachInterruptHandler() {
@@ -1866,8 +1907,10 @@ namespace Ade7953
     {
         BaseType_t xHigherPriorityTaskWoken = pdFALSE;
         statistics.ade7953TotalInterrupts++;
-        _interruptHandledChannelA = false;
-        _interruptHandledChannelB = false;
+        // Deliberately nothing else here: with ZXV enabled the IRQ fires every line
+        // cycle (~50/s), so any state touched here would be clobbered mid-linecyc.
+        // The energy double-read guard flags are re-armed in the task, and only on a
+        // genuine CYCEND (see _handleInterrupt).
 
         // Signal the task to handle the interrupt - let the task determine the cause
         if (_ade7953InterruptSemaphore != NULL) {
@@ -2058,10 +2101,6 @@ namespace Ade7953
         LOG_WARNING("TO BE IMPLEMENTED: ADE7953 reset interrupt detected - reinitializing device");
     }
 
-    void _handleOtherInterrupt() {
-        LOG_WARNING("TO BE IMPLEMENTED: unknown ADE7953 interrupt - this may indicate an unexpected condition");
-    }
-
     // Tasks
     // =====
 
@@ -2132,32 +2171,9 @@ namespace Ade7953
                 // that refers to the "true" time at which the data is temporarily frozen in the ADE7953
                 uint64_t linecycUnix = CustomTime::getUnixTimeMilliseconds();
 
-                // Handle the interrupt and determine its type (need to read it from ADE7953 since 
-                // we only got an interrupt, but we don't know the reason)
-                Ade7953InterruptType interruptType = _handleInterrupt();
-
-                // Process based on interrupt type
-                switch (interruptType)
-                {
-                    case Ade7953InterruptType::CYCEND:
-                        _handleCycendInterrupt(linecycUnix);
-                        break;
-
-                    case Ade7953InterruptType::RESET:
-                        _handleResetInterrupt();
-                        break;
-                        
-                    case Ade7953InterruptType::CRC_CHANGE:
-                        _handleCrcChangeInterrupt();
-                        break;
-
-                    case Ade7953InterruptType::OTHER:
-                        _handleOtherInterrupt();
-                        break;
-                    default:
-                        // Already logged in _handleInterrupt(), just continue
-                        break;
-                }
+                // Snapshot the status register once and service every pending cause
+                // (ZXV and CYCEND routinely co-pend at line rate - see _handleInterrupt)
+                _handleInterrupt(linecycUnix);
             } else {
                 LOG_DEBUG("No ADE7953 interrupt received within timeout, checking for stop notification");
                 _recordCriticalFailure();
@@ -4354,8 +4370,10 @@ namespace Ade7953
     }
 
     float _readGridFrequency() {
-        int32_t period = _readPeriod();
-        return period > 0 ? GRID_FREQUENCY_CONVERSION_FACTOR / float(period) : float(DEFAULT_FALLBACK_FREQUENCY);
+        // Single unfiltered read; shares Eq.36 (the +1) with the EMA readout so the
+        // raw and filtered paths can never disagree on the conversion.
+        float frequency = GridFrequency::rawFrequencyHz(_gridFreqCfg, _readPeriod());
+        return frequency > 0.0f ? frequency : float(DEFAULT_FALLBACK_FREQUENCY);
     }
 
     // Verification and validation functions
