@@ -30,7 +30,7 @@ Each point SHALL contain `{timestamp_ms (uint64), frequency (float), voltage (fl
 - **THEN** it reads only in-RAM state (EMA, cached voltage, wall clock) and enqueues the struct
 
 ### Requirement: Dedicated batched grid topic
-Grid points SHALL be published on a dedicated Basic Ingest MQTT topic (`grid`, via its own IoT rule), separate from the meter payload, as batched sorted JSON arrays `{"points": [{"t", "f", "v"}, ...]}` on the existing publish cadence. The meter payload SHALL be unchanged by this capability.
+Grid points SHALL be published on a dedicated Basic Ingest MQTT topic (`grid`, via its own IoT rule), separate from the meter payload, as a batched sorted bare JSON array of positional triplets `[[t_unix_ms, frequency, voltage], ...]` (frequency serialized at 4 decimals, voltage at 1 decimal) on the existing publish cadence. The meter payload SHALL be unchanged by this capability.
 
 #### Scenario: Batch publish
 - **WHEN** the publish cadence fires with N queued points

@@ -1,6 +1,6 @@
 ## 1. Accuracy fix (independent, lands first)
 
-- [ ] 1.1 Apply Eq.36 `+1` to `_readGridFrequency()` and any other PERIOD-to-Hz conversion; adjust `GRID_FREQUENCY_CONVERSION_FACTOR` usage comments
+- [x] 1.1 Apply Eq.36 `+1` to `_readGridFrequency()` and any other PERIOD-to-Hz conversion; adjust `GRID_FREQUENCY_CONVERSION_FACTOR` usage comments
 - [ ] 1.2 Verify on device (.174, UDP logs): reported frequency drops ~11 mHz, still validates; commit `fix(ade7953): apply datasheet eq.36 +1 to period-to-frequency conversion`
 
 ## 2. Pure-logic EMA (host-testable first)
@@ -32,7 +32,7 @@
 ## 6. Grid topic + publish path
 
 - [ ] 6.1 Add `MQTT_TOPIC_GRID "grid"` + `AWS_IOT_CORE_RULE_GRID` Basic Ingest topic construction (name synced with infra handoff)
-- [ ] 6.2 Grid queue (128 x 16 B, drop-oldest on overflow) + publish-cadence drain into sorted `{"points":[{"t","f","v"},...]}` JSON (SpiRamAllocator, snprintf conventions)
+- [ ] 6.2 Grid queue (128 x 16 B, drop-oldest on overflow) + publish-cadence drain into sorted bare-array JSON `[[t,f,v],...]` (f 4-dec, v 1-dec; SpiRamAllocator, snprintf conventions)
 - [ ] 6.3 Bench e2e (.174): enable flag, verify batched arrays arrive on the grid topic via MQTT test client, meter payload byte-identical to before; commit `feat(mqtt): dedicated batched grid telemetry topic`
 
 ## 7. Verification + handoff

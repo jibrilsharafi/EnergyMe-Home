@@ -86,7 +86,7 @@ On pass: emit `{uint64_t timestamp_ms; float frequency; float voltage}` - freque
 
 New `MQTT_TOPIC_GRID "grid"` via `_constructMqttTopicWithRule(AWS_IOT_CORE_RULE_GRID, ...)` - same Basic Ingest pattern as meter/log (halves messaging cost at this cadence). The publish path drains the grid queue on the existing publish cadence (~30 s) and ships one JSON array of points per publish. Queue: 128 x 16 B = 2 KB, ~64 s buffer (2x publish period); on overflow drop oldest (grid telemetry is redundant fleet data, not billing data - recency beats completeness). Meter payload untouched.
 
-Payload schema (cross-repo contract, v1): `{"points": [{"t": <unix_ms>, "f": <hz float>, "v": <volt float>}, ...]}` - `t` is the true read at the tick (never the nominal boundary), array sorted, gaps explicit (missing boundaries).
+Payload schema (cross-repo contract, v1): bare top-level array of positional triplets `[[<t unix_ms>, <f hz>, <v volt>], ...]` - same compact style as the meter power points. `t` is the true read at the tick (never the nominal boundary); array sorted ascending; gaps explicit (missing boundaries). Serialization precision: `f` 4 decimals (0.1 mHz - preserves the 0.8 mHz EMA floor; the existing `GRID_FREQUENCY_DECIMALS`=3 would quantize it), `v` 1 decimal.
 
 *Rejected:* piggybacking on the meter payload (mixes the anonymous-at-rest stream into the attributed user path - breaks the ADR's load-bearing privacy boundary); per-point publish (60 msgs/min, cost).
 

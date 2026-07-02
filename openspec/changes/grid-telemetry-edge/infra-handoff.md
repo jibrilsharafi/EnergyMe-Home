@@ -6,10 +6,12 @@
 ## Contract (fixed by firmware)
 
 - **Topic:** Basic Ingest, new IoT rule (working name `AWS_IOT_CORE_RULE_GRID`), device publishes to `$aws/rules/<rule>/energyme/home/<device_id>/grid` (same pattern as the existing meter/log rules). Final rule name: infra's call - sync the literal back before firmware ships.
-- **Payload:** batched, ~1 per existing publish cadence (~30 s):
-  `{"points": [{"t": <unix_ms uint64>, "f": <Hz float>, "v": <V float>}, ...]}`
+- **Payload:** batched, ~1 message per existing publish cadence (~30 s), bare JSON array of positional triplets:
+  `[[<t unix_ms uint64>, <f Hz float 4-dec>, <v V float 1-dec>], ...]`
+  e.g. `[[1751500000003, 50.0123, 230.1], [1751500000502, 50.0119, 230.2]]`
   - `t` = true device wall-clock read at sample time, aligned near absolute .000/.500 boundaries (NTP-quality, ±10-50 ms typical); array sorted ascending; gaps are real (gated ticks), never interpolated.
-  - `f` = EMA-filtered grid frequency (~0.8 mHz resolution, ~1 Hz bandwidth); `v` = per-device RMS voltage (local signal - never aggregate across devices).
+  - `f` = EMA-filtered grid frequency (~0.8 mHz resolution, ~1 Hz bandwidth), 4 decimals; `v` = per-device RMS voltage (local signal - never aggregate across devices), 1 decimal.
+  - No envelope object: adding fields later means a new topic/rule version, not an in-place schema change.
 - **Report flag:** `send_grid_data` boolean in the writable `system` named shadow (same mechanism as `send_power_data`), persisted on device, default **off**. This is the quorum on/off lever.
 
 ## Work items (cloud)
