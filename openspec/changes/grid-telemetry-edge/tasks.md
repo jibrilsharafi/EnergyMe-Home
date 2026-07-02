@@ -5,9 +5,9 @@
 
 ## 2. Pure-logic EMA (host-testable first)
 
-- [ ] 2.1 Add `lib/` pure module: Q24.8 EMA update (alpha=1/8 shift form), seed-on-first-valid, 45-65 Hz range validation hook, monotonic update counter, Eq.36 readout conversion
-- [ ] 2.2 Unity tests in `test/` (WSL `pio test -e native`): seed behavior, out-of-range rejection, convergence to a dithering input's mean, sub-LSB resolution retention, counter monotonicity
-- [ ] 2.3 Commit `feat(lib): grid frequency EMA pure logic + unit tests`
+- [x] 2.1 Add `lib/` pure module: Q24.8 EMA update (alpha=1/8 shift form), seed-on-first-valid, 45-65 Hz range validation hook, monotonic update counter, Eq.36 readout conversion
+- [x] 2.2 Unity tests in `test/` (WSL `pio test -e native`): seed behavior, out-of-range rejection, convergence to a dithering input's mean, sub-LSB resolution retention, counter monotonicity
+- [x] 2.3 Commit `feat(lib): grid frequency EMA pure logic + unit tests`
 
 ## 3. Interrupt demux rework (metering-critical)
 
