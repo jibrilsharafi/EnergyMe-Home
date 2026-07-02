@@ -110,8 +110,9 @@ Pure firmware addition behind the `send_grid_data` flag (default off): deploy or
 
 ## Open Questions
 
-- QoS for grid publishes: QoS0 suggested (redundant data, cheapest); meter uses QoS1 today - decide at implementation.
+(none)
 
 ## Resolved
 
 - Rule literal: `AWS_IOT_CORE_RULE_GRID` = `energyme_home_dev_rule_grid` / `energyme_home_prod_rule_grid`, `ENV_DEV`-guarded in `include/awsconfig.h` alongside the meter/log rules.
+- QoS: grid publishes at QoS0, consistent with all existing publishes (QoS1 is used only for subscriptions).
