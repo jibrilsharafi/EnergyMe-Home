@@ -30,6 +30,7 @@
 
 #define MQTT_LOG_QUEUE_SIZE (256 * 1024) // Generous log size (in bytes) thanks to PSRAM
 #define MQTT_METER_QUEUE_SIZE (64 * 1024) // Size in bytes to allocate to PSRAM
+#define MQTT_GRID_QUEUE_SIZE (64 * 1024) // Size in bytes to allocate to PSRAM (~34 min of 500 ms points); overflow drops oldest
 #define QUEUE_WAIT_TIMEOUT 100 // Amount of milliseconds to wait if the queue is full or busy
 
 // AWS IoT Jobs OTA constants
@@ -65,9 +66,11 @@
 
 #define DEFAULT_CLOUD_SERVICES_ENABLED false // Always off by default, and enabled only explicitly by the user
 #define DEFAULT_SEND_POWER_DATA_ENABLED true // Send all the data by default
+#define DEFAULT_SEND_GRID_DATA_ENABLED false // Off by default; the cloud enables it per device
 #define DEFAULT_MQTT_LOG_LEVEL_INT 2 // Default minimum log level for MQTT publishing (INFO = 2)
 
 #define MQTT_MAX_INTERVAL_METER_PUBLISH (60 * 1000) // The maximum interval between two meter payloads
+#define MQTT_MAX_INTERVAL_GRID_PUBLISH (60 * 1000) // Batch interval for grid points (no need for fast updates)
 #ifdef ENV_DEV
 // In dev: send system_dynamic and statistics every minute so post-mortem
 // telemetry has the resolution needed to investigate behavior.
@@ -82,6 +85,8 @@
 
 #define MQTT_LOOP_INTERVAL 100 // Interval between two MQTT loop checks
 #define MQTT_METER_ESTIMATED_PER_ENTRY 35 // Estimated size in bytes of each meter entry (unix ms, channel, active power, pf)
+#define MQTT_GRID_FREQUENCY_PAYLOAD_DECIMALS 4 // 0.1 mHz: preserves the ~0.8 mHz EMA resolution
+#define MQTT_GRID_VOLTAGE_PAYLOAD_DECIMALS 1
 #define MQTT_METER_ESTIMATED_ENERGY_VOLTAGE_OVERHEAD_BYTES 500 // Estimated overhead in bytes for energy and voltage data in the payload
 #define AWS_IOT_CORE_MQTT_PAYLOAD_MINIMUM_BILLABLE (5 * 1024) // This is the minimum billable size for AWS IoT Core, so it makes little sense to send smaller payloads
 #define AWS_IOT_CORE_MQTT_PAYLOAD_LIMIT (128 * 1024) // Limit of AWS
@@ -93,6 +98,7 @@
 #define MQTT_MAX_CONNECTION_ATTEMPTS 10 // Maximum number of connection attempts before restarting the device. High since we don't want a reboot cycle
 #define MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY "en_cloud"
 #define MQTT_PREFERENCES_SEND_POWER_DATA_KEY "send_power"
+#define MQTT_PREFERENCES_SEND_GRID_DATA_KEY "send_grid"
 #define MQTT_PREFERENCES_MQTT_LOG_LEVEL_KEY "log_level_int"
 #define MQTT_PREFERENCES_TRANSIENT_LOG_LEVEL_KEY "transient_log" // active transient (VERBOSE/DEBUG) level, persisted so a debug session survives a reboot; absent = none
 
@@ -100,6 +106,7 @@
 // Publish topics. system/static + channel retired (-> info + channels shadows);
 // configurable state lives in shadows, telemetry topics carry runtime data only.
 #define MQTT_TOPIC_METER "meter"
+#define MQTT_TOPIC_GRID "grid"
 #define MQTT_TOPIC_SYSTEM_DYNAMIC "system/dynamic"
 #define MQTT_TOPIC_STATISTICS "statistics"
 #define MQTT_TOPIC_CRASH "crash"
@@ -126,6 +133,7 @@
 struct PublishMqtt
 {
   bool meter;
+  bool grid;
   bool systemDynamic;
   bool statistics;
   bool crash;
@@ -133,6 +141,7 @@ struct PublishMqtt
 
   PublishMqtt() :
     meter(false), // Need to fill queue first
+    grid(false),  // Need to fill queue first
     systemDynamic(true),
     statistics(true),
     crash(false), // May not be present
@@ -156,6 +165,7 @@ namespace Mqtt
     // Public methods for pushing data to queues
     void pushLog(const LogEntry& entry);
     void pushMeter(const PayloadMeter& payload);
+    void pushGrid(const PayloadGridPoint& point);
 
     TaskInfo getMqttTaskInfo();
     TaskInfo getMqttOtaTaskInfo();
@@ -176,6 +186,8 @@ namespace Mqtt
     int  getTransientLogLevel();             // persisted transient level, or -1 if none
     bool getSendPowerData();
     void setSendPowerData(bool enabled);     // persisted
+    bool getSendGridData();
+    void setSendGridData(bool enabled);      // persisted; cloud-settable via the system shadow
 
 #ifdef ENV_DEV
     // Dev-only: inject a synthetic IoT Command execution through the real handler

@@ -23,12 +23,15 @@ namespace Mqtt
     // FreeRTOS queues
     static QueueHandle_t _logQueue = nullptr;
     static QueueHandle_t _meterQueue = nullptr;
+    static QueueHandle_t _gridQueue = nullptr;
 
     // Static queue structures and storage for PSRAM
     static StaticQueue_t _logQueueStruct;
     static StaticQueue_t _meterQueueStruct;
+    static StaticQueue_t _gridQueueStruct;
     static uint8_t* _logQueueStorage = nullptr;
     static uint8_t* _meterQueueStorage = nullptr;
+    static uint8_t* _gridQueueStorage = nullptr;
 
     // Connection attempt tracking
     static uint32_t _mqttConnectionAttempt = 0;
@@ -40,12 +43,14 @@ namespace Mqtt
 
     // Last publish timestamps
     static uint64_t _lastMillisMeterPublished = 0;
+    static uint64_t _lastMillisGridPublished = 0;
     static uint64_t _lastMillisSystemDynamicPublished = 0;
     static uint64_t _lastMillisStatisticsPublished = 0;
 
     // Configuration
     static bool _cloudServicesEnabled = DEFAULT_CLOUD_SERVICES_ENABLED;
     static bool _sendPowerDataEnabled = DEFAULT_SEND_POWER_DATA_ENABLED;
+    static bool _sendGridDataEnabled = DEFAULT_SEND_GRID_DATA_ENABLED;
     static uint8_t _mqttLogLevelInt = DEFAULT_MQTT_LOG_LEVEL_INT;
     static LogLevel _mqttMinLogLevel = LogLevel::INFO;
 
@@ -56,6 +61,7 @@ namespace Mqtt
     
     // Topic buffers
     static char _mqttTopicMeter[MQTT_TOPIC_BUFFER_SIZE];
+    static char _mqttTopicGrid[MQTT_TOPIC_BUFFER_SIZE];
     static char _mqttTopicSystemDynamic[MQTT_TOPIC_BUFFER_SIZE];
     static char _mqttTopicStatistics[MQTT_TOPIC_BUFFER_SIZE];
     static char _mqttTopicCrash[MQTT_TOPIC_BUFFER_SIZE];
@@ -83,17 +89,20 @@ namespace Mqtt
     // Queue initialization
     static bool _initializeLogQueue();
     static bool _initializeMeterQueue();
+    static bool _initializeGridQueue();
     
     // Configuration management
     static void _loadConfigFromPreferences();
     static void _saveConfigToPreferences();
     
     static void _setSendPowerDataEnabled(bool enabled);
+    static void _setSendGridDataEnabled(bool enabled);
     static void _setMqttLogLevel(const char* logLevel);
     static void _updateMqttMinLogLevel();
 
     static void _saveCloudServicesEnabledToPreferences(bool enabled);
     static void _saveSendPowerDataEnabledToPreferences(bool enabled);
+    static void _saveSendGridDataEnabledToPreferences(bool enabled);
     static void _saveMqttLogLevelToPreferences(uint8_t logLevel);
         
     // Task management
@@ -109,6 +118,7 @@ namespace Mqtt
 
     // Publish topics
     static void _setTopicMeter();
+    static void _setTopicGrid();
     static void _setTopicSystemDynamic();
     static void _setTopicStatistics();
     static void _setTopicCrash();
@@ -144,6 +154,7 @@ namespace Mqtt
 
     // Publishing functions
     static void _publishMeter();
+    static void _publishGrid();
     static void _publishSystemDynamic();
     static void _publishStatistics();
     static void _publishCrash();
@@ -152,6 +163,7 @@ namespace Mqtt
     
     static void _checkPublishMqtt();
     static void _checkIfPublishMeterNeeded();
+    static void _checkIfPublishGridNeeded();
     static void _checkIfPublishSystemDynamicNeeded();
     static void _checkIfPublishStatisticsNeeded();
 
@@ -208,6 +220,7 @@ namespace Mqtt
         Shadow::begin();
         _initializeLogQueue();
         _initializeMeterQueue();
+        _initializeGridQueue();
         
         // Initialize OTA buffers before checking pending validation
         if (_otaCurrentUrl == nullptr) {
@@ -263,6 +276,7 @@ namespace Mqtt
         
         _logQueue = nullptr;
         _meterQueue = nullptr;
+        _gridQueue = nullptr;
         
         if (_logQueueStorage != nullptr) {
             free(_logQueueStorage);
@@ -274,6 +288,12 @@ namespace Mqtt
             free(_meterQueueStorage);
             _meterQueueStorage = nullptr;
             LOG_DEBUG("MQTT meter queue PSRAM freed");
+        }
+
+        if (_gridQueueStorage != nullptr) {
+            free(_gridQueueStorage);
+            _gridQueueStorage = nullptr;
+            LOG_DEBUG("MQTT grid queue PSRAM freed");
         }
 
         deleteMutex(&_configMutex);
@@ -374,6 +394,19 @@ namespace Mqtt
         if (_sendPowerDataEnabled) xQueueSend(_meterQueue, &payload, pdMS_TO_TICKS(QUEUE_WAIT_TIMEOUT)); // Only add to queue if we chose to send power data
     }
 
+    void pushGrid(const PayloadGridPoint& point)
+    {
+        if (!_initializeGridQueue()) return;
+        if (!_sendGridDataEnabled) return; // Sampler already gates on this
+
+        // Drop-oldest on overflow: recent points are worth more than old ones
+        if (xQueueSend(_gridQueue, &point, 0) != pdTRUE) {
+            PayloadGridPoint discarded;
+            xQueueReceive(_gridQueue, &discarded, 0);
+            xQueueSend(_gridQueue, &point, 0);
+        }
+    }
+
     TaskInfo getMqttTaskInfo()
     {
         return getTaskInfoSafely(_taskHandle, MQTT_TASK_STACK_SIZE, &_mqttHeartbeat);
@@ -460,6 +493,10 @@ namespace Mqtt
     bool getSendPowerData() { return _sendPowerDataEnabled; }
 
     void setSendPowerData(bool enabled) { _setSendPowerDataEnabled(enabled); } // persists
+
+    bool getSendGridData() { return _sendGridDataEnabled; }
+
+    void setSendGridData(bool enabled) { _setSendGridDataEnabled(enabled); } // persists
 
     // Private functions
     // =================
@@ -549,6 +586,32 @@ namespace Mqtt
         return true;
     }
 
+    bool _initializeGridQueue()
+    {
+        if (_gridQueueStorage != nullptr) return true;
+
+        // Allocate queue storage in PSRAM
+        uint32_t queueLength = MQTT_GRID_QUEUE_SIZE / sizeof(PayloadGridPoint);
+        size_t realQueueSize = queueLength * sizeof(PayloadGridPoint);
+        _gridQueueStorage = (uint8_t*)ps_malloc(realQueueSize);
+
+        if (_gridQueueStorage == nullptr) {
+            LOG_ERROR("Failed to allocate PSRAM for MQTT grid queue (%zu bytes)", realQueueSize);
+            return false;
+        }
+
+        _gridQueue = xQueueCreateStatic(queueLength, sizeof(PayloadGridPoint), _gridQueueStorage, &_gridQueueStruct);
+        if (_gridQueue == nullptr) {
+            LOG_ERROR("Failed to create MQTT grid queue");
+            free(_gridQueueStorage);
+            _gridQueueStorage = nullptr;
+            return false;
+        }
+
+        LOG_DEBUG("MQTT grid queue initialized with PSRAM buffer (%zu bytes) | Free PSRAM: %zu bytes", realQueueSize, heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+        return true;
+    }
+
     // Configuration management
     // ========================
     
@@ -564,12 +627,14 @@ namespace Mqtt
 
         _cloudServicesEnabled = prefs.getBool(MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY, DEFAULT_CLOUD_SERVICES_ENABLED);
         _sendPowerDataEnabled = prefs.getBool(MQTT_PREFERENCES_SEND_POWER_DATA_KEY, DEFAULT_SEND_POWER_DATA_ENABLED);
+        _sendGridDataEnabled = prefs.getBool(MQTT_PREFERENCES_SEND_GRID_DATA_KEY, DEFAULT_SEND_GRID_DATA_ENABLED);
         _mqttLogLevelInt = prefs.getUChar(MQTT_PREFERENCES_MQTT_LOG_LEVEL_KEY, DEFAULT_MQTT_LOG_LEVEL_INT);
         _updateMqttMinLogLevel(); // Convert integer to LogLevel enum
 
-        LOG_DEBUG("Cloud services enabled: %s, Send power data enabled: %s, MQTT log level: %u",
+        LOG_DEBUG("Cloud services enabled: %s, Send power data enabled: %s, Send grid data enabled: %s, MQTT log level: %u",
                    _cloudServicesEnabled ? "true" : "false",
                    _sendPowerDataEnabled ? "true" : "false",
+                   _sendGridDataEnabled ? "true" : "false",
                    _mqttLogLevelInt);
 
         prefs.end();
@@ -583,6 +648,7 @@ namespace Mqtt
     {
         _saveCloudServicesEnabledToPreferences(_cloudServicesEnabled);
         _saveSendPowerDataEnabledToPreferences(_sendPowerDataEnabled);
+        _saveSendGridDataEnabledToPreferences(_sendGridDataEnabled);
         _saveMqttLogLevelToPreferences(_mqttLogLevelInt);
         
         LOG_DEBUG("MQTT preferences saved");
@@ -593,6 +659,13 @@ namespace Mqtt
         _sendPowerDataEnabled = enabled;
         _saveSendPowerDataEnabledToPreferences(enabled);
         LOG_DEBUG("Set send power data enabled to %s", enabled ? "true" : "false");
+    }
+
+    static void _setSendGridDataEnabled(bool enabled)
+    {
+        _sendGridDataEnabled = enabled;
+        _saveSendGridDataEnabledToPreferences(enabled);
+        LOG_DEBUG("Set send grid data enabled to %s", enabled ? "true" : "false");
     }
 
     static void _updateMqttMinLogLevel()
@@ -662,6 +735,16 @@ namespace Mqtt
         size_t bytesWritten = prefs.putBool(MQTT_PREFERENCES_SEND_POWER_DATA_KEY, enabled);
         if (bytesWritten == 0) LOG_ERROR("Failed to save send power data enabled preference");
         
+        prefs.end();
+    }
+
+    static void _saveSendGridDataEnabledToPreferences(bool enabled) {
+        Preferences prefs;
+
+        prefs.begin(PREFERENCES_NAMESPACE_MQTT, false);
+        size_t bytesWritten = prefs.putBool(MQTT_PREFERENCES_SEND_GRID_DATA_KEY, enabled);
+        if (bytesWritten == 0) LOG_ERROR("Failed to save send grid data enabled preference");
+
         prefs.end();
     }
 
@@ -823,6 +906,7 @@ namespace Mqtt
 
     static void _setupTopics() {
         _setTopicMeter();
+        _setTopicGrid();
         _setTopicSystemDynamic();
         _setTopicStatistics();
         _setTopicCrash();
@@ -832,6 +916,7 @@ namespace Mqtt
     }
 
     static void _setTopicMeter() { _constructMqttTopicWithRule(AWS_IOT_CORE_RULE_METER, MQTT_TOPIC_METER, _mqttTopicMeter, sizeof(_mqttTopicMeter)); }
+    static void _setTopicGrid() { _constructMqttTopicWithRule(AWS_IOT_CORE_RULE_GRID, MQTT_TOPIC_GRID, _mqttTopicGrid, sizeof(_mqttTopicGrid)); }
     static void _setTopicSystemDynamic() { _constructMqttTopic(MQTT_TOPIC_SYSTEM_DYNAMIC, _mqttTopicSystemDynamic, sizeof(_mqttTopicSystemDynamic)); }
     static void _setTopicStatistics() { _constructMqttTopic(MQTT_TOPIC_STATISTICS, _mqttTopicStatistics, sizeof(_mqttTopicStatistics)); }
     static void _setTopicCrash() { _constructMqttTopic(MQTT_TOPIC_CRASH, _mqttTopicCrash, sizeof(_mqttTopicCrash)); }
@@ -1486,6 +1571,30 @@ namespace Mqtt
         if (_publishMeterJson()) _lastMillisMeterPublished = millis64();
     }
     
+    static void _publishGrid() {
+        if (_gridQueue == nullptr || uxQueueMessagesWaiting(_gridQueue) == 0) return;
+
+        // Bare top-level array of [t, f, v] triplets (cross-repo contract v1),
+        // FIFO-drained so the array is sorted; gaps stay explicit
+        SpiRamAllocator allocator;
+        JsonDocument doc(&allocator);
+        JsonArray points = doc.to<JsonArray>();
+
+        PayloadGridPoint point;
+        uint32_t loops = 0;
+        while (xQueueReceive(_gridQueue, &point, 0) == pdTRUE && loops < MAX_LOOP_ITERATIONS) {
+            loops++;
+            JsonArray triplet = points.add<JsonArray>();
+            triplet.add(point.unixTimeMs);
+            triplet.add(roundToDecimals(point.frequency, MQTT_GRID_FREQUENCY_PAYLOAD_DECIMALS));
+            triplet.add(roundToDecimals(point.voltage, MQTT_GRID_VOLTAGE_PAYLOAD_DECIMALS));
+
+            if (measureJson(doc) > AWS_IOT_CORE_MQTT_PAYLOAD_LIMIT * MQTT_METER_PAYLOAD_THRESHOLD_MULTIPLIER) break; // Remainder ships next cycle
+        }
+
+        if (_publishJsonStreaming(doc, _mqttTopicGrid)) _lastMillisGridPublished = millis64();
+    }
+
     static void _publishSystemDynamic() {
         SpiRamAllocator allocator;
         JsonDocument doc(&allocator);
@@ -1569,6 +1678,7 @@ namespace Mqtt
 
     static void _checkPublishMqtt() {
         if (_publishMqtt.meter) {_publishMeter();}
+        if (_publishMqtt.grid) {_publishGrid();}
         if (_publishMqtt.systemDynamic) {_publishSystemDynamic();}
         if (_publishMqtt.statistics) {_publishStatistics();}
         if (_publishMqtt.crash) {_publishCrash();}
@@ -1591,6 +1701,16 @@ namespace Mqtt
         ) {
             _publishMqtt.meter = true;
             LOG_DEBUG("Set flag to publish meter data (queue: %u entries, real size checked during publish)", queueSize);
+        }
+    }
+
+    static void _checkIfPublishGridNeeded() {
+        UBaseType_t queueSize = _gridQueue ? uxQueueMessagesWaiting(_gridQueue) : 0;
+
+        // Time-triggered only: a batch stays well under the billable minimum
+        if (queueSize > 0 && (millis64() - _lastMillisGridPublished) > MQTT_MAX_INTERVAL_GRID_PUBLISH) {
+            _publishMqtt.grid = true;
+            LOG_DEBUG("Set flag to publish grid data (queue: %u points)", queueSize);
         }
     }
 
@@ -2080,6 +2200,7 @@ namespace Mqtt
         // Process queues and publishing
         _processLogQueue();
         _checkIfPublishMeterNeeded();
+        _checkIfPublishGridNeeded();
         _checkIfPublishSystemDynamicNeeded();
         _checkIfPublishStatisticsNeeded();
         _checkPublishMqtt();
