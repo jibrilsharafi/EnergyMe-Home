@@ -197,7 +197,7 @@ namespace CrashMonitor
         _handleCounters();
 
         // Create task to handle the crash reset
-        LOG_DEBUG("Starting crash reset task with %d bytes stack in internal RAM", CRASH_RESET_TASK_STACK_SIZE);
+        LOG_DEBUG("Starting crash reset task with %d bytes stack", CRASH_RESET_TASK_STACK_SIZE);
 
         BaseType_t result = xTaskCreate(
             _crashResetTask, 

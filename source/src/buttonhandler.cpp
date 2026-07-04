@@ -49,8 +49,7 @@ namespace ButtonHandler
             return;
         }
 
-        // Create button handling task with internal RAM stack (performs Preferences operations)
-        LOG_DEBUG("Starting button task with %d bytes stack in internal RAM (performs Preferences operations)", BUTTON_TASK_STACK_SIZE);
+        LOG_DEBUG("Starting button task with %d bytes stack", BUTTON_TASK_STACK_SIZE);
 
         BaseType_t result = xTaskCreate(
             _buttonTask,

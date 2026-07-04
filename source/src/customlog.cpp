@@ -200,7 +200,7 @@ namespace CustomLog
             return;
         }
 
-        LOG_DEBUG("Starting UDP log task with %d bytes stack in internal RAM (performs UDP network operations)", UDP_LOG_TASK_STACK_SIZE);
+        LOG_DEBUG("Starting UDP log task with %d bytes stack", UDP_LOG_TASK_STACK_SIZE);
 
         BaseType_t result = xTaskCreate(
             _udpTask,

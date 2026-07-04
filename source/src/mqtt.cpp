@@ -794,7 +794,7 @@ namespace Mqtt
         _nextMqttConnectionAttemptMillis = 0;
         _mqttConnectionAttempt = 0;
         
-        LOG_DEBUG("Starting MQTT task with %d bytes stack in internal RAM (uses NVS)", MQTT_TASK_STACK_SIZE);
+        LOG_DEBUG("Starting MQTT task with %d bytes stack", MQTT_TASK_STACK_SIZE);
 
         BaseType_t result = xTaskCreate(
             _mqttTask,
@@ -1523,7 +1523,7 @@ namespace Mqtt
         snprintf(_otaCurrentUrl, OTA_PRESIGNED_URL_BUFFER_SIZE, "%s", url);
         snprintf(_otaCurrentJobId, sizeof(_otaCurrentJobId), "%s", jobId);
 
-        LOG_DEBUG("Starting OTA task with %d bytes stack in internal RAM (writes firmware to flash)", OTA_TASK_STACK_SIZE);
+        LOG_DEBUG("Starting OTA task with %d bytes stack", OTA_TASK_STACK_SIZE);
 
         BaseType_t result = xTaskCreate(
             _otaTask, 
@@ -2340,7 +2340,7 @@ namespace Mqtt
         snprintf(_otaCurrentJobId, sizeof(_otaCurrentJobId), "%s", jobId);
 
         // Create validation task to monitor stability
-        LOG_DEBUG("Starting OTA validation task with %d bytes stack in internal RAM", OTA_VALIDATION_TASK_STACK_SIZE);
+        LOG_DEBUG("Starting OTA validation task with %d bytes stack", OTA_VALIDATION_TASK_STACK_SIZE);
         
         BaseType_t result = xTaskCreate(
             _otaValidationTask,

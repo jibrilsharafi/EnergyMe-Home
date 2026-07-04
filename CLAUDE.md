@@ -50,7 +50,7 @@ v6.1 (current): Y1 absent on PCB - 15 mux channels + 1 direct ADE7953 input = **
 
 - Mandatory mutex on any non-atomic shared state. Keep critical sections short - copy needed data under the mutex, release, then act on the copy.
 - Graceful shutdown via task notifications (`ulTaskNotifyTake`); task self-deletes with `vTaskDelete(NULL)`.
-- Stack in **PSRAM** for non-flash tasks (WiFi, LED, ADE7953, etc.); **internal RAM** for tasks that touch flash (NVS, LittleFS, OTA) - flash cache disable crashes PSRAM-stack tasks.
+- All task stacks are **internal RAM** (plain `xTaskCreate()`), regardless of whether the task touches flash. PSRAM-backed task stacks were tried in the past and dropped due to problems; PSRAM is still used extensively for buffers/queues (`ps_malloc`, `SpiRamAllocator`), just not task stacks.
 
 ## Secrets / provisioning
 
