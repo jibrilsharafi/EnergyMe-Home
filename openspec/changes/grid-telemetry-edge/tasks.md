@@ -19,20 +19,20 @@
 
 ## 4. Grid sampler task
 
-- [ ] 4.1 New sampler task (PSRAM stack): boundary-derived delay loop (`500 - now%500`, <20 ms guard), gates (NTP sync -> `send_grid_data` -> update-counter freshness), builds `{t,f,v}` with cached `_meterValues[0].voltage`, `xQueueSend` no-block
-- [ ] 4.2 Graceful shutdown via task notification, consistent with existing task patterns
+- [x] 4.1 New sampler task (PSRAM stack): boundary-derived delay loop (`500 - now%500`, <20 ms guard), gates (NTP sync -> `send_grid_data` -> update-counter freshness), builds `{t,f,v}` with cached `_meterValues[0].voltage`, `xQueueSend` no-block
+- [x] 4.2 Graceful shutdown via task notification, consistent with existing task patterns
 - [ ] 4.3 Bench test: points land within a few ms of .000/.500, gaps appear when flag off / line events; commit `feat(grid): 500ms wall-clock-aligned grid sampler task`
 
 ## 5. Report flag
 
-- [ ] 5.1 Add `send_grid_data` (NVS-persisted, default off) mirroring `send_power_data`: getter/setter, preferences load/save
-- [ ] 5.2 Expose in `system` shadow (reported + writable delta handling)
+- [x] 5.1 Add `send_grid_data` (NVS-persisted, default off) mirroring `send_power_data`: getter/setter, preferences load/save
+- [x] 5.2 Expose in `system` shadow (reported + writable delta handling)
 - [ ] 5.3 Bench test flag flip via shadow (cloud -> device -> persisted across reboot); commit `feat(mqtt): cloud-settable send_grid_data flag`
 
 ## 6. Grid topic + publish path
 
-- [ ] 6.1 Add `MQTT_TOPIC_GRID "grid"` + `AWS_IOT_CORE_RULE_GRID` Basic Ingest topic construction (name synced with infra handoff)
-- [ ] 6.2 Grid queue (128 x 16 B, drop-oldest on overflow) + publish-cadence drain into sorted bare-array JSON `[[t,f,v],...]` (f 4-dec, v 1-dec; SpiRamAllocator, snprintf conventions)
+- [x] 6.1 Add `MQTT_TOPIC_GRID "grid"` + `AWS_IOT_CORE_RULE_GRID` Basic Ingest topic construction (name synced with infra handoff)
+- [x] 6.2 Grid queue (128 x 16 B, drop-oldest on overflow) + publish-cadence drain into sorted bare-array JSON `[[t,f,v],...]` (f 4-dec, v 1-dec; SpiRamAllocator, snprintf conventions)
 - [ ] 6.3 Bench e2e (.174): enable flag, verify batched arrays arrive on the grid topic via MQTT test client, meter payload byte-identical to before; commit `feat(mqtt): dedicated batched grid telemetry topic`
 
 ## 7. Verification + handoff
