@@ -5,25 +5,18 @@
 
 #include <cstdint>
 
-// Pure per-cycle grid frequency EMA (issue #157).
+// Pure per-cycle grid frequency EMA (issue #157). Free-standing like the other
+// lib/ modules (no Arduino/FreeRTOS/SPI/logging) so it is host-testable.
 //
-// Free-standing like the other lib/ modules: no Arduino, no FreeRTOS, no SPI,
-// no logging, no global state. The caller (src/ade7953.cpp) feeds raw PERIOD
-// register reads from the ZXV interrupt path and reads the filtered frequency
-// off the hot path; this module owns only the arithmetic, which is what lets
-// it be unit-tested on the host (see test/test_grid_frequency).
+// First-order EMA on the raw integer PERIOD register, Q24.8 fixed point,
+// alpha = 1/8 (one arithmetic shift per update, no float on the hot path).
+// A ~15-line-cycle window: the Allan-optimal averaging length for the chip's
+// single-cycle quantization dither. The Q8 fraction is what keeps sub-LSB
+// resolution alive - a plain-integer EMA would freeze on a dithering input.
 //
-// Filter: first-order EMA on the raw integer PERIOD, Q24.8 fixed point,
-// alpha = 1/8 so the update is one arithmetic shift (no multiply, divide or
-// float on the per-cycle path). At 50 Hz this is a ~15-cycle (~300 ms) window,
-// ~1.06 Hz cutoff, ~0.8 mHz noise floor - the Allan-optimal averaging length
-// for the ADE7953's ~11 mHz single-cycle quantization dither. Q8 keeps the
-// sub-LSB fraction alive through the shift; a plain-integer EMA would freeze
-// on a dithering input and lose exactly the resolution the dither provides.
-//
-// Conversion (datasheet Eq.36): f = factor / (PERIOD + 1). Applied at readout
-// only - filtering happens in the period domain, where the reciprocal's
-// nonlinearity bias is sub-uHz for the <1% period swings of a real grid.
+// Conversion (datasheet Eq.36): f = factor / (PERIOD + 1), applied at readout
+// only; filtering stays in the period domain where the reciprocal bias is
+// negligible.
 namespace GridFrequency {
 
 struct Config {

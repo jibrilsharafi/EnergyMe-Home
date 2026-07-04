@@ -52,6 +52,12 @@
 #define ADE7953_HISTORY_CLEAR_TASK_PRIORITY 1
 #define CLEAR_ALL_CHANNELS_SENTINEL 0xFE
 
+#define ADE7953_GRID_SAMPLER_TASK_NAME "grid_sampler"
+#define ADE7953_GRID_SAMPLER_TASK_STACK_SIZE (3 * 1024) // RAM-only work
+#define ADE7953_GRID_SAMPLER_TASK_PRIORITY 2
+#define GRID_SAMPLE_INTERVAL_MS 500 // Samples aligned to absolute .000/.500 wall-clock boundaries
+#define GRID_SAMPLE_MIN_DELAY_MS 20 // Skip to the next boundary when too close
+
 // ENERGY_SAVING
 #define SAVE_ENERGY_INTERVAL (15 * 60 * 1000) // Time between each energy save to preferences. Do not increase the frequency to avoid wearing the flash memory. In any case, this is part of the requirement. The other part is ENERGY_SAVE_THRESHOLD 
 #define ENERGY_CSV_PREFIX "/energy"
@@ -94,8 +100,8 @@
 #define DEFAULT_DISNOLOAD_REGISTER 0 // 0x00 0b00000000 (enable all no-load detection)
 #define DEFAULT_LCYCMODE_REGISTER 0b01111111 // 0xFF 0b01111111 (enable accumulation mode for all channels, disable read with reset)
 #define DEFAULT_PGA_REGISTER 0 // PGA gain 1
-#define DEFAULT_CONFIG_REGISTER 0b1010000100001100 // Enable bit 2, bit 3 (line accumulation for PF), 8 (CRC is enabled), 13:12=10b (ZX_EDGE: positive-going zero crossings only, 1 event/cycle; affects only ZX status/interrupt, not linecyc - datasheet p.43), and 15 (keep HPF enabled, keep COMM_LOCK disabled)
-#define DEFAULT_IRQENA_REGISTER 0b001101001000000000000000 // Enable ZXV (bit 15, voltage zero crossing for grid frequency), CYCEND (bit 18, line cycle end), Reset (bit 20, mandatory) and CRC change (bit 21)
+#define DEFAULT_CONFIG_REGISTER 0b1010000100001100 // Bits 2, 3 (line accumulation for PF), 8 (CRC), 13:12=10b (ZX_EDGE: positive-going zero crossings only; does not affect linecyc), 15 (HPF enabled, COMM_LOCK disabled)
+#define DEFAULT_IRQENA_REGISTER 0b001101001000000000000000 // ZXV (bit 15, grid frequency), CYCEND (bit 18), Reset (bit 20, mandatory), CRC change (bit 21)
 #define MINIMUM_SAMPLE_TIME 200ULL // The settling time of the ADE7953 is 200 ms, so reading faster than this makes little sense
 
 // Channel validation ranges

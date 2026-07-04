@@ -11,7 +11,7 @@
 struct Statistics { // This will be global and we accept the very small race condition as we only do ++ or read the value (almost atomic?)
   uint64_t ade7953TotalInterrupts;
   uint64_t ade7953TotalHandledInterrupts;
-  uint64_t ade7953ZxInterrupts; // ZXV (voltage zero-crossing) services, ~50/s - kept separate so total/handled keep their meaning
+  uint64_t ade7953ZxInterrupts; // ZXV (voltage zero-crossing) services, counted separately from CYCEND
   uint64_t ade7953ReadingCount;
   uint64_t ade7953ReadingCountFailure;
 
@@ -258,12 +258,29 @@ struct PayloadMeter
   PayloadMeter() : channel(0), unixTimeMs(0), activePower(0.0f), powerFactor(0.0f) {}
 
   PayloadMeter(
-    uint32_t channel, 
-    uint64_t unixTimeMs, 
-    float activePower, 
+    uint32_t channel,
+    uint64_t unixTimeMs,
+    float activePower,
     float powerFactor
-  ) : channel(channel), 
-      unixTimeMs(unixTimeMs), 
-      activePower(activePower), 
+  ) : channel(channel),
+      unixTimeMs(unixTimeMs),
+      activePower(activePower),
       powerFactor(powerFactor) {}
+};
+
+struct PayloadGridPoint
+{
+  uint64_t unixTimeMs; // True wall-clock read at sample time (never the nominal .000/.500 boundary)
+  float frequency;     // EMA-filtered grid frequency [Hz]
+  float voltage;       // Channel-0 RMS voltage [V]
+
+  PayloadGridPoint() : unixTimeMs(0), frequency(0.0f), voltage(0.0f) {}
+
+  PayloadGridPoint(
+    uint64_t unixTimeMs,
+    float frequency,
+    float voltage
+  ) : unixTimeMs(unixTimeMs),
+      frequency(frequency),
+      voltage(voltage) {}
 };

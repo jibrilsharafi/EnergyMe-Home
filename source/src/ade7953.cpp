@@ -11,6 +11,7 @@ namespace Ade7953
     static TaskHeartbeat _meterReadingHeartbeat;
     static TaskHeartbeat _energySaveHeartbeat;
     static TaskHeartbeat _hourlyCsvHeartbeat;
+    static TaskHeartbeat _gridSamplerHeartbeat;
 
     // Static variables
     // =========================================================
@@ -36,11 +37,10 @@ namespace Ade7953
     static int8_t _polarityVoteCount[MAX_CHANNEL_COUNT] = {}; // Net consistent-sign vote accumulator for CT-reversal detection (runtime only; reset on arm/decision)
     static uint16_t _polarityConductingReads[MAX_CHANNEL_COUNT] = {}; // Conducting reads since arming - bounds a sign-oscillating channel (runtime only; reset on arm/decision)
     static bool _lastConducting[MAX_CHANNEL_COUNT] = {}; // Was the channel's most recent reading conducting (pre-clamp)? Drives the CT-detection boost so a clamped reversed load/PV still gets it (meter-task only)
-    static float _gridFrequency = 50.0f; // Pre-EMA fallback: raw linecyc read, kept updated in the channel-0 path
+    static float _gridFrequency = 50.0f; // Pre-EMA fallback, updated by the raw read in the channel-0 path
 
     // Per-cycle grid frequency EMA (issue #157), fed from the ZXV interrupt path.
-    // int32 state is written only by the meter task and read lock-free elsewhere
-    // (aligned 32-bit access is atomic on Xtensa).
+    // Written only by the meter task; read lock-free (aligned 32-bit is atomic).
     static GridFrequency::State _gridFreqEma;
     static const GridFrequency::Config _gridFreqCfg = {GRID_FREQUENCY_CONVERSION_FACTOR, VALIDATE_GRID_FREQUENCY_MIN, VALIDATE_GRID_FREQUENCY_MAX};
 
@@ -103,6 +103,9 @@ namespace Ade7953
     
     static TaskHandle_t _hourlyCsvSaveTaskHandle = NULL;
     static bool _hourlyCsvSaveTaskShouldRun = false;
+
+    static TaskHandle_t _gridSamplerTaskHandle = NULL;
+    static bool _gridSamplerTaskShouldRun = false;
 
     static SemaphoreHandle_t _historyClearMutex = NULL;
 
@@ -171,6 +174,10 @@ namespace Ade7953
     static void _startHourlyCsvSaveTask();
     static void _stopHourlyCsvSaveTask();
     static void _hourlyCsvSaveTask(void* parameter);
+
+    static void _startGridSamplerTask();
+    static void _stopGridSamplerTask();
+    static void _gridSamplerTask(void* parameter);
 
     static void _historyClearTask(void* parameter);
     static void _spawnHistoryClearTask(uint8_t channelIndex);
@@ -368,6 +375,9 @@ namespace Ade7953
 
         _startHourlyCsvSaveTask();
         LOG_DEBUG("Hourly CSV save task started");
+
+        _startGridSamplerTask();
+        LOG_DEBUG("Grid sampler task started");
 
         return true;
     }
@@ -1615,9 +1625,7 @@ namespace Ade7953
     // ==============
 
     float getGridFrequency() {
-        // Filtered EMA once seeded (~one line cycle after task start): ~0.8 mHz
-        // resolution vs the ~11 mHz single-read quantization dither. Falls back to
-        // the raw linecyc-path value until then (and if ZXV never fires).
+        // Filtered EMA once seeded; raw fallback until then (and if ZXV never fires)
         if (_gridFreqEma.seeded) return GridFrequency::frequencyHz(_gridFreqEma, _gridFreqCfg);
         return _gridFrequency;
     }
@@ -1763,6 +1771,7 @@ namespace Ade7953
         _stopMeterReadingTask();
         _stopEnergySaveTask();
         _stopHourlyCsvSaveTask();
+        _stopGridSamplerTask();
 
         // Reset failure counters during cleanup
         _failureCount = 0;
@@ -1843,26 +1852,23 @@ namespace Ade7953
 
     void _handleInterrupt(uint64_t linecycUnix)
     {
-        // The ADE7953 IRQ pin is level-active-low while the ESP32 interrupt is edge
-        // triggered, so a bit asserting while the pin is already low raises no new
-        // edge: with ZXV at line rate, co-pending bits in one wake are routine, not
-        // rare. RSTIRQSTATA is read-with-reset (one read clears ALL bits), therefore
-        // this must be a single snapshot serviced bit by bit - independent ifs, never
-        // else-if, never a second status read (it would return zeros and lose bits).
+        // The IRQ pin is level-active-low but the ESP32 interrupt is edge-triggered,
+        // so multiple bits routinely co-pend in one wake. RSTIRQSTATA clears ALL bits
+        // on read: take one snapshot and service every set bit (never else-if,
+        // never a second read).
         int32_t statusA = readRegister(RSTIRQSTATA_32, BIT_32, false);
         // No need to read for channel B (only channel A has the relevant information for use)
 
-        // ZXV first: PERIOD is transient (overwritten every cycle), the energy path is not
+        // ZXV first: PERIOD is overwritten every cycle, the energy registers are not
         if (statusA & (1 << IRQSTATA_ZXV_BIT)) {
             statistics.ade7953ZxInterrupts++;
             _handleZxvInterrupt();
         }
 
         if (statusA & (1 << IRQSTATA_CYCEND_BIT)) {
-            // Re-arm the energy double-read guard here and ONLY here: a genuine new
-            // linecyc means fresh frozen energy registers. Re-arming anywhere else
-            // (e.g. the old ISR clearing) would let a duplicate CYCEND processing
-            // read the reset-on-read energy registers twice and destroy the cycle.
+            // Re-arm the energy double-read guard ONLY on a genuine new linecyc,
+            // otherwise a duplicate CYCEND could read the reset-on-read energy
+            // registers twice and lose the cycle.
             _interruptHandledChannelA = false;
             _interruptHandledChannelB = false;
             _handleCycendInterrupt(linecycUnix);
@@ -1886,10 +1892,7 @@ namespace Ade7953
 
     void _handleZxvInterrupt()
     {
-        // One 16-bit read + integer EMA update: the entire per-cycle hot path.
-        // Validation (45-65 Hz) happens inside update(); glitch reads never touch
-        // the filter, and the update counter it advances is the freshness signal
-        // for the 500 ms grid sampler.
+        // One PERIOD read + integer EMA update; out-of-range reads are discarded inside update()
         GridFrequency::update(_gridFreqEma, _gridFreqCfg, _readPeriod());
     }
 
@@ -1907,10 +1910,8 @@ namespace Ade7953
     {
         BaseType_t xHigherPriorityTaskWoken = pdFALSE;
         statistics.ade7953TotalInterrupts++;
-        // Deliberately nothing else here: with ZXV enabled the IRQ fires every line
-        // cycle (~50/s), so any state touched here would be clobbered mid-linecyc.
-        // The energy double-read guard flags are re-armed in the task, and only on a
-        // genuine CYCEND (see _handleInterrupt).
+        // Nothing else here: with ZXV the IRQ fires every line cycle, so any state
+        // touched here would be clobbered mid-linecyc (see _handleInterrupt).
 
         // Signal the task to handle the interrupt - let the task determine the cause
         if (_ade7953InterruptSemaphore != NULL) {
@@ -2255,6 +2256,77 @@ namespace Ade7953
 
         LOG_DEBUG("ADE7953 energy save task stopping");
         _energySaveTaskHandle = NULL;
+        vTaskDelete(NULL);
+    }
+
+    void _startGridSamplerTask() {
+        if (_gridSamplerTaskHandle != NULL) {
+            LOG_DEBUG("ADE7953 grid sampler task is already running");
+            return;
+        }
+
+        LOG_DEBUG("Starting ADE7953 grid sampler task with %d bytes stack in internal RAM", ADE7953_GRID_SAMPLER_TASK_STACK_SIZE);
+
+        BaseType_t result = xTaskCreate(
+            _gridSamplerTask,
+            ADE7953_GRID_SAMPLER_TASK_NAME,
+            ADE7953_GRID_SAMPLER_TASK_STACK_SIZE,
+            nullptr,
+            ADE7953_GRID_SAMPLER_TASK_PRIORITY,
+            &_gridSamplerTaskHandle);
+
+        if (result != pdPASS) {
+            LOG_ERROR("Failed to create ADE7953 grid sampler task");
+            _gridSamplerTaskHandle = NULL;
+        }
+    }
+
+    void _stopGridSamplerTask() {
+        stopTaskGracefully(&_gridSamplerTaskHandle, "ADE7953 grid sampler task");
+    }
+
+    void _gridSamplerTask(void* parameter) {
+        LOG_DEBUG("ADE7953 grid sampler task started");
+
+        // Freshness gate: only emit if the EMA advanced since the last point
+        uint32_t lastSeenUpdateCount = 0;
+
+        _gridSamplerTaskShouldRun = true;
+        while (_gridSamplerTaskShouldRun) {
+            TASK_HEARTBEAT(_gridSamplerHeartbeat);
+
+            // Sleep to the next absolute .000/.500 wall-clock boundary, re-derived
+            // from the clock each iteration so drift never accumulates and NTP
+            // steps self-heal. Points always carry the true read time.
+            uint64_t now = CustomTime::getUnixTimeMilliseconds();
+            uint32_t delayMs = GRID_SAMPLE_INTERVAL_MS - (uint32_t)(now % GRID_SAMPLE_INTERVAL_MS);
+            if (delayMs < GRID_SAMPLE_MIN_DELAY_MS) delayMs += GRID_SAMPLE_INTERVAL_MS;
+
+            // The aligned sleep doubles as the stop-notification wait
+            if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(delayMs)) > 0) {
+                _gridSamplerTaskShouldRun = false;
+                break;
+            }
+
+            // Gates: a failed gate skips the tick, leaving a real timestamp gap
+            if (!Mqtt::getSendGridData()) continue;
+            if (!CustomTime::isTimeSynched()) continue;
+            uint32_t updateCount = _gridFreqEma.updateCount;
+            if (updateCount == lastSeenUpdateCount) continue; // EMA frozen (no ZXV since last emit)
+            lastSeenUpdateCount = updateCount;
+
+            // Cached channel-0 RMS voltage (at most ~_sampleTime old); aligned float
+            // read is atomic, keeping the sampler off the SPI bus
+            PayloadGridPoint point(
+                CustomTime::getUnixTimeMilliseconds(),
+                getGridFrequency(),
+                _meterValues[0].voltage
+            );
+            Mqtt::pushGrid(point);
+        }
+
+        LOG_DEBUG("ADE7953 grid sampler task stopping");
+        _gridSamplerTaskHandle = NULL;
         vTaskDelete(NULL);
     }
 
@@ -4370,8 +4442,7 @@ namespace Ade7953
     }
 
     float _readGridFrequency() {
-        // Single unfiltered read; shares Eq.36 (the +1) with the EMA readout so the
-        // raw and filtered paths can never disagree on the conversion.
+        // Single unfiltered read; shares the Eq.36 conversion with the EMA readout
         float frequency = GridFrequency::rawFrequencyHz(_gridFreqCfg, _readPeriod());
         return frequency > 0.0f ? frequency : float(DEFAULT_FALLBACK_FREQUENCY);
     }

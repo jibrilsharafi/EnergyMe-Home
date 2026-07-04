@@ -19,8 +19,7 @@ bool update(State& state, const Config& cfg, int32_t periodRaw) {
         state.emaPeriodQ8 = xQ8;
         state.seeded = true;
     } else {
-        // ema += alpha * (x - ema), alpha = 1/8. The arithmetic shift keeps the
-        // low 8 fractional bits, so sub-LSB dither accumulates instead of vanishing.
+        // ema += alpha * (x - ema), alpha = 1/8; the shift keeps the Q8 fraction
         state.emaPeriodQ8 += (xQ8 - state.emaPeriodQ8) >> 3;
     }
     state.updateCount++;
