@@ -211,13 +211,9 @@
             color: #c82333;
         }
 
-        /* Constrain main content width and center */
-        #tabContentContainer .section-box {
-            box-sizing: border-box;
-            width: 100%;
-            max-width: 1100px;    /* limit page width so stats and chart get real space */
-            margin: auto auto;
-            padding: 12px;
+        /* Sections inside the tab container lay out exactly like direct body sections */
+        #tabContentContainer {
+            display: contents;
         }
 
         /* Chart wrapper with fixed height to prevent runaway growth */
@@ -261,6 +257,43 @@
         </div>
     </section>
 
+    <section class="section-box">
+        <h2>Grid Frequency</h2>
+        <div class="control-panel">
+            <div class="control-row">
+                <span class="control-label">Live (500 ms):</span>
+                <button id="gridFreqToggle" class="buttonSecondary" onclick="toggleGridFreqPolling()">⏸ Pause</button>
+            </div>
+        </div>
+
+        <div style="height: 15px;"></div>
+
+        <div class="chart-wrapper">
+            <canvas id="gridFrequencyChart"></canvas>
+        </div>
+
+        <div style="height: 15px;"></div>
+
+        <div class="stats-panel">
+            <div class="stat-item">
+                <span class="stat-label">Current</span>
+                <span id="gridFreqCurrent" class="stat-value">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Min (window)</span>
+                <span id="gridFreqMin" class="stat-value">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Max (window)</span>
+                <span id="gridFreqMax" class="stat-value">-</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Window</span>
+                <span id="gridFreqWindow" class="stat-value">-</span>
+            </div>
+        </div>
+    </section>
+
     <!-- Dynamic tab content will be inserted here -->
     <div id="tabContentContainer"></div>
 
@@ -274,14 +307,135 @@
 
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', async () => {
+            initGridFrequencyChart();
+            startGridFreqPolling();
+
             await loadChannels();
             const status = await refreshStatus();
-            
+
             // If status is complete on page load, auto-fetch the data
             if (status === 'complete') {
                 await fetchWaveformData();
             }
         });
+
+        // === Grid frequency live chart ===
+        const GRID_FREQ_POLL_MS = 500;
+        const GRID_FREQ_MAX_POINTS = 240; // 2 minutes at 500 ms
+        let gridFrequencyChart = null;
+        let gridFreqTimer = null;
+        let gridFreqRunning = false;
+        let gridFreqGeneration = 0; // invalidates stale poll chains across pause/resume
+        const gridFreqLabels = [];
+        const gridFreqValues = [];
+
+        function initGridFrequencyChart() {
+            const ctx = document.getElementById('gridFrequencyChart').getContext('2d');
+            gridFrequencyChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: gridFreqLabels,
+                    datasets: [{
+                        label: 'Grid Frequency (Hz)',
+                        data: gridFreqValues,
+                        borderColor: 'rgb(54, 162, 235)',
+                        backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.2,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            callbacks: {
+                                label: (context) => `${context.parsed.y.toFixed(4)} Hz`
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: { display: true, text: 'Time' },
+                            ticks: { maxTicksLimit: 8, maxRotation: 0, autoSkip: true }
+                        },
+                        y: {
+                            title: { display: true, text: 'Frequency (Hz)' },
+                            grace: '25%',
+                            ticks: { callback: (value) => Number(value).toFixed(3) }
+                        }
+                    },
+                    interaction: { mode: 'index', intersect: false }
+                }
+            });
+        }
+
+        // Self-rescheduling loop: the next request is only scheduled after the
+        // previous one completes, so at most one request is in flight.
+        async function pollGridFrequency() {
+            const generation = gridFreqGeneration;
+            const started = Date.now();
+            try {
+                const data = await api.get('ade7953/grid-frequency');
+                if (data && typeof data.gridFrequency === 'number' && data.gridFrequency > 0) {
+                    addGridFrequencyPoint(started, data.gridFrequency);
+                }
+            } catch (error) {
+                console.error('Grid frequency poll failed:', error);
+            }
+            if (!gridFreqRunning || generation !== gridFreqGeneration) return;
+            const elapsed = Date.now() - started;
+            gridFreqTimer = setTimeout(pollGridFrequency, Math.max(0, GRID_FREQ_POLL_MS - elapsed));
+        }
+
+        function addGridFrequencyPoint(timestampMs, frequency) {
+            const date = new Date(timestampMs);
+            const label = date.toLocaleTimeString('en-GB') + '.' + Math.floor(date.getMilliseconds() / 100);
+            gridFreqLabels.push(label);
+            gridFreqValues.push(frequency);
+            while (gridFreqValues.length > GRID_FREQ_MAX_POINTS) {
+                gridFreqLabels.shift();
+                gridFreqValues.shift();
+            }
+            gridFrequencyChart.update('none');
+
+            const windowSeconds = (gridFreqValues.length * GRID_FREQ_POLL_MS) / 1000;
+            document.getElementById('gridFreqCurrent').textContent = `${frequency.toFixed(4)} Hz`;
+            document.getElementById('gridFreqMin').textContent = `${Math.min(...gridFreqValues).toFixed(4)} Hz`;
+            document.getElementById('gridFreqMax').textContent = `${Math.max(...gridFreqValues).toFixed(4)} Hz`;
+            document.getElementById('gridFreqWindow').textContent = `${windowSeconds.toFixed(0)} s`;
+        }
+
+        function startGridFreqPolling() {
+            if (gridFreqRunning) return;
+            gridFreqRunning = true;
+            gridFreqGeneration++;
+            document.getElementById('gridFreqToggle').textContent = '⏸ Pause';
+            pollGridFrequency();
+        }
+
+        function stopGridFreqPolling() {
+            gridFreqRunning = false;
+            if (gridFreqTimer) {
+                clearTimeout(gridFreqTimer);
+                gridFreqTimer = null;
+            }
+            document.getElementById('gridFreqToggle').textContent = '▶ Resume';
+        }
+
+        function toggleGridFreqPolling() {
+            if (gridFreqRunning) {
+                stopGridFreqPolling();
+            } else {
+                startGridFreqPolling();
+            }
+        }
 
         /**
          * Load available channels from API and create tabs
@@ -553,8 +707,6 @@
                         <canvas id="waveformChart"></canvas>
                     </div>
                 </section>
-
-                <div style="height: 20px;"></div>
 
                 <section class="section-box">
                     <h2>Waveform Statistics</h2>
@@ -833,6 +985,7 @@
         // Cleanup on page unload
         window.addEventListener('beforeunload', () => {
             stopStatusPolling();
+            stopGridFreqPolling();
         });
     </script>
 </body>
