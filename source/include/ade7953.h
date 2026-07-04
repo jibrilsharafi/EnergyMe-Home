@@ -650,6 +650,7 @@ namespace Ade7953
     TaskInfo getMeterReadingTaskInfo();
     TaskInfo getEnergySaveTaskInfo();
     TaskInfo getHourlyCsvTaskInfo();
+    TaskInfo getGridSamplerTaskInfo();
 
     // Waveform capture API
     bool startWaveformCapture(uint8_t channelIndex);

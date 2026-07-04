@@ -237,6 +237,7 @@ struct SystemDynamicInfo {
     TaskInfo ade7953MeterReadingTaskInfo;
     TaskInfo ade7953EnergySaveTaskInfo;
     TaskInfo ade7953HourlyCsvTaskInfo;
+    TaskInfo ade7953GridSamplerTaskInfo;
     TaskInfo maintenanceTaskInfo;
     TaskInfo issueRegistryTaskInfo;
 

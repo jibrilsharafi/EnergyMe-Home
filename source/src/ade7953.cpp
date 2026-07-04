@@ -51,8 +51,8 @@ namespace Ade7953
     static_assert(INVALID_CHANNEL == MeterLogic::NO_CHANNEL, "INVALID_CHANNEL / MeterLogic::NO_CHANNEL value mismatch");
 
     // Set by the meter task when the CT-reversal detector flips the persisted reverse flag.
-    // Drained by the energy save task (internal-RAM stack, flash-capable) since the meter
-    // task runs on a PSRAM stack and cannot perform NVS writes.
+    // Drained by the energy save task instead of writing NVS directly from the meter task,
+    // keeping the hot meter-reading path free of flash I/O latency.
     static volatile bool _pendingPolaritySave[MAX_CHANNEL_COUNT] = {};
 
     // Issue-registry facts (issue #145), RAM-only and monotonic within this boot.
@@ -2124,7 +2124,7 @@ namespace Ade7953
         // Attach interrupt handler
         _attachInterruptHandler();
         
-        LOG_DEBUG("Starting ADE7953 meter reading task with %d bytes stack in internal RAM", ADE7953_METER_READING_TASK_STACK_SIZE);
+        LOG_DEBUG("Starting ADE7953 meter reading task with %d bytes stack", ADE7953_METER_READING_TASK_STACK_SIZE);
 
         BaseType_t result = xTaskCreate(
             _meterReadingTask, 
@@ -2206,7 +2206,7 @@ namespace Ade7953
             return;
         }
 
-        LOG_DEBUG("Starting ADE7953 energy save task with %d bytes stack in internal RAM (uses NVS)", ADE7953_ENERGY_SAVE_TASK_STACK_SIZE);
+        LOG_DEBUG("Starting ADE7953 energy save task with %d bytes stack", ADE7953_ENERGY_SAVE_TASK_STACK_SIZE);
 
         BaseType_t result = xTaskCreate(
             _energySaveTask,
@@ -2237,10 +2237,10 @@ namespace Ade7953
                 if (isChannelActive(i)) _saveEnergyToPreferences(i);
             }
 
-            // Drain pending polarity-flip persistence (queued by the meter task on PSRAM
-            // stack, which cannot itself touch NVS). Test-and-clear under _channelDataMutex
-            // so a concurrent re-set from the meter task lands on the *next* iteration
-            // instead of being lost between the read and the false-write.
+            // Drain pending polarity-flip persistence (queued by the meter task, which
+            // hands NVS writes off to this task instead of doing them inline). Test-and-clear
+            // under _channelDataMutex so a concurrent re-set from the meter task lands on the
+            // *next* iteration instead of being lost between the read and the false-write.
             for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
                 bool drain = false;
                 if (acquireMutex(&_channelDataMutex)) {
@@ -2270,7 +2270,7 @@ namespace Ade7953
             return;
         }
 
-        LOG_DEBUG("Starting ADE7953 grid sampler task with %d bytes stack in internal RAM", ADE7953_GRID_SAMPLER_TASK_STACK_SIZE);
+        LOG_DEBUG("Starting ADE7953 grid sampler task with %d bytes stack", ADE7953_GRID_SAMPLER_TASK_STACK_SIZE);
 
         BaseType_t result = xTaskCreate(
             _gridSamplerTask,
@@ -2341,7 +2341,7 @@ namespace Ade7953
             return;
         }
 
-        LOG_DEBUG("Starting ADE7953 hourly CSV save task with %d bytes stack in internal RAM (uses LittleFS)", ADE7953_HOURLY_CSV_SAVE_TASK_STACK_SIZE);
+        LOG_DEBUG("Starting ADE7953 hourly CSV save task with %d bytes stack", ADE7953_HOURLY_CSV_SAVE_TASK_STACK_SIZE);
 
         BaseType_t result = xTaskCreate(
             _hourlyCsvSaveTask,
@@ -4853,6 +4853,11 @@ namespace Ade7953
     TaskInfo getHourlyCsvTaskInfo()
     {
         return getTaskInfoSafely(_hourlyCsvSaveTaskHandle, ADE7953_HOURLY_CSV_SAVE_TASK_STACK_SIZE, &_hourlyCsvHeartbeat);
+    }
+
+    TaskInfo getGridSamplerTaskInfo()
+    {
+        return getTaskInfoSafely(_gridSamplerTaskHandle, ADE7953_GRID_SAMPLER_TASK_STACK_SIZE, &_gridSamplerHeartbeat);
     }
 
     // Waveform capture API

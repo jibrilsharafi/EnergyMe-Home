@@ -202,6 +202,7 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
     info.ade7953MeterReadingTaskInfo = Ade7953::getMeterReadingTaskInfo();
     info.ade7953EnergySaveTaskInfo = Ade7953::getEnergySaveTaskInfo();
     info.ade7953HourlyCsvTaskInfo = Ade7953::getHourlyCsvTaskInfo();
+    info.ade7953GridSamplerTaskInfo = Ade7953::getGridSamplerTaskInfo();
     info.maintenanceTaskInfo = getMaintenanceTaskInfo();
     info.issueRegistryTaskInfo = IssueRegistry::getTaskInfo();
 
@@ -366,6 +367,7 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument &doc) {
     addTask("ade7953MeterReading", info.ade7953MeterReadingTaskInfo);
     addTask("ade7953EnergySave", info.ade7953EnergySaveTaskInfo);
     addTask("ade7953HourlyCsv", info.ade7953HourlyCsvTaskInfo);
+    addTask("ade7953GridSampler", info.ade7953GridSamplerTaskInfo);
     addTask("maintenance", info.maintenanceTaskInfo);
     addTask("issueRegistry", info.issueRegistryTaskInfo);
 
@@ -470,7 +472,7 @@ void startMaintenanceTask() {
         return;
     }
     
-    LOG_DEBUG("Starting maintenance task with %d bytes stack in internal RAM (performs flash I/O operations)", TASK_MAINTENANCE_STACK_SIZE);
+    LOG_DEBUG("Starting maintenance task with %d bytes stack", TASK_MAINTENANCE_STACK_SIZE);
     
     BaseType_t result = xTaskCreate(
         _maintenanceTask,
