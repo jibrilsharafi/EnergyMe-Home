@@ -391,7 +391,14 @@ namespace Mqtt
     void pushMeter(const PayloadMeter& payload)
     {
         if (!_initializeMeterQueue()) return;
-        if (_sendPowerDataEnabled) xQueueSend(_meterQueue, &payload, pdMS_TO_TICKS(QUEUE_WAIT_TIMEOUT)); // Only add to queue if we chose to send power data
+        if (!_sendPowerDataEnabled) return;
+
+        // Drop-oldest on overflow: recent points are worth more than old ones
+        if (xQueueSend(_meterQueue, &payload, 0) != pdTRUE) {
+            PayloadMeter discarded;
+            xQueueReceive(_meterQueue, &discarded, 0);
+            xQueueSend(_meterQueue, &payload, 0);
+        }
     }
 
     void pushGrid(const PayloadGridPoint& point)
