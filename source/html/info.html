@@ -588,11 +588,22 @@
                         <span class="info-tooltip">
                             <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about handled interrupts">ⓘ</button>
                             <div class="info-tooltip-popover" role="tooltip">
-                                Interrupts that were successfully read before the next one arrived. Should equal Total Interrupts. A gap means the ESP32S3 was too busy and missed readings.
+                                Line-cycle (CYCEND) interrupts serviced for meter readings. Lower than Total Interrupts, which also counts the per-cycle zero-crossing (ZX) interrupts used for grid frequency.
                             </div>
                         </span>
                     </span>
                     <span class="info-value" id="ade7953HandledInterrupts">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">🌊</span>ZX Interrupts
+                        <span class="info-tooltip">
+                            <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about zx interrupts">ⓘ</button>
+                            <div class="info-tooltip-popover" role="tooltip">
+                                Voltage zero-crossing interrupts, one per line cycle, driving the grid frequency measurement.
+                            </div>
+                        </span>
+                    </span>
+                    <span class="info-value" id="ade7953ZxInterrupts">Loading...</span>
                 </div>
                 <div class="info-item">
                     <span class="info-label"><span class="emoji">📈</span>Successful Readings
@@ -830,6 +841,7 @@
             // ADE7953 Statistics
             document.getElementById('ade7953TotalInterrupts').textContent = formatNumber(stats.ade7953.totalInterrupts);
             document.getElementById('ade7953HandledInterrupts').textContent = formatNumber(stats.ade7953.totalHandledInterrupts);
+            document.getElementById('ade7953ZxInterrupts').textContent = formatNumber(stats.ade7953.zxInterrupts);
             document.getElementById('ade7953Readings').textContent = formatNumber(stats.ade7953.readingCount);
             
             const ade7953Failures = stats.ade7953.readingCountFailure;
