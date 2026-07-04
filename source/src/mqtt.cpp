@@ -1601,7 +1601,10 @@ namespace Mqtt
             if (measureJson(doc) > AWS_IOT_CORE_MQTT_PAYLOAD_LIMIT * MQTT_METER_PAYLOAD_THRESHOLD_MULTIPLIER) break; // Remainder ships next cycle
         }
 
-        if (_publishJsonStreaming(doc, _mqttTopicGrid)) _lastMillisGridPublished = millis64();
+        if (_publishJsonStreaming(doc, _mqttTopicGrid)) {
+            _publishMqtt.grid = false;
+            _lastMillisGridPublished = millis64();
+        }
     }
 
     static void _publishSystemDynamic() {
