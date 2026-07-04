@@ -256,7 +256,7 @@ namespace CustomMqtt
             return;
         }
 
-        LOG_DEBUG("Starting Custom MQTT task with %d bytes stack in internal RAM (uses NVS)", CUSTOM_MQTT_TASK_STACK_SIZE);
+        LOG_DEBUG("Starting Custom MQTT task with %d bytes stack", CUSTOM_MQTT_TASK_STACK_SIZE);
 
         BaseType_t result = xTaskCreate(
             _customMqttTask,

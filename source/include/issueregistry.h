@@ -19,7 +19,7 @@
 
 // Task
 #define ISSUE_REGISTRY_TASK_NAME "issue_reg_task"
-#define ISSUE_REGISTRY_TASK_STACK_SIZE (6 * 1024) // Internal RAM: the tick reads LittleFS usage (flash I/O)
+#define ISSUE_REGISTRY_TASK_STACK_SIZE (6 * 1024)
 #define ISSUE_REGISTRY_TASK_PRIORITY 1
 #define ISSUE_REGISTRY_TICK_INTERVAL (5 * 1000)
 

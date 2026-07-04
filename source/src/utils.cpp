@@ -202,6 +202,7 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
     info.ade7953MeterReadingTaskInfo = Ade7953::getMeterReadingTaskInfo();
     info.ade7953EnergySaveTaskInfo = Ade7953::getEnergySaveTaskInfo();
     info.ade7953HourlyCsvTaskInfo = Ade7953::getHourlyCsvTaskInfo();
+    info.ade7953GridSamplerTaskInfo = Ade7953::getGridSamplerTaskInfo();
     info.maintenanceTaskInfo = getMaintenanceTaskInfo();
     info.issueRegistryTaskInfo = IssueRegistry::getTaskInfo();
 
@@ -366,6 +367,7 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument &doc) {
     addTask("ade7953MeterReading", info.ade7953MeterReadingTaskInfo);
     addTask("ade7953EnergySave", info.ade7953EnergySaveTaskInfo);
     addTask("ade7953HourlyCsv", info.ade7953HourlyCsvTaskInfo);
+    addTask("ade7953GridSampler", info.ade7953GridSamplerTaskInfo);
     addTask("maintenance", info.maintenanceTaskInfo);
     addTask("issueRegistry", info.issueRegistryTaskInfo);
 
@@ -470,7 +472,7 @@ void startMaintenanceTask() {
         return;
     }
     
-    LOG_DEBUG("Starting maintenance task with %d bytes stack in internal RAM (performs flash I/O operations)", TASK_MAINTENANCE_STACK_SIZE);
+    LOG_DEBUG("Starting maintenance task with %d bytes stack", TASK_MAINTENANCE_STACK_SIZE);
     
     BaseType_t result = xTaskCreate(
         _maintenanceTask,
@@ -750,18 +752,23 @@ void printStatistics() {
     updateStatistics();
 
     LOG_DEBUG("--- Statistics ---");
-    LOG_DEBUG("Statistics - ADE7953: %llu total interrupts | %llu handled interrupts | %llu readings | %llu reading failures",  
-        statistics.ade7953TotalInterrupts, 
-        statistics.ade7953TotalHandledInterrupts, 
-        statistics.ade7953ReadingCount, 
+    LOG_DEBUG("Statistics - ADE7953: %llu total interrupts | %llu handled interrupts | %llu zx interrupts | %llu service passes | %llu unhandled | %llu readings | %llu reading failures",
+        statistics.ade7953TotalInterrupts,
+        statistics.ade7953TotalHandledInterrupts,
+        statistics.ade7953ZxInterrupts,
+        statistics.ade7953ServicePasses,
+        statistics.ade7953UnhandledInterrupts,
+        statistics.ade7953ReadingCount,
         statistics.ade7953ReadingCountFailure
     );
 
-    LOG_DEBUG("Statistics - MQTT: %llu messages published | %llu errors | %llu connections | %llu connection errors",  
-        statistics.mqttMessagesPublished, 
+    LOG_DEBUG("Statistics - MQTT: %llu messages published | %llu errors | %llu connections | %llu connection errors | %llu meter points dropped | %llu grid points dropped",
+        statistics.mqttMessagesPublished,
         statistics.mqttMessagesPublishedError,
         statistics.mqttConnections,
-        statistics.mqttConnectionErrors
+        statistics.mqttConnectionErrors,
+        statistics.mqttMeterPointsDropped,
+        statistics.mqttGridPointsDropped
     );
 
     LOG_DEBUG("Statistics - Custom MQTT: %llu messages published | %llu errors",  
@@ -808,6 +815,9 @@ void statisticsToJson(Statistics& statistics, JsonDocument &jsonDocument) {
     // ADE7953 statistics
     jsonDocument["ade7953"]["totalInterrupts"] = statistics.ade7953TotalInterrupts;
     jsonDocument["ade7953"]["totalHandledInterrupts"] = statistics.ade7953TotalHandledInterrupts;
+    jsonDocument["ade7953"]["zxInterrupts"] = statistics.ade7953ZxInterrupts;
+    jsonDocument["ade7953"]["servicePasses"] = statistics.ade7953ServicePasses;
+    jsonDocument["ade7953"]["unhandledInterrupts"] = statistics.ade7953UnhandledInterrupts;
     jsonDocument["ade7953"]["readingCount"] = statistics.ade7953ReadingCount;
     jsonDocument["ade7953"]["readingCountFailure"] = statistics.ade7953ReadingCountFailure;
 
@@ -816,6 +826,8 @@ void statisticsToJson(Statistics& statistics, JsonDocument &jsonDocument) {
     jsonDocument["mqtt"]["messagesPublishedError"] = statistics.mqttMessagesPublishedError;
     jsonDocument["mqtt"]["connections"] = statistics.mqttConnections;
     jsonDocument["mqtt"]["connectionErrors"] = statistics.mqttConnectionErrors;
+    jsonDocument["mqtt"]["meterPointsDropped"] = statistics.mqttMeterPointsDropped;
+    jsonDocument["mqtt"]["gridPointsDropped"] = statistics.mqttGridPointsDropped;
 
     // Custom MQTT statistics
     jsonDocument["customMqtt"]["messagesPublished"] = statistics.customMqttMessagesPublished;

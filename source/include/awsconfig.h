@@ -27,9 +27,11 @@ constexpr const char* AWS_IOT_CORE_ENDPOINT = "a26zjeqaj9a3xc-ats.iot.eu-west-1.
 #ifdef ENV_DEV
 constexpr const char* AWS_IOT_CORE_RULE_METER = "energyme_home_dev_rule_meter";
 constexpr const char* AWS_IOT_CORE_RULE_LOG   = "energyme_home_dev_rule_log";
+constexpr const char* AWS_IOT_CORE_RULE_GRID  = "energyme_home_dev_rule_grid";
 #else
 constexpr const char* AWS_IOT_CORE_RULE_METER = "energyme_home_prod_rule_meter";
 constexpr const char* AWS_IOT_CORE_RULE_LOG   = "energyme_home_prod_rule_log";
+constexpr const char* AWS_IOT_CORE_RULE_GRID  = "energyme_home_prod_rule_grid";
 #endif
 
 // AWS reserved topic prefixes

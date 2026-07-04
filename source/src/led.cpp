@@ -75,7 +75,7 @@ namespace Led
         if (_ledQueue == nullptr) { return; } // Failed to create queue
 
         // Create LED task
-        LOG_DEBUG("Starting LED task with %d bytes stack in internal RAM", LED_TASK_STACK_SIZE);
+        LOG_DEBUG("Starting LED task with %d bytes stack", LED_TASK_STACK_SIZE);
         
         BaseType_t result = xTaskCreate(
             _ledTask,

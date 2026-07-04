@@ -302,7 +302,7 @@ namespace InfluxDbClient
             return;
         }
 
-        LOG_DEBUG("Starting InfluxDB task with %d bytes stack in internal RAM (uses NVS)", INFLUXDB_TASK_STACK_SIZE);
+        LOG_DEBUG("Starting InfluxDB task with %d bytes stack", INFLUXDB_TASK_STACK_SIZE);
 
         BaseType_t result = xTaskCreate(
             _influxDbTask,

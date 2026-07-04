@@ -102,7 +102,7 @@ namespace IssueRegistry
             return;
         }
 
-        LOG_DEBUG("Starting issue registry task with %d bytes stack in internal RAM (reads LittleFS usage)", ISSUE_REGISTRY_TASK_STACK_SIZE);
+        LOG_DEBUG("Starting issue registry task with %d bytes stack", ISSUE_REGISTRY_TASK_STACK_SIZE);
 
         BaseType_t result = xTaskCreate(
             _registryTask,

@@ -590,6 +590,7 @@ static void _reportSystem(JsonDocument& doc) {
     JsonObject rep = doc["state"]["reported"].to<JsonObject>();
     rep["led_brightness"] = Led::getBrightness();
     rep["send_power_data"] = Mqtt::getSendPowerData();
+    rep["send_grid_data"] = Mqtt::getSendGridData();
     rep["mqtt_log_level"] = ShadowLogic::logLevelToString(Mqtt::getMqttLogLevel());
     rep["log_level_print"] = AdvancedLogger::logLevelToString(AdvancedLogger::getPrintLevel());
     rep["log_level_save"] = AdvancedLogger::logLevelToString(AdvancedLogger::getSaveLevel());
@@ -634,6 +635,18 @@ static bool _applySystem(JsonObjectConst delta, JsonObject reported) {
             applied = true;
         } else {
             LOG_WARNING("Rejected send_power_data: not a boolean");
+        }
+    }
+
+    v = delta["send_grid_data"];
+    if (!v.isNull()) {
+        if (v.is<bool>()) {
+            bool e = v.as<bool>();
+            Mqtt::setSendGridData(e); // persists
+            reported["send_grid_data"] = e;
+            applied = true;
+        } else {
+            LOG_WARNING("Rejected send_grid_data: not a boolean");
         }
     }
 

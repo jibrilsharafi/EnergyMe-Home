@@ -4,12 +4,14 @@
 #include "ade7953.h"
 #include "taskprofiler.h"
 #include "duration_format.h"
+#include "grid_frequency.h"
 
 namespace Ade7953
 {
     static TaskHeartbeat _meterReadingHeartbeat;
     static TaskHeartbeat _energySaveHeartbeat;
     static TaskHeartbeat _hourlyCsvHeartbeat;
+    static TaskHeartbeat _gridSamplerHeartbeat;
 
     // Static variables
     // =========================================================
@@ -35,7 +37,12 @@ namespace Ade7953
     static int8_t _polarityVoteCount[MAX_CHANNEL_COUNT] = {}; // Net consistent-sign vote accumulator for CT-reversal detection (runtime only; reset on arm/decision)
     static uint16_t _polarityConductingReads[MAX_CHANNEL_COUNT] = {}; // Conducting reads since arming - bounds a sign-oscillating channel (runtime only; reset on arm/decision)
     static bool _lastConducting[MAX_CHANNEL_COUNT] = {}; // Was the channel's most recent reading conducting (pre-clamp)? Drives the CT-detection boost so a clamped reversed load/PV still gets it (meter-task only)
-    static float _gridFrequency = 50.0f;
+    static float _gridFrequency = 50.0f; // Pre-EMA fallback, updated by the raw read in the channel-0 path
+
+    // Per-cycle grid frequency EMA (issue #157), fed from the ZXV interrupt path.
+    // Written only by the meter task; read lock-free (aligned 32-bit is atomic).
+    static GridFrequency::State _gridFreqEma;
+    static const GridFrequency::Config _gridFreqCfg = {GRID_FREQUENCY_CONVERSION_FACTOR, VALIDATE_GRID_FREQUENCY_MIN, VALIDATE_GRID_FREQUENCY_MAX};
 
     // The library returns MeterLogic::NO_CHANNEL for "no channel"; the firmware
     // compares scheduler results against its own INVALID_CHANNEL macro. They must
@@ -44,8 +51,8 @@ namespace Ade7953
     static_assert(INVALID_CHANNEL == MeterLogic::NO_CHANNEL, "INVALID_CHANNEL / MeterLogic::NO_CHANNEL value mismatch");
 
     // Set by the meter task when the CT-reversal detector flips the persisted reverse flag.
-    // Drained by the energy save task (internal-RAM stack, flash-capable) since the meter
-    // task runs on a PSRAM stack and cannot perform NVS writes.
+    // Drained by the energy save task instead of writing NVS directly from the meter task,
+    // keeping the hot meter-reading path free of flash I/O latency.
     static volatile bool _pendingPolaritySave[MAX_CHANNEL_COUNT] = {};
 
     // Issue-registry facts (issue #145), RAM-only and monotonic within this boot.
@@ -97,6 +104,9 @@ namespace Ade7953
     static TaskHandle_t _hourlyCsvSaveTaskHandle = NULL;
     static bool _hourlyCsvSaveTaskShouldRun = false;
 
+    static TaskHandle_t _gridSamplerTaskHandle = NULL;
+    static bool _gridSamplerTaskShouldRun = false;
+
     static SemaphoreHandle_t _historyClearMutex = NULL;
 
     // Waveform capture state and buffers
@@ -142,15 +152,15 @@ namespace Ade7953
 
     // Interrupt handling
     static void _setupInterrupts();
-    static Ade7953InterruptType _handleInterrupt();
+    static void _handleInterrupt(uint64_t linecycUnix);
     static void _attachInterruptHandler();
     static void _detachInterruptHandler();
     static void IRAM_ATTR _isrHandler();
+    static void _handleZxvInterrupt();
     static void _handleCycendInterrupt(uint64_t linecycUnix);
     static void _pollWaveformSamples();
     static void _handleCrcChangeInterrupt();
     static void _handleResetInterrupt();
-    static void _handleOtherInterrupt();
     
     // Task management
     static void _startMeterReadingTask();
@@ -164,6 +174,10 @@ namespace Ade7953
     static void _startHourlyCsvSaveTask();
     static void _stopHourlyCsvSaveTask();
     static void _hourlyCsvSaveTask(void* parameter);
+
+    static void _startGridSamplerTask();
+    static void _stopGridSamplerTask();
+    static void _gridSamplerTask(void* parameter);
 
     static void _historyClearTask(void* parameter);
     static void _spawnHistoryClearTask(uint8_t channelIndex);
@@ -361,6 +375,9 @@ namespace Ade7953
 
         _startHourlyCsvSaveTask();
         LOG_DEBUG("Hourly CSV save task started");
+
+        _startGridSamplerTask();
+        LOG_DEBUG("Grid sampler task started");
 
         return true;
     }
@@ -1608,6 +1625,8 @@ namespace Ade7953
     // ==============
 
     float getGridFrequency() {
+        // Filtered EMA once seeded; raw fallback until then (and if ZXV never fires)
+        if (_gridFreqEma.seeded) return GridFrequency::frequencyHz(_gridFreqEma, _gridFreqCfg);
         return _gridFrequency;
     }
 
@@ -1752,6 +1771,7 @@ namespace Ade7953
         _stopMeterReadingTask();
         _stopEnergySaveTask();
         _stopHourlyCsvSaveTask();
+        _stopGridSamplerTask();
 
         // Reset failure counters during cleanup
         _failureCount = 0;
@@ -1821,35 +1841,60 @@ namespace Ade7953
     // ==================
 
     void _setupInterrupts() {
-        // Enable only CYCEND interrupt for line cycle end detection (bit 18)
         writeRegister(IRQENA_32, BIT_32, DEFAULT_IRQENA_REGISTER);
-        
+
         // Clear any existing interrupt status
         readRegister(RSTIRQSTATA_32, BIT_32, false);
         readRegister(RSTIRQSTATB_32, BIT_32, false);
 
-        LOG_DEBUG("ADE7953 interrupts enabled: CYCEND, RESET");
+        LOG_DEBUG("ADE7953 interrupts enabled: ZXV, CYCEND, RESET, CRC");
     }
 
-    Ade7953InterruptType _handleInterrupt() 
-    {    
+    void _handleInterrupt(uint64_t linecycUnix)
+    {
+        // The IRQ pin is level-active-low but the ESP32 interrupt is edge-triggered,
+        // so multiple bits routinely co-pend in one wake. RSTIRQSTATA clears ALL bits
+        // on read: take one snapshot and service every set bit (never else-if,
+        // never a second read).
         int32_t statusA = readRegister(RSTIRQSTATA_32, BIT_32, false);
         // No need to read for channel B (only channel A has the relevant information for use)
 
-        // Check in order of priority, but ONLY check interrupts that are actually enabled
-        
-        // CYCEND is always enabled - check it first as it's the primary interrupt
-        if (statusA & (1 << IRQSTATA_CYCEND_BIT)) {
-            return Ade7953InterruptType::CYCEND;
-        } else if (statusA & (1 << IRQSTATA_RESET_BIT)) { 
-            return Ade7953InterruptType::RESET;
-        } else if (statusA & (1 << IRQSTATA_CRC_BIT)) {
-            return Ade7953InterruptType::CRC_CHANGE;
-        } else {
-            // Just log the unhandled status
-            LOG_WARNING("Unhandled ADE7953 interrupt status: 0x%08lX | %s", statusA, _irqstataBitName(statusA));
-            return Ade7953InterruptType::OTHER;
+        // ZXV first: PERIOD is overwritten every cycle, the energy registers are not
+        if (statusA & (1 << IRQSTATA_ZXV_BIT)) {
+            statistics.ade7953ZxInterrupts++;
+            _handleZxvInterrupt();
         }
+
+        if (statusA & (1 << IRQSTATA_CYCEND_BIT)) {
+            // Re-arm the energy double-read guard ONLY on a genuine new linecyc,
+            // otherwise a duplicate CYCEND could read the reset-on-read energy
+            // registers twice and lose the cycle.
+            _interruptHandledChannelA = false;
+            _interruptHandledChannelB = false;
+            _handleCycendInterrupt(linecycUnix);
+        }
+
+        if (statusA & (1 << IRQSTATA_RESET_BIT)) {
+            _handleResetInterrupt();
+        }
+
+        if (statusA & (1 << IRQSTATA_CRC_BIT)) {
+            _handleCrcChangeInterrupt();
+        }
+
+        constexpr int32_t handledIrqMask =
+            (1 << IRQSTATA_ZXV_BIT) | (1 << IRQSTATA_CYCEND_BIT) |
+            (1 << IRQSTATA_RESET_BIT) | (1 << IRQSTATA_CRC_BIT);
+        if ((statusA & handledIrqMask) == 0) {
+            statistics.ade7953UnhandledInterrupts++;
+            LOG_WARNING("Unhandled ADE7953 interrupt status: 0x%08lX | %s", statusA, _irqstataBitName(statusA));
+        }
+    }
+
+    void _handleZxvInterrupt()
+    {
+        // One PERIOD read + integer EMA update; out-of-range reads are discarded inside update()
+        GridFrequency::update(_gridFreqEma, _gridFreqCfg, _readPeriod());
     }
 
     void _attachInterruptHandler() {
@@ -1866,8 +1911,8 @@ namespace Ade7953
     {
         BaseType_t xHigherPriorityTaskWoken = pdFALSE;
         statistics.ade7953TotalInterrupts++;
-        _interruptHandledChannelA = false;
-        _interruptHandledChannelB = false;
+        // Nothing else here: with ZXV the IRQ fires every line cycle, so any state
+        // touched here would be clobbered mid-linecyc (see _handleInterrupt).
 
         // Signal the task to handle the interrupt - let the task determine the cause
         if (_ade7953InterruptSemaphore != NULL) {
@@ -2058,10 +2103,6 @@ namespace Ade7953
         LOG_WARNING("TO BE IMPLEMENTED: ADE7953 reset interrupt detected - reinitializing device");
     }
 
-    void _handleOtherInterrupt() {
-        LOG_WARNING("TO BE IMPLEMENTED: unknown ADE7953 interrupt - this may indicate an unexpected condition");
-    }
-
     // Tasks
     // =====
 
@@ -2083,7 +2124,7 @@ namespace Ade7953
         // Attach interrupt handler
         _attachInterruptHandler();
         
-        LOG_DEBUG("Starting ADE7953 meter reading task with %d bytes stack in internal RAM", ADE7953_METER_READING_TASK_STACK_SIZE);
+        LOG_DEBUG("Starting ADE7953 meter reading task with %d bytes stack", ADE7953_METER_READING_TASK_STACK_SIZE);
 
         BaseType_t result = xTaskCreate(
             _meterReadingTask, 
@@ -2128,36 +2169,17 @@ namespace Ade7953
                 _ade7953InterruptSemaphore != NULL &&
                 xSemaphoreTake(_ade7953InterruptSemaphore, pdMS_TO_TICKS(ADE7953_INTERRUPT_TIMEOUT_MS + _sampleTime)) == pdTRUE
             ) {
+                // One pass here can service several coalesced ISR wakeups (binary
+                // semaphore); ade7953TotalInterrupts - ade7953ServicePasses is how many were coalesced away.
+                statistics.ade7953ServicePasses++;
+
                 // Grab as quickly as possible the current unix time in milliseconds
                 // that refers to the "true" time at which the data is temporarily frozen in the ADE7953
                 uint64_t linecycUnix = CustomTime::getUnixTimeMilliseconds();
 
-                // Handle the interrupt and determine its type (need to read it from ADE7953 since 
-                // we only got an interrupt, but we don't know the reason)
-                Ade7953InterruptType interruptType = _handleInterrupt();
-
-                // Process based on interrupt type
-                switch (interruptType)
-                {
-                    case Ade7953InterruptType::CYCEND:
-                        _handleCycendInterrupt(linecycUnix);
-                        break;
-
-                    case Ade7953InterruptType::RESET:
-                        _handleResetInterrupt();
-                        break;
-                        
-                    case Ade7953InterruptType::CRC_CHANGE:
-                        _handleCrcChangeInterrupt();
-                        break;
-
-                    case Ade7953InterruptType::OTHER:
-                        _handleOtherInterrupt();
-                        break;
-                    default:
-                        // Already logged in _handleInterrupt(), just continue
-                        break;
-                }
+                // Snapshot the status register once and service every pending cause
+                // (ZXV and CYCEND routinely co-pend at line rate - see _handleInterrupt)
+                _handleInterrupt(linecycUnix);
             } else {
                 LOG_DEBUG("No ADE7953 interrupt received within timeout, checking for stop notification");
                 _recordCriticalFailure();
@@ -2184,7 +2206,7 @@ namespace Ade7953
             return;
         }
 
-        LOG_DEBUG("Starting ADE7953 energy save task with %d bytes stack in internal RAM (uses NVS)", ADE7953_ENERGY_SAVE_TASK_STACK_SIZE);
+        LOG_DEBUG("Starting ADE7953 energy save task with %d bytes stack", ADE7953_ENERGY_SAVE_TASK_STACK_SIZE);
 
         BaseType_t result = xTaskCreate(
             _energySaveTask,
@@ -2215,10 +2237,10 @@ namespace Ade7953
                 if (isChannelActive(i)) _saveEnergyToPreferences(i);
             }
 
-            // Drain pending polarity-flip persistence (queued by the meter task on PSRAM
-            // stack, which cannot itself touch NVS). Test-and-clear under _channelDataMutex
-            // so a concurrent re-set from the meter task lands on the *next* iteration
-            // instead of being lost between the read and the false-write.
+            // Drain pending polarity-flip persistence (queued by the meter task, which
+            // hands NVS writes off to this task instead of doing them inline). Test-and-clear
+            // under _channelDataMutex so a concurrent re-set from the meter task lands on the
+            // *next* iteration instead of being lost between the read and the false-write.
             for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
                 bool drain = false;
                 if (acquireMutex(&_channelDataMutex)) {
@@ -2242,13 +2264,84 @@ namespace Ade7953
         vTaskDelete(NULL);
     }
 
+    void _startGridSamplerTask() {
+        if (_gridSamplerTaskHandle != NULL) {
+            LOG_DEBUG("ADE7953 grid sampler task is already running");
+            return;
+        }
+
+        LOG_DEBUG("Starting ADE7953 grid sampler task with %d bytes stack", ADE7953_GRID_SAMPLER_TASK_STACK_SIZE);
+
+        BaseType_t result = xTaskCreate(
+            _gridSamplerTask,
+            ADE7953_GRID_SAMPLER_TASK_NAME,
+            ADE7953_GRID_SAMPLER_TASK_STACK_SIZE,
+            nullptr,
+            ADE7953_GRID_SAMPLER_TASK_PRIORITY,
+            &_gridSamplerTaskHandle);
+
+        if (result != pdPASS) {
+            LOG_ERROR("Failed to create ADE7953 grid sampler task");
+            _gridSamplerTaskHandle = NULL;
+        }
+    }
+
+    void _stopGridSamplerTask() {
+        stopTaskGracefully(&_gridSamplerTaskHandle, "ADE7953 grid sampler task");
+    }
+
+    void _gridSamplerTask(void* parameter) {
+        LOG_DEBUG("ADE7953 grid sampler task started");
+
+        // Freshness gate: only emit if the EMA advanced since the last point
+        uint32_t lastSeenUpdateCount = 0;
+
+        _gridSamplerTaskShouldRun = true;
+        while (_gridSamplerTaskShouldRun) {
+            TASK_HEARTBEAT(_gridSamplerHeartbeat);
+
+            // Sleep to the next absolute .000/.500 wall-clock boundary, re-derived
+            // from the clock each iteration so drift never accumulates and NTP
+            // steps self-heal. Points always carry the true read time.
+            uint64_t now = CustomTime::getUnixTimeMilliseconds();
+            uint32_t delayMs = GRID_SAMPLE_INTERVAL_MS - (uint32_t)(now % GRID_SAMPLE_INTERVAL_MS);
+            if (delayMs < GRID_SAMPLE_MIN_DELAY_MS) delayMs += GRID_SAMPLE_INTERVAL_MS;
+
+            // The aligned sleep doubles as the stop-notification wait
+            if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(delayMs)) > 0) {
+                _gridSamplerTaskShouldRun = false;
+                break;
+            }
+
+            // Gates: a failed gate skips the tick, leaving a real timestamp gap
+            if (!Mqtt::getSendGridData()) continue;
+            if (!CustomTime::isTimeSynched()) continue;
+            uint32_t updateCount = _gridFreqEma.updateCount;
+            if (updateCount == lastSeenUpdateCount) continue; // EMA frozen (no ZXV since last emit)
+            lastSeenUpdateCount = updateCount;
+
+            // Cached channel-0 RMS voltage (at most ~_sampleTime old); aligned float
+            // read is atomic, keeping the sampler off the SPI bus
+            PayloadGridPoint point(
+                CustomTime::getUnixTimeMilliseconds(),
+                getGridFrequency(),
+                _meterValues[0].voltage
+            );
+            Mqtt::pushGrid(point);
+        }
+
+        LOG_DEBUG("ADE7953 grid sampler task stopping");
+        _gridSamplerTaskHandle = NULL;
+        vTaskDelete(NULL);
+    }
+
     void _startHourlyCsvSaveTask() {
         if (_hourlyCsvSaveTaskHandle != NULL) {
             LOG_DEBUG("ADE7953 hourly CSV save task is already running");
             return;
         }
 
-        LOG_DEBUG("Starting ADE7953 hourly CSV save task with %d bytes stack in internal RAM (uses LittleFS)", ADE7953_HOURLY_CSV_SAVE_TASK_STACK_SIZE);
+        LOG_DEBUG("Starting ADE7953 hourly CSV save task with %d bytes stack", ADE7953_HOURLY_CSV_SAVE_TASK_STACK_SIZE);
 
         BaseType_t result = xTaskCreate(
             _hourlyCsvSaveTask,
@@ -4354,8 +4447,9 @@ namespace Ade7953
     }
 
     float _readGridFrequency() {
-        int32_t period = _readPeriod();
-        return period > 0 ? GRID_FREQUENCY_CONVERSION_FACTOR / float(period) : float(DEFAULT_FALLBACK_FREQUENCY);
+        // Single unfiltered read; shares the Eq.36 conversion with the EMA readout
+        float frequency = GridFrequency::rawFrequencyHz(_gridFreqCfg, _readPeriod());
+        return frequency > 0.0f ? frequency : float(DEFAULT_FALLBACK_FREQUENCY);
     }
 
     // Verification and validation functions
@@ -4759,6 +4853,11 @@ namespace Ade7953
     TaskInfo getHourlyCsvTaskInfo()
     {
         return getTaskInfoSafely(_hourlyCsvSaveTaskHandle, ADE7953_HOURLY_CSV_SAVE_TASK_STACK_SIZE, &_hourlyCsvHeartbeat);
+    }
+
+    TaskInfo getGridSamplerTaskInfo()
+    {
+        return getTaskInfoSafely(_gridSamplerTaskHandle, ADE7953_GRID_SAMPLER_TASK_STACK_SIZE, &_gridSamplerHeartbeat);
     }
 
     // Waveform capture API

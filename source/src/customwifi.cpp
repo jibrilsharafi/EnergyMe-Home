@@ -510,7 +510,7 @@ namespace CustomWifi
     _lastReconnectAttempt = 0;
 
     _setupMdns();
-    // Note: printDeviceStatusDynamic() removed to avoid flash I/O from PSRAM task
+    // Note: printDeviceStatusDynamic() removed to avoid flash I/O from this task
 
     Led::clearPattern(Led::PRIO_MEDIUM); // Ensure that if we are connected again, we don't keep the blue pattern
     Led::setGreen(Led::PRIO_NORMAL); // Hack: to ensure we get back to green light, we set it here even though a proper LED manager would handle priorities better
@@ -1087,7 +1087,7 @@ namespace CustomWifi
   static void _startWifiTask()
   {
     if (_wifiTaskHandle) { LOG_DEBUG("WiFi task is already running"); return; }
-    LOG_DEBUG("Starting WiFi task with %d bytes stack in internal RAM (performs TCP network operations)", WIFI_TASK_STACK_SIZE);
+    LOG_DEBUG("Starting WiFi task with %d bytes stack", WIFI_TASK_STACK_SIZE);
 
     BaseType_t result = xTaskCreate(
         _wifiConnectionTask,

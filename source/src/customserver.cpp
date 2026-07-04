@@ -354,7 +354,7 @@ namespace CustomServer
             return;
         }
 
-        LOG_DEBUG("Starting health check task with %d bytes stack in internal RAM (performs TCP network operations)", HEALTH_CHECK_TASK_STACK_SIZE);
+        LOG_DEBUG("Starting health check task with %d bytes stack", HEALTH_CHECK_TASK_STACK_SIZE);
         _consecutiveFailures = 0;
 
         BaseType_t result = xTaskCreate(
@@ -382,7 +382,7 @@ namespace CustomServer
             return;
         }
 
-        LOG_DEBUG("Starting OTA timeout task with %d bytes stack in internal RAM (uses flash I/O)", OTA_TIMEOUT_TASK_STACK_SIZE);
+        LOG_DEBUG("Starting OTA timeout task with %d bytes stack", OTA_TIMEOUT_TASK_STACK_SIZE);
 
         BaseType_t result = xTaskCreate(
             _otaTimeoutTask,
