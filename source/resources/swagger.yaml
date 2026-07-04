@@ -326,6 +326,12 @@ paths:
                     type: integer
                   ade7953ZxInterrupts:
                     type: integer
+                  ade7953ServicePasses:
+                    type: integer
+                    description: Semaphore takes serviced; ade7953TotalInterrupts minus this is ISR wakeups coalesced into another pass
+                  ade7953UnhandledInterrupts:
+                    type: integer
+                    description: Interrupt status snapshots with none of the known bits set
                   ade7953ReadingCount:
                     type: integer
                   ade7953ReadingCountFailure:
@@ -334,6 +340,12 @@ paths:
                     type: integer
                   mqttMessagesPublishedError:
                     type: integer
+                  mqttMeterPointsDropped:
+                    type: integer
+                    description: Meter queue was full; oldest point evicted to make room
+                  mqttGridPointsDropped:
+                    type: integer
+                    description: Grid queue was full; oldest point evicted to make room
                   customMqttMessagesPublished:
                     type: integer
                   customMqttMessagesPublishedError:

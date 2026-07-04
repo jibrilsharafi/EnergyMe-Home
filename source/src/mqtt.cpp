@@ -398,6 +398,7 @@ namespace Mqtt
             PayloadMeter discarded;
             xQueueReceive(_meterQueue, &discarded, 0);
             xQueueSend(_meterQueue, &payload, 0);
+            statistics.mqttMeterPointsDropped++;
         }
     }
 
@@ -411,6 +412,7 @@ namespace Mqtt
             PayloadGridPoint discarded;
             xQueueReceive(_gridQueue, &discarded, 0);
             xQueueSend(_gridQueue, &point, 0);
+            statistics.mqttGridPointsDropped++;
         }
     }
 

@@ -1886,6 +1886,7 @@ namespace Ade7953
             (1 << IRQSTATA_ZXV_BIT) | (1 << IRQSTATA_CYCEND_BIT) |
             (1 << IRQSTATA_RESET_BIT) | (1 << IRQSTATA_CRC_BIT);
         if ((statusA & handledIrqMask) == 0) {
+            statistics.ade7953UnhandledInterrupts++;
             LOG_WARNING("Unhandled ADE7953 interrupt status: 0x%08lX | %s", statusA, _irqstataBitName(statusA));
         }
     }
@@ -2168,6 +2169,10 @@ namespace Ade7953
                 _ade7953InterruptSemaphore != NULL &&
                 xSemaphoreTake(_ade7953InterruptSemaphore, pdMS_TO_TICKS(ADE7953_INTERRUPT_TIMEOUT_MS + _sampleTime)) == pdTRUE
             ) {
+                // One pass here can service several coalesced ISR wakeups (binary
+                // semaphore); ade7953TotalInterrupts - ade7953ServicePasses is how many were coalesced away.
+                statistics.ade7953ServicePasses++;
+
                 // Grab as quickly as possible the current unix time in milliseconds
                 // that refers to the "true" time at which the data is temporarily frozen in the ADE7953
                 uint64_t linecycUnix = CustomTime::getUnixTimeMilliseconds();

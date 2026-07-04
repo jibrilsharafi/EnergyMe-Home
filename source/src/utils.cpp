@@ -750,19 +750,23 @@ void printStatistics() {
     updateStatistics();
 
     LOG_DEBUG("--- Statistics ---");
-    LOG_DEBUG("Statistics - ADE7953: %llu total interrupts | %llu handled interrupts | %llu zx interrupts | %llu readings | %llu reading failures",  
-        statistics.ade7953TotalInterrupts, 
-        statistics.ade7953TotalHandledInterrupts, 
-        statistics.ade7953ZxInterrupts, 
-        statistics.ade7953ReadingCount, 
+    LOG_DEBUG("Statistics - ADE7953: %llu total interrupts | %llu handled interrupts | %llu zx interrupts | %llu service passes | %llu unhandled | %llu readings | %llu reading failures",
+        statistics.ade7953TotalInterrupts,
+        statistics.ade7953TotalHandledInterrupts,
+        statistics.ade7953ZxInterrupts,
+        statistics.ade7953ServicePasses,
+        statistics.ade7953UnhandledInterrupts,
+        statistics.ade7953ReadingCount,
         statistics.ade7953ReadingCountFailure
     );
 
-    LOG_DEBUG("Statistics - MQTT: %llu messages published | %llu errors | %llu connections | %llu connection errors",  
-        statistics.mqttMessagesPublished, 
+    LOG_DEBUG("Statistics - MQTT: %llu messages published | %llu errors | %llu connections | %llu connection errors | %llu meter points dropped | %llu grid points dropped",
+        statistics.mqttMessagesPublished,
         statistics.mqttMessagesPublishedError,
         statistics.mqttConnections,
-        statistics.mqttConnectionErrors
+        statistics.mqttConnectionErrors,
+        statistics.mqttMeterPointsDropped,
+        statistics.mqttGridPointsDropped
     );
 
     LOG_DEBUG("Statistics - Custom MQTT: %llu messages published | %llu errors",  
@@ -810,6 +814,8 @@ void statisticsToJson(Statistics& statistics, JsonDocument &jsonDocument) {
     jsonDocument["ade7953"]["totalInterrupts"] = statistics.ade7953TotalInterrupts;
     jsonDocument["ade7953"]["totalHandledInterrupts"] = statistics.ade7953TotalHandledInterrupts;
     jsonDocument["ade7953"]["zxInterrupts"] = statistics.ade7953ZxInterrupts;
+    jsonDocument["ade7953"]["servicePasses"] = statistics.ade7953ServicePasses;
+    jsonDocument["ade7953"]["unhandledInterrupts"] = statistics.ade7953UnhandledInterrupts;
     jsonDocument["ade7953"]["readingCount"] = statistics.ade7953ReadingCount;
     jsonDocument["ade7953"]["readingCountFailure"] = statistics.ade7953ReadingCountFailure;
 
@@ -818,6 +824,8 @@ void statisticsToJson(Statistics& statistics, JsonDocument &jsonDocument) {
     jsonDocument["mqtt"]["messagesPublishedError"] = statistics.mqttMessagesPublishedError;
     jsonDocument["mqtt"]["connections"] = statistics.mqttConnections;
     jsonDocument["mqtt"]["connectionErrors"] = statistics.mqttConnectionErrors;
+    jsonDocument["mqtt"]["meterPointsDropped"] = statistics.mqttMeterPointsDropped;
+    jsonDocument["mqtt"]["gridPointsDropped"] = statistics.mqttGridPointsDropped;
 
     // Custom MQTT statistics
     jsonDocument["customMqtt"]["messagesPublished"] = statistics.customMqttMessagesPublished;

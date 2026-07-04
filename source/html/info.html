@@ -606,6 +606,28 @@
                     <span class="info-value" id="ade7953ZxInterrupts">Loading...</span>
                 </div>
                 <div class="info-item">
+                    <span class="info-label"><span class="emoji">🔁</span>Service Passes
+                        <span class="info-tooltip">
+                            <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about service passes">ⓘ</button>
+                            <div class="info-tooltip-popover" role="tooltip">
+                                Interrupt status snapshots serviced. Total Interrupts minus this is how many ISR wakeups were coalesced into another pass (expected under load; the status snapshot covers every pending cause either way).
+                            </div>
+                        </span>
+                    </span>
+                    <span class="info-value" id="ade7953ServicePasses">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">❓</span>Unhandled Interrupts
+                        <span class="info-tooltip">
+                            <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about unhandled interrupts">ⓘ</button>
+                            <div class="info-tooltip-popover" role="tooltip">
+                                Interrupt status snapshots with none of the known bits (ZX, line-cycle end, reset, CRC change) set. Should stay at zero; a non-zero count means the chip raised a cause the firmware doesn't recognize.
+                            </div>
+                        </span>
+                    </span>
+                    <span class="info-value" id="ade7953UnhandledInterrupts">Loading...</span>
+                </div>
+                <div class="info-item">
                     <span class="info-label"><span class="emoji">📈</span>Successful Readings
                         <span class="info-tooltip">
                             <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about successful readings">ⓘ</button>
@@ -646,6 +668,28 @@
                         </span>
                     </span>
                     <span class="info-value" id="customMqttMessages">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">📉</span>Meter Points Dropped
+                        <span class="info-tooltip">
+                            <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about meter points dropped">ⓘ</button>
+                            <div class="info-tooltip-popover" role="tooltip">
+                                Meter readings evicted from the cloud publish queue because it was full. The oldest queued point is dropped to make room for the newest. A non-zero count means the device is producing readings faster than they can be published.
+                            </div>
+                        </span>
+                    </span>
+                    <span class="info-value" id="mqttMeterPointsDropped">Loading...</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">📉</span>Grid Points Dropped
+                        <span class="info-tooltip">
+                            <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about grid points dropped">ⓘ</button>
+                            <div class="info-tooltip-popover" role="tooltip">
+                                Grid frequency/voltage points evicted from the cloud publish queue because it was full. The oldest queued point is dropped to make room for the newest.
+                            </div>
+                        </span>
+                    </span>
+                    <span class="info-value" id="mqttGridPointsDropped">Loading...</span>
                 </div>
                 <div class="info-item">
                     <span class="info-label"><span class="emoji">🌐</span>Web Requests
@@ -842,15 +886,32 @@
             document.getElementById('ade7953TotalInterrupts').textContent = formatNumber(stats.ade7953.totalInterrupts);
             document.getElementById('ade7953HandledInterrupts').textContent = formatNumber(stats.ade7953.totalHandledInterrupts);
             document.getElementById('ade7953ZxInterrupts').textContent = formatNumber(stats.ade7953.zxInterrupts);
+            document.getElementById('ade7953ServicePasses').textContent = formatNumber(stats.ade7953.servicePasses);
             document.getElementById('ade7953Readings').textContent = formatNumber(stats.ade7953.readingCount);
-            
+
             const ade7953Failures = stats.ade7953.readingCountFailure;
             const ade7953FailureElement = document.getElementById('ade7953ReadingFailures');
             ade7953FailureElement.textContent = formatNumber(ade7953Failures);
             ade7953FailureElement.style.color = ade7953Failures > 0 ? '#f44336' : '#4caf50';
 
+            const ade7953Unhandled = stats.ade7953.unhandledInterrupts;
+            const ade7953UnhandledElement = document.getElementById('ade7953UnhandledInterrupts');
+            ade7953UnhandledElement.textContent = formatNumber(ade7953Unhandled);
+            ade7953UnhandledElement.style.color = ade7953Unhandled > 0 ? '#f44336' : '#4caf50';
+
             // Communication Statistics
             document.getElementById('customMqttMessages').textContent = `${formatNumber(stats.customMqtt.messagesPublished)} (${stats.customMqtt.messagesPublishedError} errors)`;
+
+            const meterPointsDropped = stats.mqtt.meterPointsDropped;
+            const meterPointsDroppedElement = document.getElementById('mqttMeterPointsDropped');
+            meterPointsDroppedElement.textContent = formatNumber(meterPointsDropped);
+            meterPointsDroppedElement.style.color = meterPointsDropped > 0 ? '#f44336' : '#4caf50';
+
+            const gridPointsDropped = stats.mqtt.gridPointsDropped;
+            const gridPointsDroppedElement = document.getElementById('mqttGridPointsDropped');
+            gridPointsDroppedElement.textContent = formatNumber(gridPointsDropped);
+            gridPointsDroppedElement.style.color = gridPointsDropped > 0 ? '#f44336' : '#4caf50';
+
             document.getElementById('webServerRequests').textContent = `${formatNumber(stats.webServer.requests)} (${stats.webServer.requestsError} errors)`;
             document.getElementById('influxdbUploads').textContent = `${formatNumber(stats.influxdb.uploadCount)} (${stats.influxdb.uploadCountError} errors)`;
             document.getElementById('modbusRequests').textContent = `${formatNumber(stats.modbus.requests)} (${stats.modbus.requestsError} errors)`;

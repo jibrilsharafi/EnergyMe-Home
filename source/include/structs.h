@@ -12,6 +12,8 @@ struct Statistics { // This will be global and we accept the very small race con
   uint64_t ade7953TotalInterrupts;
   uint64_t ade7953TotalHandledInterrupts;
   uint64_t ade7953ZxInterrupts; // ZXV (voltage zero-crossing) services, counted separately from CYCEND
+  uint64_t ade7953ServicePasses; // Semaphore takes; ade7953TotalInterrupts - this = ISR wakeups coalesced into another pass
+  uint64_t ade7953UnhandledInterrupts; // Status snapshot had none of the known bits set
   uint64_t ade7953ReadingCount;
   uint64_t ade7953ReadingCountFailure;
 
@@ -19,10 +21,12 @@ struct Statistics { // This will be global and we accept the very small race con
   uint64_t mqttMessagesPublishedError;
   uint64_t mqttConnections;
   uint64_t mqttConnectionErrors;
-  
+  uint64_t mqttMeterPointsDropped; // Meter queue full; oldest point evicted to make room
+  uint64_t mqttGridPointsDropped;  // Grid queue full; oldest point evicted to make room
+
   uint64_t customMqttMessagesPublished;
   uint64_t customMqttMessagesPublishedError;
-  
+
   uint64_t modbusRequests;
   uint64_t modbusRequestsError;
   
@@ -43,10 +47,10 @@ struct Statistics { // This will be global and we accept the very small race con
   uint64_t logFatal;
   uint64_t logDropped;
 
-  Statistics() 
-    : ade7953TotalInterrupts(0), ade7953TotalHandledInterrupts(0), ade7953ZxInterrupts(0), ade7953ReadingCount(0), ade7953ReadingCountFailure(0),
-    mqttMessagesPublished(0), mqttMessagesPublishedError(0), mqttConnections(0), mqttConnectionErrors(0), 
-    customMqttMessagesPublished(0), customMqttMessagesPublishedError(0), modbusRequests(0), modbusRequestsError(0), 
+  Statistics()
+    : ade7953TotalInterrupts(0), ade7953TotalHandledInterrupts(0), ade7953ZxInterrupts(0), ade7953ServicePasses(0), ade7953UnhandledInterrupts(0), ade7953ReadingCount(0), ade7953ReadingCountFailure(0),
+    mqttMessagesPublished(0), mqttMessagesPublishedError(0), mqttConnections(0), mqttConnectionErrors(0), mqttMeterPointsDropped(0), mqttGridPointsDropped(0),
+    customMqttMessagesPublished(0), customMqttMessagesPublishedError(0), modbusRequests(0), modbusRequestsError(0),
     influxdbUploadCount(0), influxdbUploadCountError(0), wifiConnection(0), wifiConnectionError(0),
     webServerRequests(0), webServerRequestsError(0),
     logVerbose(0), logDebug(0), logInfo(0), logWarning(0), logError(0), logFatal(0), logDropped(0) {}
