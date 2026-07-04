@@ -53,7 +53,7 @@
 #define CLEAR_ALL_CHANNELS_SENTINEL 0xFE
 
 #define ADE7953_GRID_SAMPLER_TASK_NAME "grid_sampler"
-#define ADE7953_GRID_SAMPLER_TASK_STACK_SIZE (3 * 1024) // RAM-only work
+#define ADE7953_GRID_SAMPLER_TASK_STACK_SIZE (6 * 1024) // Was 3 KB; too small caused a stack overflow that corrupted adjacent heap, surfacing as an unrelated heap-poisoning panic elsewhere
 #define ADE7953_GRID_SAMPLER_TASK_PRIORITY 2
 #define GRID_SAMPLE_INTERVAL_MS 500 // Samples aligned to absolute .000/.500 wall-clock boundaries
 #define GRID_SAMPLE_MIN_DELAY_MS 20 // Skip to the next boundary when too close
