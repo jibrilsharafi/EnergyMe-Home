@@ -6,6 +6,7 @@
 #include "shadow_logic.h"
 #include "taskprofiler.h"
 #include "duration_format.h"
+#include "mqtt_grid_schedule.h"
 
 namespace Mqtt
 {
@@ -43,9 +44,11 @@ namespace Mqtt
 
     // Last publish timestamps
     static uint64_t _lastMillisMeterPublished = 0;
-    static uint64_t _lastMillisGridPublished = 0;
     static uint64_t _lastMillisSystemDynamicPublished = 0;
     static uint64_t _lastMillisStatisticsPublished = 0;
+
+    // Next grid publish deadline (unix seconds, wall-clock aligned); 0 = not yet scheduled
+    static uint64_t _nextGridPublishUnixSecond = 0;
 
     // Configuration
     static bool _cloudServicesEnabled = DEFAULT_CLOUD_SERVICES_ENABLED;
@@ -1598,12 +1601,12 @@ namespace Mqtt
             triplet.add(roundToDecimals(point.frequency, MQTT_GRID_FREQUENCY_PAYLOAD_DECIMALS));
             triplet.add(roundToDecimals(point.voltage, MQTT_GRID_VOLTAGE_PAYLOAD_DECIMALS));
 
-            if (measureJson(doc) > AWS_IOT_CORE_MQTT_PAYLOAD_LIMIT * MQTT_METER_PAYLOAD_THRESHOLD_MULTIPLIER) break; // Remainder ships next cycle
+            if (measureJson(doc) > AWS_IOT_CORE_MQTT_PAYLOAD_LIMIT * MQTT_METER_PAYLOAD_THRESHOLD_MULTIPLIER) break; // Remainder ships at the next aligned boundary
         }
 
         if (_publishJsonStreaming(doc, _mqttTopicGrid)) {
             _publishMqtt.grid = false;
-            _lastMillisGridPublished = millis64();
+            _nextGridPublishUnixSecond = MqttGridSchedule::nextAlignedBoundarySeconds(CustomTime::getUnixTime(), MQTT_GRID_PUBLISH_ALIGN_SECONDS);
         }
     }
 
@@ -1718,9 +1721,21 @@ namespace Mqtt
 
     static void _checkIfPublishGridNeeded() {
         UBaseType_t queueSize = _gridQueue ? uxQueueMessagesWaiting(_gridQueue) : 0;
+        if (queueSize == 0) return;
 
-        // Time-triggered only: a batch stays well under the billable minimum
-        if (queueSize > 0 && (millis64() - _lastMillisGridPublished) > MQTT_MAX_INTERVAL_GRID_PUBLISH) {
+        uint64_t nowUnixSecond = CustomTime::getUnixTime();
+
+        // First check since (re)connect: schedule the next aligned boundary
+        // rather than publishing immediately, so even the first grid publish
+        // lands on wall-clock alignment.
+        if (_nextGridPublishUnixSecond == 0) {
+            _nextGridPublishUnixSecond = MqttGridSchedule::nextAlignedBoundarySeconds(nowUnixSecond, MQTT_GRID_PUBLISH_ALIGN_SECONDS);
+            return;
+        }
+
+        // Wall-clock-aligned, not a relative interval: `>=` (not `==`) so a
+        // delayed loop tick still catches the boundary instead of missing it
+        if (nowUnixSecond >= _nextGridPublishUnixSecond) {
             _publishMqtt.grid = true;
             LOG_DEBUG("Set flag to publish grid data (queue: %u points)", queueSize);
         }

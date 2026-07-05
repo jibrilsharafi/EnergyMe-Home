@@ -70,7 +70,7 @@
 #define DEFAULT_MQTT_LOG_LEVEL_INT 2 // Default minimum log level for MQTT publishing (INFO = 2)
 
 #define MQTT_MAX_INTERVAL_METER_PUBLISH (60 * 1000) // The maximum interval between two meter payloads
-#define MQTT_MAX_INTERVAL_GRID_PUBLISH (60 * 1000) // Batch interval for grid points (no need for fast updates)
+#define MQTT_GRID_PUBLISH_ALIGN_SECONDS 60 // Grid batches publish aligned to wall-clock minute boundaries, not a relative interval
 #ifdef ENV_DEV
 // In dev: send system_dynamic and statistics every minute so post-mortem
 // telemetry has the resolution needed to investigate behavior.
