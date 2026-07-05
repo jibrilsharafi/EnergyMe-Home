@@ -141,6 +141,21 @@ void computeWeights(const ChannelWeightInput* in, uint8_t count, uint8_t startIn
 
         outWeights[i] = computeChannelWeight(in[i], powerShare, variabilityShare, cfg);
     }
+
+    // Third pass: normalise so the weights sum to 1. The WDRR loop services
+    // exactly one channel (deficit -1) per round, so the total weight added per
+    // round must also be 1 - otherwise deficits inflate until every channel
+    // saturates at the clamp bound and the tie-break degenerates into a plain
+    // round-robin where weights (load, variability, role) stop mattering at all.
+    // Un-normalised, the raw sum is ~0.8 + minBase*N, which oversubscribes for
+    // any N >= 3 and fully degenerates for N >= 10 (seen in prod as a constant
+    // N*2*sampleTime interval on every channel of 16-channel devices).
+    // Normalising makes a weight literally "this channel's fraction of reads".
+    float totalWeight = 0.0f;
+    for (uint8_t i = startIndex; i < count; i++) totalWeight += outWeights[i];
+    if (totalWeight > 0.0f) {
+        for (uint8_t i = startIndex; i < count; i++) outWeights[i] /= totalWeight;
+    }
 }
 
 // ----------------------------------------------------------------------------

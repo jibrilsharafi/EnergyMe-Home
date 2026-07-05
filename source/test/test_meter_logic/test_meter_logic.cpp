@@ -11,6 +11,7 @@
 // reversed-CT detection on circuits that are idle at install time.
 
 #include <unity.h>
+#include <cstdio>
 #include "meter_logic.h"
 
 using namespace MeterLogic;
@@ -978,6 +979,186 @@ void test_small_reversed_load_earns_armed_boost(void) {
 }
 
 // ============================================================================
+// Weight normalisation (regression: constant inter-sample interval on
+// high-channel-count devices)
+// ============================================================================
+//
+// Un-normalised, the total weight added per round was 0.4 + 0.4 + 0.1*N while
+// only one channel is serviced (-1.0) per round. For N >= 3 the system was
+// oversubscribed, deficits saturated at the clamp, and once every channel
+// re-clamped within one rotation (w_i * N >= 1, guaranteed for N >= 10 since
+// w_i >= 0.1) every pick became an all-way tie at the bound. The cursor
+// tie-break then degenerated to pure sequential round-robin: weights stopped
+// mattering and every channel was serviced exactly every N rounds regardless
+// of load. Observed on prod device 8856a682ff6c: 14 active channels, p50
+// elapsed 5604 ms == 14 slots * 2 linecyc * 200 ms for every channel.
+// computeWeights now normalises to sum 1 (demand == supply), so these sims
+// must show weight differentiation at ANY channel count.
+
+static void _runSaturationSim(uint8_t n, int rounds, int* picks, int* lastGap,
+                              bool* gapsConstant) {
+    ChannelWeightInput in[32];
+    bool active[32];
+    float deficits[32];
+    float weights[32];
+    int lastPickRound[32];
+
+    for (uint8_t i = 0; i < n; i++) {
+        in[i] = {i >= 1, 0.0f, 0.0f, false, CHANNEL_ROLE_LOAD, false};
+        active[i] = (i >= 1);
+        deficits[i] = 0.0f;
+        weights[i] = 0.0f;
+        picks[i] = 0;
+        lastGap[i] = -1;
+        lastPickRound[i] = -1;
+    }
+    // ch1 is the hog: it carries ALL the power and ALL the variability, so it
+    // holds the maximum possible non-boosted weight (0.4 + 0.4 + 0.1 = 0.9)
+    // while every other channel sits at minBase (0.1). A 9x weight ratio.
+    in[1].activePower = 3000.0f;
+    in[1].variability = 500.0f;
+    in[1].conducting = true;
+
+    *gapsConstant = true;
+    uint8_t cursor = 0;
+    const int WARMUP = 200; // let deficits reach steady state first
+
+    for (int r = 0; r < WARMUP + rounds; r++) {
+        computeWeights(in, n, 1, WCFG, weights);
+        wdrrAccumulate(weights, deficits, active, n, 1, 5.0f);
+        uint8_t pick = wdrrPick(deficits, active, n, 1, &cursor);
+        TEST_ASSERT_NOT_EQUAL(NO_CHANNEL, pick);
+        if (r < WARMUP) continue;
+
+        picks[pick]++;
+        if (lastPickRound[pick] >= 0) {
+            int gap = r - lastPickRound[pick];
+            if (lastGap[pick] >= 0 && gap != lastGap[pick]) *gapsConstant = false;
+            lastGap[pick] = gap;
+        }
+        lastPickRound[pick] = r;
+    }
+}
+
+void test_fleet_keeps_weight_differentiation_across_all_channel_counts(void) {
+    // Sweep every schedulable fleet size from 2 up to 16 (the hardware max:
+    // MAX_CHANNEL_COUNT=17 total incl. ch0). The old bug only appeared once
+    // per-round demand (0.8 + 0.1*N) started to exceed the supply of 1.0/round
+    // AND every idle channel could re-clamp within one rotation - i.e. roughly
+    // N >= 10. This sweep proves the fix holds BELOW that threshold too (where
+    // the bug never showed) and ABOVE it (where it did, including the 14-channel
+    // prod-device case), with one test instead of picking two magic sizes.
+    for (uint8_t schedulable = 2; schedulable <= 16; schedulable++) {
+        const uint8_t N = schedulable + 1; // + ch0
+        const int ROUNDS = schedulable * 60;
+        int picks[32], lastGap[32];
+        bool gapsConstant;
+        _runSaturationSim(N, ROUNDS, picks, lastGap, &gapsConstant);
+
+        // The old bug made every gap identical and every count equal. At every
+        // fleet size the hog (9x raw weight) must now be serviced meaningfully
+        // more than an idle channel, and nobody may starve (picks == 0).
+        for (uint8_t i = 2; i < N; i++) {
+            char msg[96];
+            snprintf(msg, sizeof(msg), "schedulable=%u channel=%u hog=%d idle=%d",
+                     schedulable, i, picks[1], picks[i]);
+            TEST_ASSERT_TRUE_MESSAGE(picks[1] >= 2 * picks[i], msg);
+            TEST_ASSERT_TRUE_MESSAGE(picks[i] > 0, msg);
+        }
+    }
+}
+
+// ============================================================================
+// computeWeights normalisation (isolated)
+// ============================================================================
+
+static float _sumWeights(const float* w, uint8_t count, uint8_t startIndex) {
+    float s = 0.0f;
+    for (uint8_t i = startIndex; i < count; i++) s += w[i];
+    return s;
+}
+
+void test_computeWeights_sums_to_one_uniform_fleet(void) {
+    // 14 idle LOAD channels: each ends up at exactly 1/14.
+    const uint8_t N = 15;
+    ChannelWeightInput in[N];
+    in[0] = {true, 0.0f, 0.0f, false, CHANNEL_ROLE_GRID};
+    for (uint8_t i = 1; i < N; i++) in[i] = {true, 0.0f, 0.0f, false, CHANNEL_ROLE_LOAD};
+    float w[N] = {};
+    computeWeights(in, N, 1, WCFG, w);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 1.0f, _sumWeights(w, N, 1));
+    for (uint8_t i = 1; i < N; i++) TEST_ASSERT_FLOAT_WITHIN(1e-5f, 1.0f / 14.0f, w[i]);
+}
+
+void test_computeWeights_sums_to_one_mixed_fleet(void) {
+    // Mixed shapes: hog + battery (2x mult) + armed-conducting (boost) + idles.
+    // Whatever the raw pile-up, the output must always sum to 1.
+    const uint8_t N = 10;
+    ChannelWeightInput in[N];
+    in[0] = {true, 5000.0f, 0.0f, false, CHANNEL_ROLE_GRID};
+    in[1] = {true, 3000.0f, 500.0f, false, CHANNEL_ROLE_LOAD};       // hog
+    in[2] = {true, 200.0f, 10.0f, false, CHANNEL_ROLE_BATTERY};      // 2x mult
+    in[3] = {true, -50.0f, 5.0f, true, CHANNEL_ROLE_LOAD, true};     // armed boost
+    in[4] = {true, NAN, NAN, false, CHANNEL_ROLE_LOAD};              // bad reading
+    in[5] = {false, 999.0f, 99.0f, false, CHANNEL_ROLE_LOAD};        // inactive
+    for (uint8_t i = 6; i < N; i++) in[i] = {true, 0.0f, 0.0f, false, CHANNEL_ROLE_LOAD};
+    float w[N] = {};
+    computeWeights(in, N, 1, WCFG, w);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 1.0f, _sumWeights(w, N, 1));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, w[0]); // ch0 stays out of the rotation
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, w[5]); // inactive stays zero
+}
+
+void test_computeWeights_normalisation_preserves_ratios(void) {
+    // The battery multiplier ratio must survive normalisation exactly.
+    const uint8_t N = 4;
+    ChannelWeightInput in[N];
+    in[0] = {false, 0.0f, 0.0f, false, CHANNEL_ROLE_LOAD};
+    in[1] = {true, 100.0f, 0.0f, false, CHANNEL_ROLE_BATTERY};
+    in[2] = {true, 100.0f, 0.0f, false, CHANNEL_ROLE_LOAD};
+    in[3] = {true, 100.0f, 0.0f, false, CHANNEL_ROLE_LOAD};
+    float w[N] = {};
+    computeWeights(in, N, 1, WCFG, w);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 1.0f, _sumWeights(w, N, 1));
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, w[2] * WCFG.rolePriorityMult, w[1]);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, w[2], w[3]);
+}
+
+void test_wdrr_no_deficit_saturation_with_normalised_weights(void) {
+    // Demand == supply: with normalised weights the deficits must stay well
+    // inside the clamp bound forever (the clamp becomes a dead safety net),
+    // at every fleet size from 2 to 16 schedulable channels, not just one.
+    for (uint8_t schedulable = 2; schedulable <= 16; schedulable++) {
+        const uint8_t N = schedulable + 1;
+        ChannelWeightInput in[17];
+        bool active[17];
+        for (uint8_t i = 0; i < N; i++) {
+            in[i] = {i >= 1, 0.0f, 0.0f, false, CHANNEL_ROLE_LOAD, false};
+            active[i] = (i >= 1);
+        }
+        in[1].activePower = 3000.0f;
+        in[1].variability = 500.0f;
+        in[1].conducting = true;
+
+        float weights[17] = {};
+        float deficits[17] = {};
+        uint8_t cursor = 0;
+        for (int r = 0; r < 1000; r++) {
+            computeWeights(in, N, 1, WCFG, weights);
+            wdrrAccumulate(weights, deficits, active, N, 1, 5.0f);
+            uint8_t pick = wdrrPick(deficits, active, N, 1, &cursor);
+            TEST_ASSERT_NOT_EQUAL(NO_CHANNEL, pick);
+            for (uint8_t i = 1; i < N; i++) {
+                char msg[64];
+                snprintf(msg, sizeof(msg), "schedulable=%u channel=%u round=%d", schedulable, i, r);
+                TEST_ASSERT_TRUE_MESSAGE(deficits[i] < 4.9f, msg);  // never reaches the clamp
+                TEST_ASSERT_TRUE_MESSAGE(deficits[i] > -4.9f, msg);
+            }
+        }
+    }
+}
+
+// ============================================================================
 // runner
 // ============================================================================
 
@@ -1062,6 +1243,12 @@ int main(int, char **) {
     RUN_TEST(test_small_reversed_load_flips_with_conducting_gate);
     RUN_TEST(test_noise_below_conducting_gate_does_not_vote);
     RUN_TEST(test_small_reversed_load_earns_armed_boost);
+
+    RUN_TEST(test_fleet_keeps_weight_differentiation_across_all_channel_counts);
+    RUN_TEST(test_computeWeights_sums_to_one_uniform_fleet);
+    RUN_TEST(test_computeWeights_sums_to_one_mixed_fleet);
+    RUN_TEST(test_computeWeights_normalisation_preserves_ratios);
+    RUN_TEST(test_wdrr_no_deficit_saturation_with_normalised_weights);
 
     return UNITY_END();
 }

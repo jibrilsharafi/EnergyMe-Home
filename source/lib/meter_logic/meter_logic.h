@@ -142,6 +142,12 @@ float computeChannelWeight(const ChannelWeightInput& in, float powerShare,
 // set to 0 (the firmware reads channel 0 separately, outside the rotation).
 // NaN power / variability values are excluded from the totals and treated as 0,
 // so one bad reading cannot poison every other channel's weight.
+// The result is normalised to sum to 1 across the rotation: the scheduler
+// services exactly one channel per round, so total weight in must equal total
+// service out - otherwise deficits saturate at the clamp and selection
+// degenerates into weight-blind round-robin at high channel counts. Each
+// weight is therefore the channel's fraction of reads (relative priorities
+// from cfg are preserved; only the scale changes). All-inactive -> all zeros.
 void computeWeights(const ChannelWeightInput* in, uint8_t count, uint8_t startIndex,
                     const WeightConfig& cfg, float* outWeights);
 
