@@ -98,7 +98,16 @@
 #define DEFAULT_EXPECTED_AP_NOLOAD_REGISTER 0x00E419 // Default expected value for AP_NOLOAD_32 (used to validate the ADE7953 communication)
 #define DEFAULT_NOLOAD_DYNAMIC_RANGE 20000 // Indicates the 1/X dynamic range before the no load feature kicks in. The higher the more sensible, but more prone to noise. Then there will be a formula to compute the register value.
 #define DEFAULT_DISNOLOAD_REGISTER 0 // 0x00 0b00000000 (enable all no-load detection)
-#define DEFAULT_LCYCMODE_REGISTER 0b01111111 // 0xFF 0b01111111 (enable accumulation mode for all channels, disable read with reset)
+// Bits 0-5: line cycle accumulation enabled for active/reactive/apparent on both channels.
+// Bit 6 RSTREAD = 0: read-with-reset DISABLED. In line cycle accumulation mode the hardware
+// latches a full window into the energy registers at each CYCEND and holds it until the next,
+// so a plain read always returns the last complete window. With RSTREAD set (the chip default),
+// any second read within one window returned 0 until the next CYCEND, which produced intermittent
+// false-zero power spikes (see openspec harden-meter-energy-window-glitches).
+// GUARDRAIL: RSTREAD is safe to leave OFF only while line cycle mode (bits 0-5) is ON. In normal
+// (free-running) accumulation mode the register never auto-resets, so RSTREAD is MANDATORY there
+// (saturation + per-interval energy). If bits 0-5 are ever cleared, set bit 6 back to 1.
+#define DEFAULT_LCYCMODE_REGISTER 0b00111111 // 0x3F line cycle accumulation on all channels; read-with-reset OFF (see guardrail above)
 #define DEFAULT_PGA_REGISTER 0 // PGA gain 1
 #define DEFAULT_CONFIG_REGISTER 0b1010000100001100 // Bits 2, 3 (line accumulation for PF), 8 (CRC), 13:12=10b (ZX_EDGE: positive-going zero crossings only; does not affect linecyc), 15 (HPF enabled, COMM_LOCK disabled)
 #define DEFAULT_IRQENA_REGISTER 0b001101001000000000000000 // ZXV (bit 15, grid frequency), CYCEND (bit 18), Reset (bit 20, mandatory), CRC change (bit 21)
