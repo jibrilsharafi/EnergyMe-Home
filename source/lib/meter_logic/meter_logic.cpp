@@ -77,6 +77,20 @@ bool shouldClampNegative(float activePower, ChannelRole role) {
 }
 
 // ----------------------------------------------------------------------------
+// RMS witness (energy-path integrity)
+// ----------------------------------------------------------------------------
+bool apparentWitnessDiverges(float sApparentFromEnergy, float sApparentFromRms,
+                             float maxDivergence, float rmsFloor) {
+    // Never invent a disagreement from a NaN or from the near-zero region where the
+    // ratio is meaningless (no meaningful current to witness against).
+    if (std::isnan(sApparentFromEnergy) || std::isnan(sApparentFromRms)) return false;
+    if (sApparentFromRms <= rmsFloor) return false;
+
+    float divergence = std::fabs(sApparentFromEnergy - sApparentFromRms) / sApparentFromRms;
+    return divergence > maxDivergence;
+}
+
+// ----------------------------------------------------------------------------
 // WDRR weighting
 // ----------------------------------------------------------------------------
 bool roleHasSchedulingPriority(ChannelRole role) {
