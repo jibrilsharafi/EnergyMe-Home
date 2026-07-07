@@ -249,6 +249,13 @@
 #define MINIMUM_CURRENT_RATIO_VALIDATION 0.001f // 10/10000 of the CT rating: validation-discard gate - an electrically invalid reading at this current is a genuine failure worth logging
 #define MINIMUM_CURRENT_RATIO_CONDUCTING 0.0003f // 3/10000 of the CT rating: gate for the polarity-vote and WDRR-armed-boost path. Sits above the ADE7953 offset-noise floor (~0 A consistent-sign bias) yet below real small loads (~2 W on a 30 A CT = ~9 mA). Lower than MINIMUM_CURRENT_RATIO_VALIDATION so a reversed 2-3 W load still earns votes and the armed boost instead of reading a constant 0.
 #define MINIMUM_POWER_FACTOR 0.10f // Measuring such low power factors is virtually impossible with such CTs
+// RMS-witness residual check (base-phase path): discard a reading when apparent power derived from the
+// energy registers (APENERGY/_sampleTime) and apparent power from the independent RMS registers
+// (voltage x IRMS) disagree by more than this fraction. IRMS is not on the reset-on-read energy path, so it
+// stays truthful when the energy path is corrupted (partials / mux artifacts). Loose on purpose: real
+// artifacts diverge far (50-100%); steady state clusters near 0. PROVISIONAL - calibrate from the
+// DEBUG-log capture on device 907069886934 before relying on it (see openspec change design.md).
+#define APPARENT_WITNESS_MAX_DIVERGENCE 0.5f // |S_energy - S_rms| / S_rms above this -> discard
 #define POLARITY_DETECT_VOTE_THRESHOLD 5 // Net consistent-sign votes (over conducting samples) needed to decide CT orientation. Magnitude-independent, so a steady -4 W reversed CT is caught like a -4 kW one
 #define POLARITY_DETECT_MAX_CONDUCTING_READS 40 // Give up CT-reversal detection after this many CONDUCTING reads without a decision (only trips on a sign-oscillating channel; a no-load channel waits indefinitely)
 #define ADE7953_MIN_LINECYC 10UL // Below this the readings are unstable (200 ms)

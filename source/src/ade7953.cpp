@@ -3795,6 +3795,23 @@ namespace Ade7953
             else powerFactor = activePower / apparentPower * (reactivePower >= 0.0f ? 1.0f : -1.0f); // Apply sign as by datasheet (page 38)
 
             current = voltage > 0.0f ? apparentPower / voltage : 0.0f; // VA = V * A => A = VA / V | Always positive as apparent power is always positive
+
+            // RMS witness (residual integrity check). apparentPower here comes from the reset-on-read
+            // energy path; IRMS is an independent, continuously-updated register that is NOT on that
+            // path, so it stays truthful when a bad accumulation window corrupts the energy read
+            // (partials / mux artifacts - the residual the RSTREAD root fix does not cover). Compare
+            // APPARENT-vs-APPARENT only (S_rms = voltage x IRMS) so power factor never false-trips, and
+            // discard on a large divergence. NOT a timing/deltaMillis guard: that false-rejects valid
+            // close-in-time reads (see openspec harden-meter-energy-window-glitches design.md).
+            float apparentPowerFromRms = voltage * (float(_readCurrentRms(ade7953Channel)) * channelData.ctSpecification.aLsb);
+            if (MeterLogic::apparentWitnessDiverges(apparentPower, apparentPowerFromRms, APPARENT_WITNESS_MAX_DIVERGENCE, minCurrentValidation * voltage)) {
+                LOG_DEBUG(
+                    "%s (%d): RMS witness discard - S_energy %.1fVA vs S_rms %.1fVA (>%.0f%% divergence)",
+                    channelData.label, channelIndex, apparentPower, apparentPowerFromRms, APPARENT_WITNESS_MAX_DIVERGENCE * 100.0f
+                );
+                _recordFailure();
+                return false;
+            }
         } else {
             // We cannot use the energy registers as it would be too complicated (or impossible) to account both for the 120° shift and possible reverse current
             // Assume the voltage is the same as channel 0 (in amplitude) but shifted 120°
