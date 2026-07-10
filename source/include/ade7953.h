@@ -137,6 +137,8 @@
 #define POWER_FACTOR_CONVERSION_FACTOR 0.00003052f // PF/LSB computed as 1.0f / 32768.0f (from ADE7953 datasheet). Unused but left for reference
 #define ANGLE_CONVERSION_FACTOR 0.0807f // 0.0807 °/LSB computed as 360.0f * 50.0f / 223000.0f. Unused but left for reference
 #define GRID_FREQUENCY_CONVERSION_FACTOR 223750.0f // Clock of the period measurement, in Hz. f = factor / (PERIOD_16 + 1) per datasheet Eq.36
+// NOTE: assumes a nominal 3.58 MHz CLKIN; the populated oscillator (X1, RO03579043) is 3.579545 MHz.
+// Reported frequency is accordingly biased by tens of ppm vs an external reference (~4-9 mHz at 50 Hz).
 #define DEFAULT_FALLBACK_FREQUENCY 50 // Most of the world is 50 Hz
 
 // Waveform capture
