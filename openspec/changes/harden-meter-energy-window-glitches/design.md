@@ -86,7 +86,21 @@ This section is deliberately preserved so the RSTREAD/line-cycle coupling is not
 3. Finalize the witness tolerance from the capture; roll out.
 4. Rollback: restore `RSTREAD` = 1 in `DEFAULT_LCYCMODE_REGISTER` and re-enable the guard; raise the witness tolerance to a no-op.
 
+## Validation results (prod device `907069886934`, 2026-07-08 -> 07-14)
+
+Firmware manually rolled out mid-day 2026-07-08. Verified read-only via Athena (`energyme_home_prod_meter`), the S3 `statistics/` payloads, and CloudWatch DEBUG logs. One continuous boot across the window (all statistics counters monotonically increasing, no reset).
+
+**Root fix - false-zeros eliminated.** ch0 grid false-zeros (`active_power = 0` flanked by `|>500 W|` both sides), per day:
+- Old fw ramping: 07-05 **90** -> 07-06 **131** -> 07-07 **164**.
+- New fw: 07-09 **0**, 07-10 2, 07-11 0, 07-12 3, 07-13 4, 07-14 1 (07-08 = 52, changeover day). Clamped to the noise floor.
+
+**PV artifacts gone.** ch15 isolated up-spikes (`> both neighbors + 1000 W`): old fw 0-3/day -> new fw **0/day** every day, despite PV cadence doubling (16.5k -> 34k samples/day after the RSTREAD fix).
+
+**Servicing keeps up.** `unhandledInterrupts = 0` and `meterPointsDropped = gridPointsDropped = 0` across ~29.4 M interrupts / 4.08 M reads. No crashes since 07-04 (pre-fix); 3 warnings / 2 errors total over ~6 days.
+
+**Witness behaving as designed.** `readingCountFailure` steady at ~1.2% (39,059 discards / 3,284,242 reads over the 07-09..07-14 interval, not growing) - the apparent-vs-apparent witness quietly dropping bad reads without gaps in published data. Grid-conservation cross-check (Grid + PV - Sum loads) stays within <1% of throughput and tightens to std ~42 W with zero >500 W deviations at 15 s; real transients (shutter motors corroborated on the independent grid clamp) are preserved, only artifacts rejected.
+
 ## Open Questions
 
-- Final numeric tolerance for the apparent-power divergence band (pending DEBUG-log capture).
-- Whether the residual partials are artifacts (witness handles them) or real (no action needed) - resolved by the capture.
+- ~~Final numeric tolerance for the apparent-power divergence band~~ - resolved: `APPARENT_WITNESS_MAX_DIVERGENCE = 0.5` validated in prod (steady ~1.2% discard rate, no real-transient loss over a week).
+- ~~Whether the residual partials are artifacts or real~~ - resolved: the witness rejects only artifacts (energy low while `IRMS` high); genuine transients move both together and pass. Confirmed against grid-corroborated motor events.
