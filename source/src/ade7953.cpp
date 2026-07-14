@@ -75,16 +75,7 @@ namespace Ade7953
 
     // Operational flags
     static bool _hasConfigurationChanged = false; // Flag to track if configuration has changed (needed since we will get an interrupt for CRC change)
-    static bool _hasToSkipReading = true; // Flag to skip every other reading on Channel B so we purge the ADE7953 data when switching multiplexer channel
-    
-    // Interrupt management
-    // We set this flag to false in the ISR and to true immediately after reading the energy registers (with reset)
-    // This ensures that we only process the interrupt once and avoid reading 0 energy values when reading twice in a row
-    // This happens when the CPU is starved (e.g. during OTA) and thus we fall late, starting the reading just before an
-    // interrupt is triggered, meaning we read twice in a row in the same window.
-    // TL;DR: This flag helps us avoid reading zero energy data during OTA.
-    static bool volatile _interruptHandledChannelA = false;
-    static bool volatile _interruptHandledChannelB = false;
+    static bool _hasToSkipReading = true; // Flag to skip the first reading on Channel B after a mux switch so the contaminated (transition-spanning) window is discarded
 
     // Synchronization primitives
     static SemaphoreHandle_t _spiMutex = NULL; // To handle single SPI operations
@@ -206,7 +197,6 @@ namespace Ade7953
 
     // Meter reading and processing
     static bool _readMeterValues(uint8_t channelIndex, uint64_t linecycUnixTime);
-    static void _purgeEnergyRegisters(Ade7953Channel ade7953Channel);
     static bool _processChannelReading(uint8_t channelIndex, uint64_t linecycUnix);
     static void _addMeterDataToPayload(uint8_t channelIndex);
 
@@ -1866,11 +1856,6 @@ namespace Ade7953
         }
 
         if (statusA & (1 << IRQSTATA_CYCEND_BIT)) {
-            // Re-arm the energy double-read guard ONLY on a genuine new linecyc,
-            // otherwise a duplicate CYCEND could read the reset-on-read energy
-            // registers twice and lose the cycle.
-            _interruptHandledChannelA = false;
-            _interruptHandledChannelB = false;
             _handleCycendInterrupt(linecycUnix);
         }
 
@@ -1926,8 +1911,11 @@ namespace Ade7953
         statistics.ade7953TotalHandledInterrupts++;
         
         if (_hasToSkipReading) {
-            LOG_VERBOSE("Purging energy registers for Channel B (channel %lu)", _currentChannel);
-            _purgeEnergyRegisters(Ade7953Channel::B);
+            // First window after a mux switch: it spans the channel transition, so it is
+            // contaminated. We simply skip it - the next CYCEND overwrites the register with a
+            // clean full window on the settled channel (no reset read needed; with RSTREAD off
+            // the register is non-destructive and auto-latches per window).
+            LOG_VERBOSE("Skipping contaminated post-switch window for Channel B (channel %lu)", _currentChannel);
             _hasToSkipReading = false;
         } else {
             // Next linecyc we skip since we changed channel
@@ -3769,20 +3757,11 @@ namespace Ade7953
             // the ADE7953 do the hard work for us.
             // Use multiplication instead of division as it is faster in embedded systems
                     
-            // Handle interrupt flag depending on channel
-            if (ade7953Channel == Ade7953Channel::A) {
-                if (_interruptHandledChannelA) {
-                    LOG_DEBUG("Tried to handle CYCEND interrupt for channel A, but it was already handled");
-                    _recordFailure();
-                    return false; // Already handled, cannot read again
-                }
-            } else {
-                if (_interruptHandledChannelB) {
-                    LOG_DEBUG("Tried to handle CYCEND interrupt for channel B, but it was already handled");
-                    _recordFailure();
-                    return false; // Already handled, cannot read again
-                }
-            }
+            // No double-read guard needed anymore: with read-with-reset disabled (LCYCMODE
+            // RSTREAD=0, see DEFAULT_LCYCMODE_REGISTER), the energy registers are non-destructive
+            // and hold the last full latched window until the next CYCEND, so a second read within
+            // a window returns the same correct value instead of 0. The old _interruptHandledChannel
+            // flags existed solely to suppress that reset-induced zero and are now obsolete.
 
             // Apply 2x multiplier for split-phase 240V circuits (ADE7953 measures only 120V leg)
             float voltageMultiplier = isSplitPhase240 ? 2.0f : 1.0f;
@@ -3790,10 +3769,6 @@ namespace Ade7953
             activeEnergy = float(_readActiveEnergy(ade7953Channel)) * channelData.ctSpecification.whLsb * (channelData.reverse ? -1.0f : 1.0f) * voltageMultiplier;
             reactiveEnergy = float(_readReactiveEnergy(ade7953Channel)) * channelData.ctSpecification.varhLsb * (channelData.reverse ? -1.0f : 1.0f) * voltageMultiplier;
             apparentEnergy = float(_readApparentEnergy(ade7953Channel)) * channelData.ctSpecification.vahLsb * voltageMultiplier;
-
-            // Set the handling just after reading the energy values, to ensure 100% consistency
-            if (ade7953Channel == Ade7953Channel::A) _interruptHandledChannelA = true;
-            else _interruptHandledChannelB = true;
 
             // Since the voltage measurement is only one in any case, it makes sense to just re-use the same value
             // as channel 0 (sampled just before) instead of reading it again. It will be at worst _sampleTime old.
@@ -3820,6 +3795,23 @@ namespace Ade7953
             else powerFactor = activePower / apparentPower * (reactivePower >= 0.0f ? 1.0f : -1.0f); // Apply sign as by datasheet (page 38)
 
             current = voltage > 0.0f ? apparentPower / voltage : 0.0f; // VA = V * A => A = VA / V | Always positive as apparent power is always positive
+
+            // RMS witness (residual integrity check). apparentPower here comes from the reset-on-read
+            // energy path; IRMS is an independent, continuously-updated register that is NOT on that
+            // path, so it stays truthful when a bad accumulation window corrupts the energy read
+            // (partials / mux artifacts - the residual the RSTREAD root fix does not cover). Compare
+            // APPARENT-vs-APPARENT only (S_rms = voltage x IRMS) so power factor never false-trips, and
+            // discard on a large divergence. NOT a timing/deltaMillis guard: that false-rejects valid
+            // close-in-time reads (see openspec harden-meter-energy-window-glitches design.md).
+            float apparentPowerFromRms = voltage * (float(_readCurrentRms(ade7953Channel)) * channelData.ctSpecification.aLsb);
+            if (MeterLogic::apparentWitnessDiverges(apparentPower, apparentPowerFromRms, APPARENT_WITNESS_MAX_DIVERGENCE, minCurrentValidation * voltage)) {
+                LOG_DEBUG(
+                    "%s (%d): RMS witness discard - S_energy %.1fVA vs S_rms %.1fVA (>%.0f%% divergence)",
+                    channelData.label, channelIndex, apparentPower, apparentPowerFromRms, APPARENT_WITNESS_MAX_DIVERGENCE * 100.0f
+                );
+                _recordFailure();
+                return false;
+            }
         } else {
             // We cannot use the energy registers as it would be too complicated (or impossible) to account both for the 120° shift and possible reverse current
             // Assume the voltage is the same as channel 0 (in amplitude) but shifted 120°
@@ -4096,6 +4088,10 @@ namespace Ade7953
         // a certain threshold (set during setup), the read value is 0
         // In this way, we can avoid worrying about setting up thresholds (which are always specific to one case)
         // and instead use this feature to really discard zero-power readings.
+        // Energy integrates power over the ACTUAL elapsed time (deltaMillis), not the fixed
+        // _sampleTime. This self-corrects any repeated read now that reads are non-destructive
+        // (RSTREAD off): two reads of one window add P*~200ms then P*~5ms ~= one true window, so a
+        // double-service does not double-count energy (it only yields a duplicate power sample).
         float deltaHoursFromLastEnergyIncrement = float(deltaMillis) / 1000.0f / 3600.0f; // Convert milliseconds to hours
         if (activeEnergy > 0) { // Increment imported
             // NOTE: The line below is the reason the energy variables are double: with float, we cannot sum numbers like 96901.9688 + 0.0054
@@ -4152,21 +4148,6 @@ namespace Ade7953
         _meterValues[channelIndex].lastUnixTimeMilliseconds = linecycUnixTimeMillis;
         releaseMutex(&_meterValuesMutex);
         return true;
-    }
-
-    static void _purgeEnergyRegisters(Ade7953Channel ade7953Channel) {
-        // Purge the energy registers to ensure the next linecyc reading is clean
-        // To do so, we just need to read the energy registers (which are read with reset)
-        LOG_VERBOSE("Purging energy registers for channel %s", ADE7953_CHANNEL_TO_STRING(ade7953Channel));
-        if (ade7953Channel == Ade7953Channel::A) {
-            _readActiveEnergy(Ade7953Channel::A);
-            _readReactiveEnergy(Ade7953Channel::A);
-            _readApparentEnergy(Ade7953Channel::A);
-        } else {
-            _readActiveEnergy(Ade7953Channel::B);
-            _readReactiveEnergy(Ade7953Channel::B);
-            _readApparentEnergy(Ade7953Channel::B);
-        }
     }
 
     bool _processChannelReading(uint8_t channelIndex, uint64_t linecycUnix) {

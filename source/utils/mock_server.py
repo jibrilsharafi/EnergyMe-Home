@@ -41,6 +41,7 @@ GET_ENDPOINTS = [
     '/api/v1/system/safe-mode',
     '/api/v1/system/secrets',
     '/api/v1/system/time',
+    '/api/v1/system/issues',
     '/api/v1/firmware/update-info',
     '/api/v1/list-files',
     '/api/v1/crash/info',

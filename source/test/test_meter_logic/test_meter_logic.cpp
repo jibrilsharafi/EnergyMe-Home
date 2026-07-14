@@ -12,6 +12,7 @@
 
 #include <unity.h>
 #include <cstdio>
+#include <cmath>
 #include "meter_logic.h"
 
 using namespace MeterLogic;
@@ -1159,6 +1160,49 @@ void test_wdrr_no_deficit_saturation_with_normalised_weights(void) {
 }
 
 // ============================================================================
+// apparentWitnessDiverges (RMS witness)
+// ============================================================================
+// Divergence = |sEnergy - sRms| / sRms; discard when > maxDivergence.
+static const float WITNESS_TOL = 0.5f;   // mirrors APPARENT_WITNESS_MAX_DIVERGENCE
+static const float WITNESS_FLOOR = 20.0f; // near-zero VA floor (below this, ratio is meaningless)
+
+void test_witness_glitch_energy_zero_current_flows_discards(void) {
+    // Energy path glitched to ~0 while RMS says ~3900 VA -> discard.
+    TEST_ASSERT_TRUE(apparentWitnessDiverges(0.0f, 3900.0f, WITNESS_TOL, WITNESS_FLOOR));
+}
+
+void test_witness_partial_energy_discards(void) {
+    // Energy ~40% of RMS (partial window) -> 60% divergence -> discard.
+    TEST_ASSERT_TRUE(apparentWitnessDiverges(1560.0f, 3900.0f, WITNESS_TOL, WITNESS_FLOOR));
+}
+
+void test_witness_steady_agreement_keeps(void) {
+    // Within a few percent -> keep.
+    TEST_ASSERT_FALSE(apparentWitnessDiverges(3850.0f, 3900.0f, WITNESS_TOL, WITNESS_FLOOR));
+}
+
+void test_witness_low_power_factor_does_not_trip(void) {
+    // Apparent-vs-apparent: both are S (not P), so a low-PF load (large reactive) still
+    // has S_energy == S_rms. Power factor is irrelevant to the witness.
+    TEST_ASSERT_FALSE(apparentWitnessDiverges(2000.0f, 2000.0f, WITNESS_TOL, WITNESS_FLOOR));
+}
+
+void test_witness_genuine_transient_moves_together_keeps(void) {
+    // A real load change moves BOTH witnesses together, so they still agree -> keep.
+    TEST_ASSERT_FALSE(apparentWitnessDiverges(900.0f, 950.0f, WITNESS_TOL, WITNESS_FLOOR));
+}
+
+void test_witness_near_zero_current_no_false_trip(void) {
+    // Idle channel: sRms below the floor -> never rejects (ratio is meaningless there).
+    TEST_ASSERT_FALSE(apparentWitnessDiverges(0.0f, 5.0f, WITNESS_TOL, WITNESS_FLOOR));
+}
+
+void test_witness_nan_never_rejects(void) {
+    TEST_ASSERT_FALSE(apparentWitnessDiverges(NAN, 3900.0f, WITNESS_TOL, WITNESS_FLOOR));
+    TEST_ASSERT_FALSE(apparentWitnessDiverges(3900.0f, NAN, WITNESS_TOL, WITNESS_FLOOR));
+}
+
+// ============================================================================
 // runner
 // ============================================================================
 
@@ -1249,6 +1293,14 @@ int main(int, char **) {
     RUN_TEST(test_computeWeights_sums_to_one_mixed_fleet);
     RUN_TEST(test_computeWeights_normalisation_preserves_ratios);
     RUN_TEST(test_wdrr_no_deficit_saturation_with_normalised_weights);
+
+    RUN_TEST(test_witness_glitch_energy_zero_current_flows_discards);
+    RUN_TEST(test_witness_partial_energy_discards);
+    RUN_TEST(test_witness_steady_agreement_keeps);
+    RUN_TEST(test_witness_low_power_factor_does_not_trip);
+    RUN_TEST(test_witness_genuine_transient_moves_together_keeps);
+    RUN_TEST(test_witness_near_zero_current_no_false_trip);
+    RUN_TEST(test_witness_nan_never_rejects);
 
     return UNITY_END();
 }

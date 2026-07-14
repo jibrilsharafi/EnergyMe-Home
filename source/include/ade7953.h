@@ -98,7 +98,16 @@
 #define DEFAULT_EXPECTED_AP_NOLOAD_REGISTER 0x00E419 // Default expected value for AP_NOLOAD_32 (used to validate the ADE7953 communication)
 #define DEFAULT_NOLOAD_DYNAMIC_RANGE 20000 // Indicates the 1/X dynamic range before the no load feature kicks in. The higher the more sensible, but more prone to noise. Then there will be a formula to compute the register value.
 #define DEFAULT_DISNOLOAD_REGISTER 0 // 0x00 0b00000000 (enable all no-load detection)
-#define DEFAULT_LCYCMODE_REGISTER 0b01111111 // 0xFF 0b01111111 (enable accumulation mode for all channels, disable read with reset)
+// Bits 0-5: line cycle accumulation enabled for active/reactive/apparent on both channels.
+// Bit 6 RSTREAD = 0: read-with-reset DISABLED. In line cycle accumulation mode the hardware
+// latches a full window into the energy registers at each CYCEND and holds it until the next,
+// so a plain read always returns the last complete window. With RSTREAD set (the chip default),
+// any second read within one window returned 0 until the next CYCEND, which produced intermittent
+// false-zero power spikes (see openspec harden-meter-energy-window-glitches).
+// GUARDRAIL: RSTREAD is safe to leave OFF only while line cycle mode (bits 0-5) is ON. In normal
+// (free-running) accumulation mode the register never auto-resets, so RSTREAD is MANDATORY there
+// (saturation + per-interval energy). If bits 0-5 are ever cleared, set bit 6 back to 1.
+#define DEFAULT_LCYCMODE_REGISTER 0b00111111 // 0x3F line cycle accumulation on all channels; read-with-reset OFF (see guardrail above)
 #define DEFAULT_PGA_REGISTER 0 // PGA gain 1
 #define DEFAULT_CONFIG_REGISTER 0b1010000100001100 // Bits 2, 3 (line accumulation for PF), 8 (CRC), 13:12=10b (ZX_EDGE: positive-going zero crossings only; does not affect linecyc), 15 (HPF enabled, COMM_LOCK disabled)
 #define DEFAULT_IRQENA_REGISTER 0b001101001000000000000000 // ZXV (bit 15, grid frequency), CYCEND (bit 18), Reset (bit 20, mandatory), CRC change (bit 21)
@@ -128,6 +137,8 @@
 #define POWER_FACTOR_CONVERSION_FACTOR 0.00003052f // PF/LSB computed as 1.0f / 32768.0f (from ADE7953 datasheet). Unused but left for reference
 #define ANGLE_CONVERSION_FACTOR 0.0807f // 0.0807 °/LSB computed as 360.0f * 50.0f / 223000.0f. Unused but left for reference
 #define GRID_FREQUENCY_CONVERSION_FACTOR 223750.0f // Clock of the period measurement, in Hz. f = factor / (PERIOD_16 + 1) per datasheet Eq.36
+// NOTE: assumes a nominal 3.58 MHz CLKIN; the populated oscillator (X1, RO03579043) is 3.579545 MHz.
+// Reported frequency is accordingly biased by tens of ppm vs an external reference (~4-9 mHz at 50 Hz).
 #define DEFAULT_FALLBACK_FREQUENCY 50 // Most of the world is 50 Hz
 
 // Waveform capture
@@ -240,6 +251,13 @@
 #define MINIMUM_CURRENT_RATIO_VALIDATION 0.001f // 10/10000 of the CT rating: validation-discard gate - an electrically invalid reading at this current is a genuine failure worth logging
 #define MINIMUM_CURRENT_RATIO_CONDUCTING 0.0003f // 3/10000 of the CT rating: gate for the polarity-vote and WDRR-armed-boost path. Sits above the ADE7953 offset-noise floor (~0 A consistent-sign bias) yet below real small loads (~2 W on a 30 A CT = ~9 mA). Lower than MINIMUM_CURRENT_RATIO_VALIDATION so a reversed 2-3 W load still earns votes and the armed boost instead of reading a constant 0.
 #define MINIMUM_POWER_FACTOR 0.10f // Measuring such low power factors is virtually impossible with such CTs
+// RMS-witness residual check (base-phase path): discard a reading when apparent power derived from the
+// energy registers (APENERGY/_sampleTime) and apparent power from the independent RMS registers
+// (voltage x IRMS) disagree by more than this fraction. IRMS is not on the reset-on-read energy path, so it
+// stays truthful when the energy path is corrupted (partials / mux artifacts). Loose on purpose: real
+// artifacts diverge far (50-100%); steady state clusters near 0. PROVISIONAL - calibrate from the
+// DEBUG-log capture on device 907069886934 before relying on it (see openspec change design.md).
+#define APPARENT_WITNESS_MAX_DIVERGENCE 0.5f // |S_energy - S_rms| / S_rms above this -> discard
 #define POLARITY_DETECT_VOTE_THRESHOLD 5 // Net consistent-sign votes (over conducting samples) needed to decide CT orientation. Magnitude-independent, so a steady -4 W reversed CT is caught like a -4 kW one
 #define POLARITY_DETECT_MAX_CONDUCTING_READS 40 // Give up CT-reversal detection after this many CONDUCTING reads without a decision (only trips on a sign-oscillating channel; a no-load channel waits indefinitely)
 #define ADE7953_MIN_LINECYC 10UL // Below this the readings are unstable (200 ms)

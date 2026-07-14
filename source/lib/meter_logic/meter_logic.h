@@ -96,6 +96,27 @@ PolarityResult updatePolarity(PolarityState state, float activePower, float curr
 bool shouldClampNegative(float activePower, ChannelRole role);
 
 // ============================================================================
+// RMS witness (energy-path integrity)
+// ============================================================================
+// True if the base-phase reading must be discarded because the apparent power
+// derived from the reset-on-read energy registers disagrees with the apparent
+// power measured independently from the RMS registers by more than maxDivergence.
+//
+// sApparentFromEnergy = APENERGY / _sampleTime ; sApparentFromRms = voltage x IRMS.
+// The two accumulators are independent, and IRMS is NOT on the reset-on-read path,
+// so it stays truthful when the energy path is corrupted by a bad accumulation
+// window (partials / mux artifacts) - the residual the RSTREAD root fix does not
+// cover. Compare APPARENT-vs-APPARENT only: power factor is irrelevant, so a
+// legitimately low-PF or reactive load never false-trips.
+//
+// Divergence is |sEnergy - sRms| / sRms. Returns false (keep) when there is no
+// meaningful current to compare against (sRms at or below rmsFloor) or when either
+// input is NaN - the witness only rejects a positive disagreement, it never invents
+// one. rmsFloor guards the near-zero region where the ratio is meaningless.
+bool apparentWitnessDiverges(float sApparentFromEnergy, float sApparentFromRms,
+                             float maxDivergence, float rmsFloor);
+
+// ============================================================================
 // WDRR weighting
 // ============================================================================
 // Weighted Deficit Round-Robin sampling weights. Higher weight -> sampled more
