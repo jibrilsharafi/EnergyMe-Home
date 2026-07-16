@@ -92,6 +92,19 @@
 #define AWS_IOT_CORE_MQTT_PAYLOAD_LIMIT (128 * 1024) // Limit of AWS
 #define MQTT_METER_PAYLOAD_THRESHOLD_MULTIPLIER 0.95 // Multiplier to avoid reaching exactly the limit
 
+// Meter publish cadence: shadow-configurable via the `system` shadow
+// (meter_publish_threshold_bytes / meter_publish_max_interval_ms), so cadence
+// can be dialed down for near-real-time viewing or up for cost-efficient
+// batching without a reflash. Defaults match today's fixed behavior; bounds
+// guard against a bad/forgotten write causing a publish storm or an
+// oversized payload (see openspec/changes/configurable-meter-publish-rate).
+#define MQTT_METER_PUBLISH_THRESHOLD_BYTES_DEFAULT AWS_IOT_CORE_MQTT_PAYLOAD_MINIMUM_BILLABLE
+#define MQTT_METER_PUBLISH_THRESHOLD_BYTES_MIN 256 // Small enough to allow near-real-time publishing, big enough to be a meaningful trigger
+#define MQTT_METER_PUBLISH_THRESHOLD_BYTES_MAX ((uint32_t)(AWS_IOT_CORE_MQTT_PAYLOAD_LIMIT * MQTT_METER_PAYLOAD_THRESHOLD_MULTIPLIER))
+#define MQTT_METER_PUBLISH_MAX_INTERVAL_MS_DEFAULT MQTT_MAX_INTERVAL_METER_PUBLISH
+#define MQTT_METER_PUBLISH_MAX_INTERVAL_MS_MIN MQTT_LOOP_INTERVAL // Below the task's own poll cadence, a smaller value has no effect
+#define MQTT_METER_PUBLISH_MAX_INTERVAL_MS_MAX (24UL * 60 * 60 * 1000) // 24 h ceiling - a long interval is just "batch a lot"
+
 #define MQTT_INITIAL_RETRY_INTERVAL (15 * 1000) // Base delay for exponential backoff in milliseconds
 #define MQTT_MAX_RETRY_INTERVAL (60 * 60 * 1000) // Maximum delay for exponential backoff in milliseconds
 #define MQTT_RETRY_MULTIPLIER 2 // Multiplier for exponential backoff
@@ -99,6 +112,8 @@
 #define MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY "en_cloud"
 #define MQTT_PREFERENCES_SEND_POWER_DATA_KEY "send_power"
 #define MQTT_PREFERENCES_SEND_GRID_DATA_KEY "send_grid"
+#define MQTT_PREFERENCES_METER_PUBLISH_THRESHOLD_KEY "meter_pub_thr"
+#define MQTT_PREFERENCES_METER_PUBLISH_INTERVAL_KEY "meter_pub_int"
 #define MQTT_PREFERENCES_MQTT_LOG_LEVEL_KEY "log_level_int"
 #define MQTT_PREFERENCES_TRANSIENT_LOG_LEVEL_KEY "transient_log" // active transient (VERBOSE/DEBUG) level, persisted so a debug session survives a reboot; absent = none
 
@@ -188,6 +203,10 @@ namespace Mqtt
     void setSendPowerData(bool enabled);     // persisted
     bool getSendGridData();
     void setSendGridData(bool enabled);      // persisted; cloud-settable via the system shadow
+    uint32_t getMeterPublishThresholdBytes();
+    void setMeterPublishThresholdBytes(uint32_t bytes);     // persisted; clamped to [MIN,MAX]; cloud-settable via the system shadow
+    uint32_t getMeterPublishMaxIntervalMs();
+    void setMeterPublishMaxIntervalMs(uint32_t intervalMs); // persisted; clamped to [MIN,MAX]; cloud-settable via the system shadow
 
 #ifdef ENV_DEV
     // Dev-only: inject a synthetic IoT Command execution through the real handler

@@ -7,6 +7,7 @@
 #include "taskprofiler.h"
 #include "duration_format.h"
 #include "mqtt_grid_schedule.h"
+#include <algorithm>
 
 namespace Mqtt
 {
@@ -54,6 +55,8 @@ namespace Mqtt
     static bool _cloudServicesEnabled = DEFAULT_CLOUD_SERVICES_ENABLED;
     static bool _sendPowerDataEnabled = DEFAULT_SEND_POWER_DATA_ENABLED;
     static bool _sendGridDataEnabled = DEFAULT_SEND_GRID_DATA_ENABLED;
+    static uint32_t _meterPublishThresholdBytes = MQTT_METER_PUBLISH_THRESHOLD_BYTES_DEFAULT;
+    static uint32_t _meterPublishMaxIntervalMs = MQTT_METER_PUBLISH_MAX_INTERVAL_MS_DEFAULT;
     static uint8_t _mqttLogLevelInt = DEFAULT_MQTT_LOG_LEVEL_INT;
     static LogLevel _mqttMinLogLevel = LogLevel::INFO;
 
@@ -100,12 +103,16 @@ namespace Mqtt
     
     static void _setSendPowerDataEnabled(bool enabled);
     static void _setSendGridDataEnabled(bool enabled);
+    static void _setMeterPublishThresholdBytes(uint32_t bytes);
+    static void _setMeterPublishMaxIntervalMs(uint32_t intervalMs);
     static void _setMqttLogLevel(const char* logLevel);
     static void _updateMqttMinLogLevel();
 
     static void _saveCloudServicesEnabledToPreferences(bool enabled);
     static void _saveSendPowerDataEnabledToPreferences(bool enabled);
     static void _saveSendGridDataEnabledToPreferences(bool enabled);
+    static void _saveMeterPublishThresholdBytesToPreferences(uint32_t bytes);
+    static void _saveMeterPublishMaxIntervalMsToPreferences(uint32_t intervalMs);
     static void _saveMqttLogLevelToPreferences(uint8_t logLevel);
         
     // Task management
@@ -510,6 +517,14 @@ namespace Mqtt
 
     void setSendGridData(bool enabled) { _setSendGridDataEnabled(enabled); } // persists
 
+    uint32_t getMeterPublishThresholdBytes() { return _meterPublishThresholdBytes; }
+
+    void setMeterPublishThresholdBytes(uint32_t bytes) { _setMeterPublishThresholdBytes(bytes); } // persists, clamped
+
+    uint32_t getMeterPublishMaxIntervalMs() { return _meterPublishMaxIntervalMs; }
+
+    void setMeterPublishMaxIntervalMs(uint32_t intervalMs) { _setMeterPublishMaxIntervalMs(intervalMs); } // persists, clamped
+
     // Private functions
     // =================
     // =================
@@ -640,13 +655,18 @@ namespace Mqtt
         _cloudServicesEnabled = prefs.getBool(MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY, DEFAULT_CLOUD_SERVICES_ENABLED);
         _sendPowerDataEnabled = prefs.getBool(MQTT_PREFERENCES_SEND_POWER_DATA_KEY, DEFAULT_SEND_POWER_DATA_ENABLED);
         _sendGridDataEnabled = prefs.getBool(MQTT_PREFERENCES_SEND_GRID_DATA_KEY, DEFAULT_SEND_GRID_DATA_ENABLED);
+        _meterPublishThresholdBytes = prefs.getUInt(MQTT_PREFERENCES_METER_PUBLISH_THRESHOLD_KEY, MQTT_METER_PUBLISH_THRESHOLD_BYTES_DEFAULT);
+        _meterPublishMaxIntervalMs = prefs.getUInt(MQTT_PREFERENCES_METER_PUBLISH_INTERVAL_KEY, MQTT_METER_PUBLISH_MAX_INTERVAL_MS_DEFAULT);
         _mqttLogLevelInt = prefs.getUChar(MQTT_PREFERENCES_MQTT_LOG_LEVEL_KEY, DEFAULT_MQTT_LOG_LEVEL_INT);
         _updateMqttMinLogLevel(); // Convert integer to LogLevel enum
 
-        LOG_DEBUG("Cloud services enabled: %s, Send power data enabled: %s, Send grid data enabled: %s, MQTT log level: %u",
+        LOG_DEBUG("Cloud services enabled: %s, Send power data enabled: %s, Send grid data enabled: %s, "
+                   "Meter publish threshold: %u bytes, Meter publish max interval: %u ms, MQTT log level: %u",
                    _cloudServicesEnabled ? "true" : "false",
                    _sendPowerDataEnabled ? "true" : "false",
                    _sendGridDataEnabled ? "true" : "false",
+                   _meterPublishThresholdBytes,
+                   _meterPublishMaxIntervalMs,
                    _mqttLogLevelInt);
 
         prefs.end();
@@ -661,6 +681,8 @@ namespace Mqtt
         _saveCloudServicesEnabledToPreferences(_cloudServicesEnabled);
         _saveSendPowerDataEnabledToPreferences(_sendPowerDataEnabled);
         _saveSendGridDataEnabledToPreferences(_sendGridDataEnabled);
+        _saveMeterPublishThresholdBytesToPreferences(_meterPublishThresholdBytes);
+        _saveMeterPublishMaxIntervalMsToPreferences(_meterPublishMaxIntervalMs);
         _saveMqttLogLevelToPreferences(_mqttLogLevelInt);
         
         LOG_DEBUG("MQTT preferences saved");
@@ -678,6 +700,30 @@ namespace Mqtt
         _sendGridDataEnabled = enabled;
         _saveSendGridDataEnabledToPreferences(enabled);
         LOG_DEBUG("Set send grid data enabled to %s", enabled ? "true" : "false");
+    }
+
+    static void _setMeterPublishThresholdBytes(uint32_t bytes)
+    {
+        uint32_t clamped = std::clamp<uint32_t>(bytes, MQTT_METER_PUBLISH_THRESHOLD_BYTES_MIN, MQTT_METER_PUBLISH_THRESHOLD_BYTES_MAX);
+        if (clamped != bytes) {
+            LOG_WARNING("Requested meter publish threshold %u bytes out of range [%u, %u], clamped to %u bytes",
+                        bytes, MQTT_METER_PUBLISH_THRESHOLD_BYTES_MIN, MQTT_METER_PUBLISH_THRESHOLD_BYTES_MAX, clamped);
+        }
+        _meterPublishThresholdBytes = clamped;
+        _saveMeterPublishThresholdBytesToPreferences(clamped);
+        LOG_DEBUG("Set meter publish threshold to %u bytes", clamped);
+    }
+
+    static void _setMeterPublishMaxIntervalMs(uint32_t intervalMs)
+    {
+        uint32_t clamped = std::clamp<uint32_t>(intervalMs, MQTT_METER_PUBLISH_MAX_INTERVAL_MS_MIN, MQTT_METER_PUBLISH_MAX_INTERVAL_MS_MAX);
+        if (clamped != intervalMs) {
+            LOG_WARNING("Requested meter publish max interval %u ms out of range [%u, %u], clamped to %u ms",
+                        intervalMs, MQTT_METER_PUBLISH_MAX_INTERVAL_MS_MIN, MQTT_METER_PUBLISH_MAX_INTERVAL_MS_MAX, clamped);
+        }
+        _meterPublishMaxIntervalMs = clamped;
+        _saveMeterPublishMaxIntervalMsToPreferences(clamped);
+        LOG_DEBUG("Set meter publish max interval to %u ms", clamped);
     }
 
     static void _updateMqttMinLogLevel()
@@ -756,6 +802,26 @@ namespace Mqtt
         prefs.begin(PREFERENCES_NAMESPACE_MQTT, false);
         size_t bytesWritten = prefs.putBool(MQTT_PREFERENCES_SEND_GRID_DATA_KEY, enabled);
         if (bytesWritten == 0) LOG_ERROR("Failed to save send grid data enabled preference");
+
+        prefs.end();
+    }
+
+    static void _saveMeterPublishThresholdBytesToPreferences(uint32_t bytes) {
+        Preferences prefs;
+
+        prefs.begin(PREFERENCES_NAMESPACE_MQTT, false);
+        size_t bytesWritten = prefs.putUInt(MQTT_PREFERENCES_METER_PUBLISH_THRESHOLD_KEY, bytes);
+        if (bytesWritten == 0) LOG_ERROR("Failed to save meter publish threshold preference");
+
+        prefs.end();
+    }
+
+    static void _saveMeterPublishMaxIntervalMsToPreferences(uint32_t intervalMs) {
+        Preferences prefs;
+
+        prefs.begin(PREFERENCES_NAMESPACE_MQTT, false);
+        size_t bytesWritten = prefs.putUInt(MQTT_PREFERENCES_METER_PUBLISH_INTERVAL_KEY, intervalMs);
+        if (bytesWritten == 0) LOG_ERROR("Failed to save meter publish max interval preference");
 
         prefs.end();
     }
@@ -1710,9 +1776,10 @@ namespace Mqtt
         // Real JSON size is checked during _publishMeterStreaming() with measureJson()
         // It is better to underestimate here (thus, the real payload will be more than 5kB) so we use all of the billable size
         // and only "risk" losing a few entries, which will just be published on the next cycle
+        // Threshold and max interval are shadow-configurable (system.meter_publish_threshold_bytes / max_interval_ms)
         if (
-            ((estimatedJsonSize >= AWS_IOT_CORE_MQTT_PAYLOAD_MINIMUM_BILLABLE) && _sendPowerDataEnabled) ||
-            ((millis64() - _lastMillisMeterPublished) > MQTT_MAX_INTERVAL_METER_PUBLISH)
+            ((estimatedJsonSize >= _meterPublishThresholdBytes) && _sendPowerDataEnabled) ||
+            ((millis64() - _lastMillisMeterPublished) > _meterPublishMaxIntervalMs)
         ) {
             _publishMqtt.meter = true;
             LOG_DEBUG("Set flag to publish meter data (queue: %u entries, real size checked during publish)", queueSize);
