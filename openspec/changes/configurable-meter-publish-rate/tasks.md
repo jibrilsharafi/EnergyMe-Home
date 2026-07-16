@@ -29,7 +29,7 @@
 
 ## 6. Hardware verification (dev device)
 
-- [ ] 6.1 Flash dev build to a bench device; confirm default behavior (no shadow write yet) matches today's cadence (5 KB / 60 s) via UDP log capture.
-- [ ] 6.2 Push a `system` shadow `desired` lowering both values (e.g. small threshold, few-second interval); confirm via UDP logs and the reported shadow that the device applies, persists, and acks correctly, and that publish frequency visibly increases.
-- [ ] 6.3 Push an out-of-range `desired` (e.g. 0, or above ceiling) and confirm the device clamps, logs a WARN, and reports the clamped value rather than the requested one.
-- [ ] 6.4 Reboot the device with a non-default persisted value set; confirm it boots back into that same cadence (NVS persistence) rather than reverting to firmware defaults.
+- [x] 6.1 Flash dev build to a bench device; confirm default behavior (no shadow write yet) matches today's cadence (5 KB / 60 s) via UDP log capture.
+- [x] 6.2 Push a `system` shadow `desired` lowering both values (e.g. small threshold, few-second interval); confirm via UDP logs and the reported shadow that the device applies, persists, and acks correctly, and that publish frequency visibly increases.
+- [x] 6.3 Push an out-of-range `desired` (e.g. 0, or above ceiling) and confirm the device clamps, logs a WARN, and reports the clamped value rather than the requested one.
+- [x] 6.4 Reboot the device with a non-default persisted value set; confirm it boots back into that same cadence (NVS persistence) rather than reverting to firmware defaults.
