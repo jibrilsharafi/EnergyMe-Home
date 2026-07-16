@@ -27,27 +27,27 @@ lists; info/issues/wifi are reported-only and not settable here).
 Examples
 --------
   # Generic set (any field on any writable shadow)
-  uv run utils/shadow_cli.py --host 192.168.1.111 set system led_brightness=20
+  uv run utils/shadow_cli.py set system led_brightness=20 --host 192.168.1.111
 
   # Convenience shorthands for things this repo tests often
-  uv run utils/shadow_cli.py --host 192.168.1.111 meter-cadence 1024 10000
-  uv run utils/shadow_cli.py --host 192.168.1.111 restore-cadence
-  uv run utils/shadow_cli.py --host 192.168.1.111 power-data off
-  uv run utils/shadow_cli.py --host 192.168.1.111 log-level print DEBUG
+  uv run utils/shadow_cli.py meter-cadence 1024 10000 --host 192.168.1.111
+  uv run utils/shadow_cli.py restore-cadence --host 192.168.1.111
+  uv run utils/shadow_cli.py power-data off --host 192.168.1.111
+  uv run utils/shadow_cli.py log-level print DEBUG --host 192.168.1.111
 
   # Per-channel config (channels shadow is keyed by channel index)
-  uv run utils/shadow_cli.py --host 192.168.1.111 channel 3 label="Kitchen" active=true
+  uv run utils/shadow_cli.py channel 3 label="Kitchen" active=true --host 192.168.1.111
 
   # Full escape hatch: raw state object for any shadow
-  uv run utils/shadow_cli.py --host 192.168.1.111 set-json meter '{"sample_time": 200}'
+  uv run utils/shadow_cli.py set-json meter '{"sample_time": 200}' --host 192.168.1.111
 
   # Best-effort local read (only fields with a local, non-shadow GET endpoint)
-  uv run utils/shadow_cli.py --host 192.168.1.111 get meter
-  uv run utils/shadow_cli.py --host 192.168.1.111 get channel 3
+  uv run utils/shadow_cli.py get meter --host 192.168.1.111
+  uv run utils/shadow_cli.py get channel 3 --host 192.168.1.111
 
   # IoT Commands (separate from shadow deltas, same dev-only injection path)
-  uv run utils/shadow_cli.py --host 192.168.1.111 command energy-reset --channels 0,2,5
-  uv run utils/shadow_cli.py --host 192.168.1.111 command restart --yes
+  uv run utils/shadow_cli.py command energy-reset --channels 0,2,5 --host 192.168.1.111
+  uv run utils/shadow_cli.py command restart --yes --host 192.168.1.111
 
 Every `set`/`channel`/shorthand command listens briefly on the UDP log port
 afterward (same port the device already sends AdvancedLogger syslog output
@@ -73,7 +73,7 @@ import requests
 from requests.auth import HTTPDigestAuth
 
 DEFAULT_USERNAME = "admin"
-DEFAULT_PASSWORD = "energyme"
+DEFAULT_PASSWORD = "energyme00"
 DEFAULT_WATCH_PORT = 514
 DEFAULT_WATCH_SECONDS = 3.0
 
