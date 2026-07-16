@@ -591,6 +591,8 @@ static void _reportSystem(JsonDocument& doc) {
     rep["led_brightness"] = Led::getBrightness();
     rep["send_power_data"] = Mqtt::getSendPowerData();
     rep["send_grid_data"] = Mqtt::getSendGridData();
+    rep["meter_publish_threshold_bytes"] = Mqtt::getMeterPublishThresholdBytes();
+    rep["meter_publish_max_interval_ms"] = Mqtt::getMeterPublishMaxIntervalMs();
     rep["mqtt_log_level"] = ShadowLogic::logLevelToString(Mqtt::getMqttLogLevel());
     rep["log_level_print"] = AdvancedLogger::logLevelToString(AdvancedLogger::getPrintLevel());
     rep["log_level_save"] = AdvancedLogger::logLevelToString(AdvancedLogger::getSaveLevel());
@@ -647,6 +649,31 @@ static bool _applySystem(JsonObjectConst delta, JsonObject reported) {
             applied = true;
         } else {
             LOG_WARNING("Rejected send_grid_data: not a boolean");
+        }
+    }
+
+    // meter_publish_threshold_bytes / meter_publish_max_interval_ms: the setters
+    // clamp to their valid range (and WARN-log if a clamp occurred), so the
+    // reported value here is always the actual applied value, not the raw request.
+    v = delta["meter_publish_threshold_bytes"];
+    if (!v.isNull()) {
+        if (v.is<int>() && v.as<int>() >= 0) {
+            Mqtt::setMeterPublishThresholdBytes((uint32_t)v.as<int>()); // persists, clamped
+            reported["meter_publish_threshold_bytes"] = Mqtt::getMeterPublishThresholdBytes();
+            applied = true;
+        } else {
+            LOG_WARNING("Rejected meter_publish_threshold_bytes: not a non-negative integer");
+        }
+    }
+
+    v = delta["meter_publish_max_interval_ms"];
+    if (!v.isNull()) {
+        if (v.is<int>() && v.as<int>() >= 0) {
+            Mqtt::setMeterPublishMaxIntervalMs((uint32_t)v.as<int>()); // persists, clamped
+            reported["meter_publish_max_interval_ms"] = Mqtt::getMeterPublishMaxIntervalMs();
+            applied = true;
+        } else {
+            LOG_WARNING("Rejected meter_publish_max_interval_ms: not a non-negative integer");
         }
     }
 
