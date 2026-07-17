@@ -1828,19 +1828,26 @@ namespace Mqtt
         UBaseType_t queueSize = _meterQueue ? uxQueueMessagesWaiting(_meterQueue) : 0;
         size_t estimatedJsonSize = queueSize * MQTT_METER_ESTIMATED_PER_ENTRY;
 
-        // Publish (power-only payload) if:
-        // 1. Queue reaches threshold (at least the billable size for efficiency) AND power data is enabled (trigger only), OR
-        // 2. Enough time has passed since the last publish (flush whatever is queued)
+        // Queue capacity in entries; used to force a publish before pushMeter()'s
+        // ring buffer starts silently dropping the oldest queued entry
+        UBaseType_t meterQueueCapacity = MQTT_METER_QUEUE_SIZE / sizeof(PayloadMeter);
+        bool queueAlmostFull = queueSize >= (UBaseType_t)(meterQueueCapacity * MQTT_METER_QUEUE_ALMOST_FULL_RATIO);
+
+        // Publish (power-only payload) if power data is enabled AND either:
+        // 1. Queue reaches the byte threshold (at least the billable size for efficiency), OR
+        // 2. The queue is close to capacity, regardless of threshold (avoid silently dropping entries)
+        // OR, independent of power data being enabled:
+        // 3. Enough time has passed since the last publish (flush whatever is queued)
         // Real JSON size is checked during _publishMeterStreaming() with measureJson()
         // It is better to underestimate here (thus, the real payload will be more than 5kB) so we use all of the billable size
         // and only "risk" losing a few entries, which will just be published on the next cycle
         // Threshold and max interval are shadow-configurable (system.meter_publish_threshold_bytes / max_interval_ms)
         if (
-            ((estimatedJsonSize >= _meterPublishThresholdBytes) && _sendPowerDataEnabled) ||
+            (((estimatedJsonSize >= _meterPublishThresholdBytes) || queueAlmostFull) && _sendPowerDataEnabled) ||
             ((millis64() - _lastMillisMeterPublished) > _meterPublishMaxIntervalMs)
         ) {
             _publishMqtt.meter = true;
-            LOG_DEBUG("Set flag to publish meter data (queue: %u entries, real size checked during publish)", queueSize);
+            LOG_DEBUG("Set flag to publish meter data (queue: %u/%u entries, real size checked during publish)", queueSize, meterQueueCapacity);
         }
     }
 

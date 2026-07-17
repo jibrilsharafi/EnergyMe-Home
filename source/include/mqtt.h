@@ -86,6 +86,7 @@
 
 #define MQTT_LOOP_INTERVAL 100 // Interval between two MQTT loop checks
 #define MQTT_METER_ESTIMATED_PER_ENTRY 35 // Estimated size in bytes of each meter entry (unix ms, channel, active power, pf)
+#define MQTT_METER_QUEUE_ALMOST_FULL_RATIO 0.9 // Force a publish attempt once the meter queue is this fraction full, regardless of the byte/interval trigger, so pushMeter() doesn't silently drop the oldest entry
 #define MQTT_GRID_FREQUENCY_PAYLOAD_DECIMALS 4 // 0.1 mHz: preserves the ~0.8 mHz EMA resolution
 #define MQTT_GRID_VOLTAGE_PAYLOAD_DECIMALS 1
 #define AWS_IOT_CORE_MQTT_PAYLOAD_MINIMUM_BILLABLE (5 * 1024) // This is the minimum billable size for AWS IoT Core, so it makes little sense to send smaller payloads
