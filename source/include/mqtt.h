@@ -71,6 +71,7 @@
 
 #define MQTT_MAX_INTERVAL_METER_PUBLISH (60 * 1000) // The maximum interval between two meter payloads
 #define MQTT_GRID_PUBLISH_ALIGN_SECONDS 60 // Grid batches publish aligned to wall-clock minute boundaries, not a relative interval
+#define MQTT_ENERGY_PUBLISH_ALIGN_SECONDS 60 // Energy snapshots publish aligned to wall-clock minute boundaries, not a relative interval
 #ifdef ENV_DEV
 // In dev: send system_dynamic and statistics every minute so post-mortem
 // telemetry has the resolution needed to investigate behavior.
@@ -87,16 +88,19 @@
 #define MQTT_METER_ESTIMATED_PER_ENTRY 35 // Estimated size in bytes of each meter entry (unix ms, channel, active power, pf)
 #define MQTT_GRID_FREQUENCY_PAYLOAD_DECIMALS 4 // 0.1 mHz: preserves the ~0.8 mHz EMA resolution
 #define MQTT_GRID_VOLTAGE_PAYLOAD_DECIMALS 1
-#define MQTT_METER_ESTIMATED_ENERGY_VOLTAGE_OVERHEAD_BYTES 500 // Estimated overhead in bytes for energy and voltage data in the payload
 #define AWS_IOT_CORE_MQTT_PAYLOAD_MINIMUM_BILLABLE (5 * 1024) // This is the minimum billable size for AWS IoT Core, so it makes little sense to send smaller payloads
 #define AWS_IOT_CORE_MQTT_PAYLOAD_LIMIT (128 * 1024) // Limit of AWS
 #define MQTT_METER_PAYLOAD_THRESHOLD_MULTIPLIER 0.95 // Multiplier to avoid reaching exactly the limit
 
-// Meter publish cadence: shadow-configurable via the `system` shadow
-// (meter_publish_threshold_bytes / meter_publish_max_interval_ms), so cadence
-// can be dialed down for near-real-time viewing or up for cost-efficient
-// batching without a reflash. Defaults match today's fixed behavior; bounds
-// guard against a bad/forgotten write causing a publish storm or an
+// Meter (power-only) publish cadence: shadow-configurable via the `system`
+// shadow (meter_publish_threshold_bytes / meter_publish_max_interval_ms), so
+// cadence can be dialed down for near-real-time viewing or up for
+// cost-efficient batching without a reflash. Key names are unchanged from
+// before the meter/energy topic split (see split-meter-energy-topic); their
+// scope is now power points only - voltage and per-channel energy counters
+// publish separately on their own wall-clock-aligned cadence (see
+// MQTT_ENERGY_PUBLISH_ALIGN_SECONDS). Defaults match today's fixed behavior;
+// bounds guard against a bad/forgotten write causing a publish storm or an
 // oversized payload (see openspec/changes/configurable-meter-publish-rate).
 #define MQTT_METER_PUBLISH_THRESHOLD_BYTES_DEFAULT AWS_IOT_CORE_MQTT_PAYLOAD_MINIMUM_BILLABLE
 #define MQTT_METER_PUBLISH_THRESHOLD_BYTES_MIN 256 // Small enough to allow near-real-time publishing, big enough to be a meaningful trigger
@@ -122,6 +126,7 @@
 // configurable state lives in shadows, telemetry topics carry runtime data only.
 #define MQTT_TOPIC_METER "meter"
 #define MQTT_TOPIC_GRID "grid"
+#define MQTT_TOPIC_ENERGY "energy"
 #define MQTT_TOPIC_SYSTEM_DYNAMIC "system/dynamic"
 #define MQTT_TOPIC_STATISTICS "statistics"
 #define MQTT_TOPIC_CRASH "crash"
@@ -149,6 +154,7 @@ struct PublishMqtt
 {
   bool meter;
   bool grid;
+  bool energy;
   bool systemDynamic;
   bool statistics;
   bool crash;
@@ -157,6 +163,7 @@ struct PublishMqtt
   PublishMqtt() :
     meter(false), // Need to fill queue first
     grid(false),  // Need to fill queue first
+    energy(false), // Scheduled on first aligned boundary after connect
     systemDynamic(true),
     statistics(true),
     crash(false), // May not be present
