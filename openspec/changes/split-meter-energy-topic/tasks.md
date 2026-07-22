@@ -31,14 +31,14 @@
 
 ## 6. Hardware verification (dev device)
 
-- [x] 6.1 Flash dev build to a bench device; confirm the `meter` topic no longer contains voltage or per-channel energy fields (UDP log capture / MQTT client inspection), only power point arrays. Verified on .174: meter payloads dropped to 31-90 bytes (power points only), vs. ~4.5KB pre-split.
-- [x] 6.2 Confirm the new `energy` topic publishes once per minute, aligned to `:00` (verify via timestamps in captured messages across several minutes, not just message arrival time). Verified across multiple consecutive boundaries (:52:00, :53:00, ... :00:00) with no drift.
-- [x] 6.3 Confirm energy snapshots continue publishing with `send_power_data` set to false. Verified via shadow_cli.py; energy kept its 60s cadence, meter topic went fully silent (no publishes at all).
-- [x] 6.4 Confirm energy snapshots (including voltage) continue publishing with `send_grid_data` set to false. Verified; energy payload size stayed stable (~740B, voltage included), grid topic went silent at the next boundary once its queue drained (pushGrid() gates new points at the source - pre-existing behavior, not part of this change).
-- [x] 6.5 Confirm meter publish cadence (threshold/interval trigger behavior from `configurable-meter-publish-rate`) is otherwise unaffected - shadow-configured values still apply to power-only publishing. Verified with restored 5120B/60000ms defaults: threshold-based publish fires reliably every ~19-20s once the power-only queue crosses ~147 entries (~4.3KB).
-- [x] 6.6 Cross-check against the in-progress `harden-meter-energy-window-glitches` change for merge conflicts in nearby energy-read code before finalizing this branch. No conflict: harden's code sections (1-4, the RSTREAD fix + IRMS witness in ade7953.cpp) are already merged into development as #199 (commit 5416b39), which this branch is based on. Only harden's §5 (on-device calibration/log tuning) remains open and doesn't touch mqtt.cpp.
+- [ ] 6.1 Flash dev build to a bench device; confirm the `meter` topic no longer contains voltage or per-channel energy fields (UDP log capture / MQTT client inspection), only power point arrays.
+- [ ] 6.2 Confirm the new `energy` topic publishes once per minute, aligned to `:00` (verify via timestamps in captured messages across several minutes, not just message arrival time).
+- [ ] 6.3 Confirm energy snapshots continue publishing with `send_power_data` set to false.
+- [ ] 6.4 Confirm energy snapshots (including voltage) continue publishing with `send_grid_data` set to false.
+- [ ] 6.5 Confirm meter publish cadence (threshold/interval trigger behavior from `configurable-meter-publish-rate`) is otherwise unaffected - shadow-configured values still apply to power-only publishing.
+- [ ] 6.6 Cross-check against the in-progress `harden-meter-energy-window-glitches` change for merge conflicts in nearby energy-read code before finalizing this branch.
 
 ## 7. Cross-repo coordination
 
-- [x] 7.1 Confirm `energyme-infra` has the `energy` AWS IoT rule (dev environment) live and routed before flashing any dev/bench device with this firmware. Confirmed live from energyme-infra.
-- [x] 7.2 Do not merge/release to fleet until prod-side `energyme-infra` routing for the `energy` topic is confirmed ready. Confirmed live from energyme-infra.
+- [ ] 7.1 Confirm `energyme-infra` has the `energy` AWS IoT rule (dev environment) live and routed before flashing any dev/bench device with this firmware.
+- [ ] 7.2 Do not merge/release to fleet until prod-side `energyme-infra` routing for the `energy` topic is confirmed ready.
