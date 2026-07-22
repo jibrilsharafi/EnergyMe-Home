@@ -72,7 +72,11 @@
 #define MQTT_MAX_INTERVAL_METER_PUBLISH (60 * 1000) // The maximum interval between two meter payloads
 #define MQTT_GRID_PUBLISH_ALIGN_SECONDS 60 // Grid batches publish aligned to wall-clock minute boundaries, not a relative interval
 #define MQTT_ENERGY_PUBLISH_ALIGN_SECONDS 60 // Energy snapshots publish aligned to wall-clock minute boundaries, not a relative interval
-#define MQTT_ENERGY_PUBLISH_DEADLINE_SECONDS 10 // Max wait past the boundary for every active channel to cross it before publishing anyway (see MqttEnergyPublishGate)
+// Max wait past the boundary for every active channel to cross it before publishing anyway (see
+// MqttEnergyPublishGate). Tied to CHANNEL_MAX_GAP_MS (ade7953.h) - the WDRR watchdog's own guarantee
+// on the longest gap between reads of any channel - rather than a separate literal, so the two never
+// drift apart: this deadline can never fire before the scheduler's own worst-case has had a chance to catch up.
+#define MQTT_ENERGY_PUBLISH_DEADLINE_SECONDS (CHANNEL_MAX_GAP_MS / 1000)
 #ifdef ENV_DEV
 // In dev: send system_dynamic and statistics every minute so post-mortem
 // telemetry has the resolution needed to investigate behavior.
