@@ -5,15 +5,30 @@ The device SHALL publish an energy snapshot based on an absolute wall-clock minu
 
 #### Scenario: Aligned publish at the minute boundary
 - **WHEN** the wall clock reaches a minute boundary
-- **THEN** an energy snapshot publish is triggered at or immediately after that boundary
+- **THEN** an energy snapshot publish is triggered at or after that boundary, once the all-channels-fresh condition below is satisfied
 
 #### Scenario: Delayed check still catches the boundary
 - **WHEN** the periodic check that would normally fire exactly at the boundary is delayed
-- **THEN** the next time the check runs and finds the current time at or past the boundary, it still triggers the publish, instead of waiting for the following boundary
+- **THEN** the next time the check runs and finds the current time at or past the boundary, it still evaluates the publish condition, instead of waiting for the following boundary
 
 #### Scenario: First publish after connect is aligned
 - **WHEN** the device (re)connects with no prior publish target set
 - **THEN** the first energy publish is scheduled for the next upcoming minute boundary, not triggered immediately regardless of the wall-clock phase
+
+### Requirement: Publish held until every channel has crossed the boundary, capped by a deadline
+Once the wall-clock boundary is reached, the device SHALL NOT publish immediately. It SHALL wait until every active channel with valid measurements (and the base-phase voltage read) has a last-read timestamp at or after the boundary, so every point in the snapshot genuinely belongs to the new minute and none is carried over stale from before the boundary. If this condition is not met within `MQTT_ENERGY_PUBLISH_DEADLINE_SECONDS` of the boundary, the device SHALL publish anyway with whatever is freshest, so a single starved channel can never block the topic indefinitely.
+
+#### Scenario: Publish waits for a channel still reading pre-boundary data
+- **WHEN** the boundary is reached but a muxed channel's last reading predates the boundary (round-robin hasn't serviced it yet)
+- **THEN** the publish is held, and the periodic check keeps re-evaluating on each pass until that channel's reading crosses the boundary
+
+#### Scenario: All channels cross the boundary before the deadline
+- **WHEN** every active channel (and the base-phase voltage read) has a last-read timestamp at or after the boundary, within the deadline window
+- **THEN** the snapshot publishes immediately at that point, with every point's `unixTime` at or after the boundary
+
+#### Scenario: A starved channel does not block the topic forever
+- **WHEN** one channel has not been serviced since before the boundary even after `MQTT_ENERGY_PUBLISH_DEADLINE_SECONDS` has elapsed
+- **THEN** the device publishes anyway with the freshest available reading for that channel (its real, possibly pre-boundary, timestamp - never fabricated or interpolated)
 
 ### Requirement: Energy snapshot is read directly, not queued
 At each publish boundary, the device SHALL read current per-channel energy and voltage state directly rather than buffering intermediate values in a queue between boundaries. No new PSRAM-backed queue SHALL be introduced for energy data.
