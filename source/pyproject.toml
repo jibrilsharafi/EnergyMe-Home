@@ -10,6 +10,5 @@ dependencies = [
     "pymodbus>=3.6.0",
     "urllib3>=2.7.0",
     "numpy>=2.3.4",
-    "matplotlib>=3.10.7",
     "tqdm>=4.67.1",
 ]
