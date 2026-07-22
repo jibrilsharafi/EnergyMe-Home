@@ -25,13 +25,15 @@ constexpr const char* AWS_IOT_CORE_ENDPOINT = "a26zjeqaj9a3xc-ats.iot.eu-west-1.
 
 // IoT Core Basic Ingest rule names - routes messages server-side, enabling cheaper MQTT ingestion.
 #ifdef ENV_DEV
-constexpr const char* AWS_IOT_CORE_RULE_METER = "energyme_home_dev_rule_meter";
-constexpr const char* AWS_IOT_CORE_RULE_LOG   = "energyme_home_dev_rule_log";
-constexpr const char* AWS_IOT_CORE_RULE_GRID  = "energyme_home_dev_rule_grid";
+constexpr const char* AWS_IOT_CORE_RULE_METER  = "energyme_home_dev_rule_meter";
+constexpr const char* AWS_IOT_CORE_RULE_LOG    = "energyme_home_dev_rule_log";
+constexpr const char* AWS_IOT_CORE_RULE_GRID   = "energyme_home_dev_rule_grid";
+constexpr const char* AWS_IOT_CORE_RULE_ENERGY = "energyme_home_dev_rule_energy";
 #else
-constexpr const char* AWS_IOT_CORE_RULE_METER = "energyme_home_prod_rule_meter";
-constexpr const char* AWS_IOT_CORE_RULE_LOG   = "energyme_home_prod_rule_log";
-constexpr const char* AWS_IOT_CORE_RULE_GRID  = "energyme_home_prod_rule_grid";
+constexpr const char* AWS_IOT_CORE_RULE_METER  = "energyme_home_prod_rule_meter";
+constexpr const char* AWS_IOT_CORE_RULE_LOG    = "energyme_home_prod_rule_log";
+constexpr const char* AWS_IOT_CORE_RULE_GRID   = "energyme_home_prod_rule_grid";
+constexpr const char* AWS_IOT_CORE_RULE_ENERGY = "energyme_home_prod_rule_energy";
 #endif
 
 // AWS reserved topic prefixes

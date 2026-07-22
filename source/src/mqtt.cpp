@@ -7,6 +7,7 @@
 #include "taskprofiler.h"
 #include "duration_format.h"
 #include "mqtt_grid_schedule.h"
+#include "mqtt_energy_publish_gate.h"
 #include <algorithm>
 
 namespace Mqtt
@@ -50,6 +51,8 @@ namespace Mqtt
 
     // Next grid publish deadline (unix seconds, wall-clock aligned); 0 = not yet scheduled
     static uint64_t _nextGridPublishUnixSecond = 0;
+    // Next energy publish deadline (unix seconds, wall-clock aligned); 0 = not yet scheduled
+    static uint64_t _nextEnergyPublishUnixSecond = 0;
 
     // Configuration
     static bool _cloudServicesEnabled = DEFAULT_CLOUD_SERVICES_ENABLED;
@@ -68,6 +71,7 @@ namespace Mqtt
     // Topic buffers
     static char _mqttTopicMeter[MQTT_TOPIC_BUFFER_SIZE];
     static char _mqttTopicGrid[MQTT_TOPIC_BUFFER_SIZE];
+    static char _mqttTopicEnergy[MQTT_TOPIC_BUFFER_SIZE];
     static char _mqttTopicSystemDynamic[MQTT_TOPIC_BUFFER_SIZE];
     static char _mqttTopicStatistics[MQTT_TOPIC_BUFFER_SIZE];
     static char _mqttTopicCrash[MQTT_TOPIC_BUFFER_SIZE];
@@ -129,6 +133,7 @@ namespace Mqtt
     // Publish topics
     static void _setTopicMeter();
     static void _setTopicGrid();
+    static void _setTopicEnergy();
     static void _setTopicSystemDynamic();
     static void _setTopicStatistics();
     static void _setTopicCrash();
@@ -165,6 +170,7 @@ namespace Mqtt
     // Publishing functions
     static void _publishMeter();
     static void _publishGrid();
+    static void _publishEnergy();
     static void _publishSystemDynamic();
     static void _publishStatistics();
     static void _publishCrash();
@@ -174,6 +180,8 @@ namespace Mqtt
     static void _checkPublishMqtt();
     static void _checkIfPublishMeterNeeded();
     static void _checkIfPublishGridNeeded();
+    static bool _allActiveChannelsFreshSinceBoundary(uint64_t boundaryUnixMs);
+    static void _checkIfPublishEnergyNeeded();
     static void _checkIfPublishSystemDynamicNeeded();
     static void _checkIfPublishStatisticsNeeded();
 
@@ -985,6 +993,7 @@ namespace Mqtt
     static void _setupTopics() {
         _setTopicMeter();
         _setTopicGrid();
+        _setTopicEnergy();
         _setTopicSystemDynamic();
         _setTopicStatistics();
         _setTopicCrash();
@@ -995,6 +1004,7 @@ namespace Mqtt
 
     static void _setTopicMeter() { _constructMqttTopicWithRule(AWS_IOT_CORE_RULE_METER, MQTT_TOPIC_METER, _mqttTopicMeter, sizeof(_mqttTopicMeter)); }
     static void _setTopicGrid() { _constructMqttTopicWithRule(AWS_IOT_CORE_RULE_GRID, MQTT_TOPIC_GRID, _mqttTopicGrid, sizeof(_mqttTopicGrid)); }
+    static void _setTopicEnergy() { _constructMqttTopicWithRule(AWS_IOT_CORE_RULE_ENERGY, MQTT_TOPIC_ENERGY, _mqttTopicEnergy, sizeof(_mqttTopicEnergy)); }
     static void _setTopicSystemDynamic() { _constructMqttTopic(MQTT_TOPIC_SYSTEM_DYNAMIC, _mqttTopicSystemDynamic, sizeof(_mqttTopicSystemDynamic)); }
     static void _setTopicStatistics() { _constructMqttTopic(MQTT_TOPIC_STATISTICS, _mqttTopicStatistics, sizeof(_mqttTopicStatistics)); }
     static void _setTopicCrash() { _constructMqttTopic(MQTT_TOPIC_CRASH, _mqttTopicCrash, sizeof(_mqttTopicCrash)); }
@@ -1626,25 +1636,22 @@ namespace Mqtt
     // ====================
 
     static void _publishMeter() {
-        // Check if we have any data to publish
+        // Power-only topic: nothing to publish unless the queue has entries
+        // and power data is enabled (voltage/energy moved to _publishEnergy()).
         UBaseType_t queueSize = _meterQueue ? uxQueueMessagesWaiting(_meterQueue) : 0;
 
-        bool hasQueueData = (queueSize > 0 && _sendPowerDataEnabled); // Only consider queue if power data is enabled
-        bool hasChannelData = false;
-        
-        // Check if any channels have valid data (always include energy data)
-        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount && !hasChannelData; i++) {
-            if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i)) {
-                hasChannelData = true;
-            }
-        }
-        
-        // Always publish if we have voltage or channel energy data, queue data is optional
-        if (!hasChannelData && !hasQueueData) {
+        if (queueSize == 0 || !_sendPowerDataEnabled) {
             LOG_VERBOSE("No valid meter data to publish");
+            // Clear the flag and reset the timer here too, not just on a real
+            // publish - otherwise the max-interval trigger in
+            // _checkIfPublishMeterNeeded() re-sets this flag every loop tick
+            // (100 ms) forever whenever there's nothing to send (power data
+            // disabled, or queue still empty), spinning instead of going quiet.
+            _publishMqtt.meter = false;
+            _lastMillisMeterPublished = millis64();
             return;
         }
-        
+
         // Any error is already logged in _publishMeterJson()
         if (_publishMeterJson()) _lastMillisMeterPublished = millis64();
     }
@@ -1673,6 +1680,58 @@ namespace Mqtt
         if (_publishJsonStreaming(doc, _mqttTopicGrid)) {
             _publishMqtt.grid = false;
             _nextGridPublishUnixSecond = MqttGridSchedule::nextAlignedBoundarySeconds(CustomTime::getUnixTime(), MQTT_GRID_PUBLISH_ALIGN_SECONDS);
+        }
+    }
+
+    static void _publishEnergy() {
+        // Bare array of self-contained objects (cross-repo contract v1): one
+        // voltage object, then one energy object per active channel with valid
+        // measurements. Unconditional - independent of _sendPowerDataEnabled.
+        SpiRamAllocator allocator;
+        JsonDocument doc(&allocator);
+
+        MeterValues meterValuesZeroChannel;
+        if (Ade7953::getMeterValues(meterValuesZeroChannel, 0) && meterValuesZeroChannel.lastUnixTimeMilliseconds > 0) {
+            JsonObject voltageObj = doc.add<JsonObject>();
+            voltageObj["unixTime"] = meterValuesZeroChannel.lastUnixTimeMilliseconds;
+            voltageObj["voltage"] = meterValuesZeroChannel.voltage;
+        }
+
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
+            if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i)) {
+                MeterValues meterValues;
+
+                if (!Ade7953::getMeterValues(meterValues, i)) {
+                    LOG_DEBUG("Failed to get meter values for channel %d. Skipping for energy publishing", i);
+                    continue;
+                }
+
+                JsonObject channelObj = doc.add<JsonObject>();
+                channelObj["unixTime"] = meterValues.lastUnixTimeMilliseconds;
+                channelObj["channel"] = i;
+                channelObj["activeEnergyImported"] = roundToDecimals(meterValues.activeEnergyImported, ENERGY_DECIMALS);
+                channelObj["activeEnergyExported"] = roundToDecimals(meterValues.activeEnergyExported, ENERGY_DECIMALS);
+                channelObj["reactiveEnergyImported"] = roundToDecimals(meterValues.reactiveEnergyImported, ENERGY_DECIMALS);
+                channelObj["reactiveEnergyExported"] = roundToDecimals(meterValues.reactiveEnergyExported, ENERGY_DECIMALS);
+                channelObj["apparentEnergy"] = roundToDecimals(meterValues.apparentEnergy, ENERGY_DECIMALS);
+            }
+        }
+
+        if (doc.size() == 0) {
+            LOG_DEBUG("No energy data available for publishing");
+            // Clear the flag and advance the boundary anyway - otherwise, with
+            // no active channels/voltage yet (e.g. right after boot), this
+            // would re-fire every loop tick (100 ms) instead of waiting for
+            // the next minute boundary. Unlike grid, energy has no queue-size
+            // guard to prevent the flag from being set with nothing to send.
+            _publishMqtt.energy = false;
+            _nextEnergyPublishUnixSecond = MqttGridSchedule::nextAlignedBoundarySeconds(CustomTime::getUnixTime(), MQTT_ENERGY_PUBLISH_ALIGN_SECONDS);
+            return;
+        }
+
+        if (_publishJsonStreaming(doc, _mqttTopicEnergy)) {
+            _publishMqtt.energy = false;
+            _nextEnergyPublishUnixSecond = MqttGridSchedule::nextAlignedBoundarySeconds(CustomTime::getUnixTime(), MQTT_ENERGY_PUBLISH_ALIGN_SECONDS);
         }
     }
 
@@ -1760,6 +1819,7 @@ namespace Mqtt
     static void _checkPublishMqtt() {
         if (_publishMqtt.meter) {_publishMeter();}
         if (_publishMqtt.grid) {_publishGrid();}
+        if (_publishMqtt.energy) {_publishEnergy();}
         if (_publishMqtt.systemDynamic) {_publishSystemDynamic();}
         if (_publishMqtt.statistics) {_publishStatistics();}
         if (_publishMqtt.crash) {_publishCrash();}
@@ -1768,21 +1828,28 @@ namespace Mqtt
 
     static void _checkIfPublishMeterNeeded() {
         UBaseType_t queueSize = _meterQueue ? uxQueueMessagesWaiting(_meterQueue) : 0;
-        size_t estimatedJsonSize = queueSize * MQTT_METER_ESTIMATED_PER_ENTRY + MQTT_METER_ESTIMATED_ENERGY_VOLTAGE_OVERHEAD_BYTES;
-        
-        // Publish if:
-        // 1. Queue reaches threshold (at least the billable size for efficiency) AND power data is enabled (trigger only), OR
-        // 2. Enough time has passed (for voltage/energy data, regardless of queue state)
+        size_t estimatedJsonSize = queueSize * MQTT_METER_ESTIMATED_PER_ENTRY;
+
+        // Queue capacity in entries; used to force a publish before pushMeter()'s
+        // ring buffer starts silently dropping the oldest queued entry
+        UBaseType_t meterQueueCapacity = MQTT_METER_QUEUE_SIZE / sizeof(PayloadMeter);
+        bool queueAlmostFull = queueSize >= (UBaseType_t)(meterQueueCapacity * MQTT_METER_QUEUE_ALMOST_FULL_RATIO);
+
+        // Publish (power-only payload) if power data is enabled AND either:
+        // 1. Queue reaches the byte threshold (at least the billable size for efficiency), OR
+        // 2. The queue is close to capacity, regardless of threshold (avoid silently dropping entries)
+        // OR, independent of power data being enabled:
+        // 3. Enough time has passed since the last publish (flush whatever is queued)
         // Real JSON size is checked during _publishMeterStreaming() with measureJson()
         // It is better to underestimate here (thus, the real payload will be more than 5kB) so we use all of the billable size
         // and only "risk" losing a few entries, which will just be published on the next cycle
         // Threshold and max interval are shadow-configurable (system.meter_publish_threshold_bytes / max_interval_ms)
         if (
-            ((estimatedJsonSize >= _meterPublishThresholdBytes) && _sendPowerDataEnabled) ||
+            (((estimatedJsonSize >= _meterPublishThresholdBytes) || queueAlmostFull) && _sendPowerDataEnabled) ||
             ((millis64() - _lastMillisMeterPublished) > _meterPublishMaxIntervalMs)
         ) {
             _publishMqtt.meter = true;
-            LOG_DEBUG("Set flag to publish meter data (queue: %u entries, real size checked during publish)", queueSize);
+            LOG_DEBUG("Set flag to publish meter data (queue: %u/%u entries, real size checked during publish)", queueSize, meterQueueCapacity);
         }
     }
 
@@ -1805,6 +1872,55 @@ namespace Mqtt
         if (nowUnixSecond >= _nextGridPublishUnixSecond) {
             _publishMqtt.grid = true;
             LOG_DEBUG("Set flag to publish grid data (queue: %u points)", queueSize);
+        }
+    }
+
+    // True once every active channel with valid measurements (plus the
+    // base-phase voltage read, channel 0) has been serviced at or after the
+    // given boundary - i.e. no point in the snapshot would actually be
+    // leftover data from before the boundary. Channels are read round-robin
+    // over a shared mux (WDRR-scheduled), so this can take a few seconds to
+    // become true; the caller caps the wait with a deadline.
+    static bool _allActiveChannelsFreshSinceBoundary(uint64_t boundaryUnixMs) {
+        MeterValues meterValuesZeroChannel;
+        if (!Ade7953::getMeterValues(meterValuesZeroChannel, 0) ||
+            meterValuesZeroChannel.lastUnixTimeMilliseconds < boundaryUnixMs) {
+            return false;
+        }
+
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
+            if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i)) {
+                MeterValues meterValues;
+                if (!Ade7953::getMeterValues(meterValues, i) ||
+                    meterValues.lastUnixTimeMilliseconds < boundaryUnixMs) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    static void _checkIfPublishEnergyNeeded() {
+        uint64_t nowUnixSecond = CustomTime::getUnixTime();
+
+        // First check since (re)connect: schedule the next aligned boundary
+        // rather than publishing immediately, so even the first energy publish
+        // lands on wall-clock alignment.
+        if (_nextEnergyPublishUnixSecond == 0) {
+            _nextEnergyPublishUnixSecond = MqttGridSchedule::nextAlignedBoundarySeconds(nowUnixSecond, MQTT_ENERGY_PUBLISH_ALIGN_SECONDS);
+            return;
+        }
+
+        // Once the boundary is reached, hold the publish until every channel
+        // has crossed it too (so the snapshot can't mix a fresh reading with
+        // one that's actually leftover from before the boundary), capped by
+        // a deadline so one starved channel can't block the topic forever.
+        bool allFresh = nowUnixSecond >= _nextEnergyPublishUnixSecond &&
+                         _allActiveChannelsFreshSinceBoundary(_nextEnergyPublishUnixSecond * 1000ULL);
+        if (MqttEnergyPublishGate::shouldPublishNow(nowUnixSecond, _nextEnergyPublishUnixSecond,
+                                                     MQTT_ENERGY_PUBLISH_DEADLINE_SECONDS, allFresh)) {
+            _publishMqtt.energy = true;
+            LOG_DEBUG("Set flag to publish energy data");
         }
     }
 
@@ -2009,39 +2125,12 @@ namespace Mqtt
     }
 
     static bool _publishMeterStreaming() {
+        // Power-only: bare array of [unixTimeMs, channel, activePower, powerFactor]
+        // points. Voltage and per-channel energy counters are published
+        // separately on the dedicated energy topic (see _publishEnergy()).
         SpiRamAllocator allocator;
         JsonDocument doc(&allocator);
 
-        // Always add voltage data if available (independent of sendPowerDataEnabled)
-        MeterValues meterValuesZeroChannel;
-        
-        if (Ade7953::getMeterValues(meterValuesZeroChannel, 0) && meterValuesZeroChannel.lastUnixTimeMilliseconds > 0) {
-            JsonObject voltageObj = doc.add<JsonObject>();
-            voltageObj["unixTime"] = meterValuesZeroChannel.lastUnixTimeMilliseconds;
-            voltageObj["voltage"] = meterValuesZeroChannel.voltage;
-        }
-
-        // Always add channel energy data (independent of sendPowerDataEnabled)
-        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
-            if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i)) {
-                MeterValues meterValues;
-
-                if (!Ade7953::getMeterValues(meterValues, i)) {
-                    LOG_DEBUG("Failed to get meter values for channel %d. Skipping for meter publishing", i);
-                    continue;
-                }
-                
-                JsonObject channelObj = doc.add<JsonObject>();
-                channelObj["unixTime"] = meterValues.lastUnixTimeMilliseconds;
-                channelObj["channel"] = i;
-                channelObj["activeEnergyImported"] = roundToDecimals(meterValues.activeEnergyImported, ENERGY_DECIMALS);
-                channelObj["activeEnergyExported"] = roundToDecimals(meterValues.activeEnergyExported, ENERGY_DECIMALS);
-                channelObj["reactiveEnergyImported"] = roundToDecimals(meterValues.reactiveEnergyImported, ENERGY_DECIMALS);
-                channelObj["reactiveEnergyExported"] = roundToDecimals(meterValues.reactiveEnergyExported, ENERGY_DECIMALS);
-                channelObj["apparentEnergy"] = roundToDecimals(meterValues.apparentEnergy, ENERGY_DECIMALS);
-            }
-        }
-        
         // Only add power data points if sendPowerDataEnabled is true and connected
         // CRITICAL: Check connectivity BEFORE dequeuing to prevent data loss
         uint32_t entriesAdded = 0;
@@ -2295,6 +2384,7 @@ namespace Mqtt
         _processLogQueue();
         _checkIfPublishMeterNeeded();
         _checkIfPublishGridNeeded();
+        _checkIfPublishEnergyNeeded();
         _checkIfPublishSystemDynamicNeeded();
         _checkIfPublishStatisticsNeeded();
         _checkPublishMqtt();
