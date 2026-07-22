@@ -7,6 +7,7 @@
 #include "taskprofiler.h"
 #include "duration_format.h"
 #include "mqtt_grid_schedule.h"
+#include "mqtt_energy_publish_gate.h"
 #include <algorithm>
 
 namespace Mqtt
@@ -179,6 +180,7 @@ namespace Mqtt
     static void _checkPublishMqtt();
     static void _checkIfPublishMeterNeeded();
     static void _checkIfPublishGridNeeded();
+    static bool _allActiveChannelsFreshSinceBoundary(uint64_t boundaryUnixMs);
     static void _checkIfPublishEnergyNeeded();
     static void _checkIfPublishSystemDynamicNeeded();
     static void _checkIfPublishStatisticsNeeded();
@@ -1873,6 +1875,31 @@ namespace Mqtt
         }
     }
 
+    // True once every active channel with valid measurements (plus the
+    // base-phase voltage read, channel 0) has been serviced at or after the
+    // given boundary - i.e. no point in the snapshot would actually be
+    // leftover data from before the boundary. Channels are read round-robin
+    // over a shared mux (WDRR-scheduled), so this can take a few seconds to
+    // become true; the caller caps the wait with a deadline.
+    static bool _allActiveChannelsFreshSinceBoundary(uint64_t boundaryUnixMs) {
+        MeterValues meterValuesZeroChannel;
+        if (!Ade7953::getMeterValues(meterValuesZeroChannel, 0) ||
+            meterValuesZeroChannel.lastUnixTimeMilliseconds < boundaryUnixMs) {
+            return false;
+        }
+
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
+            if (Ade7953::isChannelActive(i) && Ade7953::hasChannelValidMeasurements(i)) {
+                MeterValues meterValues;
+                if (!Ade7953::getMeterValues(meterValues, i) ||
+                    meterValues.lastUnixTimeMilliseconds < boundaryUnixMs) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
     static void _checkIfPublishEnergyNeeded() {
         uint64_t nowUnixSecond = CustomTime::getUnixTime();
 
@@ -1884,9 +1911,14 @@ namespace Mqtt
             return;
         }
 
-        // Wall-clock-aligned, not a relative interval: `>=` (not `==`) so a
-        // delayed loop tick still catches the boundary instead of missing it
-        if (nowUnixSecond >= _nextEnergyPublishUnixSecond) {
+        // Once the boundary is reached, hold the publish until every channel
+        // has crossed it too (so the snapshot can't mix a fresh reading with
+        // one that's actually leftover from before the boundary), capped by
+        // a deadline so one starved channel can't block the topic forever.
+        bool allFresh = nowUnixSecond >= _nextEnergyPublishUnixSecond &&
+                         _allActiveChannelsFreshSinceBoundary(_nextEnergyPublishUnixSecond * 1000ULL);
+        if (MqttEnergyPublishGate::shouldPublishNow(nowUnixSecond, _nextEnergyPublishUnixSecond,
+                                                     MQTT_ENERGY_PUBLISH_DEADLINE_SECONDS, allFresh)) {
             _publishMqtt.energy = true;
             LOG_DEBUG("Set flag to publish energy data");
         }
