@@ -46,6 +46,13 @@ namespace CrashMonitor
         _consecutiveCrashCount = 0;
     }
 
+    void clearRollbackTried() {
+        if (_rollbackTried) {
+            LOG_DEBUG("Clearing rollback-tried flag, re-arming rollback eligibility");
+            _rollbackTried = false;
+        }
+    }
+
     bool isInSafeMode() {
         return _safeModeActive;
     }
@@ -228,10 +235,16 @@ namespace CrashMonitor
             LOG_INFO("Stable operation achieved (%lu seconds), resetting consecutive crash/reset counters", COUNTERS_RESET_TIMEOUT / 1000);
             LOG_DEBUG("Was: crashes=%d, resets=%d", _consecutiveCrashCount, _consecutiveResetCount);
         }
-        
+
         _consecutiveCrashCount = 0;
         _consecutiveResetCount = 0;
         // Note: Don't reset _quickRestartCount here - it's managed separately based on restart timing
+
+        // Stable operation proves this boot isn't the tail of a crash loop, so
+        // rollback eligibility can be re-armed without waiting for a power cycle
+        // (RTC_NOINIT_ATTR _rollbackTried otherwise stays stuck true across every
+        // reset until power is physically cut - see issue found 2026-07-23).
+        clearRollbackTried();
 
         _crashResetTaskHandle = nullptr;
         vTaskDelete(NULL);

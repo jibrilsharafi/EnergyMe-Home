@@ -1434,10 +1434,14 @@ namespace Mqtt
 
             // Publish IN_PROGRESS status (download complete, about to reboot)
             _publishOtaStatus(_otaCurrentJobId, "IN_PROGRESS", "rebooting");
-            
+
+            // Fresh image in the partition - give it its own rollback chance,
+            // independent of whatever the previous firmware already consumed
+            CrashMonitor::clearRollbackTried();
+
             // Give time for MQTT message to be sent - no need to rush to the restart
             delay(2000);
-            
+
             setRestartSystem("OTA download complete, rebooting for validation");
         } else {
             LOG_ERROR("OTA download failed for job %s.", _otaCurrentJobId);

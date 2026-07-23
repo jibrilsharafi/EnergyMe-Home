@@ -24,8 +24,10 @@
 
 ## 5. Calibrate and verify on device (after rollout)
 
-- [ ] 5.1 Add temporary DEBUG logging of `S_energy`, `S_rms`, ratio, and actual window per base-phase read
-- [ ] 5.2 Deploy to a bench/dev device; capture logs during PV production and during real fast transients
-- [ ] 5.3 Confirm the exact-zero spikes are gone in Athena for the target device after the root fix
-- [ ] 5.4 From the capture, determine whether residual partials are artifacts (energy low while IRMS high) or real (both move together); set the final witness tolerance accordingly
-- [ ] 5.5 Set the final tolerance constant; remove the temporary calibration-only DEBUG logging (keep the concise per-discard log)
+**Closed out 2026-07-23 without the originally planned bench-capture workflow - tracking what was actually verified vs what was not, per Jibril's explicit call to close this rather than leave it open indefinitely.**
+
+- [ ] 5.1 Add temporary DEBUG logging of `S_energy`, `S_rms`, ratio, and actual window per base-phase read - **not done**. No such temporary block was ever added to `ade7953.cpp` (only the concise per-discard log from 3.3 exists). Verification below used Athena production data directly instead of a bench capture.
+- [ ] 5.2 Deploy to a bench/dev device; capture logs during PV production and during real fast transients - **not done as specified**. The fix shipped straight to the production fleet as part of #199 rather than a staged bench capture; no dedicated log capture during PV production/fast transients was performed.
+- [x] 5.3 Confirm the exact-zero spikes are gone in Athena for the target device after the root fix - **confirmed by Jibril via direct Athena query against production data**: exact-zero spikes are gone for the target device.
+- [ ] 5.4 From the capture, determine whether residual partials are artifacts (energy low while IRMS high) or real (both move together); set the final witness tolerance accordingly - **not done**. No capture was taken, so this was never empirically determined.
+- [ ] 5.5 Set the final tolerance constant; remove the temporary calibration-only DEBUG logging (keep the concise per-discard log) - **not applicable / accepted as-is**. No temp logging exists to remove. `APPARENT_WITNESS_MAX_DIVERGENCE` remains at its original implementation-time value (`0.5f`, `ade7953.h:260`), never re-tuned against real capture data. Accepted as an open, untuned constant: the root cause (RSTREAD false-zeros) is what's confirmed fixed per 5.3; the RMS witness is a secondary/residual safety net whose exact threshold precision is unverified but not required for the primary fix to hold.

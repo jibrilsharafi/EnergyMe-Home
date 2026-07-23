@@ -10,9 +10,10 @@
 #include "constants.h"
 #include "utils.h"
 
+// Fallback servers, tried after the default gateway (see CustomTime::begin/_checkAndSyncTime) -
+// NTP_SERVER_1 is a DNS-dependent public pool, NTP_SERVER_2 a raw IP so it still works if DNS fails.
 #define NTP_SERVER_1 "pool.ntp.org"
-#define NTP_SERVER_2 "time.google.com"
-#define NTP_SERVER_3 "162.159.200.1" // Cloudflare NTP server IP as fallback if DNS fails
+#define NTP_SERVER_2 "162.159.200.1" // Cloudflare NTP server IP
 
 #define TIME_SYNC_INTERVAL (60 * 60 * 1000)
 #define TIME_SYNC_RETRY_IF_NOT_SYNCHED (60 * 1000)
