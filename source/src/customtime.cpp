@@ -9,12 +9,19 @@ namespace CustomTime {
     static bool _isTimeSynched = false;
     static uint64_t _lastSyncAttempt = 0;
 
+    // Backing storage for the gateway server string passed into configTime(); must
+    // outlive the call (static, not stack-local) since the SNTP client only stores
+    // the pointer it is given, not a copy.
+    static char _gatewayNtpServer[IP_ADDRESS_BUFFER_SIZE];
+
     static bool _getTime();
     static void _checkAndSyncTime();
+    static void _configureNtpServers();
 
     bool begin() {
         // Initial sync attempt
-        configTime(0, 0, NTP_SERVER_1, NTP_SERVER_2, NTP_SERVER_3);
+        _configureNtpServers();
+
         _lastSyncAttempt = millis64();
         _isTimeSynched = _getTime();
 
@@ -228,6 +235,15 @@ namespace CustomTime {
         return true;
     }
 
+    // Gateway first (many routers answer NTP on their own LAN IP), then the two
+    // compiled-in public fallbacks. Reads the gateway fresh every call so a DHCP
+    // renewal, static IP change, or reconnect to a different network is picked up
+    // with no stale state.
+    static void _configureNtpServers() {
+        snprintf(_gatewayNtpServer, sizeof(_gatewayNtpServer), "%s", WiFi.gatewayIP().toString().c_str());
+        configTime(0, 0, _gatewayNtpServer, NTP_SERVER_1, NTP_SERVER_2);
+    }
+
     static bool _getTime() {
         struct tm timeinfo;
         if (!getLocalTime(&timeinfo)) {
@@ -260,10 +276,10 @@ namespace CustomTime {
                 return;
             }
             _lastSyncAttempt = currentTime;
-            
+
             // Re-configure time to trigger a new sync
-            configTime(0, 0, NTP_SERVER_1, NTP_SERVER_2, NTP_SERVER_3);
-            
+            _configureNtpServers();
+
             // Check if sync was successful
             bool previousSyncState = _isTimeSynched;
             _isTimeSynched = _getTime();
