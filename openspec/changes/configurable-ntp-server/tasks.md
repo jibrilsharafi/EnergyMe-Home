@@ -14,9 +14,9 @@
 
 ## 4. Hardware verification (bench device, before commit per CLAUDE.md testing rule)
 
-**Not yet done.** The DHCP-servermode bug (task 2.1) crashed the device before sync logic ever ran, so none of this has actually been exercised on hardware yet - "the crash is gone" is not evidence the feature works. Do this on the next flash, with the DHCP call removed.
+**Done for 4.2, on 192.168.2.174 (2026-07-23) after removing the DHCP call.** OTA-flashed via local REST; device rebooted clean (`lastResetWasCrash: false`, no crash-analysis dump on boot), and logged `Initial time sync successful` ~6.1s after boot with no assert. Confirmed via `w32tm /stripchart /computer:192.168.2.1` that this bench network's gateway (192.168.2.1) does answer NTP, so this sync exercised the gateway-first path specifically (not just fallback). The 180s crash-monitor stability reset (`_crashResetTask`) also fired cleanly on this boot with no errors.
 
-- [ ] 4.1 Verify a device on a normal internet-connected network still syncs (gateway likely doesn't answer NTP, falls through to `pool.ntp.org`/Cloudflare IP) - no regression
-- [ ] 4.2 Verify a device on a network whose router does answer NTP requests on its gateway IP syncs against the gateway (confirmed reachable on the bench network via `w32tm /stripchart /computer:192.168.2.1`)
-- [ ] 4.3 Verify a device not yet WiFi-connected when `begin()` first runs (gateway `0.0.0.0`) degrades gracefully to the fallback servers instead of misbehaving
-- [ ] 4.4 Verify gateway-IP change (e.g. reconnect to a different bench network) is picked up on the next sync attempt with no stale state
+- [ ] 4.1 Verify a device on a normal internet-connected network still syncs (gateway likely doesn't answer NTP, falls through to `pool.ntp.org`/Cloudflare IP) - no regression. Not directly exercised - the bench network's gateway does answer NTP (see 4.2), so this fallback path hasn't been forced. Low risk: unchanged from prior behavior once the gateway slot times out, per SNTP's existing failover.
+- [x] 4.2 Verify a device on a network whose router does answer NTP requests on its gateway IP syncs against the gateway (confirmed reachable on the bench network via `w32tm /stripchart /computer:192.168.2.1`)
+- [ ] 4.3 Verify a device not yet WiFi-connected when `begin()` first runs (gateway `0.0.0.0`) degrades gracefully to the fallback servers instead of misbehaving. Not directly exercised - would need a boot sequence where `begin()` runs before WiFi association completes.
+- [ ] 4.4 Verify gateway-IP change (e.g. reconnect to a different bench network) is picked up on the next sync attempt with no stale state. Not directly exercised - would need a mid-session network switch on the bench device.
