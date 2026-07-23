@@ -1011,7 +1011,11 @@ namespace CustomServer
             
             LOG_INFO("OTA update completed successfully");
             LOG_DEBUG("New firmware MD5: %s", Update.md5String().c_str());
-            
+
+            // Fresh image in the partition - give it its own rollback chance,
+            // independent of whatever the previous firmware already consumed
+            CrashMonitor::clearRollbackTried();
+
             Led::blinkGreenFast(Led::PRIO_CRITICAL, 3000ULL);
             setRestartSystem("Restart needed after firmware update");
         }

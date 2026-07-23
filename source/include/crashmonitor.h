@@ -55,7 +55,8 @@ namespace CrashMonitor {
     uint32_t getConsecutiveResetCount();
 
     void clearConsecutiveCrashCount(); // Useful for avoiding crash loops (e.g. during factory reset)
-    
+    void clearRollbackTried(); // Re-arm rollback eligibility: call after stable operation, and after every successful OTA flash (new partition contents = new image, deserves its own rollback chance)
+
     // Safe mode protection
     bool isInSafeMode(); // Returns true if device is in safe mode (rapid restart protection)
     bool canRestartNow(); // Returns true if enough time has passed to allow restart
