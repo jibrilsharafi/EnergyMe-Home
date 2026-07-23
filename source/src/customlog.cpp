@@ -34,6 +34,7 @@ namespace CustomLog
     // Preferences management
     static bool _loadUdpDestinationFromPreferences();
     static bool _saveUdpDestinationToPreferences();
+    static bool _ensureUdpDestinationLoaded();
 
     void begin()
     {
@@ -42,9 +43,12 @@ namespace CustomLog
             return;
         }
 
-        // Initialize mutex for UDP destination
-        if (!createMutexIfNeeded(&_udpDestinationMutex)) {
-            LOG_ERROR("Failed to create UDP destination mutex");
+        // Mutex + destination are normally already loaded by now (the first LOG_*
+        // call after AdvancedLogger::setCallback lazily triggers this via
+        // _callbackUdp, well before WiFi/this begin() ever runs) - call it here
+        // too as a defensive no-op fallback in case no log line has fired yet.
+        if (!_ensureUdpDestinationLoaded()) {
+            LOG_ERROR("Failed to load UDP destination");
             return;
         }
 
@@ -53,7 +57,6 @@ namespace CustomLog
             _udpBuffer = (char*)ps_malloc(UDP_LOG_BUFFER_SIZE);
             if (_udpBuffer == nullptr) {
                 LOG_ERROR("Failed to allocate PSRAM for UDP log buffer");
-                deleteMutex(&_udpDestinationMutex);
                 return;
             }
         }
@@ -65,18 +68,11 @@ namespace CustomLog
                 free(_udpBuffer);
                 _udpBuffer = nullptr;
             }
-            deleteMutex(&_udpDestinationMutex);
             return;
         }
 
         // Make all ESP logs also go to our logger
         esp_log_set_vprintf(_espLogVprintf);
-
-        // No persisted destination -> leave _udpDestination at 0.0.0.0 so _callbackUdp drops logs
-        // until one is configured via PUT /api/v1/logs-udp-destination.
-        if (!_loadUdpDestinationFromPreferences()) {
-            LOG_DEBUG("No saved UDP destination, UDP logging silent until one is set via API");
-        }
 
         _udpClient.begin(UDP_LOG_PORT);
         _isUdpInitialized = true;
@@ -182,9 +178,35 @@ namespace CustomLog
         if (!globalCommunityMode) Mqtt::pushLog(entry);
     }
 
+    // Lazily creates the destination mutex and loads the persisted UDP destination
+    // on the first log callback, mirroring Mqtt::pushLog's lazy queue init - this
+    // is what lets _callbackUdp start queuing from the very first LOG_* call
+    // instead of dropping everything until CustomLog::begin() runs after WiFi
+    // connects (found while investigating a ~6s UDP-log blind spot at boot).
+    static bool _ensureUdpDestinationLoaded() // Cannot use logger here - runs inside the logger callback itself
+    {
+        static bool attempted = false;
+        if (attempted) return true;
+        attempted = true;
+
+        if (!createMutexIfNeeded(&_udpDestinationMutex)) {
+            Serial.printf("[ERROR] Failed to create UDP destination mutex\n");
+            return false;
+        }
+
+        // No persisted destination -> leave _udpDestination at 0.0.0.0 so _callbackUdp drops logs
+        // until one is configured via PUT /api/v1/logs-udp-destination.
+        if (!_loadUdpDestinationFromPreferences()) {
+            Serial.printf("[DEBUG] No saved UDP destination, UDP logging silent until one is set via API\n");
+        }
+
+        return true;
+    }
+
     static void _callbackUdp(const LogEntry& entry)
     {
         if (entry.level == LogLevel::VERBOSE) return; // Never send verbose logs via UDP
+        if (!_ensureUdpDestinationLoaded()) return; // Failed to load, drop this log
         if ((uint32_t)_udpDestination == 0) return; // No destination configured: drop silently
         if (!_initializeQueue()) return; // Failed to initialize, drop this log
 
@@ -306,7 +328,7 @@ namespace CustomLog
     // UDP Destination Management
     // ============================
 
-    static bool _loadUdpDestinationFromPreferences()
+    static bool _loadUdpDestinationFromPreferences() // Cannot use logger here - reachable from _ensureUdpDestinationLoaded(), which runs inside the logger callback itself
     {
         Preferences prefs;
         if (!prefs.begin(PREFERENCES_NAMESPACE_UDP_LOG, true)) {
@@ -329,7 +351,7 @@ namespace CustomLog
         releaseMutex(&_udpDestinationMutex);
 
         if (success) {
-            LOG_DEBUG("Loaded UDP destination from preferences: %s", ipStr);
+            Serial.printf("[DEBUG] Loaded UDP destination from preferences: %s\n", ipStr);
         }
         return success;
     }
