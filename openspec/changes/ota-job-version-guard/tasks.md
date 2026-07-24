@@ -28,3 +28,20 @@
 - [x] 5.1 Add a null-check inside the comparator itself (previously relied on both call sites - `mqtt.cpp`'s `targetVersion` guard, `customserver.cpp`'s `tagName` guard - remembering to check first; now defended in the shared function too).
 - [x] 5.2 Extract the parse/compare algorithm to `lib/version_compare/` and write a real Unity suite (`test/test_version_compare/`), replacing the throwaway scratch script from the original verification pass with committed, repeatable coverage.
 - [x] 5.3 Re-run the full native suite (239 cases) and rebuild `esp32s3-dev` to confirm the delegation refactor is behavior-preserving.
+
+## 6. Second hardening pass (raised in review again: "try all combinations, rock solid, unit + real e2e")
+
+- [x] 6.1 Fix `sscanf("%d", ...)` undefined behavior on out-of-range components (e.g. `"99999999999.0.0"`) and subtraction overflow in the old `currentMajor - availableMajor` compare - replaced with `strtol` (clamped `[0, INT_MAX]`) and a three-way compare.
+- [x] 6.2 Fix capital `V` prefix not being stripped (`"V2.2.0"` parsed as `0.0.0`, misread as a downgrade).
+- [x] 6.3 Extend `test_version_compare` from 27 to 39 cases: capital-V prefix, negative numbers, integer overflow/INT_MAX boundary, extra trailing components, leading whitespace, space-before-dot, dots-only, `+`-prefix, non-numeric middle component, full semver suffix (`-alpha+build.5`), JSON-looking garbage, very long garbage string, invalid UTF-8 bytes.
+- [x] 6.4 Fix `mqtt.cpp` bypass: missing/non-string `firmware.version` (`targetVersion == nullptr`) previously skipped the guard entirely and let the job proceed unchecked; now rejects (`REJECTED`/`invalid_version`) unless `force` is set.
+- [x] 6.5 Fix `mqtt.cpp` bypass: `force` read via `doc[...]["force"] | false` treated any non-null JSON value (including the string `"false"`) as `true`, per ArduinoJson 7.4.2's documented `as<bool>()` behavior - verified against the official docs (Context7), not assumed. Now reads `is<bool>() ? as<bool>() : false`.
+- [ ] 6.6 Rebuild `esp32s3-dev`, re-run native suite, re-flash bench device 192.168.2.174 via local `ota_updater.py`, and confirm the running `sketch_md5` matches the new binary before any AWS job is created.
+- [ ] 6.7 Real AWS IoT Job e2e, dev environment, unique job ID per case, UDP log listener running throughout:
+  - [ ] downgrade (older version, no force) -> `REJECTED`/`downgrade_not_allowed`
+  - [ ] equal version (no force) -> `REJECTED`/`already_up_to_date`
+  - [ ] newer version (synthetic tag, no force) -> proceeds, `SUCCEEDED`
+  - [ ] older version + `force: true` -> guard bypassed, proceeds, `SUCCEEDED`
+  - [ ] `firmware.version` field absent entirely, no force -> `REJECTED`/`invalid_version` (previously bypassed - this is the fix from 6.4)
+  - [ ] `firmware.version` sent as a JSON number instead of a string, no force -> `REJECTED`/`invalid_version`
+  - [ ] `force` sent as the JSON string `"false"` targeting an older version -> `REJECTED`/`downgrade_not_allowed` (previously bypassed - this is the fix from 6.5)
