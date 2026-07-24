@@ -37,7 +37,6 @@
 #define OTA_TASK_NAME "ota_task"
 #define OTA_TASK_STACK_SIZE (12 * 1024) // Has to be big to allow for the presigned S3 URL to be handled
 #define OTA_TASK_PRIORITY 5
-#define OTA_STATUS_CHECK_INTERVAL (1 * 1000)
 #define OTA_HTTPS_BUFFER_SIZE_TX (2 * 1024)
 #define OTA_PRESIGNED_URL_BUFFER_SIZE (4 * 1024) // The presigned S3 URL can be very long
 #define MQTT_OTA_SIZE_REPORT_UPDATE (128 * 1024)
@@ -61,7 +60,6 @@
 #define MQTT_BUFFER_SIZE (9 * 1024)
 #define MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE (32 * 1024) // PSRAM buffer for MQTT subscribe messages (reduced for efficiency)
 #define CERTIFICATE_BUFFER_SIZE (16 * 1024)   // PSRAM buffer for certificate storage (was 4KB)
-#define MINIMUM_CERTIFICATE_LENGTH 128 // Minimum length for valid certificates (to avoid empty strings)
 #define CORE_DUMP_CHUNK_SIZE (4 * 1024) // Do not exceed 4kB to avoid stability issues
 
 #define DEFAULT_CLOUD_SERVICES_ENABLED false // Always off by default, and enabled only explicitly by the user
