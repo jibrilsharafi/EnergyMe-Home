@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2025 Jibril Sharafi
 
+import argparse
 import time
 from typing import Any, Dict, List
 from pymodbus.client import ModbusTcpClient
-import sys
 import statistics
+
+from _device_auth import add_device_args
 
 # Modbus server details
 SERVER_PORT = 502
@@ -374,12 +376,11 @@ def test_polling_performance(client: ModbusTcpClient, registers: Dict[str, Dict[
     draw_histogram(response_times, width=50, bins=12)
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python modbus_tester.py <SERVER_IP>")
-        print("Example: python modbus_tester.py 192.168.1.60")
-        return
+    parser = argparse.ArgumentParser(description="Modbus TCP register testing suite for EnergyMe-Home")
+    add_device_args(parser, need_credentials=False)
+    args = parser.parse_args()
 
-    server_ip = sys.argv[1]
+    server_ip = args.host
     client = ModbusTcpClient(server_ip, port=SERVER_PORT)
 
     if not client.connect():
