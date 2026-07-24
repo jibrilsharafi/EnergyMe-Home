@@ -1568,12 +1568,43 @@ namespace Mqtt
         const char* jobId = doc["execution"]["jobId"].as<const char*>();
         const char* operation = doc["execution"]["jobDocument"]["operation"].as<const char*>();
         const char* url = doc["execution"]["jobDocument"]["firmware"]["url"].as<const char*>();
+        const char* targetVersion = doc["execution"]["jobDocument"]["firmware"]["version"].as<const char*>();
+        // Read force strictly as a bool: ArduinoJson's as<bool>() returns true
+        // for ANY non-null value regardless of type (v6.12+), so a job document
+        // with force sent as the JSON string "false" would otherwise silently
+        // bypass the guard below. is<bool>() rejects non-bool JSON types first.
+        JsonVariant forceVariant = doc["execution"]["jobDocument"]["force"];
+        bool force = forceVariant.is<bool>() ? forceVariant.as<bool>() : false;
 
         // Additional validation for operation type (validation function only checks existence)
         if (strcmp(operation, "ota_update") != 0) {
             LOG_WARNING("Job operation '%s' is not supported, rejecting job %s.", operation, jobId);
             _publishOtaStatus(jobId, "REJECTED", "unsupported_operation");
             return;
+        }
+
+        // Reject non-upgrade targets unless explicitly forced (a stale/orphaned CONTINUOUS
+        // job could otherwise keep re-applying an old version to devices indefinitely)
+        if (!force) {
+            // A missing or non-string firmware.version must reject, not silently
+            // proceed - guard-by-default is the point of this check, and `force`
+            // is already the documented escape hatch for a version-less job.
+            if (!targetVersion) {
+                LOG_WARNING("Job '%s' has no valid firmware.version and force is not set, rejecting.", jobId);
+                _publishOtaStatus(jobId, "REJECTED", "invalid_version");
+                return;
+            }
+            int comparison = compareVersions(FIRMWARE_BUILD_VERSION, targetVersion);
+            if (comparison > 0) {
+                LOG_WARNING("Job '%s' targets older version '%s' (current '%s'), rejecting.", jobId, targetVersion, FIRMWARE_BUILD_VERSION);
+                _publishOtaStatus(jobId, "REJECTED", "downgrade_not_allowed");
+                return;
+            }
+            if (comparison == 0) {
+                LOG_INFO("Job '%s' targets current version '%s', rejecting as already up to date.", jobId, targetVersion);
+                _publishOtaStatus(jobId, "REJECTED", "already_up_to_date");
+                return;
+            }
         }
 
         // Check if there is already a OTA job being validated (no need to check the ID since only one can be active at a time)
