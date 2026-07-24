@@ -18,7 +18,7 @@ from tqdm import tqdm
 
 # Directories to scan
 HEADER_DIRS = ["include"]
-SOURCE_DIRS = ["src", "include"]
+SOURCE_DIRS = ["src", "include", "lib", "test"]
 
 # File extensions
 HEADER_EXTENSIONS = {".h", ".hpp"}
@@ -74,26 +74,27 @@ def is_excluded(macro_name: str, include_guards: bool) -> bool:
     return False
 
 
-def find_usages(macro_name: str, source_files: list[Path], definition_file: Path) -> list[tuple[Path, int]]:
+def find_usages(macro_name: str, source_files: list[Path], definition_file: Path, definition_line: int) -> list[tuple[Path, int]]:
     """Find all usages of a macro in source files."""
     usages = []
     # Match whole word only (not part of another identifier)
     pattern = re.compile(rf"\b{re.escape(macro_name)}\b")
-    
+
     for file_path in source_files:
         try:
             with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                 for line_num, line in enumerate(f, 1):
-                    # Skip the definition line itself
-                    if file_path == definition_file:
-                        if line.strip().startswith("#") and "define" in line and macro_name in line:
-                            continue
-                    
+                    # Skip only the macro's own definition line (references from
+                    # OTHER #define lines in the same file, e.g. macro-in-macro
+                    # composition, are legitimate usages and must not be skipped)
+                    if file_path == definition_file and line_num == definition_line:
+                        continue
+
                     if pattern.search(line):
                         usages.append((file_path, line_num))
         except Exception:
             pass
-    
+
     return usages
 
 
@@ -132,7 +133,7 @@ def main():
     used_count = 0
     
     for macro_name, (def_file, def_line) in tqdm(sorted(all_defines.items()), desc="Checking usages", unit="macro"):
-        usages = find_usages(macro_name, source_files, def_file)
+        usages = find_usages(macro_name, source_files, def_file, def_line)
         
         if not usages:
             unused_defines[def_file].append((macro_name, def_line))
