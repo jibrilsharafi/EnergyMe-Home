@@ -40,6 +40,13 @@ def add_device_args(
 
     `--host` is required unless a default is given, or `host_required=False`
     is passed explicitly (e.g. a script that only needs a host in some modes).
+
+    Deliberately no `.env`/default fallback for `--host` (unlike username/
+    password): wrong credentials fail loudly (401), but a wrong host fails
+    silently - the request just goes to the wrong device and does whatever
+    the command does (OTA flash, factory-reset, shadow injection...). Keeping
+    it a required, explicit argument forces you to look at what you typed
+    before anything mutating goes out.
     """
     parser.add_argument(
         "-H", "--host",
