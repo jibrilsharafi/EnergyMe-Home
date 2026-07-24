@@ -1568,12 +1568,30 @@ namespace Mqtt
         const char* jobId = doc["execution"]["jobId"].as<const char*>();
         const char* operation = doc["execution"]["jobDocument"]["operation"].as<const char*>();
         const char* url = doc["execution"]["jobDocument"]["firmware"]["url"].as<const char*>();
+        const char* targetVersion = doc["execution"]["jobDocument"]["firmware"]["version"].as<const char*>();
+        bool force = doc["execution"]["jobDocument"]["force"] | false;
 
         // Additional validation for operation type (validation function only checks existence)
         if (strcmp(operation, "ota_update") != 0) {
             LOG_WARNING("Job operation '%s' is not supported, rejecting job %s.", operation, jobId);
             _publishOtaStatus(jobId, "REJECTED", "unsupported_operation");
             return;
+        }
+
+        // Reject non-upgrade targets unless explicitly forced (a stale/orphaned CONTINUOUS
+        // job could otherwise keep re-applying an old version to devices indefinitely)
+        if (!force && targetVersion) {
+            int comparison = compareVersions(FIRMWARE_BUILD_VERSION, targetVersion);
+            if (comparison > 0) {
+                LOG_WARNING("Job '%s' targets older version '%s' (current '%s'), rejecting.", jobId, targetVersion, FIRMWARE_BUILD_VERSION);
+                _publishOtaStatus(jobId, "REJECTED", "downgrade_not_allowed");
+                return;
+            }
+            if (comparison == 0) {
+                LOG_INFO("Job '%s' targets current version '%s', rejecting as already up to date.", jobId, targetVersion);
+                _publishOtaStatus(jobId, "REJECTED", "already_up_to_date");
+                return;
+            }
         }
 
         // Check if there is already a OTA job being validated (no need to check the ID since only one can be active at a time)
