@@ -30,8 +30,9 @@ Examples:
     python udp_log_listener.py --exclude-files src/ade7953.cpp          # Filter out all logs from ade7953.cpp
     python udp_log_listener.py --exclude-functions _printMeterValues    # Filter out _printMeterValues function logs
     python udp_log_listener.py --exclude-files src/ade7953.cpp src/utils.cpp --exclude-functions _printMeterValues printStatus  # Multiple filters
-    python udp_log_listener.py --device-ip 192.168.1.100                # Configure device to send logs to this PC
-    python udp_log_listener.py --device-ip 192.168.1.100 --device-port 8080  # Configure with custom port
+    python udp_log_listener.py -H 192.168.1.100                         # Configure device to send logs to this PC
+    python udp_log_listener.py -H 192.168.1.100 --device-port 8080      # Configure with custom device port
+    python udp_log_listener.py -H 192.168.1.100 -u admin -p secret      # Configure with explicit credentials
 
 Device-specific logging:
     The listener automatically creates separate log files for each device in the logs/
@@ -54,10 +55,11 @@ import re
 import os
 import signal
 import requests
-import getpass
 from requests.auth import HTTPDigestAuth
 from datetime import datetime
 from typing import Optional, Dict, Any, TextIO
+
+from _device_auth import add_device_args, resolve_credentials
 
 
 class Colors:
@@ -700,13 +702,13 @@ def main():
     parser.add_argument(
         '--unicast',
         action='store_true',
-        help='Use unicast instead of multicast (listen on --host IP)'
+        help='Use unicast instead of multicast (listen on --bind IP)'
     )
-    
+
     parser.add_argument(
-        '--host', 
+        '--bind',
         default='0.0.0.0',
-        help='Host to bind to for unicast mode (default: 0.0.0.0 for all interfaces)'
+        help='Local address to bind to for unicast mode (default: 0.0.0.0 for all interfaces)'
     )
     
     parser.add_argument(
@@ -772,16 +774,12 @@ def main():
         help='Enable debug output for troubleshooting'
     )
 
-    parser.add_argument(
-        '--device-ip',
-        help='IP address or hostname of the EnergyMe-Home device to configure as log destination'
-    )
-
+    add_device_args(parser, host_required=False)
     parser.add_argument(
         '--device-port',
         type=int,
         default=80,
-        help='Port of the EnergyMe-Home device (default: 80)'
+        help='Port of the EnergyMe-Home device to configure as log destination (default: 80)'
     )
 
     args = parser.parse_args()
@@ -806,27 +804,25 @@ def main():
     # Determine auto device logs setting
     auto_device_logs = args.auto_device_logs and not args.no_auto_device_logs
 
-    # Handle device IP configuration
-    if args.device_ip:
+    # Handle device configuration
+    if args.host:
         print(f"\n{Colors.BOLD}Device Configuration{Colors.RESET}")
-        print(f"Target device: {args.device_ip}:{args.device_port}")
+        print(f"Target device: {args.host}:{args.device_port}")
 
         # Get local IP
-        local_ip = get_local_ip(args.device_ip)
+        local_ip = get_local_ip(args.host)
         print(f"Local IP to send: {local_ip}")
 
-        # Prompt for credentials
-        username = input("Enter device username: ")
-        password = getpass.getpass("Enter device password: ")
+        username, password = resolve_credentials(args)
 
         # Attempt to set the log destination
-        if set_device_log_destination(args.device_ip, args.device_port, username, password, local_ip):
+        if set_device_log_destination(args.host, args.device_port, username, password, local_ip):
             print(f"{Colors.INFO}Device will now send logs to {local_ip}{Colors.RESET}\n")
         else:
             print(f"{Colors.WARNING}Proceeding with listener despite device configuration error{Colors.RESET}\n")
 
     # Start listener
-    listener = UDPLogListener(args.host, args.port, log_filter, args.log_file, args.log_format, multicast_group, auto_device_logs, args.debug)
+    listener = UDPLogListener(args.bind, args.port, log_filter, args.log_file, args.log_format, multicast_group, auto_device_logs, args.debug)
     listener.start()
 
 if __name__ == '__main__':
