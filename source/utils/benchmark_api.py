@@ -13,7 +13,7 @@ Usage:
 
 Example:
     python3 benchmark_api.py -H 192.168.1.200
-    python3 benchmark_api.py -H energyme.local -p 80 -r 10 -c 5
+    python3 benchmark_api.py -H energyme.local --port 80 -r 10 -c 5
 """
 
 import argparse
@@ -28,6 +28,8 @@ import requests
 from requests.adapters import HTTPAdapter
 from requests.auth import HTTPDigestAuth
 from urllib3.util.retry import Retry
+
+from _device_auth import add_device_args, resolve_credentials
 
 
 @dataclass
@@ -395,20 +397,15 @@ def main():
         epilog="""
 Examples:
   %(prog)s -H 192.168.1.200
-  %(prog)s -H energyme.local -p 80 -r 10 -c 5
+  %(prog)s -H energyme.local --port 80 -r 10 -c 5
   %(prog)s -H 192.168.1.200 --https -r 20 --timeout 15
-  %(prog)s -H 192.168.1.200 -u admin -P mypassword -r 5 --sequential --save results.json
+  %(prog)s -H 192.168.1.200 -u admin -p mypassword -r 5 --sequential --save results.json
         """
     )
     
-    parser.add_argument('-H', '--host', required=True,
-                       help='Target host IP address or hostname')
-    parser.add_argument('-p', '--port', type=int, default=80,
+    add_device_args(parser)
+    parser.add_argument('--port', type=int, default=80,
                        help='Target port number (default: 80)')
-    parser.add_argument('-u', '--username', default='admin',
-                       help='Username for authentication (default: admin)')
-    parser.add_argument('-P', '--password', default='energyme',
-                       help='Password for authentication (default: energyme)')
     parser.add_argument('--https', action='store_true',
                        help='Use HTTPS instead of HTTP')
     parser.add_argument('-r', '--requests', type=int, default=10,
@@ -434,13 +431,14 @@ Examples:
         args.port = 443  # Default HTTPS port
     
     # Create benchmark instance
+    username, password = resolve_credentials(args)
     benchmark = ApiBenchmark(
         host=args.host,
         port=args.port,
         protocol=protocol,
         timeout=args.timeout,
-        username=args.username,
-        password=args.password
+        username=username,
+        password=password
     )
     
     # Determine concurrency
