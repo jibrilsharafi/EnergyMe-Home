@@ -1569,7 +1569,12 @@ namespace Mqtt
         const char* operation = doc["execution"]["jobDocument"]["operation"].as<const char*>();
         const char* url = doc["execution"]["jobDocument"]["firmware"]["url"].as<const char*>();
         const char* targetVersion = doc["execution"]["jobDocument"]["firmware"]["version"].as<const char*>();
-        bool force = doc["execution"]["jobDocument"]["force"] | false;
+        // Read force strictly as a bool: ArduinoJson's as<bool>() returns true
+        // for ANY non-null value regardless of type (v6.12+), so a job document
+        // with force sent as the JSON string "false" would otherwise silently
+        // bypass the guard below. is<bool>() rejects non-bool JSON types first.
+        JsonVariant forceVariant = doc["execution"]["jobDocument"]["force"];
+        bool force = forceVariant.is<bool>() ? forceVariant.as<bool>() : false;
 
         // Additional validation for operation type (validation function only checks existence)
         if (strcmp(operation, "ota_update") != 0) {
@@ -1580,7 +1585,15 @@ namespace Mqtt
 
         // Reject non-upgrade targets unless explicitly forced (a stale/orphaned CONTINUOUS
         // job could otherwise keep re-applying an old version to devices indefinitely)
-        if (!force && targetVersion) {
+        if (!force) {
+            // A missing or non-string firmware.version must reject, not silently
+            // proceed - guard-by-default is the point of this check, and `force`
+            // is already the documented escape hatch for a version-less job.
+            if (!targetVersion) {
+                LOG_WARNING("Job '%s' has no valid firmware.version and force is not set, rejecting.", jobId);
+                _publishOtaStatus(jobId, "REJECTED", "invalid_version");
+                return;
+            }
             int comparison = compareVersions(FIRMWARE_BUILD_VERSION, targetVersion);
             if (comparison > 0) {
                 LOG_WARNING("Job '%s' targets older version '%s' (current '%s'), rejecting.", jobId, targetVersion, FIRMWARE_BUILD_VERSION);
