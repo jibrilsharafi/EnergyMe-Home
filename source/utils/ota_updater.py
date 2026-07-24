@@ -19,9 +19,11 @@ from datetime import datetime
 from pathlib import Path
 from requests.auth import HTTPDigestAuth
 
+from _device_auth import add_device_args, resolve_credentials
+
 
 class OTAUpdater:
-    def __init__(self, host, username="admin", password="energyme"):
+    def __init__(self, host, username="admin", password="energyme00"):
         self.host = host
         self.base_url = f"http://{host}"
         self.auth = HTTPDigestAuth(username, password)
@@ -429,10 +431,8 @@ class OTAUpdater:
 
 def main():
     parser = argparse.ArgumentParser(description='EnergyMe-Home OTA Updater')
-    parser.add_argument('-H', '--host', default='energyme.local', help='Device IP address (e.g., 192.168.1.245). If not passed, it will use the default hostname energyme.local (WARNING: it will be slower and may cause problems)')
-    parser.add_argument('-u', '--username', default='admin', help='Username (default: admin)')
-    parser.add_argument('-p', '--password', default='energyme', help='Password (default: energyme)')
-    parser.add_argument('-env', '--environment', default='dev', 
+    add_device_args(parser, host_default='energyme.local')
+    parser.add_argument('-env', '--environment', default='dev',
                        choices=['dev', 'prod'],
                        help='Build environment (default: dev)')
     parser.add_argument('-b', '--bin', 
@@ -464,7 +464,8 @@ def main():
     print(f"🐛 Debug: {args.elf}")
     print()
     
-    updater = OTAUpdater(args.host, args.username, args.password)
+    username, password = resolve_credentials(args)
+    updater = OTAUpdater(args.host, username, password)
     
     if args.status_only:
         print("📊 Getting OTA Status...")
