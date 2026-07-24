@@ -76,6 +76,17 @@ void test_v_prefix_available_only(void) {
     TEST_ASSERT_EQUAL(0, compare("1.5.0", "v1.5.0"));
 }
 
+void test_capital_v_prefix(void) {
+    TEST_ASSERT_EQUAL(0, compare("V1.5.0", "1.5.0"));
+}
+
+void test_capital_v_prefix_not_treated_as_downgrade(void) {
+    // Regression: capital 'V' must strip the same as lowercase 'v' - if it
+    // didn't, "V2.2.0" would parse as 0.0.0 and read as an incorrect
+    // downgrade against a real running version.
+    TEST_ASSERT_GREATER_THAN(0, compare("V2.2.0", "2.1.0"));
+}
+
 // ============================================================================
 // Leading zeros (real device job payloads use "00.12.31" style)
 // ============================================================================
@@ -114,6 +125,63 @@ void test_partial_major_only(void) {
     TEST_ASSERT_EQUAL(0, compare("2", "2.0.0"));
 }
 
+void test_extra_trailing_component_ignored(void) {
+    // "1.2.3.4" -> parses 1.2.3, trailing ".4" ignored
+    TEST_ASSERT_EQUAL(0, compare("1.2.3.4", "1.2.3"));
+}
+
+void test_leading_whitespace_ignored(void) {
+    // strtol skips leading whitespace on each numeric component, same as
+    // scanf's "%d" - " 2.1.0" parses identically to "2.1.0"
+    TEST_ASSERT_EQUAL(0, compare(" 2.1.0", "2.1.0"));
+}
+
+void test_space_before_dot_stops_parse(void) {
+    // "1 . 2 . 3": after parsing major=1, the next char is a space, not
+    // '.', so parsing stops there -> 1.0.0, not 1.2.3
+    TEST_ASSERT_EQUAL(0, compare("1 . 2 . 3", "1.0.0"));
+}
+
+void test_dots_only_is_zero(void) {
+    TEST_ASSERT_EQUAL(0, compare("...", "0.0.0"));
+}
+
+void test_plus_sign_prefix_parses(void) {
+    // strtol accepts a leading '+' like scanf's "%d" did
+    TEST_ASSERT_EQUAL(0, compare("+2.1.0", "2.1.0"));
+}
+
+// ============================================================================
+// Negative numbers and integer overflow - must clamp, never invoke UB or
+// wrap around via subtraction (both were real bugs found in review)
+// ============================================================================
+
+void test_negative_major_clamped_to_zero(void) {
+    // "-1.2.3" -> major clamps to 0 (versions are non-negative) -> 0.2.3
+    TEST_ASSERT_EQUAL(0, compare("-1.2.3", "0.2.3"));
+}
+
+void test_negative_vs_positive_is_older(void) {
+    TEST_ASSERT_LESS_THAN(0, compare("-1.0.0", "1.0.0"));
+}
+
+void test_overflow_major_clamps_not_wraps(void) {
+    // A cloud typo like "99999999999.0.0" must not overflow strtol/int
+    // (sscanf's "%d" would be undefined behavior here) - it clamps to
+    // INT_MAX and compares as a huge-but-defined value.
+    TEST_ASSERT_GREATER_THAN(0, compare("99999999999.0.0", "-1.0.0"));
+}
+
+void test_int_max_boundary_no_overflow(void) {
+    // Old subtraction-based compare (currentMajor - availableMajor) could
+    // overflow signed int here; three-way compare cannot.
+    TEST_ASSERT_GREATER_THAN(0, compare("2147483647.0.0", "-1.0.0"));
+}
+
+void test_int_max_vs_int_max_equal(void) {
+    TEST_ASSERT_EQUAL(0, compare("2147483647.0.0", "2147483647.0.0"));
+}
+
 // ============================================================================
 // Malformed / non-numeric input -> degrades to "0.0.0", never crashes
 // ============================================================================
@@ -142,6 +210,37 @@ void test_whitespace_only_is_zero(void) {
 void test_lone_v_is_zero(void) {
     // "v" with nothing after the prefix
     TEST_ASSERT_EQUAL(0, compare("v", "0.0.0"));
+}
+
+void test_words_only_is_zero(void) {
+    TEST_ASSERT_EQUAL(0, compare("banana", "0.0.0"));
+}
+
+void test_middle_component_non_numeric_stops_at_major(void) {
+    // "1.x.3" -> major=1 parses, then '.', then minor component "x.3" has
+    // no leading digit -> minor=0, str left at "x.3" (not '.') -> patch=0
+    TEST_ASSERT_EQUAL(0, compare("1.x.3", "1.0.0"));
+}
+
+void test_semver_suffix_alpha_plus_build(void) {
+    // "1.2.3-alpha+build.5" -> parses 1.2.3, full semver suffix ignored
+    TEST_ASSERT_EQUAL(0, compare("1.2.3-alpha+build.5", "1.2.3"));
+}
+
+void test_json_looking_garbage_is_zero(void) {
+    TEST_ASSERT_EQUAL(0, compare("{\"version\":\"1.2.3\"}", "0.0.0"));
+}
+
+void test_very_long_garbage_string_is_zero(void) {
+    // Must not misbehave (crash, hang, huge alloc) on a long non-numeric
+    // string - this is a fixed C string, no dynamic allocation involved.
+    TEST_ASSERT_EQUAL(0, compare(
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "0.0.0"));
+}
+
+void test_unicode_bytes_is_zero(void) {
+    TEST_ASSERT_EQUAL(0, compare("\xC3\xA9\xC3\xA8.1.0", "0.0.0"));
 }
 
 // ============================================================================
@@ -182,6 +281,8 @@ int main(int argc, char **argv) {
     RUN_TEST(test_v_prefix_both_sides);
     RUN_TEST(test_v_prefix_current_only);
     RUN_TEST(test_v_prefix_available_only);
+    RUN_TEST(test_capital_v_prefix);
+    RUN_TEST(test_capital_v_prefix_not_treated_as_downgrade);
 
     RUN_TEST(test_leading_zeros_equal);
     RUN_TEST(test_leading_zeros_greater);
@@ -191,12 +292,29 @@ int main(int argc, char **argv) {
 
     RUN_TEST(test_partial_major_minor_only);
     RUN_TEST(test_partial_major_only);
+    RUN_TEST(test_extra_trailing_component_ignored);
+    RUN_TEST(test_leading_whitespace_ignored);
+    RUN_TEST(test_space_before_dot_stops_parse);
+    RUN_TEST(test_dots_only_is_zero);
+    RUN_TEST(test_plus_sign_prefix_parses);
+
+    RUN_TEST(test_negative_major_clamped_to_zero);
+    RUN_TEST(test_negative_vs_positive_is_older);
+    RUN_TEST(test_overflow_major_clamps_not_wraps);
+    RUN_TEST(test_int_max_boundary_no_overflow);
+    RUN_TEST(test_int_max_vs_int_max_equal);
 
     RUN_TEST(test_garbage_string_is_zero);
     RUN_TEST(test_empty_string_is_zero);
     RUN_TEST(test_garbage_vs_real_version_is_older);
     RUN_TEST(test_whitespace_only_is_zero);
     RUN_TEST(test_lone_v_is_zero);
+    RUN_TEST(test_words_only_is_zero);
+    RUN_TEST(test_middle_component_non_numeric_stops_at_major);
+    RUN_TEST(test_semver_suffix_alpha_plus_build);
+    RUN_TEST(test_json_looking_garbage_is_zero);
+    RUN_TEST(test_very_long_garbage_string_is_zero);
+    RUN_TEST(test_unicode_bytes_is_zero);
 
     RUN_TEST(test_null_available_is_safe);
     RUN_TEST(test_null_current_is_safe);
