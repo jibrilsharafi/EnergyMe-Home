@@ -225,6 +225,7 @@ bool isNvsRestorePending();                            // Check if configuration
 void performNvsRestore();                              // Perform configuration restore from staged file (boot-time)
 bool restoreNvsFromJson(JsonDocument &doc);            // Restore NVS from JSON document (inverse of nvsDataToJson)
 bool isBackupVersionCompatible(const char* backupVersion); // Check if backup version is compatible with current firmware
+int compareVersions(const char* current, const char* available); // Compare "X.Y.Z" version strings: >0 if current newer, 0 if equal, <0 if current older
 
 // String utilities
 inline bool endsWith(const char* s, const char* suffix) {

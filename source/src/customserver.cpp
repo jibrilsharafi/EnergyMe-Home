@@ -98,7 +98,6 @@ namespace CustomServer
     static void _serveOtaStatusEndpoint();
     static void _serveOtaRollbackEndpoint();
     static bool _fetchGitHubReleaseInfo(JsonDocument &doc);
-    static int _compareVersions(const char* current, const char* available);
     static void _serveFirmwareStatusEndpoint();
     static void _handleOtaUploadComplete(AsyncWebServerRequest *request);
     static void _handleOtaUploadData(AsyncWebServerRequest *request, const String& filename, 
@@ -1380,7 +1379,7 @@ namespace CustomServer
         }
 
         // Compare versions to determine if update is available
-        bool isLatest = _compareVersions(FIRMWARE_BUILD_VERSION, tagName) >= 0;
+        bool isLatest = compareVersions(FIRMWARE_BUILD_VERSION, tagName) >= 0;
         doc["isLatest"] = isLatest;
 
         // Only populate update fields when a newer version is available
@@ -1395,25 +1394,6 @@ namespace CustomServer
                  tagName, isLatest ? "true" : "false");
 
         return true;
-    }
-
-    static int _compareVersions(const char* current, const char* available)
-    {
-        // Parse version strings (assuming semantic versioning: x.y.z)
-        int currentMajor = 0, currentMinor = 0, currentPatch = 0;
-        int availableMajor = 0, availableMinor = 0, availablePatch = 0;
-        
-        // Remove 'v' prefix if present
-        const char* currentStr = (current[0] == 'v') ? current + 1 : current;
-        const char* availableStr = (available[0] == 'v') ? available + 1 : available;
-        
-        sscanf(currentStr, "%d.%d.%d", &currentMajor, &currentMinor, &currentPatch);
-        sscanf(availableStr, "%d.%d.%d", &availableMajor, &availableMinor, &availablePatch);
-        
-        // Compare versions
-        if (currentMajor != availableMajor) return currentMajor - availableMajor;
-        if (currentMinor != availableMinor) return currentMinor - availableMinor;
-        return currentPatch - availablePatch;
     }
 
     static void _serveFirmwareStatusEndpoint()
