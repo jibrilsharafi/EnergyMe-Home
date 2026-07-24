@@ -3,6 +3,7 @@
 
 #include "utils.h"
 #include "duration_format.h"
+#include "version_compare.h"
 
 #include "taskprofiler.h"
 
@@ -2355,18 +2356,8 @@ bool isBackupVersionCompatible(const char* backupVersion) {
 
 // Compare two "vX.Y.Z" or "X.Y.Z" version strings
 // Returns >0 if current is newer than available, 0 if equal, <0 if current is older
+// Null or unparseable input degrades to "0.0.0" - see lib/version_compare for the
+// (unit-tested) implementation and its null/malformed-input guarantees.
 int compareVersions(const char* current, const char* available) {
-    int currentMajor = 0, currentMinor = 0, currentPatch = 0;
-    int availableMajor = 0, availableMinor = 0, availablePatch = 0;
-
-    // Remove 'v' prefix if present
-    const char* currentStr = (current[0] == 'v') ? current + 1 : current;
-    const char* availableStr = (available[0] == 'v') ? available + 1 : available;
-
-    sscanf(currentStr, "%d.%d.%d", &currentMajor, &currentMinor, &currentPatch);
-    sscanf(availableStr, "%d.%d.%d", &availableMajor, &availableMinor, &availablePatch);
-
-    if (currentMajor != availableMajor) return currentMajor - availableMajor;
-    if (currentMinor != availableMinor) return currentMinor - availableMinor;
-    return currentPatch - availablePatch;
+    return VersionCompare::compare(current, available);
 }
