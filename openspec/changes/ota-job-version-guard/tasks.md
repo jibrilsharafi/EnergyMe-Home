@@ -12,7 +12,7 @@
 
 ## 3. Verification
 
-- [x] 3.1 Native/manual check of `compareVersions` against the scenarios in `specs/ota-job-version-guard/spec.md` (current>available, equal, current<available, `v`-prefixed and non-prefixed strings) - full native suite (212 tests) run for regression, plus a scratch host build of the isolated `compareVersions` logic against all six spec scenarios (all pass). `utils.cpp` itself isn't host-compilable (pulls Arduino/ESP-IDF headers), so it's outside the `lib/`-based native harness.
+- [x] 3.1 Native unit tests for `compareVersions`: the algorithm was extracted to `lib/version_compare/` (host-compilable, no Arduino deps) so it can be exercised by the real `pio test -e native` harness instead of only manually. `test/test_version_compare/` covers equal/greater/less by each component, multi-digit correctness (`10.0.0` > `9.99.99`), `v`-prefix in every combination, leading zeros, trailing suffixes (`-rc1`, `(dev)`), partial version strings, malformed/empty/whitespace-only input (degrades to `0.0.0`, never crashes), and null `current`/`available`/both (must not crash) - 27 cases, all passing alongside the full 239-case native suite (212 pre-existing + 27 new).
 - [x] 3.2 On-device test on the dev bench unit (192.168.2.174, thing `907069875394`): real AWS IoT Job (`ota_release.py --env dev --version 2.0.1`) targeting version older than the running 2.1.0 build. Confirmed `REJECTED`/`downgrade_not_allowed` on both the device log and the AWS-side job execution status; no OTA task started.
 - [x] 3.3 On-device test: real AWS IoT Job targeting `2.1.0` (== running version). Confirmed `REJECTED`/`already_up_to_date` on both device log and AWS job execution status.
 - [x] 3.4 On-device test: real AWS IoT Job targeting a version newer than running (synthetic `9.9.9` tag, since no real released version exceeds current `2.1.0` without a disallowed version bump). Confirmed normal flow unaffected: `IN_PROGRESS` -> download -> reboot -> validation -> `SUCCEEDED`, device left running the guard-equipped build.
@@ -20,5 +20,11 @@
 
 ## 4. Commit
 
-- [ ] 4.1 Commit the `compareVersions` move/rename as its own commit (refactor, no behavior change).
-- [ ] 4.2 Commit the OTA job version guard + `force` override as a separate commit, referencing `Closes #208`.
+- [x] 4.1 Commit the `compareVersions` move/rename as its own commit (refactor, no behavior change).
+- [x] 4.2 Commit the OTA job version guard + `force` override as a separate commit, referencing `Closes #208`.
+
+## 5. Robustness follow-up (raised in review: "is this thoroughly tested / can it fail on any string?")
+
+- [x] 5.1 Add a null-check inside the comparator itself (previously relied on both call sites - `mqtt.cpp`'s `targetVersion` guard, `customserver.cpp`'s `tagName` guard - remembering to check first; now defended in the shared function too).
+- [x] 5.2 Extract the parse/compare algorithm to `lib/version_compare/` and write a real Unity suite (`test/test_version_compare/`), replacing the throwaway scratch script from the original verification pass with committed, repeatable coverage.
+- [x] 5.3 Re-run the full native suite (239 cases) and rebuild `esp32s3-dev` to confirm the delegation refactor is behavior-preserving.
