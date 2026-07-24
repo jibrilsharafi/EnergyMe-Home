@@ -72,8 +72,8 @@ from typing import Any
 import requests
 from requests.auth import HTTPDigestAuth
 
-DEFAULT_USERNAME = "admin"
-DEFAULT_PASSWORD = "energyme00"
+from _device_auth import add_device_args, resolve_credentials
+
 DEFAULT_WATCH_PORT = 514
 DEFAULT_WATCH_SECONDS = 3.0
 
@@ -157,6 +157,11 @@ class ShadowClient:
         return data
 
 
+def _client(args: argparse.Namespace) -> ShadowClient:
+    username, password = resolve_credentials(args)
+    return ShadowClient(args.host, username, password)
+
+
 def _watch_udp(port: int, seconds: float, host_hint: str, raw: bool = False) -> None:
     """Print syslog lines for a few seconds so a set/command is self-verifying.
 
@@ -198,7 +203,7 @@ def _watch_udp(port: int, seconds: float, host_hint: str, raw: bool = False) -> 
     if not seen_any:
         print("(no log lines received - device may be logging elsewhere, offline, "
               "or its UDP destination isn't pointed at this machine; see "
-              "utils/udp_log_listener.py --device-ip to configure it)")
+              "utils/udp_log_listener.py -H <ip> to configure it)")
     print("--- end watch ---")
 
 
@@ -212,7 +217,7 @@ def _do_set(client: ShadowClient, args, shadow_name: str, state: dict) -> None:
 
 def cmd_set(args):
     state = _parse_kv_pairs(args.pairs)
-    client = ShadowClient(args.host, args.username, args.password)
+    client = _client(args)
     _do_set(client, args, args.shadow, state)
 
 
@@ -222,14 +227,14 @@ def cmd_set_json(args):
         state = json.loads(args.json)
     except json.JSONDecodeError as e:
         raise SystemExit(f"Invalid JSON: {e}")
-    client = ShadowClient(args.host, args.username, args.password)
+    client = _client(args)
     _do_set(client, args, args.shadow, state)
 
 
 def cmd_channel(args):
     fields = _parse_kv_pairs(args.pairs)
     state = {str(args.index): fields}
-    client = ShadowClient(args.host, args.username, args.password)
+    client = _client(args)
     _do_set(client, args, "channels", state)
 
 
@@ -238,7 +243,7 @@ def cmd_meter_cadence(args):
         "meter_publish_threshold_bytes": args.threshold_bytes,
         "meter_publish_max_interval_ms": args.max_interval_ms,
     }
-    client = ShadowClient(args.host, args.username, args.password)
+    client = _client(args)
     _do_set(client, args, "system", state)
 
 
@@ -247,24 +252,24 @@ def cmd_restore_cadence(args):
         "meter_publish_threshold_bytes": FIRMWARE_DEFAULT_METER_THRESHOLD_BYTES,
         "meter_publish_max_interval_ms": FIRMWARE_DEFAULT_METER_MAX_INTERVAL_MS,
     }
-    client = ShadowClient(args.host, args.username, args.password)
+    client = _client(args)
     _do_set(client, args, "system", state)
 
 
 def cmd_led(args):
     if not 0 <= args.brightness <= 255:
         raise SystemExit("brightness must be 0-255")
-    client = ShadowClient(args.host, args.username, args.password)
+    client = _client(args)
     _do_set(client, args, "system", {"led_brightness": args.brightness})
 
 
 def cmd_power_data(args):
-    client = ShadowClient(args.host, args.username, args.password)
+    client = _client(args)
     _do_set(client, args, "system", {"send_power_data": args.state == "on"})
 
 
 def cmd_grid_data(args):
-    client = ShadowClient(args.host, args.username, args.password)
+    client = _client(args)
     _do_set(client, args, "system", {"send_grid_data": args.state == "on"})
 
 
@@ -273,12 +278,12 @@ def cmd_log_level(args):
     if level not in VALID_LOG_LEVELS:
         raise SystemExit(f"level must be one of {sorted(VALID_LOG_LEVELS)}")
     field = {"system": "mqtt_log_level", "print": "log_level_print", "save": "log_level_save"}[args.target]
-    client = ShadowClient(args.host, args.username, args.password)
+    client = _client(args)
     _do_set(client, args, "system", {field: level})
 
 
 def cmd_get(args):
-    client = ShadowClient(args.host, args.username, args.password)
+    client = _client(args)
     if args.what == "led":
         print(client.get_json("/api/v1/led/brightness"))
     elif args.what == "meter":
@@ -298,7 +303,7 @@ def cmd_get(args):
 
 
 def cmd_command(args):
-    client = ShadowClient(args.host, args.username, args.password)
+    client = _client(args)
     execution_id = args.execution_id or f"local-{int(time.time())}"
 
     if args.action == "restart":
@@ -322,9 +327,7 @@ def cmd_command(args):
 
 
 def _add_common_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--host", required=True, help="Device IP (must be an esp32s3-dev build)")
-    parser.add_argument("-u", "--username", default=DEFAULT_USERNAME)
-    parser.add_argument("-p", "--password", default=DEFAULT_PASSWORD)
+    add_device_args(parser)
     parser.add_argument("--no-watch", action="store_true", help="Skip the post-command UDP log watch")
     parser.add_argument("--watch-raw", action="store_true", help="Show all log lines, not just shadow/apply-relevant ones")
     parser.add_argument("--watch-port", type=int, default=DEFAULT_WATCH_PORT)

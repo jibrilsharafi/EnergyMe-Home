@@ -7,9 +7,9 @@ Development server for EnergyMe HTML development.
 Serves static files and API responses from JSON mock files.
 
 Usage:
-    python mock_server.py                              # Mock mode (from mocks/ folder)
-    python mock_server.py --proxy 192.168.2.75 pass   # Proxy mode (real device)
-    python mock_server.py --fetch 192.168.2.75 pass   # Fetch real data to mocks/
+    python mock_server.py                                       # Mock mode (from mocks/ folder)
+    python mock_server.py --proxy --host 192.168.2.75 -p pass  # Proxy mode (real device)
+    python mock_server.py --fetch --host 192.168.2.75 -p pass  # Fetch real data to mocks/
 """
 
 import argparse
@@ -25,8 +25,11 @@ import time
 import urllib.request
 import urllib.error
 
+from _device_auth import add_device_args, resolve_credentials
+
 PORT = 8081
 PROXY_TARGET = None
+PROXY_USERNAME = None
 PROXY_PASSWORD = None
 MOCKS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'mocks')
 LITTLE_FS_DIR = os.path.join(MOCKS_DIR, 'little-fs')
@@ -191,14 +194,14 @@ def fetch_data_files(opener, host: str):
     print(f"Data files: Success: {success_count}, Failed: {fail_count}")
 
 
-def fetch_from_device(host: str, password: str):
+def fetch_from_device(host: str, username: str, password: str):
     """Fetch all GET endpoint responses from real device and save to mocks/."""
     print(f"\nFetching data from http://{host}...")
     print("=" * 50)
-    
+
     # Set up digest auth
     password_mgr = urllib.request.HTTPPasswordMgrWithDefaultRealm()
-    password_mgr.add_password(None, f"http://{host}/", "admin", password)
+    password_mgr.add_password(None, f"http://{host}/", username, password)
     auth_handler = urllib.request.HTTPDigestAuthHandler(password_mgr)
     opener = urllib.request.build_opener(auth_handler)
     
@@ -267,7 +270,7 @@ class MockHandler(http.server.SimpleHTTPRequestHandler):
         try:
             assert PROXY_PASSWORD, "Proxy password not set"
             password_mgr = urllib.request.HTTPPasswordMgrWithDefaultRealm()
-            password_mgr.add_password(None, f"http://{PROXY_TARGET}/", "admin", PROXY_PASSWORD)
+            password_mgr.add_password(None, f"http://{PROXY_TARGET}/", PROXY_USERNAME, PROXY_PASSWORD)
             auth_handler = urllib.request.HTTPDigestAuthHandler(password_mgr)
             opener = urllib.request.build_opener(auth_handler)
             
@@ -613,36 +616,43 @@ class FileWatcher(threading.Thread):
 
 
 def main():
-    global PROXY_TARGET, PROXY_PASSWORD, PORT
-    
+    global PROXY_TARGET, PROXY_USERNAME, PROXY_PASSWORD, PORT
+
     parser = argparse.ArgumentParser(
         description='EnergyMe development server',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python mock_server.py                              # Mock mode (uses mocks/ folder)
-  python mock_server.py --proxy 192.168.2.75 pass   # Proxy to real device
-  python mock_server.py --fetch 192.168.2.75 pass   # Fetch data from device to mocks/
+  python mock_server.py                                       # Mock mode (uses mocks/ folder)
+  python mock_server.py --proxy --host 192.168.2.75 -p pass  # Proxy to real device
+  python mock_server.py --fetch --host 192.168.2.75 -p pass  # Fetch data from device to mocks/
         """
     )
-    parser.add_argument('--proxy', nargs=2, metavar=('HOST', 'PASSWORD'),
-                        help='Proxy API requests to real device')
-    parser.add_argument('--fetch', nargs=2, metavar=('HOST', 'PASSWORD'),
-                        help='Fetch all GET endpoint data from device and save to mocks/')
+    add_device_args(parser, host_required=False)
+    parser.add_argument('--proxy', action='store_true',
+                        help='Proxy API requests to real device (requires --host)')
+    parser.add_argument('--fetch', action='store_true',
+                        help='Fetch all GET endpoint data from device and save to mocks/ (requires --host)')
     parser.add_argument('--port', type=int, default=PORT,
                         help=f'Server port (default: {PORT})')
     args = parser.parse_args()
-    
+
+    if (args.proxy or args.fetch) and not args.host:
+        parser.error('--proxy/--fetch require --host')
+
+    username, password = resolve_credentials(args)
+
     # Fetch mode: capture data and exit
     if args.fetch:
-        fetch_from_device(args.fetch[0], args.fetch[1])
+        fetch_from_device(args.host, username, password)
         return
-    
+
     # Set proxy mode
     if args.proxy:
-        PROXY_TARGET = args.proxy[0]
-        PROXY_PASSWORD = args.proxy[1]
-    
+        PROXY_TARGET = args.host
+        PROXY_USERNAME = username
+        PROXY_PASSWORD = password
+
     PORT = args.port
     
     print(f"Starting server on http://localhost:{PORT}")
