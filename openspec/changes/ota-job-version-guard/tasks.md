@@ -36,12 +36,13 @@
 - [x] 6.3 Extend `test_version_compare` from 27 to 39 cases: capital-V prefix, negative numbers, integer overflow/INT_MAX boundary, extra trailing components, leading whitespace, space-before-dot, dots-only, `+`-prefix, non-numeric middle component, full semver suffix (`-alpha+build.5`), JSON-looking garbage, very long garbage string, invalid UTF-8 bytes.
 - [x] 6.4 Fix `mqtt.cpp` bypass: missing/non-string `firmware.version` (`targetVersion == nullptr`) previously skipped the guard entirely and let the job proceed unchecked; now rejects (`REJECTED`/`invalid_version`) unless `force` is set.
 - [x] 6.5 Fix `mqtt.cpp` bypass: `force` read via `doc[...]["force"] | false` treated any non-null JSON value (including the string `"false"`) as `true`, per ArduinoJson 7.4.2's documented `as<bool>()` behavior - verified against the official docs (Context7), not assumed. Now reads `is<bool>() ? as<bool>() : false`.
-- [ ] 6.6 Rebuild `esp32s3-dev`, re-run native suite, re-flash bench device 192.168.2.174 via local `ota_updater.py`, and confirm the running `sketch_md5` matches the new binary before any AWS job is created.
-- [ ] 6.7 Real AWS IoT Job e2e, dev environment, unique job ID per case, UDP log listener running throughout:
-  - [ ] downgrade (older version, no force) -> `REJECTED`/`downgrade_not_allowed`
-  - [ ] equal version (no force) -> `REJECTED`/`already_up_to_date`
-  - [ ] newer version (synthetic tag, no force) -> proceeds, `SUCCEEDED`
-  - [ ] older version + `force: true` -> guard bypassed, proceeds, `SUCCEEDED`
-  - [ ] `firmware.version` field absent entirely, no force -> `REJECTED`/`invalid_version` (previously bypassed - this is the fix from 6.4)
-  - [ ] `firmware.version` sent as a JSON number instead of a string, no force -> `REJECTED`/`invalid_version`
-  - [ ] `force` sent as the JSON string `"false"` targeting an older version -> `REJECTED`/`downgrade_not_allowed` (previously bypassed - this is the fix from 6.5)
+- [x] 6.6 Rebuilt `esp32s3-dev` (native suite: 257/257), re-flashed bench device 192.168.2.174 via local `ota_updater.py` (MD5 `f1bb663c...` confirmed matching before any AWS job was created).
+- [x] 6.7 Real AWS IoT Job e2e, dev environment (thing `907069875394`), unique job ID per case, UDP log listener running throughout - all 6 cases confirmed on both the AWS-side job execution status and the device-side log message:
+  - [x] downgrade (2.0.1, no force) -> `REJECTED`/`downgrade_not_allowed`
+  - [x] equal version (2.1.0, no force) -> `REJECTED`/`already_up_to_date`
+  - [x] `firmware.version` field absent entirely, no force -> `REJECTED`/`invalid_version` (previously bypassed - fix from 6.4)
+  - [x] `firmware.version` sent as a JSON number instead of a string, no force -> `REJECTED`/`invalid_version`
+  - [x] `force` sent as the JSON string `"false"` targeting an older version -> `REJECTED`/`downgrade_not_allowed`, guard NOT bypassed (previously bypassed - fix from 6.5)
+  - [x] newer version (synthetic `9.9.9` tag, no force) -> proceeds, `SUCCEEDED`, on-device SHA256 validated
+  - [x] real bool `force: true` targeting the running version (regression check that a genuine bool still bypasses `already_up_to_date` after the `is<bool>()` tightening) -> proceeds, `SUCCEEDED`
+  - Cleanup: synthetic `fw/9.9.9/` S3 object deleted after use; device left running the hardened build (MD5 `f1bb663c2558850d1a574bc317cc4cca`, version `2.1.0`, unchanged).
