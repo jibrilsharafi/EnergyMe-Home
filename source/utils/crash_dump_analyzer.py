@@ -10,13 +10,14 @@ then decodes and analyzes the crash dump for debugging purposes. It automaticall
 searches for the correct ELF file in the releases/ folder based on SHA256 matching.
 
 Usage:
-    python crash_dump_analyzer.py <device_ip> [username] [password]
+    python crash_dump_analyzer.py -H <device_ip> [options]
 
 Example:
-    python crash_dump_analyzer.py 192.168.1.100 admin secret123
+    python crash_dump_analyzer.py -H 192.168.1.100
+    python crash_dump_analyzer.py -H 192.168.1.100 -u admin -p secret123 --clear
 """
 
-import sys
+import argparse
 import json
 import base64
 import requests
@@ -25,6 +26,8 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 import os
 import hashlib
+
+from _device_auth import add_device_args, resolve_credentials
 
 
 class CrashDumpAnalyzer:
@@ -702,52 +705,31 @@ class CrashDumpAnalyzer:
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python crash_dump_analyzer.py <device_ip> [username] [password] [chunk_size] [--clear]")
-        print("Example: python crash_dump_analyzer.py 192.168.1.100")
-        print("Example: python crash_dump_analyzer.py 192.168.1.100 admin secret123")
-        print("Example: python crash_dump_analyzer.py 192.168.1.100 admin secret123 4096")
-        print("Example: python crash_dump_analyzer.py 192.168.1.100 --clear  # Clear dump after analysis")
-        sys.exit(1)
-    
-    # Check for --clear flag
-    clear_after = '--clear' in sys.argv
-    args = [arg for arg in sys.argv[1:] if arg != '--clear']
-    
-    device_ip = args[0]
-    username = args[1] if len(args) > 1 else None
-    password = args[2] if len(args) > 2 else None
-    
-    # Determine chunk_size based on number of arguments
-    if len(args) > 3:
-        chunk_size = int(args[3])
-    elif len(args) == 2:  # Only device_ip and one other arg (assume it's chunk_size)
-        try:
-            chunk_size = int(args[1])
-            username = None
-            password = None
-        except ValueError:
-            # If it's not a number, treat it as username and use default chunk_size
-            chunk_size = 2048
-    else:
-        chunk_size = 2048
-    
-    # Validate chunk size
-    if chunk_size < 512 or chunk_size > 8192:
-        print("❌ Chunk size must be between 512 and 8192 bytes")
-        sys.exit(1)
-    
-    analyzer = CrashDumpAnalyzer(device_ip, username, password, chunk_size)
-    
+    parser = argparse.ArgumentParser(
+        description="Fetch and analyze a crash/core dump from an EnergyMe-Home device",
+    )
+    add_device_args(parser)
+    parser.add_argument('--chunk-size', type=int, default=2048,
+                       help='Core dump download chunk size in bytes, 512-8192 (default: 2048)')
+    parser.add_argument('--clear', action='store_true',
+                       help='Clear the core dump from the device after analysis')
+    args = parser.parse_args()
+
+    if not 512 <= args.chunk_size <= 8192:
+        parser.error("--chunk-size must be between 512 and 8192 bytes")
+
+    username, password = resolve_credentials(args)
+    analyzer = CrashDumpAnalyzer(args.host, username, password, args.chunk_size)
+
     try:
         # Run analysis automatically (no prompts)
         filename = analyzer.analyze()
-        
+
         # Clear core dump if --clear flag was provided
-        if clear_after and filename:
+        if args.clear and filename:
             print(f"\n🗑️  Clearing core dump from device (--clear flag provided)...")
             analyzer.clear_core_dump()
-        
+
     except KeyboardInterrupt:
         print("\n\n⚠️  Analysis interrupted by user")
     except Exception as e:
