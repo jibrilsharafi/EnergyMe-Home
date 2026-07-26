@@ -275,8 +275,6 @@ namespace Ade7953
     static void _recalculateWeights();
     static void _updateVariability(uint8_t channelIndex, float newActivePower);
     static uint8_t _findNextActiveChannel(uint8_t currentChannel);
-    static Phase _getLaggingPhase(Phase phase);
-    static Phase _getLeadingPhase(Phase phase);
     float _calculatePhaseShift(Phase voltagePhase, Phase currentPhase);
     // Returns the string name of the IRQSTATA bit, or UNKNOWN if the bit is not recognized.
     static const char *_irqstataBitName(uint32_t bit);
@@ -3825,44 +3823,48 @@ namespace Ade7953
             current = float(_readCurrentRms(ade7953Channel)) * channelData.ctSpecification.aLsb;
 
             // To get the power factor, we can read the angle difference between voltage and current (which is the time between the two zero-crossings)
-            float angleDifference = _readAngleRadians(ade7953Channel);
-            // What we just read is the raw angle; we need to shift it by 120° depending if it is leading or lagging
-            float realAngleDifference = angleDifference;
+            float angleDifferenceDeg = _readAngleRadians(ade7953Channel) * float(RAD_TO_DEG);
 
-            if (channelData.phase == _getLaggingPhase(basePhase)) {
-                realAngleDifference = angleDifference - 2.0f * (float)PI / 3.0f;
-            } else if (channelData.phase == _getLeadingPhase(basePhase)) {
-                realAngleDifference = angleDifference + 2.0f * (float)PI / 3.0f;
-            } else {
-                LOG_ERROR("Invalid phase %d for channel %d", channelData.phase, channelIndex);
-                _recordFailure();
-                return false;
-            }
+            // Rotate the raw angle into this channel's own frame (+-120° for the lagging
+            // or leading line, 0 for the reference) and fold it into the +-90° quadrant.
+            // Wrapping before folding matters: raw reaches +-180°, so raw + 120° reaches
+            // 300°, and a single fold leaves that at 120° - still outside the quadrant,
+            // where cos() goes negative and the power factor sign stops meaning
+            // inductive/capacitive. Only reachable on a misconfigured phase, which is
+            // exactly when the installer preview needs a truthful (P, Q) to point at the
+            // right label.
+            PhaseUtils::LoadAngle loadAngle = PhaseUtils::loadAngleFromRawDeg(
+                basePhase, channelData.phase, angleDifferenceDeg
+            );
+            bool isActivePowerNegative = loadAngle.activePowerNegative;
 
-            // Finally, if the shifted angle is outside the -90 to 90 degrees range, it means the active power is negative
-            bool isActivePowerNegative = false;
-            if (realAngleDifference < -float(HALF_PI) || realAngleDifference > float(HALF_PI)) { // If the angle is outside the -90 to 90 degrees range, it means the active power is negative
-                realAngleDifference = realAngleDifference + (realAngleDifference > 0 ? -float(PI) : float(PI)); // Bring the angle to the -90 to 90 degrees range for power factor calculation
-                isActivePowerNegative = true;
-            }
+            // S = Vrms * Irms, then P and Q from the recovered load angle. Both are
+            // negated together when the current phasor is flipped (backwards CT or
+            // genuine reverse flow) so the published pair stays a real phasor.
+            apparentPower = current * voltage;
+            PhaseUtils::SignedPowers powers = PhaseUtils::powersFromFoldedAngle(
+                apparentPower,
+                loadAngle.foldedAngleDeg,
+                channelData.reverse,
+                isActivePowerNegative
+            );
+            powerFactor = powers.powerFactor;
 
-            powerFactor = cos(realAngleDifference) * (realAngleDifference >= 0 ? 1.0f : -1.0f); // Apply sign as the cosine is always positive in the -90 to 90 degrees range, but negative power values indicate capacitive (leading) load
             // Since this is a tricky approximation, we print the debug info anyway
             LOG_DEBUG(
                 "%s (%d) (phase %d): Angle difference: %.1f° (from %.1f°), Power factor: %.1f%% %s",
-                channelData.label, 
-                channelIndex, 
+                channelData.label,
+                channelIndex,
                 channelData.phase,
-                realAngleDifference * RAD_TO_DEG,
-                angleDifference * RAD_TO_DEG,
+                loadAngle.foldedAngleDeg,
+                angleDifferenceDeg,
                 powerFactor * 100.0f,
                 isActivePowerNegative ? "(negative power)" : ""
             );
 
-            // FINALLY: Compute power values
-            apparentPower = current * voltage; // S = Vrms * Irms
-            activePower = current * voltage * abs(powerFactor) * (channelData.reverse ? -1.0f : 1.0f) * (isActivePowerNegative ? -1.0f : 1.0f); // P = Vrms * Irms * PF
-            reactivePower = float(sqrt(pow(apparentPower, 2) - pow(activePower, 2))) * (channelData.reverse ? -1.0f : 1.0f) * (powerFactor >= 0 ? 1.0f : -1.0f); // Q = sqrt(S^2 - P^2) * sign(PF)
+            // FINALLY: Compute power values (computed above with the power factor)
+            activePower = powers.activePower;     // P = S * |cos(phi)|, signed by the flips
+            reactivePower = powers.reactivePower; // Q = S * sin(phi), signed by the same flips
 
             // Synthetic no-load: the ADE7953's no-load feature only gates the energy
             // registers of the base-phase branch; here a sub-threshold current is offset
@@ -4754,12 +4756,6 @@ namespace Ade7953
         // _wdrrCursor.
         return MeterLogic::wdrrPick(_channelDeficit, active, count, 1, &_wdrrCursor);
     }
-
-    // Poor man's phase shift (doing with modulus didn't work properly,
-    // and in any case the phases will always be at most 3)
-
-    Phase _getLaggingPhase(Phase phase) { return PhaseUtils::getLaggingPhase(phase); }
-    Phase _getLeadingPhase(Phase phase)  { return PhaseUtils::getLeadingPhase(phase); }
 
     float _calculatePhaseShift(Phase voltagePhase, Phase currentPhase) {
         return PhaseUtils::calculatePhaseShiftDeg(voltagePhase, currentPhase);
