@@ -145,6 +145,15 @@
     const RECONCILE_DELAY_MS = 2500;
     var reconcileTimers = {};
 
+    // The post-PATCH reconcile above only covers a change the firmware makes right
+    // after an edit. A CT clipped on a circuit that is off at install time casts no
+    // polarity votes until the load actually starts, which can be long after the
+    // reconcile has fired, so poll the config as well to keep `reverse` and the phase
+    // preview honest without a manual reload.
+    const CONFIG_REFRESH_MS = 10000;
+    var configRefreshInterval = null;
+    const RECONCILED_FIELDS = ['active', 'reverse', 'role', 'phase', 'label', 'groupLabel'];
+
     // Initialize the page
     async function initializePage() {
         try {
@@ -153,6 +162,9 @@
             channelData = channelResponse;
 
             createChannelBoxes();
+
+            if (configRefreshInterval) clearInterval(configRefreshInterval);
+            configRefreshInterval = setInterval(refreshChannelConfig, CONFIG_REFRESH_MS);
         } catch (error) {
             console.error('Error initializing page:', error);
             showStatus('Error loading data: ' + error.message, 'error');
@@ -586,9 +598,8 @@
         }
         if (!serverChannel) return;
 
-        const fields = ['active', 'reverse', 'role', 'phase', 'label', 'groupLabel'];
         const diffs = [];
-        fields.forEach(field => {
+        RECONCILED_FIELDS.forEach(field => {
             const sent = sentSnapshot[field];
             const got = serverChannel[field];
             if (sent === undefined) return;
@@ -607,6 +618,41 @@
 
         const label = serverChannel.label || `Channel ${index}`;
         showStatus(`${label}: automatically adjusted ${diffs.join(', ')}`, 'info');
+    }
+
+    // Background config poll. Patches only the fields that actually differ instead of
+    // re-rendering: createChannelBoxes() wipes the container, which would drop focus,
+    // scroll position and any half-typed value.
+    async function refreshChannelConfig() {
+        // Never race the user. While an edit is queued, in flight, or waiting on its
+        // own reconcile, that path owns the merge and the server is not yet the truth.
+        if (isProcessingUpdate) return;
+        if (Object.keys(updateQueue).length > 0) return;
+        if (Object.keys(reconcileTimers).length > 0) return;
+
+        let all;
+        try {
+            all = await energyApi.getChannelConfig();
+        } catch (error) {
+            console.error('Channel config refresh failed', error);
+            return;
+        }
+        if (!all) return;
+
+        const focused = document.activeElement;
+        Object.entries(all).forEach(([index, serverChannel]) => {
+            const local = channelData[index];
+            if (!local || !serverChannel) return;
+            RECONCILED_FIELDS.forEach(field => {
+                if (local[field] === serverChannel[field]) return;
+                // Leave the control the user is currently in alone, and leave the local
+                // mirror with it, so the next poll retries once focus moves away.
+                const el = document.getElementById(`${field}${index}`);
+                if (el && el === focused) return;
+                applyServerFieldToDom(index, field, serverChannel[field]);
+                local[field] = serverChannel[field];
+            });
+        });
     }
 
     function applyServerFieldToDom(index, field, value) {
