@@ -312,14 +312,12 @@
         // Negative reading clamped to zero this cycle (load/PV): angle not recoverable
         if (p === 0) return { state: 'clamped' };
 
-        // The two firmware measurement branches publish reactivePower with different
-        // sign conventions: the energy-register branch (configured phase == base
-        // phase) gives the chip's signed Q, while the angle branch applies sign(PF),
-        // which mirrors Q whenever active power is negative. Undo that so atan2
-        // always sees the angle in the same frame as the published active power.
-        const revSign = channel.reverse ? -1 : 1;
-        const qEff = (channel.phase === basePhase) ? q : q * Math.sign(p) * revSign;
-        const psi = Math.atan2(qEff, p);
+        // Both firmware measurement branches now publish (P, Q) as a consistent
+        // phasor: the energy-register branch (configured phase == base phase) gives
+        // the chip's signed pair, and the angle branch negates Q together with P when
+        // the current phasor is flipped. So atan2 sees the load angle directly, in the
+        // same frame as the published active power, with no correction needed.
+        const psi = Math.atan2(q, p);
 
         const candidates = {};
         [1, 2, 3].forEach(c => {
