@@ -216,6 +216,23 @@ namespace CustomWifi
     return _publishedState;
   }
 
+  void getStoredSsid(char* out, size_t outSize)
+  {
+    if (out == nullptr || outSize == 0) return;
+    _readStoredSsid(out, outSize);
+  }
+
+  void getDisconnectDiagnosticsAsJson(JsonDocument &jsonDocument)
+  {
+    jsonDocument["lastAttemptedSsid"] = _lastAttemptedSSID;
+    jsonDocument["reasonCode"] = _lastDisconnectReason;
+    jsonDocument["reason"] = _getDisconnectReasonString(_lastDisconnectReason);
+    jsonDocument["disconnectSsid"] = _lastDisconnectSSID;
+    jsonDocument["disconnectBssid"] = _lastDisconnectBSSID;
+    jsonDocument["disconnectRssi"] = _lastDisconnectRSSI;
+    jsonDocument["retryAttempts"] = _reconnectAttempts;
+  }
+
   bool testConnectivity()
   {
     return _testConnectivity();
@@ -308,10 +325,9 @@ namespace CustomWifi
     }
   }
 
-  // Unused since the WiFiManager /diagnostic page was removed. Kept, not deleted: D11
-  // requires these diagnostics to survive as a REST endpoint, which Phase 4 adds. Deleting
-  // it here and rewriting it there would lose the reason-code table for no benefit.
-  [[maybe_unused]] static const char* _getDisconnectReasonString(uint8_t reason)
+  // Consumed by getDisconnectDiagnosticsAsJson(), which is what replaced the reason-code
+  // display on the removed WiFiManager /diagnostic page (D11).
+  static const char* _getDisconnectReasonString(uint8_t reason)
   {
     switch (reason) {
       case 1:   return "UNSPECIFIED";

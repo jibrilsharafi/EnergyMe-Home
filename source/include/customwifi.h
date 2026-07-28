@@ -137,6 +137,13 @@ namespace CustomWifi
     // the AsyncTCP task inside a request filter: it is a plain load of a uint8_t-backed
     // enum, no mutex and no NVS. The Phase 4 auth carve-out gates on this.
     WifiProvisioning::State getProvisioningState();
+
+    // SSID the driver has stored, i.e. what WiFi.begin() would try. Empty when unprovisioned.
+    void getStoredSsid(char *out, size_t outSize);
+
+    // Last association failure: reason code and string, SSID, BSSID, RSSI. These were only
+    // ever visible through the removed WiFiManager /diagnostic page (D11).
+    void getDisconnectDiagnosticsAsJson(JsonDocument &jsonDocument);
     bool testConnectivity(); // Test actual network connectivity (check gateway and DNS)
     void forceReconnect();   // Force immediate WiFi reconnection
 

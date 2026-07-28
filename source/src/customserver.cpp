@@ -244,6 +244,50 @@ namespace CustomServer
         LOG_DEBUG("Logging middleware configured");
     }
 
+    // True only for a request that arrived on the SoftAP netif of a device that has no
+    // stored credentials. This is the whole auth carve-out (D3/D9).
+    //
+    // Runs on the AsyncTCP task for every request to every path, so it must stay a state
+    // read plus an address compare: no mutex, no NVS, no logging, no allocation.
+    //
+    // Deliberately NOT ON_AP_FILTER, which is `WiFi.localIP() != client()->localIP()`.
+    // That compares against the SYN destination rather than the arrival interface, returns
+    // true for the device's own 127.0.0.1 health probe, and returns true for EVERYTHING
+    // whenever WiFi.localIP() is 0.0.0.0 - which is exactly the unprovisioned case, so it
+    // would open the entire UI on the LAN the moment STA dropped.
+    static bool _isProvisioningOrigin(AsyncWebServerRequest *request)
+    {
+        // The state check carries the safety: outside UNPROVISIONED there is no bypass at
+        // all, whatever the address comparison says.
+        if (CustomWifi::getProvisioningState() != WifiProvisioning::State::UNPROVISIONED) return false;
+
+        IPAddress apAddress = WiFi.softAPIP();
+        if (apAddress == IPAddress(0, 0, 0, 0)) return false; // No AP up: nothing to carve out
+
+        AsyncClient *client = request->client();
+        if (client == nullptr) return false;
+
+        return client->localIP() == apAddress;
+    }
+
+    // Registers a route twice: an open handler that only matches provisioning-origin
+    // requests, then the normal authenticated one.
+    //
+    // Insertion order is what makes this work - the first handler whose filter passes wins
+    // (WebServer.cpp:145-154). skipServerMiddlewares() drops the whole server chain, which
+    // includes rate limiting as well as auth, so the rate limiter is added back explicitly:
+    // an unauthenticated route still must not be floodable.
+    static void _onOpenDuringProvisioning(const char *uri, WebRequestMethodComposite method,
+                                          ArRequestHandlerFunction handler)
+    {
+        server.on(uri, method, handler)
+              .setFilter(_isProvisioningOrigin)
+              .skipServerMiddlewares()
+              .addMiddleware(&rateLimit);
+
+        server.on(uri, method, handler);
+    }
+
     // Helper functions for common response patterns
     static void _sendJsonResponse(AsyncWebServerRequest *request, const JsonDocument &doc, int32_t statusCode)
     {
@@ -765,55 +809,55 @@ namespace CustomServer
         const char* etag = _getSketchEtag();
 
         // CSS files
-        server.on("/css/button.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringProvisioning("/css/button.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/css", EMBEDDED(button_css), etag);
         });
-        server.on("/css/forms.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringProvisioning("/css/forms.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/css", EMBEDDED(forms_css), etag);
         });
-        server.on("/css/index.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringProvisioning("/css/index.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/css", EMBEDDED(index_css), etag);
         });
-        server.on("/css/styles.css", HTTP_GET, [etag](AsyncWebServerRequest *request) { 
+        _onOpenDuringProvisioning("/css/styles.css", HTTP_GET, [etag](AsyncWebServerRequest *request) { 
             _sendStaticWithEtag(request, "text/css", EMBEDDED(styles_css), etag);
         });
-        server.on("/css/section.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringProvisioning("/css/section.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/css", EMBEDDED(section_css), etag);
         });
-        server.on("/css/tooltip.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringProvisioning("/css/tooltip.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/css", EMBEDDED(tooltip_css), etag);
         });
-        server.on("/css/typography.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringProvisioning("/css/typography.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/css", EMBEDDED(typography_css), etag);
         });
 
         // JavaScript files
-        server.on("/js/api-client.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringProvisioning("/js/api-client.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "application/javascript", EMBEDDED(api_client_js), etag);
         });
-        server.on("/js/chart-helpers.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringProvisioning("/js/chart-helpers.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "application/javascript", EMBEDDED(chart_helpers_js), etag);
         });
-        server.on("/js/data-helpers.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringProvisioning("/js/data-helpers.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "application/javascript", EMBEDDED(data_helpers_js), etag);
         });
-        server.on("/js/issues.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringProvisioning("/js/issues.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "application/javascript", EMBEDDED(issues_js), etag);
         });
-        server.on("/js/power-flow.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringProvisioning("/js/power-flow.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "application/javascript", EMBEDDED(power_flow_js), etag);
         });
-        server.on("/js/tooltip.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringProvisioning("/js/tooltip.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "application/javascript", EMBEDDED(tooltip_js), etag);
         });
 
         // Resources
-        server.on("/favicon.svg", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringProvisioning("/favicon.svg", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "image/svg+xml", EMBEDDED(favicon_svg), etag);
         });
 
         // Main dashboard
-        server.on("/", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringProvisioning("/", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/html", EMBEDDED(index_html), etag);
         });
 
@@ -1686,8 +1730,72 @@ namespace CustomServer
         server.addHandler(ackIssueHandler);
     }
 
+    // Captive-portal detection probes. Registered as explicit handlers rather than relying
+    // on onNotFound, which ignores filters (so it could not be limited to the AP netif) but
+    // still runs middleware (so it would demand auth on a probe that cannot authenticate).
+    //
+    // Answering with a redirect rather than the expected 204/success is what makes the OS
+    // show its "sign in to network" sheet.
+    static void _serveCaptivePortalProbes()
+    {
+        static const char *const kProbePaths[] = {
+            "/generate_204",            // Android
+            "/gen_204",                 // Android, older
+            "/hotspot-detect.html",     // iOS / macOS
+            "/library/test/success.html",
+            "/ncsi.txt",                // Windows
+            "/connecttest.txt",         // Windows 10+
+            "/redirect",                // Windows, follow-up
+        };
+
+        for (size_t i = 0; i < sizeof(kProbePaths) / sizeof(kProbePaths[0]); i++) {
+            _onOpenDuringProvisioning(kProbePaths[i], HTTP_GET, [](AsyncWebServerRequest *request) {
+                char location[IP_ADDRESS_BUFFER_SIZE + 16];
+                snprintf(location, sizeof(location), "http://%s/", WiFi.softAPIP().toString().c_str());
+
+                AsyncWebServerResponse *response = request->beginResponse(302, "text/plain", "");
+                response->addHeader("Location", location);
+                request->send(response);
+            });
+        }
+    }
+
     static void _serveNetworkEndpoints()
     {
+        _serveCaptivePortalProbes();
+
+        // Provisioning status: what the device is doing, and where to reach it afterwards.
+        // Open on the AP while unprovisioned because the setup page polls this before any
+        // password could have been entered.
+        _onOpenDuringProvisioning("/api/v1/network/wifi/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+
+            doc["state"] = (uint8_t)CustomWifi::getProvisioningState();
+            doc["connected"] = CustomWifi::isFullyConnected();
+            doc["apServing"] = CustomWifi::isApServing();
+
+            char ssid[WIFI_SSID_BUFFER_SIZE];
+            CustomWifi::getStoredSsid(ssid, sizeof(ssid));
+            doc["ssid"] = ssid;
+
+            doc["ip"] = WiFi.localIP().toString();
+            doc["apIp"] = WiFi.softAPIP().toString();
+            doc["hostname"] = MDNS_HOSTNAME ".local";
+            doc["rssi"] = WiFi.RSSI();
+
+            _sendJsonResponse(request, doc);
+        });
+
+        // Why the last association failed. Replaces the WiFiManager /diagnostic page (D11);
+        // nothing else ever exposed these fields.
+        _onOpenDuringProvisioning("/api/v1/network/wifi/diagnostics", HTTP_GET, [](AsyncWebServerRequest *request) {
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            CustomWifi::getDisconnectDiagnosticsAsJson(doc);
+            _sendJsonResponse(request, doc);
+        });
+
         // WiFi reset
         server.on("/api/v1/network/wifi/reset", HTTP_POST, [](AsyncWebServerRequest *request)
                   {
@@ -1740,7 +1848,7 @@ namespace CustomServer
 
                 LOG_INFO("Received request to set WiFi credentials for SSID: %s", ssid);
 
-                if (CustomWifi::setCredentials(ssid, password)) _sendSuccessResponse(request, "WiFi credentials updated successfully. It will restart and attempt to connect to the new network.");
+                if (CustomWifi::setCredentials(ssid, password)) _sendSuccessResponse(request, "WiFi credentials saved. Connecting to the new network without restarting - poll /api/v1/network/wifi/status for the result.");
                 else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to save credentials for the specified network. Please verify them and try again.");
             });
         server.addHandler(wifiCredentialsHandler);
