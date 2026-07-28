@@ -14,6 +14,12 @@ namespace CustomWifi
   // Counters
   static uint64_t _lastReconnectAttempt = 0;
   static int32_t _reconnectAttempts = 0; // Increased every disconnection, reset on stable (few minutes) connection
+  // Deadline replacing the old blocking delay() after a disconnect: the task must stay
+  // responsive during the grace window. 0 means disarmed.
+  static uint64_t _disconnectDeadlineMs = 0;
+  // The notify wait is shortened while a deadline is armed, so "wait timed out" no longer
+  // implies "a full periodic interval elapsed". Gate the periodic check on its own clock.
+  static uint64_t _lastPeriodicCheckMs = 0;
   static uint64_t _lastWifiConnectedMillis = 0; // Timestamp when WiFi was last fully connected (for lwIP stabilization)
   static IPAddress _lastMdnsIp; // Last IP for which mDNS was initialized; used to skip rebuild when IP unchanged
   static bool _mdnsInitialized = false;
@@ -65,6 +71,7 @@ namespace CustomWifi
   static void _stopWifiTask();
   static bool _testConnectivity();
   static void _forceReconnectInternal();
+  static void _serviceDisconnectDeadline(const char* hostname);
   static bool _isPowerReset();
   static void _sendOpenSourceTelemetry();
   static void _resolveApPassword(char* out, size_t outSize);
@@ -633,12 +640,27 @@ namespace CustomWifi
     _eventsEnabled = true;
 
     // Main task loop - handles fallback scenarios and deferred logging
+    _lastPeriodicCheckMs = millis64();
     while (_taskShouldRun)
     {
       TASK_HEARTBEAT(_heartbeat);
 
+      // Serviced at the top of the loop so it also runs on iterations reached by the
+      // `continue`s in the switch below, which skip the periodic branch entirely.
+      _serviceDisconnectDeadline(hostname);
+
+      // Never wait past an armed deadline, or a 15 s grace window would go unchecked
+      // for up to a full 30 s periodic interval.
+      uint32_t waitMs = WIFI_PERIODIC_CHECK_INTERVAL;
+      if (_disconnectDeadlineMs != 0)
+      {
+        uint64_t nowMs = millis64();
+        uint64_t remainingMs = (_disconnectDeadlineMs > nowMs) ? (_disconnectDeadlineMs - nowMs) : 0;
+        if (remainingMs < waitMs) waitMs = (uint32_t)remainingMs;
+      }
+
       // Wait for notification from event handler or timeout
-      if (xTaskNotifyWait(0, ULONG_MAX, &notificationValue, pdMS_TO_TICKS(WIFI_PERIODIC_CHECK_INTERVAL)))
+      if (xTaskNotifyWait(0, ULONG_MAX, &notificationValue, pdMS_TO_TICKS(waitMs)))
       {
         // Check if this is a stop notification (we use a special value for shutdown)
         if (notificationValue == WIFI_EVENT_SHUTDOWN)
@@ -656,6 +678,7 @@ namespace CustomWifi
 
         case WIFI_EVENT_GOT_IP:
           LOG_DEBUG("WiFi got IP: %s", WiFi.localIP().toString().c_str());
+          _disconnectDeadlineMs = 0; // Link is back; nothing left to evaluate
           statistics.wifiConnection++; // It is here we know the wifi connection went through (and the one which is called on reconnections)
           _lastWifiConnectedMillis = millis64(); // Track connection time for lwIP stabilization
           // Handle successful connection operations safely in task context
@@ -704,45 +727,15 @@ namespace CustomWifi
           LOG_WARNING("WiFi disconnected - auto-reconnect will handle");
           _lastWifiConnectedMillis = 0; // Reset stabilization timer on disconnect
 
-          // Wait a bit for auto-reconnect (enabled by default) to work
-          delay(WIFI_DISCONNECT_DELAY);
-
-          // Check if still disconnected
-          if (!isFullyConnected())
+          // Give auto-reconnect (enabled by default) a grace window, then evaluate.
+          // Arm only when not already armed: re-arming on every disconnect would let a
+          // link flapping faster than the window push the deadline out indefinitely, so
+          // the evaluation below - and with it the portal fallback - would never run.
+          // The old blocking delay() always completed and always evaluated exactly once
+          // per window; this preserves that while keeping the task responsive.
+          if (_disconnectDeadlineMs == 0)
           {
-            _reconnectAttempts++;
-            _lastReconnectAttempt = millis64();
-
-            LOG_WARNING("Auto-reconnect failed, attempt %d", _reconnectAttempts);
-
-            // After several failures, try WiFiManager as fallback
-            if (_reconnectAttempts >= WIFI_MAX_CONSECUTIVE_RECONNECT_ATTEMPTS)
-            {
-              LOG_ERROR("Multiple reconnection failures - starting portal");
-
-              // Create WiFiManager on heap for portal operation
-              WiFiManager* portalManager = new WiFiManager();
-              if (!portalManager) {
-                LOG_ERROR("Failed to allocate WiFiManager for portal");
-                setRestartSystem("Restart after WiFiManager allocation failure");
-                break;
-              }
-              _setupWiFiManager(*portalManager);
-
-              // Try WiFiManager portal (WPA2-protected; password from factory NVS or MAC fallback)
-              char fallbackApPassword[WIFI_PASSWORD_BUFFER_SIZE];
-              _resolveApPassword(fallbackApPassword, sizeof(fallbackApPassword));
-              if (!portalManager->startConfigPortal(hostname, fallbackApPassword))
-              {
-                LOG_ERROR("Portal failed - restarting device");
-                Led::blinkRedFast(Led::PRIO_URGENT);
-                setRestartSystem("Restart after portal failure");
-              }
-
-              // Clean up WiFiManager after portal operation
-              delete portalManager;
-              // If portal succeeds, device will restart automatically
-            }
+            _disconnectDeadlineMs = millis64() + WIFI_DISCONNECT_DELAY;
           }
           break;
 
@@ -771,9 +764,13 @@ namespace CustomWifi
       }
       else
       {
-        // Timeout occurred - perform periodic health check
-        if (_taskShouldRun)
+        // Timeout occurred. The wait may have been shortened by an armed deadline, so a
+        // timeout no longer implies a full interval elapsed. Without this gate the branch
+        // below would call _forceReconnectInternal() every few seconds while disconnected,
+        // because that is exactly when the deadline is armed and isFullyConnected() false.
+        if (_taskShouldRun && (millis64() - _lastPeriodicCheckMs >= WIFI_PERIODIC_CHECK_INTERVAL))
         {
+          _lastPeriodicCheckMs = millis64();
           if (isFullyConnected())
           {
             // Test internet connectivity but don't force reconnection if it fails
@@ -1030,6 +1027,55 @@ namespace CustomWifi
     statistics.wifiConnectionError++;
     
     LOG_INFO("Forced reconnection initiated (attempt %d)", _reconnectAttempts);
+  }
+
+  // Evaluates a disconnect grace window once it expires. This is the non-blocking
+  // replacement for the delay(WIFI_DISCONNECT_DELAY) that used to sit inline in the
+  // WIFI_EVENT_DISCONNECTED case and stall the task for 15 s per failed attempt,
+  // freezing AP client events, the DNS lifecycle and every timer along with it.
+  static void _serviceDisconnectDeadline(const char* hostname)
+  {
+    if (_disconnectDeadlineMs == 0) return;
+    if (millis64() < _disconnectDeadlineMs) return;
+
+    _disconnectDeadlineMs = 0; // Disarm first: exactly one evaluation per armed window
+
+    // Auto-reconnect may have restored the link during the window
+    if (isFullyConnected()) return;
+
+    _reconnectAttempts++;
+    _lastReconnectAttempt = millis64();
+
+    LOG_WARNING("Auto-reconnect failed, attempt %d", _reconnectAttempts);
+
+    // After several failures, try WiFiManager as fallback
+    if (_reconnectAttempts >= WIFI_MAX_CONSECUTIVE_RECONNECT_ATTEMPTS)
+    {
+      LOG_ERROR("Multiple reconnection failures - starting portal");
+
+      // Create WiFiManager on heap for portal operation
+      WiFiManager* portalManager = new WiFiManager();
+      if (!portalManager) {
+        LOG_ERROR("Failed to allocate WiFiManager for portal");
+        setRestartSystem("Restart after WiFiManager allocation failure");
+        return;
+      }
+      _setupWiFiManager(*portalManager);
+
+      // Try WiFiManager portal (WPA2-protected; password from factory NVS or MAC fallback)
+      char fallbackApPassword[WIFI_PASSWORD_BUFFER_SIZE];
+      _resolveApPassword(fallbackApPassword, sizeof(fallbackApPassword));
+      if (!portalManager->startConfigPortal(hostname, fallbackApPassword))
+      {
+        LOG_ERROR("Portal failed - restarting device");
+        Led::blinkRedFast(Led::PRIO_URGENT);
+        setRestartSystem("Restart after portal failure");
+      }
+
+      // Clean up WiFiManager after portal operation
+      delete portalManager;
+      // If portal succeeds, device will restart automatically
+    }
   }
 
   static bool _isPowerReset()
