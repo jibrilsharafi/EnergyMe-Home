@@ -47,6 +47,25 @@ The SoftAP SHALL NOT remain raised indefinitely. Every path that raises it SHALL
 - **WHEN** the device enters AP-assist because its network is gone and the user never intervenes
 - **THEN** the AP is torn down at the maximum lifetime rather than broadcasting indefinitely
 
+#### Scenario: Unprovisioned device left alone past the maximum lifetime
+
+- **WHEN** a device with no stored credentials reaches the maximum AP lifetime with nobody connected
+- **THEN** the AP is torn down and raised again after a cooldown, because a device with no credentials has no other way to be reached
+
+#### Scenario: User asks for the AP after it was torn down
+
+- **WHEN** the user makes the on-demand request on a device whose AP window has closed
+- **THEN** the AP is raised again with a fresh lifetime
+
+### Requirement: Local integrations are not exposed on the SoftAP
+
+Unauthenticated local integration services SHALL NOT accept connections arriving on the SoftAP netif.
+
+#### Scenario: Modbus TCP during provisioning
+
+- **WHEN** a client on the SoftAP connects to the Modbus TCP port
+- **THEN** the connection is refused, because Modbus TCP carries no authentication and the SoftAP admits anyone within radio range
+
 ### Requirement: Credential changes do not restart the device
 
 Changing the WiFi SSID or password SHALL apply without a restart. Changing the static IP configuration SHALL continue to require a restart.
@@ -79,6 +98,16 @@ While the device is `UNPROVISIONED`, requests arriving on the SoftAP netif SHALL
 
 - **WHEN** a request arrives on the STA netif while the device is `UNPROVISIONED`
 - **THEN** digest authentication is required
+
+#### Scenario: Reading the log while provisioning fails
+
+- **WHEN** a user on the SoftAP of an unprovisioned device opens the log view to find out why association keeps failing
+- **THEN** it is reachable without the web password, matching what the removed diagnostic page offered
+
+#### Scenario: Grace period after a successful connect
+
+- **WHEN** a client on the SoftAP requests a route during the grace period
+- **THEN** digest authentication is required, because the device is now reachable on the LAN and the justification for opening up is gone
 
 #### Scenario: Device's own loopback health probe
 

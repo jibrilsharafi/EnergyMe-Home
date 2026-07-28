@@ -245,6 +245,31 @@ Deleting `_setupWiFiManager` deletes these by accident unless they are moved fir
 
 Also: `customserver.h:6` includes `<WiFiManager.h>` directly. Removing the dependency breaks that file.
 
+### D12: AP re-raise is asymmetric between UNPROVISIONED and AP_ASSIST
+
+D1 bounds every AP window, which raises the question of what happens after the bound fires. The answer differs by state, and the difference is deliberate:
+
+- **`UNPROVISIONED`**: the AP comes back after `WIFI_AP_COOLDOWN` (5 min). A device with no credentials has no other way to be reached, and a first-boot user who walks away for 40 minutes must not return to a dark device. Each window is still bounded, so the radio is not on permanently.
+- **`AP_ASSIST`**: no automatic re-raise. One window per boot, and the button raises another. This is the "router died" and "owner moved house" case the bound exists for; a meter that broadcasts an open-ish SSID for weeks is exactly what D1 set out to prevent.
+
+Both paths are unit-tested (`test_unprovisioned_ap_re_raises_after_cooldown`, `test_ap_assist_does_not_re_raise_after_teardown`).
+
+### D13: Decisions made while the bench gates are outstanding
+
+Implementation is proceeding ahead of the Phase 0 bench results at the user's direction. To keep a bench answer from invalidating built code, two decisions were narrowed rather than left branching:
+
+- **D2 / Bench-1**: only the stop -> `softAPConfig` -> `softAP(ssid, pw, N)` sequence is implemented. It is correct whichever way Bench-1 lands. If the probe shows the driver moves a live AP in place, that becomes a later simplification, not a rework.
+- **D1 + D4 / Bench-3**: surfacing the LAN address and `energyme.local` **on submit** is the primary UX, not the Bench-3 failure fallback. The grace window remains, but nothing in the flow depends on the phone surviving the STA transition. A Bench-3 failure then changes no built code.
+
+Bench-2 is the one gate that can still invalidate the architecture rather than adjust it. If the internal-heap largest free block comes in under 32 KB, Phases 3 to 6 do not ship in APSTA form and the fallback is the descoped non-blocking-WiFiManager path, which is a different change.
+
+### D14: Resolutions for the previously open questions
+
+- **Modbus TCP on the AP netif: filtered off.** `modbustcp.cpp:22` binds all interfaces and the protocol is unauthenticated. The AP window is bounded, but there is no reason to expose register reads to whoever is standing in range during setup, and the filter is a one-line change.
+- **`/log` is included in the `UNPROVISIONED` bypass.** It matches what `/diagnostic` does today: the log tail is exactly what a user needs when provisioning is failing, and refusing it would be a regression against the page being removed.
+- **Button: the `< 2 s` press raises the AP on demand.** It is the only free slot (`buttonhandler.cpp:179-205`), practical window ~150 ms to 2 s after debounce.
+- **LED: AP states use `PRIO_MEDIUM` with a distinct pattern.** `PRIO_URGENT` collides with button feedback and `PRIO_CRITICAL` with safe-mode purple and `resetWifi` orange. The known cost is that the repeated `pulseBlue` on disconnect (`customwifi.cpp:660`) stomps it; that call is being reworked in Phase 3 anyway, so the collision is resolved there rather than by escalating priority.
+
 ## Risks
 
 | Risk | Severity | Status |
@@ -279,7 +304,9 @@ Written before measurement, per the review's objection that a gate without a thr
 
 ## Open questions
 
-- Should Modbus TCP be filtered off the AP netif, or is exposure during a bounded AP window acceptable?
-- Does the `UNPROVISIONED` bypass need to cover `/log` so the diagnostic log tail stays reachable without credentials (matching today's `/diagnostic` behaviour)?
-- Which button duration raises the AP on demand? Only the `<2 s` slot is free (`buttonhandler.cpp:179-205`), practical window ~150 ms to 2 s after debounce, and `_updateVisualFeedback` currently shows white there.
-- LED priority for AP states. `PRIO_MEDIUM` is stomped by the repeated `pulseBlue` on disconnect (`customwifi.cpp:660`); `PRIO_URGENT` collides with button feedback; `PRIO_CRITICAL` collides with safe-mode purple and `resetWifi` orange.
+All four previously open questions are resolved in D14. What remains open is only what the bench answers:
+
+- Bench-2: does APSTA leave enough internal heap? This is the one gate that can invalidate the architecture.
+- Bench-1: does the driver move a live AP in place? Informational; selects a possible simplification of D2.
+- Bench-3: does a phone survive the STA transition? Informational now that D13 made the grace window a bonus rather than a dependency.
+- Bench-4: does lwIP's weak host model let a LAN host with a static route satisfy the AP-IP compare? Must pass before Phase 4 ships.

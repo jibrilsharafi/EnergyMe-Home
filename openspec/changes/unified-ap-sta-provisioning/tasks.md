@@ -1,6 +1,10 @@
 # Tasks
 
-Phase 0 is a throwaway instrumented build. **No production code is written until Phase 0 answers Bench-1 through Bench-3.** Phase 1 is independently shippable and is required regardless of whether the rest proceeds.
+Phase 0 is a throwaway instrumented build, preserved on branch `feat/bench-apsta-probe` at tag `bench/apsta-probe-v1`.
+
+**Revised sequencing.** The original plan gated all implementation on the Phase 0 bench results. At the user's direction (no hardware available), implementation proceeds ahead of the bench and everything is tested together at the end. D13 in `design.md` records the two decisions that were narrowed so a bench answer cannot invalidate built code. Bench-2 remains the one gate that can invalidate the architecture rather than adjust it.
+
+Phase 2 was moved ahead of Phase 1: `pio test -e native` is the only verification available without hardware, so the phase that produces runnable tests came first. Every phase after that is **compile-verified only** until the bench runs.
 
 Bench hardware: dev device **192.168.2.174** (`admin` / `energyme00`), authorized for config/NVS/OTA experiments.
 
@@ -84,7 +88,7 @@ Grep the capture for `[BENCH]`. Every probe line carries that prefix; AdvancedLo
 ### Decision gate
 
 - [ ] 0.15 Write results into `review-findings.md`. If Bench-2 fails, stop and reopen the descoped alternative (non-blocking WiFiManager portal via `setConfigPortalBlocking(false)` + `process()`, verified at `WiFiManager.h:371`, `:272`). If Bench-3 fails, proceed with the amended UX only.
-- [ ] 0.16 Delete `feat/bench-apsta-probe`.
+- [ ] 0.16 Delete `feat/bench-apsta-probe` **only after the bench has run**. The branch and tag `bench/apsta-probe-v1` are the reproducible history point for the probe binary; deleting them before the measurements exist would throw away the only build that can take them.
 
 ---
 
@@ -92,25 +96,25 @@ Grep the capture for `[BENCH]`. Every probe line carries that prefix; AdvancedLo
 
 Required before D7. Without it, AP-only provisioning reboots every ~150 s and reaches firmware rollback plus NVS wipe at ~25 min. Currently masked only by the blocking wait at `main.cpp:151`.
 
-- [ ] 1.1 Add `CustomWifi::isNetworkServiceable()`: STA connected **or** AP raised and serving. Declare in `customwifi.h`.
-- [ ] 1.2 `_performHealthCheck` (`customserver.cpp:474`) calls `isNetworkServiceable()` instead of `isFullyConnected()`.
-- [ ] 1.3 Unit-test the predicate in `lib/wifi_provisioning` (Phase 2 may reorder this).
-- [ ] 1.4 Bench: force AP-only for 30 min, confirm zero reboots and that `_consecutiveResetCount` does not climb. Capture serial.
+- [x] 1.1 Add `CustomWifi::isNetworkServiceable()`: STA connected **or** AP raised and serving. Declare in `customwifi.h`. Added alongside `isApServing()` (`WiFi.AP.started()` + a non-zero `softAPIP()`); the rule itself lives in `lib/wifi_provisioning` so it stays unit-tested.
+- [x] 1.2 `_performHealthCheck` (`customserver.cpp:474`) calls `isNetworkServiceable()` instead of `isFullyConnected()`.
+- [x] 1.3 Unit-test the predicate in `lib/wifi_provisioning`. Done in Phase 2, which was moved ahead of Phase 1 because `pio test -e native` is the only verification available without hardware.
+- [ ] 1.4 Bench: force AP-only for 30 min, confirm zero reboots and that `_consecutiveResetCount` does not climb. Capture serial. **Blocked on hardware.**
 - [ ] 1.5 Commit `fix(server): keep health check green while serving on the AP netif`.
 
 ---
 
 ## Phase 2: Pure provisioning logic (`source/lib/`, no hardware)
 
-- [ ] 2.1 `source/lib/wifi_provisioning/wifi_provisioning.h` (+ `.cpp` if needed). SPDX header, `#pragma once`, `<cstdint>` / `<cstddef>` only. No Arduino, FreeRTOS or ESP headers.
-- [ ] 2.2 State enum and transition table per D8: `UNPROVISIONED`, `STA_CONNECTING`, `AP_ASSIST`, `GRACE`, `STA_ONLY`.
-- [ ] 2.3 AP-raise predicate. **Separate "STA retry attempts" from "AP-raise trigger count"** so `_forceReconnectInternal()` cannot poison it (D8).
-- [ ] 2.4 Grace-window and `WIFI_AP_MAX_LIFETIME` arithmetic, both bounded (D1).
-- [ ] 2.5 AP subnet candidate selection with overlap detection against a given STA subnet. CIDR /24 to /28 only.
-- [ ] 2.6 `source/test/test_wifi_provisioning/test_wifi_provisioning.cpp`. Explicit `main()` with `UNITY_BEGIN` / `RUN_TEST` / `UNITY_END`.
-- [ ] 2.7 Cover: unbounded-AP regression, counter-poisoning regression, subnet overlap including a foreign restored static IP, grace expiry, lifetime expiry.
-- [ ] 2.8 `pio test -e native` **from WSL**. No `platformio.ini` change needed.
-- [ ] 2.9 Commit `feat(wifi): add pure provisioning state machine with unit tests`.
+- [x] 2.1 `source/lib/wifi_provisioning/wifi_provisioning.h` (+ `.cpp` if needed). SPDX header, `#pragma once`, `<cstdint>` / `<cstddef>` only. No Arduino, FreeRTOS or ESP headers.
+- [x] 2.2 State enum and transition table per D8: `UNPROVISIONED`, `STA_CONNECTING`, `AP_ASSIST`, `GRACE`, `STA_ONLY`.
+- [x] 2.3 AP-raise predicate. **Separate "STA retry attempts" from "AP-raise trigger count"** so `_forceReconnectInternal()` cannot poison it (D8).
+- [x] 2.4 Grace-window and `WIFI_AP_MAX_LIFETIME` arithmetic, both bounded (D1).
+- [x] 2.5 AP subnet candidate selection with overlap detection against a given STA subnet. CIDR /24 to /28 only.
+- [x] 2.6 `source/test/test_wifi_provisioning/test_wifi_provisioning.cpp`. Explicit `main()` with `UNITY_BEGIN` / `RUN_TEST` / `UNITY_END`.
+- [x] 2.7 Cover: unbounded-AP regression, counter-poisoning regression, subnet overlap including a foreign restored static IP, grace expiry, lifetime expiry.
+- [x] 2.8 `pio test -e native` **from WSL**. No `platformio.ini` change needed.
+- [x] 2.9 Commit `feat(wifi): add pure provisioning state machine with unit tests`.
 
 ---
 
