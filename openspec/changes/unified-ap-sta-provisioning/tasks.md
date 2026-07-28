@@ -120,10 +120,20 @@ Required before D7. Without it, AP-only provisioning reboots every ~150 s and re
 
 ## Phase 3: AP lifecycle in `customwifi`
 
-- [ ] 3.1 Register all WiFi event handlers at boot per D10, including `AP_START`, `AP_STACONNECTED`, `AP_STADISCONNECTED`. Callbacks notify-only.
-- [ ] 3.2 Remove `WiFi.removeEvent(_onWiFiEvent)` at `customwifi.cpp:893` (unlocked-vector use-after-free hazard).
+**Sequencing amendment (found while implementing 3.1).** The notify loop does not exist until `autoConnect()` returns. `autoConnect()` owns the whole unprovisioned path: it raises its own AP, runs its own portal, blocks the task, and on failure calls `setRestartSystem()` then `vTaskDelete(NULL)` (`customwifi.cpp:577-587`). Consequences:
+
+- 3.1, 3.2, 3.3 edit code that runs today and can be done in place.
+- 3.4 has no `WifiProvisioning::Context` to read. Nothing in `customwifi.cpp` owns one, and neither `init()` nor `onEvent()` is called anywhere.
+- 3.5 to 3.8 presuppose the device sitting in `UNPROVISIONED` with our loop running, which is unreachable while `autoConnect()` exists. Written as-is they would be dead code.
+
+So **3.4a and 3.4b below are inserted before 3.5**, pulling the Context ownership and the non-blocking connect (previously Phase 6.1/6.2) forward. Phase 6 keeps only the deletion of WiFiManager itself. This is the D13 amendment mechanism.
+
+- [x] 3.1 Register all WiFi event handlers at boot per D10, including `AP_START`, `AP_STACONNECTED`, `AP_STADISCONNECTED`. Callbacks notify-only. Delivery stays gated by `_eventsEnabled` (registration timing is the hazard, not gate timing).
+- [x] 3.2 Remove `WiFi.removeEvent(_onWiFiEvent)` at `customwifi.cpp:893` (unlocked-vector use-after-free hazard).
 - [ ] 3.3 Replace the 15 s blocking `delay(WIFI_DISCONNECT_DELAY)` at `customwifi.cpp:665` with a deadline checked in the notify loop.
-- [ ] 3.4 Suppress `_forceReconnectInternal()` while `UNPROVISIONED` (`customwifi.cpp:742-747`).
+- [ ] 3.4 Suppress `_forceReconnectInternal()` while `UNPROVISIONED` (`customwifi.cpp:742-747`). Depends on 3.4a.
+- [ ] 3.4a Own a `WifiProvisioning::Context` in `customwifi.cpp`: `init()` at boot from "are there stored credentials", `onEvent()` fed from the notify loop, guarded by the existing task-state discipline. Expose the state through an atomic read for the Phase 4 filter.
+- [ ] 3.4b Replace `autoConnect()` with a non-blocking connect driven by the notify loop, so `UNPROVISIONED` becomes a state the device can actually sit in. Credentials read via `esp_wifi_get_config`; no portal, no restart on save. **This is the load-bearing change of the whole proposal.**
 - [ ] 3.5 AP raise/teardown in the documented order: `softAPConfig` -> `softAP(ssid, pw, ch)` -> wait `AP_START` -> `enableDhcpCaptivePortal()`.
 - [ ] 3.6 DNS lifecycle per D4, always `start(53, "*", WiFi.softAPIP())`, stopped on STA-connected.
 - [ ] 3.7 D2 channel handling, in whichever form Bench-1 selected.
