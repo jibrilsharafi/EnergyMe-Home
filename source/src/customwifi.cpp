@@ -308,7 +308,10 @@ namespace CustomWifi
     }
   }
 
-  static const char* _getDisconnectReasonString(uint8_t reason)
+  // Unused since the WiFiManager /diagnostic page was removed. Kept, not deleted: D11
+  // requires these diagnostics to survive as a REST endpoint, which Phase 4 adds. Deleting
+  // it here and rewriting it there would lose the reason-code table for no benefit.
+  [[maybe_unused]] static const char* _getDisconnectReasonString(uint8_t reason)
   {
     switch (reason) {
       case 1:   return "UNSPECIFIED";
@@ -453,7 +456,13 @@ namespace CustomWifi
 
         case WIFI_EVENT_GOT_IP:
           LOG_DEBUG("WiFi got IP: %s", WiFi.localIP().toString().c_str());
-          _disconnectDeadlineMs = 0; // Link is back; nothing left to evaluate
+          // Both deadlines must be disarmed here. isFullyConnected() deliberately returns
+          // false for WIFI_LWIP_STABILIZATION_DELAY after this point, so an association
+          // that completes in the last second of its window would otherwise let
+          // _serviceConnectDeadline() fire against a link that is actually up: it would
+          // log a false timeout, feed a spurious STA_ATTEMPT_FAILED, and re-associate.
+          _disconnectDeadlineMs = 0;
+          _connectDeadlineMs = 0;
           _feedProvisioning(WifiProvisioning::Event::STA_CONNECTED);
           statistics.wifiConnection++; // It is here we know the wifi connection went through (and the one which is called on reconnections)
           _lastWifiConnectedMillis = millis64(); // Track connection time for lwIP stabilization
@@ -516,7 +525,13 @@ namespace CustomWifi
           // the evaluation below - and with it the portal fallback - would never run.
           // The old blocking delay() always completed and always evaluated exactly once
           // per window; this preserves that while keeping the task responsive.
-          if (_disconnectDeadlineMs == 0)
+          // Not while a connect attempt is in flight: that attempt already has its own
+          // deadline, and the driver reports a failed FIRST association through this same
+          // DISCONNECTED event (NO_AP_FOUND, AUTH_FAIL, HANDSHAKE_TIMEOUT). Arming both
+          // would feed STA_ATTEMPT_FAILED twice for one failure, so apRaiseTriggers would
+          // reach its threshold in roughly half the intended time and stop meaning
+          // "consecutive genuine association failures".
+          if (_disconnectDeadlineMs == 0 && _connectDeadlineMs == 0)
           {
             _disconnectDeadlineMs = millis64() + WIFI_DISCONNECT_DELAY;
           }
@@ -848,6 +863,26 @@ namespace CustomWifi
     }
   }
 
+  // IPAddress <-> host-order conversion, done via octets on purpose.
+  //
+  // IPAddress stores its bytes in a union with a uint32_t and its (uint32_t) cast returns
+  // that raw dword, so on this little-endian target the FIRST octet is the LOW byte. Using
+  // the cast for arithmetic silently byte-reverses the address: IPAddress(0xAC1F2A01) is
+  // 1.42.31.172, not 172.31.42.1, and a /24 mask comes out as 0.255.255.255. The candidate
+  // table and every helper in lib/wifi_provisioning use MSB-first, so the two conventions
+  // must be converted explicitly at this boundary rather than cast across it.
+  static uint32_t _toHostOrder(const IPAddress& address)
+  {
+    return ((uint32_t)address[0] << 24) | ((uint32_t)address[1] << 16) |
+           ((uint32_t)address[2] << 8)  | (uint32_t)address[3];
+  }
+
+  static IPAddress _fromHostOrder(uint32_t value)
+  {
+    return IPAddress((uint8_t)(value >> 24), (uint8_t)(value >> 16),
+                     (uint8_t)(value >> 8),  (uint8_t)value);
+  }
+
   // Reads the SSID the driver has stored, for diagnostics and for the UI to show what the
   // device is trying to join. Replaces WiFiManager::getWiFiSSID(true) (D11).
   static void _readStoredSsid(char* out, size_t outSize)
@@ -909,14 +944,17 @@ namespace CustomWifi
     // Compare against both the live lease and the configured static IP: a restored backup
     // can carry a static IP from a different LAN that is not currently in effect.
     bool staValid = WiFi.isConnected() && WiFi.localIP() != IPAddress(0, 0, 0, 0);
-    uint32_t staAddr = staValid ? (uint32_t)WiFi.localIP() : 0;
+    uint32_t staAddr = staValid ? _toHostOrder(WiFi.localIP()) : 0;
     uint8_t staCidr = 24;
     if (staValid) {
-      IPAddress mask = WiFi.subnetMask();
-      staCidr = 0;
-      for (int i = 0; i < 4; i++) {
-        uint8_t octet = mask[i];
-        while (octet) { staCidr = (uint8_t)(staCidr + (octet & 1)); octet = (uint8_t)(octet >> 1); }
+      // cidrFromNetmask rejects a non-contiguous mask by returning 0, which is not a usable
+      // prefix; fall back to /24 rather than comparing against a network that does not exist.
+      uint8_t derived = WifiProvisioning::cidrFromNetmask(_toHostOrder(WiFi.subnetMask()));
+      if (derived == 0) {
+        LOG_WARNING("STA netmask %s is not a valid prefix - assuming /24 for overlap checks",
+                    WiFi.subnetMask().toString().c_str());
+      } else {
+        staCidr = derived;
       }
     }
 
@@ -927,7 +965,12 @@ namespace CustomWifi
       IPAddress parsed;
       if (parsed.fromString(_configuration.ip)) {
         staticValid = true;
-        staticAddr = (uint32_t)parsed;
+        staticAddr = _toHostOrder(parsed);
+        IPAddress parsedMask;
+        if (_configuration.subnet[0] != '\0' && parsedMask.fromString(_configuration.subnet)) {
+          uint8_t derived = WifiProvisioning::cidrFromNetmask(_toHostOrder(parsedMask));
+          if (derived != 0) staticCidr = derived;
+        }
       }
     }
 
@@ -938,8 +981,8 @@ namespace CustomWifi
       return false;
     }
 
-    IPAddress apIp((uint32_t)chosen.address);
-    IPAddress apMask(0xFFFFFFFFUL << (32 - chosen.cidr));
+    IPAddress apIp = _fromHostOrder(chosen.address);
+    IPAddress apMask = _fromHostOrder(WifiProvisioning::netmaskFromCidr(chosen.cidr));
 
     char apSsid[WIFI_SSID_BUFFER_SIZE];
     snprintf(apSsid, sizeof(apSsid), "%s-%s", WIFI_CONFIG_PORTAL_SSID, DEVICE_ID);
@@ -970,7 +1013,8 @@ namespace CustomWifi
   {
     if (!_apRaised) return;
 
-    _serviceDns(); // Stop DNS before the interface it answers for disappears
+    // Stop DNS before the interface it answers for disappears. Done directly rather than
+    // through _serviceDns(), which cannot act here: _apRaised is still true at this point.
     if (_dnsRunning) {
       _dnsServer.stop();
       _dnsRunning = false;
