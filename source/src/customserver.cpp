@@ -864,8 +864,24 @@ namespace CustomServer
         });
 
         // Main dashboard
-        _onOpenDuringProvisioning("/", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        // "/" is the one route whose twins differ. An unprovisioned device reached over its
+        // own SoftAP lands on WiFi setup - which is what makes the captive-portal redirect
+        // useful, since the OS opens "/" and nothing else. Everywhere else "/" is the
+        // dashboard, unchanged.
+        server.on("/", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", EMBEDDED(wifi_setup_html), etag);
+        }).setFilter(_isProvisioningOrigin)
+          .skipServerMiddlewares()
+          .addMiddleware(&rateLimit);
+
+        server.on("/", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/html", EMBEDDED(index_html), etag);
+        });
+
+        // Also reachable by name, so a provisioned device can be re-pointed at another
+        // network from the normal UI without erasing its credentials first.
+        _onOpenDuringProvisioning("/wifi-setup.html", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", EMBEDDED(wifi_setup_html), etag);
         });
 
         // Configuration pages
@@ -1791,6 +1807,15 @@ namespace CustomServer
             doc["hostname"] = MDNS_HOSTNAME ".local";
             doc["rssi"] = WiFi.RSSI();
 
+            _sendJsonResponse(request, doc);
+        });
+
+        // Network scan. Async and cached in customwifi; this just relays state so the client
+        // can poll rather than hold a request open for the length of a scan.
+        _onOpenDuringProvisioning("/api/v1/network/wifi/scan", HTTP_GET, [](AsyncWebServerRequest *request) {
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            CustomWifi::getScanResultsAsJson(doc);
             _sendJsonResponse(request, doc);
         });
 

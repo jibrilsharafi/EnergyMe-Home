@@ -36,6 +36,8 @@
 #define WIFI_MAX_CONSECUTIVE_RECONNECT_ATTEMPTS 5   // Maximum WiFi reconnection attempts before restart
 #define WIFI_DISCONNECT_DELAY (15 * 1000)           // Delay after WiFi disconnected to allow automatic reconnection
 #define WIFI_AP_LIFECYCLE_TICK_MS (10 * 1000)       // How often the AP lifetime/grace predicates are evaluated while the SoftAP is up
+#define WIFI_SCAN_MS_PER_CHANNEL 120                // Per-channel dwell. The default (~300 ms) makes a full scan long enough that a phone on the SoftAP times out waiting
+#define WIFI_SCAN_MAX_RESULTS 30                    // Cap the JSON response; a dense apartment block can see far more than a user will scroll
 #define WIFI_STABLE_CONNECTION_DURATION (5 * 60 * 1000)    // Duration of uninterrupted WiFi connection to reset the reconnection counter
 #define WIFI_PERIODIC_CHECK_INTERVAL (30 * 1000)    // Interval to check WiFi connection status (does not need to be too frequent since we have an event-based system)
 #define WIFI_FORCE_RECONNECT_DELAY (2 * 1000)      // Delay after forcing reconnection
@@ -140,6 +142,12 @@ namespace CustomWifi
 
     // SSID the driver has stored, i.e. what WiFi.begin() would try. Empty when unprovisioned.
     void getStoredSsid(char *out, size_t outSize);
+
+    // Async network scan for the provisioning UI. startScan() returns false when a scan
+    // cannot be started right now (an association attempt is in flight); the results call
+    // reports status "running" / "complete" / "unavailable" so the client can poll.
+    bool startScan();
+    void getScanResultsAsJson(JsonDocument &jsonDocument);
 
     // Last association failure: reason code and string, SSID, BSSID, RSSI. These were only
     // ever visible through the removed WiFiManager /diagnostic page (D11).

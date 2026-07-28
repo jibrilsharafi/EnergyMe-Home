@@ -76,6 +76,7 @@ namespace CustomWifi
   static DNSServer _dnsServer;
   static bool _dnsRunning = false;
   static bool _apRaised = false;
+  static uint64_t _lastScanStartedMs = 0;
 
   // Private helper functions
   static void _onWiFiEvent(WiFiEvent_t event);
@@ -214,6 +215,65 @@ namespace CustomWifi
   WifiProvisioning::State getProvisioningState()
   {
     return _publishedState;
+  }
+
+  // Network scan for the provisioning UI.
+  //
+  // Async on purpose: WiFi.scanNetworks() blocking would stall the WiFi task for seconds,
+  // which is what this whole rework exists to avoid. Results are cached so a polling UI
+  // does not restart a scan on every request - and, more importantly, so a scan is never
+  // started while one is already running.
+  bool startScan()
+  {
+    if (WiFi.scanComplete() == WIFI_SCAN_RUNNING) return true; // Already in flight
+
+    // Never scan while an association attempt is in flight: esp_wifi_scan_start returns
+    // ESP_ERR_WIFI_STATE during connect, and on some paths it aborts the attempt.
+    if (_connectDeadlineMs != 0) {
+      LOG_DEBUG("Scan requested during an association attempt - deferring");
+      return false;
+    }
+
+    int16_t result = WiFi.scanNetworks(true /* async */, true /* show hidden */,
+                                       false /* passive */, WIFI_SCAN_MS_PER_CHANNEL);
+    if (result == WIFI_SCAN_FAILED) {
+      LOG_WARNING("Failed to start WiFi scan");
+      return false;
+    }
+
+    _lastScanStartedMs = millis64();
+    return true;
+  }
+
+  void getScanResultsAsJson(JsonDocument &jsonDocument)
+  {
+    int16_t count = WiFi.scanComplete();
+
+    if (count == WIFI_SCAN_RUNNING) {
+      jsonDocument["status"] = "running";
+      jsonDocument["networks"].to<JsonArray>();
+      return;
+    }
+
+    if (count == WIFI_SCAN_FAILED) {
+      // No scan has ever completed, or the last one failed. Kick one off so the next poll
+      // has something, and tell the client to come back.
+      jsonDocument["status"] = startScan() ? "running" : "unavailable";
+      jsonDocument["networks"].to<JsonArray>();
+      return;
+    }
+
+    jsonDocument["status"] = "complete";
+    jsonDocument["ageMs"] = millis64() - _lastScanStartedMs;
+
+    JsonArray networks = jsonDocument["networks"].to<JsonArray>();
+    for (int16_t i = 0; i < count && i < WIFI_SCAN_MAX_RESULTS; i++) {
+      JsonObject network = networks.add<JsonObject>();
+      network["ssid"] = WiFi.SSID(i);
+      network["rssi"] = WiFi.RSSI(i);
+      network["channel"] = WiFi.channel(i);
+      network["secure"] = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
+    }
   }
 
   void getStoredSsid(char* out, size_t outSize)

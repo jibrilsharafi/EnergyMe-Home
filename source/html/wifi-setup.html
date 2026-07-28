@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EnergyMe - WiFi Setup</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="stylesheet" href="/css/typography.css">
+    <link rel="stylesheet" href="/css/styles.css">
+    <link rel="stylesheet" href="/css/button.css">
+    <link rel="stylesheet" href="/css/forms.css">
+    <style>
+        /* Self-contained layout: this page must render on a phone joined to the SoftAP,
+           where the only assets available are the ones embedded in the firmware. */
+        .setup-wrap { max-width: 30rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+        .setup-header { text-align: center; margin-bottom: 1.5rem; }
+        .setup-header h1 { margin: 0 0 .25rem; font-size: 1.5rem; }
+        .setup-header p { margin: 0; opacity: .75; font-size: .9rem; }
+
+        .network-list { list-style: none; margin: 0 0 1rem; padding: 0; border: 1px solid rgba(128,128,128,.3); border-radius: .5rem; overflow: hidden; }
+        .network-list li { display: flex; align-items: center; gap: .5rem; padding: .7rem .85rem; cursor: pointer; border-bottom: 1px solid rgba(128,128,128,.18); }
+        .network-list li:last-child { border-bottom: none; }
+        .network-list li:hover, .network-list li.selected { background: rgba(128,128,128,.14); }
+        .network-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .network-meta { font-size: .78rem; opacity: .65; white-space: nowrap; }
+
+        .status-box { padding: .8rem 1rem; border-radius: .5rem; margin-bottom: 1rem; font-size: .9rem; display: none; }
+        .status-box.visible { display: block; }
+        .status-info { background: rgba(70,130,220,.15); border: 1px solid rgba(70,130,220,.4); }
+        .status-error { background: rgba(220,70,70,.15); border: 1px solid rgba(220,70,70,.45); }
+        .status-ok { background: rgba(60,180,110,.15); border: 1px solid rgba(60,180,110,.45); }
+
+        .muted { opacity: .7; font-size: .82rem; }
+        .full-width { width: 100%; }
+        .row-gap { margin-bottom: .85rem; }
+        .spinner { display: inline-block; width: .8rem; height: .8rem; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -1px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="setup-wrap">
+        <div class="setup-header">
+            <h1>Connect to WiFi</h1>
+            <p>Choose the network this meter should join.</p>
+        </div>
+
+        <div id="status" class="status-box"></div>
+
+        <div class="row-gap">
+            <button id="rescan" class="button button-secondary full-width" type="button">Scan again</button>
+        </div>
+
+        <ul id="networks" class="network-list"></ul>
+
+        <form id="credentials-form" autocomplete="off">
+            <div class="row-gap">
+                <label class="form-label" for="ssid">Network name</label>
+                <input class="form-input full-width" type="text" id="ssid" name="ssid" maxlength="31" required
+                       placeholder="Pick one above, or type it in">
+            </div>
+            <div class="row-gap">
+                <label class="form-label" for="password">Password</label>
+                <input class="form-input full-width" type="password" id="password" name="password" maxlength="63"
+                       placeholder="Leave empty for an open network">
+            </div>
+            <button id="submit" class="button button-primary full-width" type="submit">Connect</button>
+        </form>
+
+        <p class="muted" id="footer-note" style="margin-top:1.25rem;">
+            After connecting, this network will disappear and the meter moves to your WiFi.
+        </p>
+    </div>
+
+    <script>
+        (function () {
+            'use strict';
+
+            var statusEl = document.getElementById('status');
+            var listEl = document.getElementById('networks');
+            var ssidEl = document.getElementById('ssid');
+            var passwordEl = document.getElementById('password');
+            var submitEl = document.getElementById('submit');
+            var rescanEl = document.getElementById('rescan');
+            var formEl = document.getElementById('credentials-form');
+
+            var scanPoll = null;
+            var connectPoll = null;
+
+            function setStatus(message, kind) {
+                statusEl.className = 'status-box visible status-' + (kind || 'info');
+                statusEl.innerHTML = message;
+            }
+
+            function clearStatus() {
+                statusEl.className = 'status-box';
+                statusEl.textContent = '';
+            }
+
+            function signalLabel(rssi) {
+                if (rssi >= -60) return 'strong';
+                if (rssi >= -70) return 'ok';
+                if (rssi >= -80) return 'weak';
+                return 'very weak';
+            }
+
+            function renderNetworks(networks) {
+                listEl.innerHTML = '';
+                if (!networks.length) {
+                    var empty = document.createElement('li');
+                    empty.className = 'muted';
+                    empty.textContent = 'No networks found. Try scanning again.';
+                    listEl.appendChild(empty);
+                    return;
+                }
+
+                // Strongest first, and drop duplicate SSIDs from mesh/repeater setups so the
+                // list shows networks rather than radios.
+                var seen = {};
+                networks.sort(function (a, b) { return b.rssi - a.rssi; })
+                    .filter(function (n) {
+                        if (!n.ssid || seen[n.ssid]) return false;
+                        seen[n.ssid] = true;
+                        return true;
+                    })
+                    .forEach(function (network) {
+                        var item = document.createElement('li');
+
+                        var name = document.createElement('span');
+                        name.className = 'network-name';
+                        name.textContent = network.ssid;
+
+                        var meta = document.createElement('span');
+                        meta.className = 'network-meta';
+                        meta.textContent = (network.secure ? 'locked, ' : 'open, ') + signalLabel(network.rssi);
+
+                        item.appendChild(name);
+                        item.appendChild(meta);
+
+                        item.addEventListener('click', function () {
+                            var previous = listEl.querySelector('.selected');
+                            if (previous) previous.classList.remove('selected');
+                            item.classList.add('selected');
+                            ssidEl.value = network.ssid;
+                            if (network.secure) passwordEl.focus();
+                        });
+
+                        listEl.appendChild(item);
+                    });
+            }
+
+            function pollScan() {
+                fetch('/api/v1/network/wifi/scan', { cache: 'no-store' })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        if (data.status === 'running') return; // Keep polling
+                        if (scanPoll) { clearInterval(scanPoll); scanPoll = null; }
+                        rescanEl.disabled = false;
+                        rescanEl.textContent = 'Scan again';
+
+                        if (data.status === 'unavailable') {
+                            setStatus('Could not scan right now. Type the network name in manually, or try again.', 'error');
+                            return;
+                        }
+                        clearStatus();
+                        renderNetworks(data.networks || []);
+                    })
+                    .catch(function () {
+                        // A dropped request during scanning is normal on a busy radio; keep polling.
+                    });
+            }
+
+            function startScan() {
+                rescanEl.disabled = true;
+                rescanEl.innerHTML = '<span class="spinner"></span> Scanning';
+                setStatus('Looking for networks...', 'info');
+                if (scanPoll) clearInterval(scanPoll);
+                scanPoll = setInterval(pollScan, 1200);
+                pollScan();
+            }
+
+            // Poll for the outcome after submitting. The AP is deliberately re-raised on the
+            // target channel before associating, so the phone WILL drop for a few seconds
+            // here. Failed requests are expected and must not be reported as failure.
+            function pollConnectResult(startedAt) {
+                fetch('/api/v1/network/wifi/status', { cache: 'no-store' })
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        if (data.connected) {
+                            if (connectPoll) { clearInterval(connectPoll); connectPoll = null; }
+                            var where = data.ip && data.ip !== '0.0.0.0' ? data.ip : data.hostname;
+                            setStatus('Connected. The meter is now reachable on your network at '
+                                + '<strong>' + where + '</strong>'
+                                + (data.hostname ? ' (or <strong>http://' + data.hostname + '</strong>)' : '')
+                                + '.<br>You can rejoin your usual WiFi now.', 'ok');
+                            submitEl.disabled = false;
+                            submitEl.textContent = 'Connect';
+                            return;
+                        }
+
+                        // Give up waiting well before the AP's own lifetime bound, and show the
+                        // driver's reason rather than a generic failure.
+                        if (Date.now() - startedAt > 90000) {
+                            if (connectPoll) { clearInterval(connectPoll); connectPoll = null; }
+                            submitEl.disabled = false;
+                            submitEl.textContent = 'Connect';
+                            fetch('/api/v1/network/wifi/diagnostics', { cache: 'no-store' })
+                                .then(function (r) { return r.json(); })
+                                .then(function (diag) {
+                                    setStatus('Could not connect: <strong>' + (diag.reason || 'unknown') + '</strong>. '
+                                        + 'Check the password and try again.', 'error');
+                                })
+                                .catch(function () {
+                                    setStatus('Could not connect. Check the password and try again.', 'error');
+                                });
+                        }
+                    })
+                    .catch(function () {
+                        // Expected while the radio moves; keep polling until the deadline above.
+                    });
+            }
+
+            formEl.addEventListener('submit', function (event) {
+                event.preventDefault();
+
+                var ssid = ssidEl.value.trim();
+                if (!ssid) {
+                    setStatus('Pick a network, or type its name in.', 'error');
+                    return;
+                }
+
+                submitEl.disabled = true;
+                submitEl.innerHTML = '<span class="spinner"></span> Connecting';
+                setStatus('Sending credentials. This network may briefly disappear while the meter '
+                    + 'switches channels - that is expected, stay on this page.', 'info');
+
+                if (scanPoll) { clearInterval(scanPoll); scanPoll = null; }
+
+                fetch('/api/v1/network/wifi/credentials', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ssid: ssid, password: passwordEl.value })
+                })
+                    .then(function (response) {
+                        if (!response.ok) throw new Error('rejected');
+                        var startedAt = Date.now();
+                        if (connectPoll) clearInterval(connectPoll);
+                        connectPoll = setInterval(function () { pollConnectResult(startedAt); }, 2000);
+                    })
+                    .catch(function () {
+                        submitEl.disabled = false;
+                        submitEl.textContent = 'Connect';
+                        setStatus('The meter rejected those credentials. Check the network name and try again.', 'error');
+                    });
+            });
+
+            rescanEl.addEventListener('click', startScan);
+            startScan();
+        })();
+    </script>
+</body>
+</html>
