@@ -133,4 +133,19 @@ bool selectApSubnet(
 size_t candidateSubnetCount();
 Subnet candidateSubnet(size_t index);
 
+// Prefix length of a host-order netmask, e.g. 0xFFFFFF00 -> 24.
+//
+// Returns 0 for a non-contiguous mask (0xFF00FF00 and friends). A netmask must be a
+// run of ones followed by a run of zeros; anything else is malformed and callers must
+// not treat the result as a usable prefix. Reading it from a live interface is not a
+// guarantee of well-formedness, so this is checked rather than assumed.
+uint8_t cidrFromNetmask(uint32_t netmask);
+
+// Host-order netmask for a prefix length, e.g. 24 -> 0xFFFFFF00.
+//
+// Defined for the whole range 0..32 inclusive. A naive 0xFFFFFFFF << (32 - cidr) is
+// undefined behaviour at cidr == 0, where the shift width equals the operand width;
+// this handles that case explicitly.
+uint32_t netmaskFromCidr(uint8_t cidr);
+
 }  // namespace WifiProvisioning

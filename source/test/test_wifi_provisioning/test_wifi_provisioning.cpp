@@ -399,6 +399,50 @@ void test_out_of_range_index_returns_empty_subnet(void) {
     TEST_ASSERT_EQUAL_UINT8(0, candidate.cidr);
 }
 
+// Netmask <-> CIDR. These sit under the AP-raise path, which reads a live netmask off the
+// STA interface and must turn it into a prefix the overlap check can use. Getting this
+// wrong picks an AP subnet that collides with the LAN, which silently blackholes traffic.
+
+void test_common_netmasks_convert_to_prefix_lengths(void) {
+    TEST_ASSERT_EQUAL_UINT8(24, cidrFromNetmask(0xFFFFFF00u));  // 255.255.255.0
+    TEST_ASSERT_EQUAL_UINT8(16, cidrFromNetmask(0xFFFF0000u));  // 255.255.0.0
+    TEST_ASSERT_EQUAL_UINT8(8, cidrFromNetmask(0xFF000000u));   // 255.0.0.0
+    TEST_ASSERT_EQUAL_UINT8(28, cidrFromNetmask(0xFFFFFFF0u));  // 255.255.255.240
+    TEST_ASSERT_EQUAL_UINT8(23, cidrFromNetmask(0xFFFFFE00u));  // 255.255.254.0
+}
+
+void test_non_contiguous_netmask_is_rejected(void) {
+    // A popcount-based implementation returns 16 for this and hands back a prefix that
+    // describes a different network than the mask does.
+    TEST_ASSERT_EQUAL_UINT8(0, cidrFromNetmask(0xFF00FF00u));
+    TEST_ASSERT_EQUAL_UINT8(0, cidrFromNetmask(0x0FFFFFFFu));
+    TEST_ASSERT_EQUAL_UINT8(0, cidrFromNetmask(0xFFFFFF01u));
+}
+
+void test_all_ones_and_all_zeros_netmasks(void) {
+    TEST_ASSERT_EQUAL_UINT8(32, cidrFromNetmask(0xFFFFFFFFu));
+    TEST_ASSERT_EQUAL_UINT8(0, cidrFromNetmask(0x00000000u));
+}
+
+void test_prefix_lengths_convert_to_netmasks(void) {
+    TEST_ASSERT_EQUAL_UINT32(0xFFFFFF00u, netmaskFromCidr(24));
+    TEST_ASSERT_EQUAL_UINT32(0xFFFFFFF0u, netmaskFromCidr(28));
+    TEST_ASSERT_EQUAL_UINT32(0xFFFF0000u, netmaskFromCidr(16));
+    TEST_ASSERT_EQUAL_UINT32(0xFFFFFFFFu, netmaskFromCidr(32));
+}
+
+void test_cidr_zero_does_not_shift_by_the_operand_width(void) {
+    // 0xFFFFFFFF << 32 is undefined behaviour, and on x86 the shift count is taken mod 32,
+    // so a naive implementation returns 0xFFFFFFFF here instead of 0.
+    TEST_ASSERT_EQUAL_UINT32(0x00000000u, netmaskFromCidr(0));
+}
+
+void test_netmask_and_cidr_round_trip(void) {
+    for (uint8_t cidr = 0; cidr <= 32; cidr++) {
+        TEST_ASSERT_EQUAL_UINT8(cidr, cidrFromNetmask(netmaskFromCidr(cidr)));
+    }
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
 
@@ -452,6 +496,13 @@ int main(int, char **) {
     RUN_TEST(test_every_candidate_blocked_fails_closed);
     RUN_TEST(test_candidates_all_sit_in_the_supported_cidr_range);
     RUN_TEST(test_out_of_range_index_returns_empty_subnet);
+
+    RUN_TEST(test_common_netmasks_convert_to_prefix_lengths);
+    RUN_TEST(test_non_contiguous_netmask_is_rejected);
+    RUN_TEST(test_all_ones_and_all_zeros_netmasks);
+    RUN_TEST(test_prefix_lengths_convert_to_netmasks);
+    RUN_TEST(test_cidr_zero_does_not_shift_by_the_operand_width);
+    RUN_TEST(test_netmask_and_cidr_round_trip);
 
     return UNITY_END();
 }

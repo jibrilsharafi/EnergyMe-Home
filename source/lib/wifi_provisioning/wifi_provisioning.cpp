@@ -19,12 +19,6 @@ constexpr Subnet kCandidates[] = {
 
 constexpr size_t kCandidateCount = sizeof(kCandidates) / sizeof(kCandidates[0]);
 
-uint32_t maskFromCidr(uint8_t cidr) {
-    if (cidr == 0) return 0u;
-    if (cidr >= 32) return 0xFFFFFFFFu;
-    return 0xFFFFFFFFu << (32 - cidr);
-}
-
 // The /24 to /28 limit is what NetworkInterface::config() will accept for the AP's
 // own address. It says nothing about the networks we compare against: a home LAN on
 // a /16 is perfectly ordinary and must still be honoured, so comparison networks are
@@ -207,7 +201,7 @@ bool subnetsOverlap(uint32_t addressA, uint8_t cidrA, uint32_t addressB, uint8_t
     // Compare on the shorter prefix: the wider network is the one that can contain
     // the narrower, and containment either way is a collision.
     uint8_t shorter = (cidrA < cidrB) ? cidrA : cidrB;
-    uint32_t mask = maskFromCidr(shorter);
+    uint32_t mask = netmaskFromCidr(shorter);
     return (addressA & mask) == (addressB & mask);
 }
 
@@ -244,6 +238,29 @@ size_t candidateSubnetCount() {
 Subnet candidateSubnet(size_t index) {
     if (index >= kCandidateCount) return Subnet{0u, 0u};
     return kCandidates[index];
+}
+
+uint8_t cidrFromNetmask(uint32_t netmask) {
+    // Count leading ones, then require every remaining bit to be zero. Counting set bits
+    // instead would accept 0xFF00FF00 as /16 and hand back a prefix describing a
+    // different network than the mask actually does.
+    uint8_t prefix = 0;
+    uint32_t remaining = netmask;
+
+    while (prefix < 32u && (remaining & 0x80000000u) != 0u) {
+        prefix = static_cast<uint8_t>(prefix + 1u);
+        remaining <<= 1;
+    }
+
+    if (remaining != 0u) return 0;  // A zero bit appeared before a one: non-contiguous
+
+    return prefix;
+}
+
+uint32_t netmaskFromCidr(uint8_t cidr) {
+    if (cidr == 0u) return 0u;           // Shifting a uint32_t by 32 is undefined, not zero
+    if (cidr >= 32u) return 0xFFFFFFFFu;
+    return static_cast<uint32_t>(0xFFFFFFFFu << (32u - cidr));
 }
 
 }  // namespace WifiProvisioning
