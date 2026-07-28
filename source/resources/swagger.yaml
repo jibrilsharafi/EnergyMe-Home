@@ -1125,16 +1125,121 @@ paths:
         '200':
           $ref: '#/components/responses/Success'
 
+  /api/v1/network/wifi/scan:
+    get:
+      summary: Scan for WiFi networks
+      description: |
+        Results of an asynchronous scan. The scan is never run inline, so this returns
+        immediately with a `status` of `running`, `complete` or `unavailable`; poll until
+        `complete`.
+
+        `unavailable` means a scan could not be started right now, which happens while an
+        association attempt is in flight.
+
+        Reachable without authentication when the request arrives on the SoftAP of a device
+        that has no stored credentials.
+      tags:
+        - Network
+      responses:
+        '200':
+          description: Scan state and, when complete, the networks found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [running, complete, unavailable]
+                  ageMs:
+                    type: integer
+                    description: Milliseconds since the scan that produced these results started
+                  networks:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        ssid: { type: string }
+                        rssi: { type: integer }
+                        channel: { type: integer }
+                        secure: { type: boolean }
+
+  /api/v1/network/wifi/status:
+    get:
+      summary: Provisioning and connection status
+      description: |
+        What the device is doing and where to reach it. Polled by the setup page after
+        credentials are submitted.
+
+        Reachable without authentication when the request arrives on the SoftAP of a device
+        that has no stored credentials.
+      tags:
+        - Network
+      responses:
+        '200':
+          description: Current state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  state:
+                    type: integer
+                    description: 0 UNPROVISIONED, 1 STA_CONNECTING, 2 AP_ASSIST, 3 GRACE, 4 STA_ONLY
+                  connected: { type: boolean }
+                  apServing: { type: boolean }
+                  ssid: { type: string }
+                  ip: { type: string }
+                  apIp: { type: string }
+                  hostname: { type: string }
+                  rssi: { type: integer }
+
+  /api/v1/network/wifi/diagnostics:
+    get:
+      summary: Last association failure
+      description: |
+        Reason code and text, SSID, BSSID and RSSI for the most recent disconnect. Replaces
+        the diagnostic page that the removed WiFi configuration portal used to serve.
+
+        Reachable without authentication when the request arrives on the SoftAP of a device
+        that has no stored credentials.
+      tags:
+        - Network
+      responses:
+        '200':
+          description: Diagnostics for the last failure
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lastAttemptedSsid: { type: string }
+                  reasonCode: { type: integer }
+                  reason: { type: string }
+                  disconnectSsid: { type: string }
+                  disconnectBssid: { type: string }
+                  disconnectRssi: { type: integer }
+                  retryAttempts: { type: integer }
+
   /api/v1/network/wifi/credentials:
     post:
       summary: Set WiFi credentials
       description: |
-        Save new WiFi credentials and immediately restart the device.
-        After receiving new credentials, the device will save them and perform a restart.
-        Upon reboot, the device will attempt to connect to the specified WiFi network using the new credentials.
-        
-        **Note:** The API returns as soon as the credentials are saved and the restart is triggered. The device will temporarily be unavailable during the restart process.
-        Monitor the device status or LED indicators to verify successful connection after reboot.
+        Save new WiFi credentials and associate to that network. **The device does not
+        restart**; the WiFi task applies them directly.
+
+        The API returns as soon as the credentials are saved, before the outcome is known.
+        Poll `/api/v1/network/wifi/status` for the result and
+        `/api/v1/network/wifi/diagnostics` if it fails.
+
+        **Note:** when submitted over the SoftAP, the access point moves to the target
+        network's radio channel before associating, so the client will lose its connection
+        for several seconds. Clients must tolerate that gap and retry rather than reporting
+        failure.
+
+        Reachable without authentication when the request arrives on the SoftAP of a device
+        that has no stored credentials; this is the one action an unprovisioned user must be
+        able to perform.
       tags:
         - Network
       requestBody:

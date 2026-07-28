@@ -15,20 +15,22 @@ On first power-on, or after a Wi-Fi reset, the device broadcasts its own Wi-Fi n
 3. Connect to it. The password is:
    - **EnergyMe devices** (purchased from us): printed on the stickers on the case, both as a scannable QR code and as plain text.
    - **Community devices** (self-built): the `DEVICE_ID` itself (same 12-character code as the network name).
-4. A configuration page opens automatically. If it does not, open a browser and navigate to **`http://192.168.4.1`**.
+4. A configuration page opens automatically. If it does not, open a browser and navigate to **`http://172.31.42.1`**.
 
 > **ⓘ NOTE: If the network doesn't appear**  
 > Wait 60 seconds after power-on. If it still isn't visible, hold the button for 10-15 seconds until the LED turns orange (Wi-Fi reset), then release. The device will restart and open the portal again. See **[Appendix D](appendices.md#appendix-d-user-button-reference)** for the full button reference.
 
 ### 4.2 Configure your home Wi-Fi
 
-In the captive portal page:
+On the setup page:
 
-1. Go to **Configure Wi-Fi**.
-2. Select your home Wi-Fi network from the list.
-3. Enter your Wi-Fi password.
-4. Tap **Save**.
-5. The device restarts and connects to your home network, which takes about 30 seconds. The LED will stop blinking blue and settle to **solid green** once connected.
+1. Select your home Wi-Fi network from the list, or type its name in if it is hidden.
+2. Enter your Wi-Fi password.
+3. Tap **Connect**.
+4. The device joins your home network without restarting. The page reports the address to use afterwards, and the LED stops blinking blue and settles to **solid green** once connected.
+
+> **ⓘ NOTE: The setup network drops for a few seconds**  
+> To join your Wi-Fi, the meter has to move its own network to the same radio channel as your router, so `EnergyMe-<DEVICE_ID>` disappears briefly right after you tap **Connect**. This is expected. Stay on the setup page; most phones rejoin on their own, and the page keeps waiting for the result. If it reports a failure, it shows the reason your router gave, such as a wrong password.
 
 > **✅ TIP: 2.4 GHz only**  
 > *EnergyMe Home* uses **2.4 GHz Wi-Fi**. If your router shows separate 2.4 GHz and 5 GHz networks, pick the 2.4 GHz one. If your router uses a single combined name ("band steering"), it will usually work fine, but if you have connection problems, ask your router's admin page to expose the 2.4 GHz band as a separate SSID.

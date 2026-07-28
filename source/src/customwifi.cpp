@@ -1081,6 +1081,12 @@ namespace CustomWifi
     _apRaised = true;
     WifiProvisioning::raiseAp(_provisioning, millis64());
     _publishedState = _provisioning.state;
+
+    // Same signal the WiFiManager portal used to give (its setAPCallback), so the meaning
+    // of a fast blue blink does not change for anyone who has seen it before: "I am waiting
+    // for you to configure me". PRIO_MEDIUM per D14, so genuine faults still win.
+    Led::blinkBlueFast(Led::PRIO_MEDIUM);
+
     LOG_INFO("SoftAP raised: %s on %s/%u", apSsid, apIp.toString().c_str(), chosen.cidr);
     return true;
   }
@@ -1100,6 +1106,11 @@ namespace CustomWifi
     _apRaised = false;
     WifiProvisioning::tearDownAp(_provisioning, millis64());
     _publishedState = _provisioning.state;
+
+    // Drop the provisioning blink. Whatever the STA side is doing owns the LED again.
+    Led::clearPattern(Led::PRIO_MEDIUM);
+    if (isFullyConnected()) Led::setGreen(Led::PRIO_NORMAL);
+
     LOG_INFO("SoftAP torn down");
   }
 
