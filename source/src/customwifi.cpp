@@ -86,6 +86,7 @@ namespace CustomWifi
   static void _startStaAttempt();
   static void _serviceConnectDeadline();
   static void _serviceApLifecycle();
+  static void _reconcileApWithState();
   static bool _raiseAp();
   static void _tearDownAp();
   static void _serviceDns();
@@ -473,10 +474,12 @@ namespace CustomWifi
     if (hasCredentials) {
       _startStaAttempt();
     } else {
-      // Nothing to try. Raise the SoftAP straight away so the device is reachable and can
-      // be provisioned; the loop below keeps it bounded.
+      // Nothing to try. Record the decision, then let the same reconciliation path every
+      // other raise goes through bring the radio up; the loop below keeps it bounded.
       LOG_INFO("No stored credentials - raising the SoftAP for provisioning");
-      _raiseAp();
+      WifiProvisioning::raiseAp(_provisioning, millis64());
+      _publishedState = _provisioning.state;
+      _reconcileApWithState();
     }
 
     // Main task loop - handles fallback scenarios and deferred logging
@@ -937,6 +940,11 @@ namespace CustomWifi
     if (current != previous) {
       LOG_INFO("Provisioning state %d -> %d", (int)previous, (int)current);
     }
+
+    // Act on the decision immediately. onEvent() can decide an AP is needed (the move to
+    // AP_ASSIST does exactly that), and waiting for the next loop tick to notice would
+    // delay the one thing that makes an unreachable device reachable again.
+    _reconcileApWithState();
   }
 
   // IPAddress <-> host-order conversion, done via octets on purpose.
@@ -1079,8 +1087,6 @@ namespace CustomWifi
     WiFi.AP.enableDhcpCaptivePortal();
 
     _apRaised = true;
-    WifiProvisioning::raiseAp(_provisioning, millis64());
-    _publishedState = _provisioning.state;
 
     // Same signal the WiFiManager portal used to give (its setAPCallback), so the meaning
     // of a fast blue blink does not change for anyone who has seen it before: "I am waiting
@@ -1104,8 +1110,6 @@ namespace CustomWifi
 
     WiFi.softAPdisconnect(true);
     _apRaised = false;
-    WifiProvisioning::tearDownAp(_provisioning, millis64());
-    _publishedState = _provisioning.state;
 
     // Drop the provisioning blink. Whatever the STA side is doing owns the LED again.
     Led::clearPattern(Led::PRIO_MEDIUM);
@@ -1137,17 +1141,46 @@ namespace CustomWifi
     }
   }
 
-  // Every AP window is bounded, so this runs the raise and teardown predicates each loop.
+  // Brings the radio in line with what the state machine decided.
+  //
+  // The split matters: the pure library owns WHETHER an AP should exist (_provisioning
+  // .apRaised), this file owns whether one actually does (_apRaised). Nothing else may
+  // set either, or the two drift.
+  //
+  // Reconciling like this rather than polling shouldRaiseAp() is what makes AP_ASSIST
+  // work at all. onEvent(STA_ATTEMPT_FAILED) sets Context.apRaised itself when it moves
+  // to AP_ASSIST, and shouldRaiseAp() is documented UNPROVISIONED-only and returns false
+  // once apRaised is set - so a predicate-polling caller would never raise the radio for
+  // a device that lost its network. It would sit silent and unreachable, with main.cpp
+  // blocked before CustomServer::begin(), recoverable only by physical access.
+  static void _reconcileApWithState()
+  {
+    if (_provisioning.apRaised && !_apRaised) {
+      // Retried on every tick if it fails: refusing to bring up the AP is exactly the
+      // state that leaves the device unreachable, so it must not be a one-shot attempt.
+      _raiseAp();
+    } else if (!_provisioning.apRaised && _apRaised) {
+      _tearDownAp();
+    }
+  }
+
+  // Every AP window is bounded, so this runs the decision predicates each loop, then makes
+  // the radio match.
   static void _serviceApLifecycle()
   {
     uint64_t nowMs = millis64();
 
-    if (!_apRaised && WifiProvisioning::shouldRaiseAp(_provisioning, nowMs)) {
-      _raiseAp();
-    } else if (_apRaised && WifiProvisioning::shouldTearDownAp(_provisioning, nowMs)) {
-      _tearDownAp();
+    if (_provisioning.apRaised && WifiProvisioning::shouldTearDownAp(_provisioning, nowMs)) {
+      WifiProvisioning::tearDownAp(_provisioning, nowMs);
+      _publishedState = _provisioning.state;
+    } else if (WifiProvisioning::shouldRaiseAp(_provisioning, nowMs)) {
+      // The UNPROVISIONED re-raise after a cooldown (D12). AP_ASSIST does not come through
+      // here; onEvent() has already decided that, and _reconcileApWithState() acts on it.
+      WifiProvisioning::raiseAp(_provisioning, nowMs);
+      _publishedState = _provisioning.state;
     }
 
+    _reconcileApWithState();
     _serviceDns();
   }
 

@@ -85,6 +85,7 @@
 
             var scanPoll = null;
             var connectPoll = null;
+            var scanStartedAt = 0;
 
             function setStatus(message, kind) {
                 statusEl.className = 'status-box visible status-' + (kind || 'info');
@@ -148,7 +149,22 @@
                     });
             }
 
+            function stopScanning(message, kind) {
+                if (scanPoll) { clearInterval(scanPoll); scanPoll = null; }
+                rescanEl.disabled = false;
+                rescanEl.textContent = 'Scan again';
+                if (message) setStatus(message, kind);
+            }
+
             function pollScan() {
+                // A scan that never reports complete must not leave the button disabled and
+                // the spinner turning forever; the only escape would be a page reload.
+                if (Date.now() - scanStartedAt > 25000) {
+                    stopScanning('Scanning is taking too long. Type the network name in manually, '
+                        + 'or try again.', 'error');
+                    return;
+                }
+
                 fetch('/api/v1/network/wifi/scan', { cache: 'no-store' })
                     .then(function (r) { return r.json(); })
                     .then(function (data) {
@@ -163,6 +179,7 @@
                         }
                         clearStatus();
                         renderNetworks(data.networks || []);
+                        scanStartedAt = Date.now(); // Completed; do not let the cap fire retroactively
                     })
                     .catch(function () {
                         // A dropped request during scanning is normal on a busy radio; keep polling.
@@ -173,6 +190,7 @@
                 rescanEl.disabled = true;
                 rescanEl.innerHTML = '<span class="spinner"></span> Scanning';
                 setStatus('Looking for networks...', 'info');
+                scanStartedAt = Date.now();
                 if (scanPoll) clearInterval(scanPoll);
                 scanPoll = setInterval(pollScan, 1200);
                 pollScan();

@@ -399,6 +399,36 @@ void test_out_of_range_index_returns_empty_subnet(void) {
     TEST_ASSERT_EQUAL_UINT8(0, candidate.cidr);
 }
 
+// Regression: shouldRaiseAp() is UNPROVISIONED-only and goes false the moment the AP is
+// flagged, so a caller that polls ONLY that predicate never raises the radio for a device
+// that lost its network - it goes silent and unreachable. The contract callers must honour
+// is "reconcile against context.apRaised", not "poll shouldRaiseAp()". These pin that.
+
+void test_ap_assist_flags_the_ap_without_shouldraiseap_ever_being_true(void) {
+    Context context;
+    init(context, true, 0); // Had credentials: this is an in-service device losing its network
+
+    for (uint32_t i = 0; i < WIFI_PROVISIONING_AP_RAISE_THRESHOLD; i++) {
+        // A caller polling this predicate would raise nothing, at any point.
+        TEST_ASSERT_FALSE(shouldRaiseAp(context, 1000));
+        onEvent(context, Event::STA_ATTEMPT_FAILED, 1000);
+    }
+
+    TEST_ASSERT_EQUAL(State::AP_ASSIST, context.state);
+    TEST_ASSERT_TRUE(context.apRaised);          // The decision IS recorded here
+    TEST_ASSERT_FALSE(shouldRaiseAp(context, 1000)); // ...and never here
+}
+
+void test_unprovisioned_also_flags_the_ap_on_the_context(void) {
+    Context context;
+    init(context, false, 0);
+
+    onEvent(context, Event::STA_ATTEMPT_FAILED, 500);
+
+    TEST_ASSERT_EQUAL(State::UNPROVISIONED, context.state);
+    TEST_ASSERT_TRUE(context.apRaised);
+}
+
 // Netmask <-> CIDR. These sit under the AP-raise path, which reads a live netmask off the
 // STA interface and must turn it into a prefix the overlap check can use. Getting this
 // wrong picks an AP subnet that collides with the LAN, which silently blackholes traffic.
@@ -496,6 +526,9 @@ int main(int, char **) {
     RUN_TEST(test_every_candidate_blocked_fails_closed);
     RUN_TEST(test_candidates_all_sit_in_the_supported_cidr_range);
     RUN_TEST(test_out_of_range_index_returns_empty_subnet);
+
+    RUN_TEST(test_ap_assist_flags_the_ap_without_shouldraiseap_ever_being_true);
+    RUN_TEST(test_unprovisioned_also_flags_the_ap_on_the_context);
 
     RUN_TEST(test_common_netmasks_convert_to_prefix_lengths);
     RUN_TEST(test_non_contiguous_netmask_is_rejected);
