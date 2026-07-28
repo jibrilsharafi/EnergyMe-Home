@@ -25,6 +25,9 @@ namespace CustomWifi
   static const uint32_t WIFI_EVENT_SHUTDOWN = 4;
   static const uint32_t WIFI_EVENT_FORCE_RECONNECT = 5;
   static const uint32_t WIFI_EVENT_NEW_CREDENTIALS = 6;
+  static const uint32_t WIFI_EVENT_AP_START = 7;
+  static const uint32_t WIFI_EVENT_AP_STACONNECTED = 8;
+  static const uint32_t WIFI_EVENT_AP_STADISCONNECTED = 9;
 
   // Task state management
   static bool _taskShouldRun = false;
@@ -113,6 +116,20 @@ namespace CustomWifi
     // attempt so it takes effect for the initial join.
     _loadConfiguration();
     _applyNetworkConfiguration();
+
+    // Register every WiFi event handler once, here, before any event can be posted.
+    // NetworkEvents never defines NETWORK_EVENTS_MUTEX, so _cbEventList is a plain
+    // std::vector mutated without a lock while the arduino_events task iterates it.
+    // Registering later (mid-connection) can reallocate the vector under that
+    // iteration, which is a use-after-free and the most plausible cause of the
+    // crash previously worked around by delaying registration.
+    //
+    // Registration is not the same as delivery: _onWiFiEvent gates on _eventsEnabled,
+    // which stays false until the initial connection completes. Enabling it here too
+    // would let eSetValueWithOverwrite leave a stale notification for the first
+    // xTaskNotifyWait to consume.
+    WiFi.onEvent(_onWiFiEventWithInfo);
+    WiFi.onEvent(_onWiFiEvent);
 
     // Start WiFi connection task
     _startWifiTask();
@@ -448,6 +465,21 @@ namespace CustomWifi
       // Auth mode changed - no immediate action needed
       break;
 
+    // SoftAP events. Notify-only like the rest; the task decides what they mean.
+    // ARDUINO_EVENT_WIFI_AP_PROBEREQRECVED is deliberately left masked - it fires per
+    // probe request and would flood the notification path.
+    case ARDUINO_EVENT_WIFI_AP_START:
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_AP_START, eSetValueWithOverwrite);
+      break;
+
+    case ARDUINO_EVENT_WIFI_AP_STACONNECTED:
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_AP_STACONNECTED, eSetValueWithOverwrite);
+      break;
+
+    case ARDUINO_EVENT_WIFI_AP_STADISCONNECTED:
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_AP_STADISCONNECTED, eSetValueWithOverwrite);
+      break;
+
     default:
       // Forward unknown events to task for logging/debugging
       xTaskNotify(_wifiTaskHandle, (uint32_t)event, eSetValueWithOverwrite);
@@ -562,9 +594,9 @@ namespace CustomWifi
       snprintf(_lastAttemptedSSID, sizeof(_lastAttemptedSSID), "%s", savedSSID.c_str());
     }
 
-    // Register early event handler to capture disconnect reason during initial connection
-    // This must be BEFORE autoConnect so we can capture why connection fails
-    WiFi.onEvent(_onWiFiEventWithInfo);
+    // Event handlers (including _onWiFiEventWithInfo, which captures the disconnect
+    // reason for a failed initial connection) are registered in begin(), before this
+    // task is created. See the note there.
 
     // Try initial connection with retries for handshake timeouts
     LOG_DEBUG("Attempt WiFi connection");
@@ -595,9 +627,10 @@ namespace CustomWifi
     // If we reach here, we are connected
     _handleSuccessfulConnection();
 
-    // Setup WiFi event handling - Only after full connection as during setup would crash sometimes probably due to the notifications
+    // Handlers are already registered (see begin()); this only opens delivery, which is
+    // deliberately held until the initial connection is done so the loop below does not
+    // start by consuming a stale notification from the connect sequence.
     _eventsEnabled = true;
-    WiFi.onEvent(_onWiFiEvent);
 
     // Main task loop - handles fallback scenarios and deferred logging
     while (_taskShouldRun)
@@ -712,6 +745,18 @@ namespace CustomWifi
             }
           }
           break;
+
+        case WIFI_EVENT_AP_START:
+          LOG_DEBUG("SoftAP started on %s", WiFi.softAPIP().toString().c_str());
+          continue;
+
+        case WIFI_EVENT_AP_STACONNECTED:
+          LOG_DEBUG("SoftAP client connected (%d now associated)", WiFi.softAPgetStationNum());
+          continue;
+
+        case WIFI_EVENT_AP_STADISCONNECTED:
+          LOG_DEBUG("SoftAP client disconnected (%d still associated)", WiFi.softAPgetStationNum());
+          continue;
 
         default:
           // Handle unknown WiFi events for debugging
@@ -896,12 +941,16 @@ namespace CustomWifi
   {
     LOG_DEBUG("Cleaning up WiFi resources...");
     
-    // Disable event handling first
+    // Disable event handling first. This is the whole shutdown barrier: _onWiFiEvent
+    // returns immediately once _eventsEnabled is false, so no notification can reach a
+    // task that is going away.
     _eventsEnabled = false;
-    
-    // Remove WiFi event handler to prevent crashes during shutdown
-    WiFi.removeEvent(_onWiFiEvent);
-    
+
+    // Deliberately NOT calling WiFi.removeEvent() here. Erasing from _cbEventList while
+    // the arduino_events task may be iterating it is the actual crash risk during
+    // shutdown, and the flag above already stops delivery. See D10.
+
+
     // Stop mDNS
     MDNS.end();
     _mdnsInitialized = false;
