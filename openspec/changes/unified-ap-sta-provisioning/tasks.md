@@ -130,7 +130,7 @@ So **3.4a and 3.4b below are inserted before 3.5**, pulling the Context ownershi
 
 - [x] 3.1 Register all WiFi event handlers at boot per D10, including `AP_START`, `AP_STACONNECTED`, `AP_STADISCONNECTED`. Callbacks notify-only. Delivery stays gated by `_eventsEnabled` (registration timing is the hazard, not gate timing).
 - [x] 3.2 Remove `WiFi.removeEvent(_onWiFiEvent)` at `customwifi.cpp:893` (unlocked-vector use-after-free hazard).
-- [ ] 3.3 Replace the 15 s blocking `delay(WIFI_DISCONNECT_DELAY)` at `customwifi.cpp:665` with a deadline checked in the notify loop.
+- [x] 3.3 Replace the 15 s blocking `delay(WIFI_DISCONNECT_DELAY)` at `customwifi.cpp:665` with a deadline checked in the notify loop. Serviced at the top of the loop (the `continue`s skip the periodic branch). Arm-if-not-armed so a flapping link still reaches evaluation; disarm on `GOT_IP`; periodic check gated on its own clock now that the wait is shortened, otherwise it would force a reconnect every few seconds while disconnected.
 - [ ] 3.4 Suppress `_forceReconnectInternal()` while `UNPROVISIONED` (`customwifi.cpp:742-747`). Depends on 3.4a.
 - [ ] 3.4a Own a `WifiProvisioning::Context` in `customwifi.cpp`: `init()` at boot from "are there stored credentials", `onEvent()` fed from the notify loop, guarded by the existing task-state discipline. Expose the state through an atomic read for the Phase 4 filter.
 - [ ] 3.4b Replace `autoConnect()` with a non-blocking connect driven by the notify loop, so `UNPROVISIONED` becomes a state the device can actually sit in. Credentials read via `esp_wifi_get_config`; no portal, no restart on save. **This is the load-bearing change of the whole proposal.**
