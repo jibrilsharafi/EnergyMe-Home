@@ -15,7 +15,7 @@
 #include "ade7953.h"
 #include "buttonhandler.h"
 #include "crashmonitor.h"
-#include "customwifi.h" // Needs to be defined before customserver.h due to conflict between WiFiManager and ESPAsyncWebServer
+#include "customwifi.h"
 #include "customserver.h"
 #include "led.h"
 #include "modbustcp.h"
@@ -145,12 +145,15 @@ void setup()
   CustomWifi::begin();
   LOG_INFO("WiFi setup done");
 
-  // While we could make this non-blocking since almost everything is async, the next steps 
-  // depend on having a WiFi connection, so it makes little sense to proceed until we have that
-  // What matters (meter measurements) is already running, so no energy is lost
-  while (!CustomWifi::isFullyConnected())
+  // Wait until the device is reachable by SOMETHING: STA connected, or the SoftAP raised
+  // and serving. Waiting on isFullyConnected() here would spin forever on a device with no
+  // valid credentials, so CustomServer::begin() below would never run and provisioning
+  // would be unreachable - the AP would be up with nothing listening on it (D7).
+  // Safe only because the health check now gates on isNetworkServiceable() too; on
+  // isFullyConnected() it would fail every 30 s with the AP up and restart the device.
+  while (!CustomWifi::isNetworkServiceable())
   {
-    LOG_DEBUG("Waiting for full WiFi connection...");
+    LOG_DEBUG("Waiting for WiFi connection or SoftAP...");
     delay(1000);
   }
 
