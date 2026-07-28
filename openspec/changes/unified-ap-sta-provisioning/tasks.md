@@ -133,17 +133,17 @@ So **3.4a and 3.4b below are inserted before 3.5**, pulling the Context ownershi
 - [x] 3.3 Replace the 15 s blocking `delay(WIFI_DISCONNECT_DELAY)` at `customwifi.cpp:665` with a deadline checked in the notify loop. Serviced at the top of the loop (the `continue`s skip the periodic branch). Arm-if-not-armed so a flapping link still reaches evaluation; disarm on `GOT_IP`; periodic check gated on its own clock now that the wait is shortened, otherwise it would force a reconnect every few seconds while disconnected.
 - [x] 3.4 Suppress `_forceReconnectInternal()` while `UNPROVISIONED` (`customwifi.cpp:742-747`). Depends on 3.4a.
 - [x] 3.4a Own a `WifiProvisioning::Context` in `customwifi.cpp`: `init()` at boot from "are there stored credentials", `onEvent()` fed from the notify loop, guarded by the existing task-state discipline. Expose the state through an atomic read for the Phase 4 filter. State currently **observes** rather than drives; `UNPROVISIONED` is unreachable at runtime until 3.4b.
-- [ ] 3.4b Replace `autoConnect()` with a non-blocking connect driven by the notify loop, so `UNPROVISIONED` becomes a state the device can actually sit in. Credentials read via `esp_wifi_get_config`; no portal, no restart on save. **This is the load-bearing change of the whole proposal.**
+- [x] 3.4b Replace `autoConnect()` with a non-blocking connect driven by the notify loop, so `UNPROVISIONED` becomes a state the device can actually sit in. Credentials read via `esp_wifi_get_config`; no portal, no restart on save. **This is the load-bearing change of the whole proposal.**
   - **Must be one commit with the D7 gate change at `main.cpp:151`.** Alone, either is broken: the gate on `isNetworkServiceable()` is satisfied by WiFiManager's *own* portal AP, so `setup()` would continue and `CustomServer::begin()` would bind port 80 while the portal's web server holds it.
   - **Must carry the power-reset extended timeout across in the same commit** (D11). `_isPowerReset()` + `WIFI_CONNECT_TIMEOUT_POWER_RESET_SECONDS` currently live inside `_setupWiFiManager`; drop them and every household power blip raises a SoftAP on mains-wired meters.
   - Removes the portal fallback in `_serviceDisconnectDeadline` outright rather than leaving it half-wired. Consequence, accepted: between 3.4b and Phase 5 the branch has **no way to enter credentials**. Acceptable mid-branch, must not ship.
   - Open: `_eventsEnabled` currently opens after `autoConnect()` returns. Without `autoConnect()` there is no such boundary, so the gate has to open before the first `WiFi.begin()`. Decide drain-once vs keep-gated.
   - Open: `WiFi.mode(WIFI_STA)` at `begin():108` must become `WIFI_AP_STA`, at boot or at AP-raise. Note `WiFi.persistent(true)` at `:105` means mode writes hit NVS.
   - Open: `resetWifi()` uses `WiFiManager::resetSettings()`; it and `_hasStoredCredentials()` must agree on where credentials live, or a reset device reads as provisioned. `esp_wifi_restore()` is the replacement.
-- [ ] 3.5 AP raise/teardown in the documented order: `softAPConfig` -> `softAP(ssid, pw, ch)` -> wait `AP_START` -> `enableDhcpCaptivePortal()`.
-- [ ] 3.6 DNS lifecycle per D4, always `start(53, "*", WiFi.softAPIP())`, stopped on STA-connected.
+- [x] 3.5 AP raise/teardown in the documented order: `softAPConfig` -> `softAP(ssid, pw, ch)` -> wait `AP_START` -> `enableDhcpCaptivePortal()`.
+- [x] 3.6 DNS lifecycle per D4, always `start(53, "*", WiFi.softAPIP())`, stopped on STA-connected.
 - [ ] 3.7 D2 channel handling, in whichever form Bench-1 selected.
-- [ ] 3.8 Async scan with a cache, `max_ms_per_chan` per 0.14. Never scan during `STA_CONNECTING` (`ESP_ERR_WIFI_STATE`).
+- [x] 3.8 Async scan with a cache, `max_ms_per_chan` per 0.14. Never scan during `STA_CONNECTING` (`ESP_ERR_WIFI_STATE`).
 - [ ] 3.9 Bench: full provisioning cycle on .174. Capture serial.
 - [ ] 3.10 Commits, one concern each: events, disconnect deadline, AP lifecycle, DNS lifecycle, scan cache.
 
@@ -151,9 +151,9 @@ So **3.4a and 3.4b below are inserted before 3.5**, pulling the Context ownershi
 
 ## Phase 4: Server auth carve-out and provisioning API
 
-- [ ] 4.1 `isProvisioningOrigin(request)` filter: atomic state read plus `client()->localIP() == WiFi.softAPIP()`. No mutex, no NVS, no logging (constraint 4). **Do not use `ON_AP_FILTER`.**
-- [ ] 4.2 Twin-handler registration per D3: open handler first with `.setFilter().skipServerMiddlewares().addMiddleware(&rateLimit)`, authenticated twin second.
-- [ ] 4.3 Captive probe routes as explicit handlers, not `onNotFound`: `/generate_204`, `/gen_204`, `/hotspot-detect.html`, `/library/test/success.html`, `/ncsi.txt`, `/connecttest.txt`, `/redirect`.
+- [x] 4.1 `isProvisioningOrigin(request)` filter: atomic state read plus `client()->localIP() == WiFi.softAPIP()`. No mutex, no NVS, no logging (constraint 4). **Do not use `ON_AP_FILTER`.**
+- [x] 4.2 Twin-handler registration per D3: open handler first with `.setFilter().skipServerMiddlewares().addMiddleware(&rateLimit)`, authenticated twin second.
+- [x] 4.3 Captive probe routes as explicit handlers, not `onNotFound`: `/generate_204`, `/gen_204`, `/hotspot-detect.html`, `/library/test/success.html`, `/ncsi.txt`, `/connecttest.txt`, `/redirect`.
 - [ ] 4.4 Provisioning API under `/api/v1/network/wifi/`: `GET scan` (cached), `POST connect`, `GET status`. **`POST connect` must only `xTaskNotify` and return.**
 - [ ] 4.5 **Do not call `_validateRequest` in a GET that replies via `_sendJsonResponse`.** `_validateRequest` acquires `_apiMutex` and only `_sendSuccessResponse` / `_sendErrorResponse` release it. Follow the existing GET convention at `customserver.cpp:1743`.
 - [ ] 4.6 Client JS must send `Content-Type: application/json`; `AsyncCallbackJsonWebHandler` requires it (`AsyncJson.cpp:125-140`).
@@ -204,6 +204,23 @@ Only after Phases 1 to 5 are green on hardware.
 - [ ] 7.4 `resources/swagger.yaml`: new scan / connect / status / diagnostics routes.
 - [ ] 7.5 Release note: `/diagnostic` is gone, credential changes no longer reboot, static IP changes still do.
 - [ ] 7.6 Confirm and document that the 5-10 s button press remains the escape hatch for a forgotten web password, now that AP-side OTA sits behind auth (D9).
+
+---
+
+## Implementation status
+
+Everything below is **compile-verified only**. 48/48 native tests pass for the pure logic in `lib/wifi_provisioning`; nothing has run on hardware.
+
+Landed: WiFiManager fully removed (`1a9f511`), non-blocking connect and SoftAP lifecycle, D7 boot gate, auth carve-out and provisioning API, WiFi setup page and async scan, AP LED state, Modbus no longer exposed on the AP, documentation and swagger.
+
+Two review passes were run and both found real defects, since fixed:
+- Byte-order across the `IPAddress` boundary would have raised the AP on a reversed address with an inverted mask, and made the subnet-overlap check unable to fire (`98b7c7b`). Native tests could not catch it: the library is internally consistent and the bug lived at the Arduino boundary.
+- The auth carve-out missed the credentials endpoint itself, so the flow would have 401'd at its last step (`d9227a8`).
+
+Not done, and deliberately so:
+- **3.7 (D2 channel handling).** Only the stop -> `softAPConfig` -> `softAP(ssid,pw,N)` sequence is implemented, which is correct whichever way Bench-1 lands. Choosing the target channel from the scan cache waits for Bench-1.
+- **NTP re-trigger (D7).** Verified unnecessary: `TIME_SYNC_RETRY_IF_NOT_SYNCHED` is 60 s and `_configureNtpServers()` re-reads the gateway on every attempt, so a never-synced device picks up the real gateway within a minute of STA connecting.
+- **Issue suppression while unprovisioned (D7).** `ntp_not_synced`, `cloud_mqtt_disconnected` and `custom_mqtt_connect_failed` will raise during provisioning. Cosmetic, and the registry is the wrong place to special-case a transient state without hardware to confirm the actual noise.
 
 ---
 
