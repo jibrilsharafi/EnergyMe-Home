@@ -1805,9 +1805,16 @@ namespace CustomServer
             CustomWifi::resetWifi(); 
         });
 
-        // Set WiFi credentials
-        AsyncCallbackJsonWebHandler *wifiCredentialsHandler = new AsyncCallbackJsonWebHandler(
-            "/api/v1/network/wifi/credentials",
+        // Set WiFi credentials.
+        //
+        // Registered twice like the routes above, and this one is load-bearing: submitting
+        // credentials is the ONE thing an unprovisioned user must be able to do, and they
+        // cannot authenticate to do it. A single authenticated handler here would 401 the
+        // whole provisioning flow at its last step.
+        //
+        // JSON body handlers are AsyncWebHandler subclasses, so they take the same filter
+        // and middleware treatment; they just cannot go through the server.on() helper.
+        ArJsonRequestHandlerFunction credentialsCallback =
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
                 if (!_validateRequest(request, "POST")) return;
@@ -1850,7 +1857,18 @@ namespace CustomServer
 
                 if (CustomWifi::setCredentials(ssid, password)) _sendSuccessResponse(request, "WiFi credentials saved. Connecting to the new network without restarting - poll /api/v1/network/wifi/status for the result.");
                 else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to save credentials for the specified network. Please verify them and try again.");
-            });
+            };
+
+        // Open twin first, so it wins by insertion order when the filter passes.
+        AsyncCallbackJsonWebHandler *openCredentialsHandler =
+            new AsyncCallbackJsonWebHandler("/api/v1/network/wifi/credentials", credentialsCallback);
+        openCredentialsHandler->setFilter(_isProvisioningOrigin);
+        openCredentialsHandler->skipServerMiddlewares();
+        openCredentialsHandler->addMiddleware(&rateLimit);
+        server.addHandler(openCredentialsHandler);
+
+        AsyncCallbackJsonWebHandler *wifiCredentialsHandler =
+            new AsyncCallbackJsonWebHandler("/api/v1/network/wifi/credentials", credentialsCallback);
         server.addHandler(wifiCredentialsHandler);
 
         // Get network configuration (static IP)
