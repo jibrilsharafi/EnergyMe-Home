@@ -57,6 +57,15 @@ namespace CustomWifi
   static WifiConfiguration _configuration;
   static SemaphoreHandle_t _configMutex = nullptr;
 
+  // Provisioning state machine (pure logic in lib/wifi_provisioning, unit-tested there).
+  // Owned by the WiFi task: only the task mutates _provisioning.
+  static WifiProvisioning::Context _provisioning;
+  // Lock-free snapshot of _provisioning.state for readers on other tasks. The Phase 4
+  // auth filter runs on the AsyncTCP task for every request and must not take a mutex,
+  // so the task publishes the state here after every transition. A uint8_t-backed enum
+  // is written atomically on this target; readers only ever compare it for equality.
+  static volatile WifiProvisioning::State _publishedState = WifiProvisioning::State::STA_CONNECTING;
+
   // Private helper functions
   static void _onWiFiEvent(WiFiEvent_t event);
   static void _onWiFiEventWithInfo(WiFiEvent_t event, WiFiEventInfo_t info);
@@ -72,6 +81,8 @@ namespace CustomWifi
   static bool _testConnectivity();
   static void _forceReconnectInternal();
   static void _serviceDisconnectDeadline(const char* hostname);
+  static bool _hasStoredCredentials();
+  static void _feedProvisioning(WifiProvisioning::Event event);
   static bool _isPowerReset();
   static void _sendOpenSourceTelemetry();
   static void _resolveApPassword(char* out, size_t outSize);
@@ -179,6 +190,11 @@ namespace CustomWifi
   bool isNetworkServiceable()
   {
     return WifiProvisioning::isNetworkServiceable(isFullyConnected(), isApServing());
+  }
+
+  WifiProvisioning::State getProvisioningState()
+  {
+    return _publishedState;
   }
 
   bool testConnectivity()
@@ -576,6 +592,14 @@ namespace CustomWifi
   {
     LOG_DEBUG("WiFi task started");
     uint32_t notificationValue;
+
+    // Seed the provisioning state machine from what the driver actually has stored.
+    // Owned by this task from here on.
+    bool hasCredentials = _hasStoredCredentials();
+    WifiProvisioning::init(_provisioning, hasCredentials, millis64());
+    _publishedState = _provisioning.state;
+    LOG_INFO("Provisioning init: %s credentials, state %d",
+             hasCredentials ? "found" : "no", (int)_provisioning.state);
     _taskShouldRun = true;
 
     // Create WiFiManager on heap to save stack space
@@ -679,6 +703,7 @@ namespace CustomWifi
         case WIFI_EVENT_GOT_IP:
           LOG_DEBUG("WiFi got IP: %s", WiFi.localIP().toString().c_str());
           _disconnectDeadlineMs = 0; // Link is back; nothing left to evaluate
+          _feedProvisioning(WifiProvisioning::Event::STA_CONNECTED);
           statistics.wifiConnection++; // It is here we know the wifi connection went through (and the one which is called on reconnections)
           _lastWifiConnectedMillis = millis64(); // Track connection time for lwIP stabilization
           // Handle successful connection operations safely in task context
@@ -726,6 +751,7 @@ namespace CustomWifi
           Led::pulseBlue(Led::PRIO_MEDIUM);
           LOG_WARNING("WiFi disconnected - auto-reconnect will handle");
           _lastWifiConnectedMillis = 0; // Reset stabilization timer on disconnect
+          _feedProvisioning(WifiProvisioning::Event::STA_LOST);
 
           // Give auto-reconnect (enabled by default) a grace window, then evaluate.
           // Arm only when not already armed: re-arming on every disconnect would let a
@@ -790,6 +816,14 @@ namespace CustomWifi
               LOG_DEBUG("WiFi connection stable - resetting counters");
               _reconnectAttempts = 0;
             }
+          }
+          else if (_provisioning.state == WifiProvisioning::State::UNPROVISIONED)
+          {
+            // No stored credentials: there is nothing to reconnect to. Forcing a reconnect
+            // here would still increment _reconnectAttempts every 30 s (D8), poisoning the
+            // very counter the AP-raise predicate reads, so the predicate would never settle
+            // while the AP is up.
+            LOG_DEBUG("Periodic check: unprovisioned, not forcing a reconnect");
           }
           else
           {
@@ -1029,6 +1063,33 @@ namespace CustomWifi
     LOG_INFO("Forced reconnection initiated (attempt %d)", _reconnectAttempts);
   }
 
+  // Reads the credentials the WiFi driver persists in its own NVS namespace. This is the
+  // same store WiFi.begin() with no arguments connects from, so "provisioned" here means
+  // exactly "WiFi.begin() has something to try".
+  static bool _hasStoredCredentials()
+  {
+    wifi_config_t conf = {};
+    esp_err_t err = esp_wifi_get_config(WIFI_IF_STA, &conf);
+    if (err != ESP_OK) {
+      LOG_WARNING("Could not read stored WiFi config: %s", esp_err_to_name(err));
+      return false;
+    }
+    return conf.sta.ssid[0] != '\0';
+  }
+
+  // Single funnel for provisioning transitions so the published snapshot can never drift
+  // from the owned context. Task context only.
+  static void _feedProvisioning(WifiProvisioning::Event event)
+  {
+    WifiProvisioning::State previous = _provisioning.state;
+    WifiProvisioning::State current = WifiProvisioning::onEvent(_provisioning, event, millis64());
+    _publishedState = current;
+
+    if (current != previous) {
+      LOG_INFO("Provisioning state %d -> %d", (int)previous, (int)current);
+    }
+  }
+
   // Evaluates a disconnect grace window once it expires. This is the non-blocking
   // replacement for the delay(WIFI_DISCONNECT_DELAY) that used to sit inline in the
   // WIFI_EVENT_DISCONNECTED case and stall the task for 15 s per failed attempt,
@@ -1045,6 +1106,7 @@ namespace CustomWifi
 
     _reconnectAttempts++;
     _lastReconnectAttempt = millis64();
+    _feedProvisioning(WifiProvisioning::Event::STA_ATTEMPT_FAILED);
 
     LOG_WARNING("Auto-reconnect failed, attempt %d", _reconnectAttempts);
 

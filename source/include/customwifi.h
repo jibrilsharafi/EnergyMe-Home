@@ -131,6 +131,11 @@ namespace CustomWifi
     // a device serving on the AP with no upstream network is working as intended,
     // and treating it as unhealthy restarts it every ~150 s.
     bool isNetworkServiceable();
+
+    // Lock-free snapshot of the provisioning state. Safe to call from any task, including
+    // the AsyncTCP task inside a request filter: it is a plain load of a uint8_t-backed
+    // enum, no mutex and no NVS. The Phase 4 auth carve-out gates on this.
+    WifiProvisioning::State getProvisioningState();
     bool testConnectivity(); // Test actual network connectivity (check gateway and DNS)
     void forceReconnect();   // Force immediate WiFi reconnection
 
