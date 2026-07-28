@@ -244,17 +244,24 @@ namespace CustomServer
         LOG_DEBUG("Logging middleware configured");
     }
 
-    // True only for a request that arrived on the SoftAP netif of a device that has no
-    // stored credentials. This is the whole auth carve-out (D3/D9).
+    // True only when the device has no stored credentials AND the request was addressed to
+    // the SoftAP's own address. This is the whole auth carve-out (D3/D9).
     //
     // Runs on the AsyncTCP task for every request to every path, so it must stay a state
     // read plus an address compare: no mutex, no NVS, no logging, no allocation.
     //
-    // Deliberately NOT ON_AP_FILTER, which is `WiFi.localIP() != client()->localIP()`.
-    // That compares against the SYN destination rather than the arrival interface, returns
-    // true for the device's own 127.0.0.1 health probe, and returns true for EVERYTHING
-    // whenever WiFi.localIP() is 0.0.0.0 - which is exactly the unprovisioned case, so it
-    // would open the entire UI on the LAN the moment STA dropped.
+    // IMPORTANT, do not build on a guarantee this does not give: client()->localIP() reads
+    // _pcb->local_ip (AsyncTCP.cpp:1341-1352), the destination address lwIP recorded for the
+    // accepted connection. That is NOT proof of which physical netif the packet arrived on,
+    // and it is the same field ON_AP_FILTER reads. What makes this safe is the state check
+    // below, not the address compare. Bench-4 exists precisely because only hardware can
+    // show whether a LAN host static-routed to the AP subnet satisfies the compare.
+    //
+    // Still preferred over ON_AP_FILTER (`WiFi.localIP() != client()->localIP()`), which
+    // returns true for the device's own 127.0.0.1 health probe and true for EVERYTHING
+    // whenever WiFi.localIP() is 0.0.0.0 - exactly the unprovisioned case, so it would open
+    // the entire UI on the LAN the moment STA dropped. Comparing against softAPIP() fixes
+    // both of those; it does not turn the check into an interface check.
     static bool _isProvisioningOrigin(AsyncWebServerRequest *request)
     {
         // The state check carries the safety: outside UNPROVISIONED there is no bypass at

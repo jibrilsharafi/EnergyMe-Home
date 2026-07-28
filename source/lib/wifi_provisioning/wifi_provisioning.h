@@ -97,9 +97,18 @@ void raiseAp(Context &context, uint64_t nowMs);
 // AP netif with no upstream network. Serving on either interface counts.
 bool isNetworkServiceable(bool staConnected, bool apServing);
 
-// The authentication carve-out. `fromApNetif` must be a real arrival-interface
-// check, not the SYN destination: the device's own loopback health probe and a LAN
-// host with a static route to the AP address both have to come out false here.
+// The authentication carve-out.
+//
+// `fromApNetif` is a caller-supplied claim, and this function cannot verify it. The
+// current caller derives it by comparing the connection's recorded destination address
+// against the SoftAP address, which is NOT proof of arrival interface - lwIP's weak host
+// model may accept a packet addressed to the AP address on another interface. The
+// device's own loopback probe does come out false (127.0.0.1 never equals the AP
+// address); a LAN host with a static route to the AP subnet is the open question, and
+// only hardware can settle it.
+//
+// Treat `state == UNPROVISIONED` as the real gate. That is why this returns false for
+// every other state regardless of `fromApNetif`, and false for OTA in all states.
 bool isAuthBypassAllowed(State state, bool fromApNetif, bool isOtaRoute);
 
 // The catch-all DNS responder answers every name with the AP address regardless of
