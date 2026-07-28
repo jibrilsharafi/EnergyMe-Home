@@ -207,11 +207,33 @@ Only after Phases 1 to 5 are green on hardware.
 
 ---
 
+## Flash validation plan
+
+What has to go on hardware, and what each flash actually proves. Kept current as phases land.
+
+**The branch is not flashable between 1a9f511 and Phase 5.** WiFiManager is gone, so a device whose credentials fail has an AP up with no way to enter new ones. `esp_wifi_restore()` from the button is the only recovery. Do not flash a device you cannot reach physically.
+
+| # | Flash after | Proves | Cannot be host-tested because |
+|---|---|---|---|
+| F1 | Phase 5 | **First end-to-end run.** Unprovisioned boot -> AP raised on the selected subnet -> phone associates -> captive probe redirects -> credentials submitted -> STA associates -> AP torn down. This is the whole feature in one pass. | Needs the WiFi driver, lwIP, DHCP, a real phone's captive-portal detection |
+| F2 | Phase 5 | **AP_ASSIST path.** Flash with deliberately wrong stored credentials: 5 failed attempts -> AP raised -> full digest auth still required on the AP (not the unprovisioned carve-out) | Needs real association failures and their timing |
+| F3 | Phase 4 or 5 | **Bench-4, ships-blocking.** LAN host with a static route to the AP subnet gets 401, not 200. The auth carve-out's IP compare must not be satisfiable from the STA netif | lwIP weak-host-model behaviour has no host equivalent |
+| F4 | Phase 5 | **Bench-2, the heap gate.** `heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL \| MALLOC_CAP_8BIT)` in the APSTA unprovisioned configuration under web load | Internal PBUF pressure is invisible off-target. Note 1a9f511 freed 16,288 B of internal RAM, so headroom is materially better than when the gate was written |
+| F5 | Phase 5 | **Phase 1 backstop.** 30 min AP-only: zero reboots, `_consecutiveResetCount` flat | Needs the real health check on a real timer |
+| F6 | Phase 6 | **Bench-3.** Does the phone stay on the AP after STA connects, iOS and Android? Decides whether the grace window survives | Phone OS behaviour |
+| F7 | Phase 6 | **Bench-1, informational.** Does `softAP(ssid,pw,N)` move a live AP? Selects the D2 implementation | Driver behaviour |
+
+**Minimum viable path:** F1 + F3 + F4 in one session after Phase 5. F3 and F4 are the two that can block shipping; F1 is the one that tells us the feature works at all. The rest can follow.
+
+**What host tests cover instead**, so the flash sessions are about integration rather than logic: everything in `lib/wifi_provisioning` (state transitions, both retry counters, grace and lifetime arithmetic, subnet overlap and selection, the auth-bypass predicate including OTA-never-carved-out, the DNS predicate). Run with `pio test -e native` **from WSL**. Anything that touches `WiFi.`, `esp_wifi_`, lwIP or `AsyncWebServer` cannot be host-tested and is what the flash list above exists for.
+
+---
+
 ## Verification summary
 
 | Gate | Blocks | Pass criterion |
 |---|---|---|
-| Bench-2 | Everything after Phase 0 | `getMaxAllocHeap()` >= 40 KB steady, never < 32 KB under load, unprovisioned-first-boot config |
+| Bench-2 | Everything after Phase 0 | `heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL \| MALLOC_CAP_8BIT)` >= 40 KB steady, never < 32 KB under load, unprovisioned-first-boot config |
 | Bench-3 | The grace window in D1/D4 | Phone stays associated >= 60 s after STA connect, iOS and Android |
 | Bench-1 | D2 implementation choice | Informational |
 | Bench-4 | Phase 4 ship | LAN host via static route gets 401, not 200 |
