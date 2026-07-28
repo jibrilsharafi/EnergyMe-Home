@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "customserver.h"
+#include "modbustcp.h" // Local integrations are started/stopped to follow the STA link
 #include "taskprofiler.h"
 #include "duration_format.h"
 #include "shadow.h"
@@ -533,6 +534,12 @@ namespace CustomServer
             LOG_DEBUG("Health check: no serviceable network interface");
             return false;
         }
+
+        // Follow the station link with the unauthenticated local integrations. This runs on
+        // the periodic health-check task rather than from the WiFi task so customwifi keeps
+        // no knowledge of the services layered on top of it. Idempotent, so the worst case
+        // is Modbus appearing up to one check interval after STA comes up.
+        ModbusTcp::syncWithNetwork(CustomWifi::isFullyConnected());
 
         // Perform a simple HTTP self-request to verify server responsiveness
         WiFiClient client;

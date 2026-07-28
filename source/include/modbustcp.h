@@ -25,4 +25,9 @@ namespace ModbusTcp
 {
     void begin();
     void stop();
+
+    // Start or stop the server to follow the station link. Modbus TCP is unauthenticated and
+    // binds every interface, so it must not be listening while the device is serving only a
+    // SoftAP. Idempotent; safe to call repeatedly.
+    void syncWithNetwork(bool staConnected);
 }

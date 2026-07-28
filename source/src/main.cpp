@@ -179,8 +179,11 @@ void setup()
   CustomServer::begin();
   LOG_INFO("Server setup done");
 
+  // Only once there is a station link. Modbus TCP is unauthenticated and binds every
+  // interface, so starting it on an AP-only boot would serve meter data to anyone in radio
+  // range of the provisioning SoftAP. The health-check task starts it when STA comes up.
   LOG_DEBUG("Setting up Modbus TCP...");
-  ModbusTcp::begin();
+  ModbusTcp::syncWithNetwork(CustomWifi::isFullyConnected());
   LOG_INFO("Modbus TCP setup done");
 
   if (!globalCommunityMode) {

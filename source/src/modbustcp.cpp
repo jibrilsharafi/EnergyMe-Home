@@ -14,21 +14,46 @@ namespace ModbusTcp
     static bool _isValidRegister(uint32_t address);
     static ModbusMessage _handleReadHoldingRegisters(ModbusMessage request);
 
+    static bool _running = false;
+
     void begin()
     {
+        if (_running) return;
+
         LOG_DEBUG("Initializing Modbus TCP");
-        
+
         _mbServer.registerWorker(MODBUS_TCP_SERVER_ID, READ_HOLD_REGISTER, &_handleReadHoldingRegisters);
         _mbServer.start(MODBUS_TCP_PORT, MODBUS_TCP_MAX_CLIENTS, MODBUS_TCP_TIMEOUT);
-        
+        _running = true;
+
         LOG_DEBUG("Modbus TCP initialized");
     }
 
     void stop()
     {
+        if (!_running) return;
+
         LOG_DEBUG("Stopping Modbus TCP server");
         _mbServer.stop();
+        _running = false;
         LOG_DEBUG("Modbus TCP server stopped");
+    }
+
+    // Modbus TCP carries no authentication, and ModbusServerTCPasync binds every interface.
+    // While the SoftAP is up that means handing meter data to anyone in radio range who
+    // joins it, so the server only exists while there is a station link to serve it on.
+    //
+    // Bound to the STA link rather than to the provisioning state: the exposure comes from
+    // the AP being up at all, not from which state raised it.
+    void syncWithNetwork(bool staConnected)
+    {
+        if (staConnected && !_running) {
+            LOG_INFO("STA link up - starting Modbus TCP");
+            begin();
+        } else if (!staConnected && _running) {
+            LOG_INFO("No STA link - stopping Modbus TCP so it is not exposed on the SoftAP");
+            stop();
+        }
     }
 
     static ModbusMessage _handleReadHoldingRegisters(ModbusMessage request)
