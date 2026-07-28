@@ -213,7 +213,8 @@ Everything below is **compile-verified only**. 48/48 native tests pass for the p
 
 Landed: WiFiManager fully removed (`1a9f511`), non-blocking connect and SoftAP lifecycle, D7 boot gate, auth carve-out and provisioning API, WiFi setup page and async scan, AP LED state, Modbus no longer exposed on the AP, documentation and swagger.
 
-Two review passes were run and both found real defects, since fixed:
+Three review passes were run and all three found real defects, since fixed:
+- **Device-bricking.** `onEvent()` set `Context.apRaised` itself on the move to `AP_ASSIST`, and `shouldRaiseAp()` is `UNPROVISIONED`-only, so the predicate-polling caller could never raise the radio. A device with wrong credentials would have come up with no AP, and `main.cpp` blocks before `CustomServer::begin()`, leaving it silent and recoverable only by physical access (`93615eb`). Ownership is now split: the pure library decides, `customwifi` reconciles the radio to it.
 - Byte-order across the `IPAddress` boundary would have raised the AP on a reversed address with an inverted mask, and made the subnet-overlap check unable to fire (`98b7c7b`). Native tests could not catch it: the library is internally consistent and the bug lived at the Arduino boundary.
 - The auth carve-out missed the credentials endpoint itself, so the flow would have 401'd at its last step (`d9227a8`).
 
