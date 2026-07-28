@@ -20,6 +20,7 @@
 #include "globals.h"
 #include "led.h"
 #include "utils.h"
+#include "wifi_provisioning.h" // Pure provisioning decision logic (Arduino-free, host-testable)
 
 #define WIFI_TASK_NAME "wifi_task"
 #define WIFI_TASK_STACK_SIZE (8 * 1024) // Week-long high-water mark hit 5580 bytes (only 564 bytes free at 6 KB) - bumped to 8 KB for ~30% safety margin on portal/credential paths
@@ -120,6 +121,16 @@ namespace CustomWifi
     void stop();
     
     bool isFullyConnected(bool requireInternet = false);
+
+    // True when the SoftAP is up and has an address, so the web server is reachable
+    // on it regardless of the STA link.
+    bool isApServing();
+
+    // STA connected OR serving on the SoftAP. This, not isFullyConnected(), is what
+    // callers should gate on when the question is "can anyone reach this device":
+    // a device serving on the AP with no upstream network is working as intended,
+    // and treating it as unhealthy restarts it every ~150 s.
+    bool isNetworkServiceable();
     bool testConnectivity(); // Test actual network connectivity (check gateway and DNS)
     void forceReconnect();   // Force immediate WiFi reconnection
 

@@ -470,10 +470,16 @@ namespace CustomServer
 
     static bool _performHealthCheck()
     {
-        // Check if WiFi is connected
-        if (!CustomWifi::isFullyConnected())
+        // Serving on the SoftAP with no upstream network is a working device, not a
+        // sick one. Gating on isFullyConnected() here fails every 30 s during AP-only
+        // operation, and five failures request a restart: at ~150 s uptime that is
+        // above QUICK_RESTART_THRESHOLD so safe mode never arms, and below
+        // COUNTERS_RESET_TIMEOUT so the consecutive-reset counter never clears. About
+        // 25 minutes of that reaches MAX_RESET_COUNT, which rolls the firmware back
+        // and wipes the user's NVS.
+        if (!CustomWifi::isNetworkServiceable())
         {
-            LOG_DEBUG("Health check: WiFi not connected");
+            LOG_DEBUG("Health check: no serviceable network interface");
             return false;
         }
 

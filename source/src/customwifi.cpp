@@ -147,6 +147,16 @@ namespace CustomWifi
     return true;
   }
 
+  bool isApServing()
+  {
+    return WiFi.AP.started() && WiFi.softAPIP() != IPAddress(0, 0, 0, 0);
+  }
+
+  bool isNetworkServiceable()
+  {
+    return WifiProvisioning::isNetworkServiceable(isFullyConnected(), isApServing());
+  }
+
   bool testConnectivity()
   {
     return _testConnectivity();
