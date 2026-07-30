@@ -13,8 +13,45 @@ on:
       - '.github/workflows/platformio-build.yml'
 
 jobs:
+  # Job 0: Native unit tests (runs on PRs and pushes, gates before build)
+  unit-test:
+    runs-on: ubuntu-latest
+    name: Unit Tests (native)
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.11.7' # Same version as PlatformIO installs on its own via VSCode extension
+
+    - name: Cache PlatformIO
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.platformio
+          ~/.cache/pip
+        key: ${{ runner.os }}-platformio-${{ hashFiles('**/platformio.ini') }}
+
+    - name: Install PlatformIO
+      run: |
+        python -m pip install --upgrade pip
+        pip install platformio
+
+    - name: Run native unit tests
+      working-directory: source
+      run: |
+        echo "🧪 Running native unit tests..."
+        pio test -e native
+        echo "✅ Unit tests passed!"
+
   # Job 1: Validation build on PRs (quick feedback)
   build-check:
+    needs: unit-test
     runs-on: ubuntu-latest
     name: Build Check (${{ matrix.env }})
     permissions:
@@ -80,6 +117,7 @@ jobs:
 
   # Job 2: Full build on push to main/development (produces retained artifacts)
   build:
+    needs: unit-test
     runs-on: ubuntu-latest
     name: Build (${{ matrix.env }})
     permissions:
