@@ -96,6 +96,22 @@ PolarityResult updatePolarity(PolarityState state, float activePower, float curr
 bool shouldClampNegative(float activePower, ChannelRole role);
 
 // ============================================================================
+// Energy direction flag
+// ============================================================================
+// The import/export split of the accumulators is driven by the SIGN of the
+// per-window energy value, while the magnitude comes from |power| * dt. On the
+// base phase that sign arrives for free: the value is the ADE7953 energy
+// register, already signed (and already reverse-corrected). Channels on another
+// line never touch those registers - their power is reconstructed from the
+// zero-crossing angle - so the firmware only has a no-load flag there, and it
+// must carry the direction itself or every exported Wh gets booked as import.
+//
+// Returns -1 for a negative (exporting) power and +1 otherwise. Zero and NaN map
+// to +1: neither carries direction, and both add a zero-magnitude increment, so
+// the branch they land in is irrelevant.
+float energyDirectionFlag(float power);
+
+// ============================================================================
 // RMS witness (energy-path integrity)
 // ============================================================================
 // True if the base-phase reading must be discarded because the apparent power

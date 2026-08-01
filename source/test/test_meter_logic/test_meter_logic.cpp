@@ -217,6 +217,33 @@ void test_clamp_never_touches_positive(void) {
 }
 
 // ============================================================================
+// energyDirectionFlag
+// ============================================================================
+
+void test_energy_direction_splits_export_from_import(void) {
+    // Regression: the angle branch (channels off the base phase) used to hard-code a
+    // +1 flag here, which made the exported-energy accumulator unreachable and booked
+    // every exported Wh as imported. Seen in prod on a 3-phase site: grid L1 export
+    // grew normally while L2/L3 export stayed pinned at 0 despite thousands of
+    // readings averaging -1.8 kW.
+    TEST_ASSERT_EQUAL_FLOAT(-1.0f, energyDirectionFlag(-1800.0f));
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, energyDirectionFlag(1800.0f));
+}
+
+void test_energy_direction_tiny_magnitudes_keep_their_sign(void) {
+    // Magnitude is irrelevant - only the sign selects the accumulator.
+    TEST_ASSERT_EQUAL_FLOAT(-1.0f, energyDirectionFlag(-0.001f));
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, energyDirectionFlag(0.001f));
+}
+
+void test_energy_direction_zero_and_nan_are_import(void) {
+    // Neither carries direction, and both increment by zero, so the branch is moot.
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, energyDirectionFlag(0.0f));
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, energyDirectionFlag(-0.0f));
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, energyDirectionFlag(NAN));
+}
+
+// ============================================================================
 // weighting
 // ============================================================================
 
@@ -1228,6 +1255,10 @@ int main(int, char **) {
     RUN_TEST(test_clamp_load_and_pv_negatives);
     RUN_TEST(test_clamp_allows_grid_battery_inverter_negatives);
     RUN_TEST(test_clamp_never_touches_positive);
+
+    RUN_TEST(test_energy_direction_splits_export_from_import);
+    RUN_TEST(test_energy_direction_tiny_magnitudes_keep_their_sign);
+    RUN_TEST(test_energy_direction_zero_and_nan_are_import);
 
     RUN_TEST(test_role_priority_grid_battery_only);
     RUN_TEST(test_weight_inactive_is_zero);

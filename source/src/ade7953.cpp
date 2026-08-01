@@ -4103,10 +4103,15 @@ namespace Ade7953
         _meterValues[channelIndex].powerFactor = powerFactor;
 
         // If the phase is not the phase of the main channel, set the energy not to 0 if the current
-        // is above the threshold since we cannot use the ADE7593 no-load feature in this approximation
+        // is above the threshold since we cannot use the ADE7593 no-load feature in this approximation.
+        // These stand in for the energy registers the angle branch never reads, so they must carry the
+        // DIRECTION as well as the presence of load: the accumulators below split import from export on
+        // the sign alone (the magnitude is |power| * dt). A hard-coded +1 made the export branch
+        // unreachable off the base phase, so every exported Wh/VArh on L2/L3 was booked as imported.
+        // Apparent power is unsigned, so its flag stays a plain presence marker.
         if (channelData.phase != basePhase && current > minCurrentThreePhaseNoLoad) {
-            activeEnergy = 1;
-            reactiveEnergy = 1;
+            activeEnergy = MeterLogic::energyDirectionFlag(activePower);
+            reactiveEnergy = MeterLogic::energyDirectionFlag(reactivePower);
             apparentEnergy = 1;
         }
 
