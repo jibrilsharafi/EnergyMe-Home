@@ -897,7 +897,17 @@ namespace Ade7953
             return;
         }
 
+        // This is a config-only reset; it must not touch the energy-reset boundary
+        // (only resetEnergyValues / resetChannelEnergyValues own that). Read the current
+        // value first rather than defaulting to 0 on failure, which would silently wipe it.
+        ChannelData current(channelIndex);
+        if (!getChannelData(current, channelIndex)) {
+            LOG_ERROR("Failed to read current data for channel %u before reset; aborting to avoid wiping startMeasuringUnixTimeMs", channelIndex);
+            return;
+        }
+
         ChannelData channelData(channelIndex); // Constructor with index sets proper defaults
+        channelData.startMeasuringUnixTimeMs = current.startMeasuringUnixTimeMs;
         setChannelData(channelData, channelIndex);
 
         LOG_DEBUG("Successfully reset channel data for channel %lu", channelIndex);
