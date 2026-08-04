@@ -2328,7 +2328,7 @@ paths:
                   type: integer
                   format: int64
                   minimum: 0
-                  description: "Reset boundary for this channel's energy counters, in unix ms. 0 = unset (no boundary). Omit to leave the current value unchanged; the device rejects any non-zero value outside a plausible range (year 2020-2100 in ms) and keeps the current value instead. Normally set by the device itself; write only to realign a device's boundary (e.g. after a firmware upgrade)."
+                  description: "Reset boundary for this channel's energy counters, in unix ms. 0 = unset (no boundary). Omit to leave the current value unchanged - do not echo back the value from a GET, since an explicit 0 IS treated as a real write and will wipe the boundary. Non-zero values outside a plausible range (year 2020-2100 in ms) are rejected (400 on PATCH, silently kept unchanged on a full PUT). Normally set by the device itself; write only to realign a device's boundary (e.g. after a firmware upgrade)."
                   example: 1717000000000
               minProperties: 2
             examples:
@@ -3470,7 +3470,7 @@ components:
           type: integer
           format: int64
           minimum: 0
-          description: "Reset boundary for this channel's energy counters, in unix ms. 0 = unset (no boundary). Always reported. On write, omit to leave the current value unchanged; the device rejects any non-zero value outside a plausible range (year 2020-2100 in ms) and keeps the current value instead. Normally set by the device itself; write only to realign a device's boundary (e.g. after a firmware upgrade)."
+          description: "Reset boundary for this channel's energy counters, in unix ms. 0 = unset (no boundary). Always reported. On write, omit to leave the current value unchanged - do not echo back the value from a GET, since an explicit 0 IS treated as a real write and will wipe the boundary. Non-zero values outside a plausible range (year 2020-2100 in ms) are rejected (400 on PATCH, silently kept unchanged on a full PUT). Normally set by the device itself; write only to realign a device's boundary (e.g. after a firmware upgrade)."
           example: 1717000000000
 
     MeterValues:
