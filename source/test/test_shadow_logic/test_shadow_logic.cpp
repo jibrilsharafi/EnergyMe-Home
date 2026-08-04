@@ -320,6 +320,68 @@ void test_parse_channel_list_null_invalid_flag_is_safe(void) {
 }
 
 // ============================================================================
+// isPlausibleStartMeasuringUnixTimeMs / shouldAdoptStartMeasuringUnixTimeMs
+// ============================================================================
+
+void test_start_measuring_zero_is_always_plausible(void) {
+    TEST_ASSERT_TRUE(isPlausibleStartMeasuringUnixTimeMs(0));
+}
+
+void test_start_measuring_seconds_value_sent_by_mistake_is_rejected(void) {
+    // A unix-seconds "now" (~1.7e9) is ~1000x below the ms floor (~1e12).
+    TEST_ASSERT_FALSE(isPlausibleStartMeasuringUnixTimeMs(1700000000ULL));
+}
+
+void test_start_measuring_plausible_ms_value_is_accepted(void) {
+    TEST_ASSERT_TRUE(isPlausibleStartMeasuringUnixTimeMs(1700000000000ULL));
+}
+
+void test_start_measuring_exactly_at_floor_is_accepted(void) {
+    TEST_ASSERT_TRUE(isPlausibleStartMeasuringUnixTimeMs(UnixTime::MIN_MILLISECONDS));
+}
+
+void test_start_measuring_one_below_floor_is_rejected(void) {
+    TEST_ASSERT_FALSE(isPlausibleStartMeasuringUnixTimeMs(UnixTime::MIN_MILLISECONDS - 1));
+}
+
+void test_start_measuring_exactly_at_ceiling_is_accepted(void) {
+    TEST_ASSERT_TRUE(isPlausibleStartMeasuringUnixTimeMs(UnixTime::MAX_MILLISECONDS));
+}
+
+void test_start_measuring_one_above_ceiling_is_rejected(void) {
+    TEST_ASSERT_FALSE(isPlausibleStartMeasuringUnixTimeMs(UnixTime::MAX_MILLISECONDS + 1));
+}
+
+void test_start_measuring_microseconds_value_sent_by_mistake_is_rejected(void) {
+    // A unix-microseconds "now" (~1.7e15) is ~1000x above the ms ceiling (~4.1e12).
+    TEST_ASSERT_FALSE(isPlausibleStartMeasuringUnixTimeMs(1700000000000000ULL));
+}
+
+void test_start_measuring_garbage_value_is_rejected(void) {
+    TEST_ASSERT_FALSE(isPlausibleStartMeasuringUnixTimeMs(9000000000000000000ULL));
+}
+
+void test_should_adopt_when_present_and_plausible(void) {
+    TEST_ASSERT_TRUE(shouldAdoptStartMeasuringUnixTimeMs(true, 1700000000000ULL));
+}
+
+void test_should_adopt_explicit_zero_when_present(void) {
+    // Explicit 0 is a legitimate write (e.g. echoing back the current value), not a wipe.
+    TEST_ASSERT_TRUE(shouldAdoptStartMeasuringUnixTimeMs(true, 0));
+}
+
+void test_should_not_adopt_when_absent(void) {
+    // This is the case that was broken: an absent field must never be adopted as 0,
+    // regardless of what candidate value happens to be passed (as<uint64_t>() on a
+    // missing key returns 0, which is why "present" has to be checked separately).
+    TEST_ASSERT_FALSE(shouldAdoptStartMeasuringUnixTimeMs(false, 0));
+}
+
+void test_should_not_adopt_when_present_but_implausible(void) {
+    TEST_ASSERT_FALSE(shouldAdoptStartMeasuringUnixTimeMs(true, 1700000000ULL));
+}
+
+// ============================================================================
 // Runner
 // ============================================================================
 
@@ -371,6 +433,20 @@ int main(int argc, char **argv) {
     RUN_TEST(test_parse_channel_list_respects_max_out);
     RUN_TEST(test_parse_channel_list_null_spec_is_safe);
     RUN_TEST(test_parse_channel_list_null_invalid_flag_is_safe);
+
+    RUN_TEST(test_start_measuring_zero_is_always_plausible);
+    RUN_TEST(test_start_measuring_seconds_value_sent_by_mistake_is_rejected);
+    RUN_TEST(test_start_measuring_plausible_ms_value_is_accepted);
+    RUN_TEST(test_start_measuring_exactly_at_floor_is_accepted);
+    RUN_TEST(test_start_measuring_one_below_floor_is_rejected);
+    RUN_TEST(test_start_measuring_exactly_at_ceiling_is_accepted);
+    RUN_TEST(test_start_measuring_one_above_ceiling_is_rejected);
+    RUN_TEST(test_start_measuring_microseconds_value_sent_by_mistake_is_rejected);
+    RUN_TEST(test_start_measuring_garbage_value_is_rejected);
+    RUN_TEST(test_should_adopt_when_present_and_plausible);
+    RUN_TEST(test_should_adopt_explicit_zero_when_present);
+    RUN_TEST(test_should_not_adopt_when_absent);
+    RUN_TEST(test_should_not_adopt_when_present_but_implausible);
 
     return UNITY_END();
 }

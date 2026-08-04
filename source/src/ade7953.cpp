@@ -5,6 +5,7 @@
 #include "taskprofiler.h"
 #include "duration_format.h"
 #include "grid_frequency.h"
+#include "shadow_logic.h"
 
 namespace Ade7953
 {
@@ -191,6 +192,7 @@ namespace Ade7953
     // Energy data management
     static void _setEnergyFromPreferences(uint8_t channelIndex);
     static void _saveEnergyToPreferences(uint8_t channelIndex, bool forceSave = false); // Needed for saving data anyway on first setup (energy is 0 and not saved otherwise)
+    static void _clearStartMeasuring(uint8_t channelIndex); // reset back to 0 (unset) on every reset
     static void _saveHourlyEnergyToCsv(); // Not per channel so that we open the file only once
     static void _saveEnergyComplete();
     static bool _clearChannelHistoricalData(uint8_t channelIndex);
@@ -889,16 +891,30 @@ namespace Ade7953
         return true;
     }
 
-    void resetChannelData(uint8_t channelIndex) {
+    bool resetChannelData(uint8_t channelIndex) {
         if (!isChannelValid(channelIndex)) {
             LOG_WARNING("Channel index out of bounds: %lu", channelIndex);
-            return;
+            return false;
+        }
+
+        // This is a config-only reset; it must not touch the energy-reset boundary
+        // (only resetEnergyValues / resetChannelEnergyValues own that). Read the current
+        // value first rather than defaulting to 0 on failure, which would silently wipe it.
+        ChannelData current(channelIndex);
+        if (!getChannelData(current, channelIndex)) {
+            LOG_ERROR("Failed to read current data for channel %u before reset; aborting to avoid wiping startMeasuringUnixTimeMs", channelIndex);
+            return false;
         }
 
         ChannelData channelData(channelIndex); // Constructor with index sets proper defaults
-        setChannelData(channelData, channelIndex);
+        channelData.startMeasuringUnixTimeMs = current.startMeasuringUnixTimeMs;
+        if (!setChannelData(channelData, channelIndex)) {
+            LOG_ERROR("Failed to reset channel data for channel %lu", channelIndex);
+            return false;
+        }
 
         LOG_DEBUG("Successfully reset channel data for channel %lu", channelIndex);
+        return true;
     }
 
     // Channel data management - JSON operations
@@ -998,6 +1014,9 @@ namespace Ade7953
         // Channel role
         jsonDocument["role"] = channelRoleToString(channelData.role);
 
+        // Device-reported reset boundary. Always reported, including the 0/"unset" value.
+        jsonDocument["startMeasuringUnixTimeMs"] = channelData.startMeasuringUnixTimeMs;
+
         LOG_VERBOSE("Successfully converted channel data to JSON for channel %u", channelData.index);
     }
 
@@ -1054,6 +1073,21 @@ namespace Ade7953
             // Channel role
             channelData.role = channelRoleFromString(jsonDocument["role"].as<const char*>());
         }
+
+        // Device-reported reset boundary. Applies to both the partial and full paths above:
+        // channelData is always preloaded with the current value before this function runs (see
+        // setChannelDataFromJson), so absent or implausible (e.g. seconds/microseconds sent
+        // instead of ms) simply leaves it unchanged rather than fabricating a false reset.
+        bool startMeasuringPresent = jsonDocument["startMeasuringUnixTimeMs"].is<uint64_t>();
+        uint64_t startMeasuringCandidate = jsonDocument["startMeasuringUnixTimeMs"].as<uint64_t>();
+        if (ShadowLogic::shouldAdoptStartMeasuringUnixTimeMs(startMeasuringPresent, startMeasuringCandidate)) {
+            channelData.startMeasuringUnixTimeMs = startMeasuringCandidate;
+        } else if (startMeasuringPresent) {
+            LOG_WARNING("Rejected implausible startMeasuringUnixTimeMs %llu for channel %u",
+                        startMeasuringCandidate, channelData.index);
+        } else if (!jsonDocument["startMeasuringUnixTimeMs"].isNull()) {
+            LOG_WARNING("Ignored startMeasuringUnixTimeMs for channel %u: wrong type (expected integer)", channelData.index);
+        }
     }
 
     ChannelRole getChannelRole(uint8_t channelIndex) {
@@ -1102,6 +1136,21 @@ namespace Ade7953
     // Energy data management
     // ======================
 
+    // Clears startMeasuringUnixTimeMs back to 0 (unset) for a reset channel. No
+    // isTimeSynched() check here, deliberately: the _energySaveTask drain loop is the single
+    // place that ever resolves 0 to a real timestamp, once the clock is synced.
+    void _clearStartMeasuring(uint8_t channelIndex) {
+        if (!isChannelValid(channelIndex)) return;
+
+        if (acquireMutex(&_channelDataMutex)) {
+            _channelData[channelIndex].startMeasuringUnixTimeMs = 0;
+            releaseMutex(&_channelDataMutex);
+            _saveChannelDataToPreferences(channelIndex);
+        } else {
+            LOG_ERROR("Failed to acquire mutex to clear channel %u start-measuring timestamp", channelIndex);
+        }
+    }
+
     void resetEnergyValues() {
         if (!acquireMutex(&_meterValuesMutex)) {
             LOG_ERROR("Failed to acquire mutex for meter values");
@@ -1125,7 +1174,10 @@ namespace Ade7953
         preferences.clear();
         preferences.end();
 
-        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) _saveEnergyToPreferences(i);
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
+            _saveEnergyToPreferences(i);
+            _clearStartMeasuring(i);
+        }
 
         // Offload heavy file I/O to background task
         _spawnHistoryClearTask(CLEAR_ALL_CHANNELS_SENTINEL);
@@ -1153,6 +1205,7 @@ namespace Ade7953
         releaseMutex(&_meterValuesMutex);
 
         _saveEnergyToPreferences(channelIndex, true); // Force save zeroed values
+        _clearStartMeasuring(channelIndex);
 
         // Offload heavy file I/O to background task
         _spawnHistoryClearTask(channelIndex);
@@ -2248,6 +2301,29 @@ namespace Ade7953
                 if (drain) _saveChannelDataToPreferences(i);
             }
 
+            // Resolve unset start-measuring timestamps: the first time the clock is
+            // synced while a channel's value is still 0, set it to now. Covers a fresh channel, a
+            // reset, and (once, on upgrade) an existing device that never had this field before.
+            // Not gated by isChannelActive - unlike the energy-save loop above - so a disabled
+            // channel never gets stuck at 0 forever.
+            if (CustomTime::isTimeSynched()) {
+                uint64_t nowMs = CustomTime::getUnixTimeMilliseconds();
+                for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
+                    bool resolve = false;
+                    if (acquireMutex(&_channelDataMutex)) {
+                        if (_channelData[i].startMeasuringUnixTimeMs == 0) {
+                            _channelData[i].startMeasuringUnixTimeMs = nowMs;
+                            resolve = true;
+                        }
+                        releaseMutex(&_channelDataMutex);
+                    }
+                    if (resolve) {
+                        _saveChannelDataToPreferences(i);
+                        LOG_INFO("Channel %u startMeasuringUnixTimeMs resolved from unset to %llu", i, nowMs);
+                    }
+                }
+            }
+
             if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(SAVE_ENERGY_INTERVAL)) > 0) {
                 _energySaveTaskShouldRun = false;
                 break;
@@ -2985,6 +3061,10 @@ namespace Ade7953
             LOG_DEBUG("Migrated channel %u role from old bool keys: %s", channelIndex, channelRoleToString(channelData.role));
         }
 
+        // Device-reported reset boundary. 0 default = never set.
+        snprintf(key, sizeof(key), CHANNEL_START_MEASURING_KEY, channelIndex);
+        channelData.startMeasuringUnixTimeMs = preferences.getULong64(key, 0);
+
         preferences.end();
 
         // armTransients=false: this is a boot-time restore, not a user/API change.
@@ -3045,6 +3125,10 @@ namespace Ade7953
         // Channel role
         snprintf(key, sizeof(key), CHANNEL_ROLE_KEY, channelIndex);
         preferences.putUChar(key, static_cast<uint8_t>(channelData.role));
+
+        // Device-reported reset boundary
+        snprintf(key, sizeof(key), CHANNEL_START_MEASURING_KEY, channelIndex);
+        preferences.putULong64(key, channelData.startMeasuringUnixTimeMs);
 
         preferences.end();
 
@@ -3240,6 +3324,19 @@ namespace Ade7953
 
                 ChannelRole role = channelRoleFromString(jsonDocument["role"].as<const char*>());
                 if (!_validateGroupRoleConsistency(groupLabel, channelIndex, role)) {
+                    return false;
+                }
+                hasValidField = true;
+            }
+
+            // Device-reported reset boundary validation. Rejects the whole partial update on an
+            // implausible value, consistent with every other field above - a standalone realign
+            // request (just index + this field) must count as a valid field on its own, otherwise
+            // it silently fails the "no valid fields found" check below.
+            if (jsonDocument["startMeasuringUnixTimeMs"].is<uint64_t>()) {
+                uint64_t val = jsonDocument["startMeasuringUnixTimeMs"].as<uint64_t>();
+                if (!ShadowLogic::isPlausibleStartMeasuringUnixTimeMs(val)) {
+                    LOG_WARNING("Invalid startMeasuringUnixTimeMs value: %llu", val);
                     return false;
                 }
                 hasValidField = true;
@@ -3448,7 +3545,7 @@ namespace Ade7953
         bool needsMigration = false;
 
         snprintf(key, sizeof(key), ENERGY_ACTIVE_IMP_KEY, channelIndex);
-        // This may trigger getBytes(): not enough space in buffer: 4 < 8, but we will handle that by checking the returned value 
+        // This may trigger getBytes(): not enough space in buffer: 4 < 8, but we will handle that by checking the returned value
         double doubleValue = preferences.getDouble(key, -1.0); // Use -1.0 as sentinel (energy can't be negative)
         float floatValue = preferences.getFloat(key, -1.0f);
         LOG_DEBUG("Ch %d activeEnergyImported: getDouble=%.4f, getFloat=%.4f", channelIndex, doubleValue, floatValue);

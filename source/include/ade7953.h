@@ -306,6 +306,15 @@
 #define CHANNEL_IS_PRODUCTION_KEY_LEGACY "is_prod_%u" // Format: is_prod_0 (10 chars)
 #define CHANNEL_IS_BATTERY_KEY_LEGACY "is_batt_%u" // Format: is_batt_0 (10 chars)
 
+// Per-channel "counters have been accumulating continuously since this timestamp".
+// 0 = unset. Resolved to a real unix ms timestamp by the _energySaveTask drain the first time the
+// clock is synced while the value is still 0 - covers a fresh channel, a reset, and (once, on
+// upgrade) an existing device that never had this field before. Any other value is a real timestamp.
+#define CHANNEL_START_MEASURING_KEY "start_meas_%u" // Format: start_meas_0 (13 chars)
+// Plausibility of externally-supplied (shadow delta / REST) values is checked via
+// ShadowLogic::isPlausibleStartMeasuringUnixTimeMs, which defers to UnixTime::isValid
+// (lib/unix_time) - the same "is this a real unix timestamp" check meter timestamps use.
+
 // Default channel values
 #define DEFAULT_CHANNEL_ACTIVE false
 #define DEFAULT_CHANNEL_0_ACTIVE true // Channel 0 must always be active
@@ -459,6 +468,10 @@ struct ChannelData
   // Channel role
   ChannelRole role;
 
+  // Device-reported "counters have been accumulating continuously since this timestamp" (unix ms).
+  // 0 = unset. See CHANNEL_START_MEASURING_KEY above for the full contract.
+  uint64_t startMeasuringUnixTimeMs;
+
   // Transient runtime flags (NOT persisted to NVS, NOT exported to JSON).
   // Set on inactive->active transition (and on role change for the polarity check).
   // Used by the scheduler / meter task to give a freshly activated channel a
@@ -474,6 +487,7 @@ struct ChannelData
       phase(PHASE_1),
       ctSpecification(CtSpecification()),
       role(DEFAULT_CHANNEL_ROLE),
+      startMeasuringUnixTimeMs(0),
       _pendingPriorityRead(false),
       _pendingPolarityCheck(false)
     {
@@ -488,6 +502,7 @@ struct ChannelData
       phase(DEFAULT_CHANNEL_PHASE),
       ctSpecification(CtSpecification()),
       role(idx == 0 ? DEFAULT_CHANNEL_0_ROLE : DEFAULT_CHANNEL_ROLE),
+      startMeasuringUnixTimeMs(0),
       _pendingPriorityRead(false),
       _pendingPolarityCheck(false)
     {
@@ -612,7 +627,7 @@ namespace Ade7953
     void getChannelLabel(uint8_t channelIndex, char* buffer, size_t bufferSize); // No need for bool return, fallback is the default constructor value if getChannelData failed
     bool getChannelData(ChannelData &channelData, uint8_t channelIndex);
     bool setChannelData(const ChannelData &channelData, uint8_t channelIndex, bool* roleChanged = nullptr, bool armTransients = true);
-    void resetChannelData(uint8_t channelIndex);
+    bool resetChannelData(uint8_t channelIndex);
 
     // Channel data management - JSON operations
     bool getChannelDataAsJson(JsonDocument &jsonDocument, uint8_t channelIndex);

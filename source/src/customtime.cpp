@@ -211,8 +211,7 @@ namespace CustomTime {
     }
 
     bool isUnixTimeValid(uint64_t unixTime, bool isMilliseconds) {
-        if (isMilliseconds) { return (unixTime >= MINIMUM_UNIX_TIME_MILLISECONDS && unixTime <= MAXIMUM_UNIX_TIME_MILLISECONDS); }
-        else { return (unixTime >= MINIMUM_UNIX_TIME_SECONDS && unixTime <= MAXIMUM_UNIX_TIME_SECONDS); }
+        return UnixTime::isValid(unixTime, isMilliseconds);
     }
 
     bool setUnixTime(uint64_t unixSeconds) {

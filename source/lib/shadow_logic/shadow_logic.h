@@ -6,6 +6,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "unix_time.h"
+
 // Pure helpers for the AWS IoT Device Shadow config feature (issue #159).
 //
 // Everything here is free-standing: no Arduino, no ArduinoJson, no FreeRTOS, no
@@ -84,5 +86,21 @@ bool isCommandStale(uint64_t createdAtUnix, uint64_t nowUnix, uint64_t maxAgeSec
 size_t parseChannelList(const char* spec, uint8_t channelCount,
                          uint8_t* validIndices, size_t maxOut,
                          bool* invalidTokenSeen);
+
+// Sanity check for an externally-supplied (shadow delta / REST) value for the
+// per-channel "startMeasuringUnixTimeMs" field: 0 (never set) is always
+// accepted; anything else must be a plausible real unix-ms timestamp per
+// UnixTime::isValid, the same bounds used for meter timestamps elsewhere -
+// catches unit mistakes in either direction (seconds instead of ms, or
+// microseconds/garbage) without a second, field-specific set of bounds.
+bool isPlausibleStartMeasuringUnixTimeMs(uint64_t valueMs);
+
+// Decides whether an incoming JSON field value should overwrite the current
+// startMeasuringUnixTimeMs. Absent (present=false) always means "leave
+// unchanged" - this is what makes a config update that never mentions the
+// field safe, whether it's a partial (shadow delta) or full (bulk PUT)
+// update. Present-but-implausible also leaves it unchanged (caller should
+// warn using the candidate it already has).
+bool shouldAdoptStartMeasuringUnixTimeMs(bool present, uint64_t candidateMs);
 
 } // namespace ShadowLogic
