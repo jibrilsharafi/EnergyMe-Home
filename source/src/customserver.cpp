@@ -2231,7 +2231,10 @@ namespace CustomServer
                 _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid channel index");
                 return;
             }
-            Ade7953::resetChannelData(channelIndex);
+            if (!Ade7953::resetChannelData(channelIndex)) {
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to reset channel data");
+                return;
+            }
 
             LOG_INFO("ADE7953 channel %u data reset via API", channelIndex);
             _sendSuccessResponse(request, "ADE7953 channel data reset successfully");

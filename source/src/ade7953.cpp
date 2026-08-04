@@ -891,10 +891,10 @@ namespace Ade7953
         return true;
     }
 
-    void resetChannelData(uint8_t channelIndex) {
+    bool resetChannelData(uint8_t channelIndex) {
         if (!isChannelValid(channelIndex)) {
             LOG_WARNING("Channel index out of bounds: %lu", channelIndex);
-            return;
+            return false;
         }
 
         // This is a config-only reset; it must not touch the energy-reset boundary
@@ -903,14 +903,18 @@ namespace Ade7953
         ChannelData current(channelIndex);
         if (!getChannelData(current, channelIndex)) {
             LOG_ERROR("Failed to read current data for channel %u before reset; aborting to avoid wiping startMeasuringUnixTimeMs", channelIndex);
-            return;
+            return false;
         }
 
         ChannelData channelData(channelIndex); // Constructor with index sets proper defaults
         channelData.startMeasuringUnixTimeMs = current.startMeasuringUnixTimeMs;
-        setChannelData(channelData, channelIndex);
+        if (!setChannelData(channelData, channelIndex)) {
+            LOG_ERROR("Failed to reset channel data for channel %lu", channelIndex);
+            return false;
+        }
 
         LOG_DEBUG("Successfully reset channel data for channel %lu", channelIndex);
+        return true;
     }
 
     // Channel data management - JSON operations

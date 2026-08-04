@@ -629,7 +629,7 @@ namespace Ade7953
     void getChannelLabel(uint8_t channelIndex, char* buffer, size_t bufferSize); // No need for bool return, fallback is the default constructor value if getChannelData failed
     bool getChannelData(ChannelData &channelData, uint8_t channelIndex);
     bool setChannelData(const ChannelData &channelData, uint8_t channelIndex, bool* roleChanged = nullptr, bool armTransients = true);
-    void resetChannelData(uint8_t channelIndex);
+    bool resetChannelData(uint8_t channelIndex);
 
     // Channel data management - JSON operations
     bool getChannelDataAsJson(JsonDocument &jsonDocument, uint8_t channelIndex);
