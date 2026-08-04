@@ -192,6 +192,7 @@ namespace Ade7953
     // Energy data management
     static void _setEnergyFromPreferences(uint8_t channelIndex);
     static void _saveEnergyToPreferences(uint8_t channelIndex, bool forceSave = false); // Needed for saving data anyway on first setup (energy is 0 and not saved otherwise)
+    static void _clearStartMeasuring(uint8_t channelIndex); // issue #314: reset back to 0 (unset) on every reset
     static void _saveHourlyEnergyToCsv(); // Not per channel so that we open the file only once
     static void _saveEnergyComplete();
     static bool _clearChannelHistoricalData(uint8_t channelIndex);
@@ -1127,6 +1128,21 @@ namespace Ade7953
     // Energy data management
     // ======================
 
+    // Clears startMeasuringUnixTimeMs back to 0 (unset) for a reset channel (issue #314). No
+    // isTimeSynched() check here, deliberately: the _energySaveTask drain loop is the single
+    // place that ever resolves 0 to a real timestamp, once the clock is synced.
+    void _clearStartMeasuring(uint8_t channelIndex) {
+        if (!isChannelValid(channelIndex)) return;
+
+        if (acquireMutex(&_channelDataMutex)) {
+            _channelData[channelIndex].startMeasuringUnixTimeMs = 0;
+            releaseMutex(&_channelDataMutex);
+            _saveChannelDataToPreferences(channelIndex);
+        } else {
+            LOG_ERROR("Failed to acquire mutex to clear channel %u start-measuring timestamp", channelIndex);
+        }
+    }
+
     void resetEnergyValues() {
         if (!acquireMutex(&_meterValuesMutex)) {
             LOG_ERROR("Failed to acquire mutex for meter values");
@@ -1150,7 +1166,10 @@ namespace Ade7953
         preferences.clear();
         preferences.end();
 
-        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) _saveEnergyToPreferences(i);
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
+            _saveEnergyToPreferences(i);
+            _clearStartMeasuring(i); // issue #314
+        }
 
         // Offload heavy file I/O to background task
         _spawnHistoryClearTask(CLEAR_ALL_CHANNELS_SENTINEL);
@@ -1178,6 +1197,7 @@ namespace Ade7953
         releaseMutex(&_meterValuesMutex);
 
         _saveEnergyToPreferences(channelIndex, true); // Force save zeroed values
+        _clearStartMeasuring(channelIndex); // issue #314
 
         // Offload heavy file I/O to background task
         _spawnHistoryClearTask(channelIndex);
@@ -2271,6 +2291,29 @@ namespace Ade7953
                     releaseMutex(&_channelDataMutex);
                 }
                 if (drain) _saveChannelDataToPreferences(i);
+            }
+
+            // Resolve unset start-measuring timestamps (issue #314): the first time the clock is
+            // synced while a channel's value is still 0, set it to now. Covers a fresh channel, a
+            // reset, and (once, on upgrade) an existing device that never had this field before.
+            // Not gated by isChannelActive - unlike the energy-save loop above - so a disabled
+            // channel never gets stuck at 0 forever.
+            if (CustomTime::isTimeSynched()) {
+                uint64_t nowMs = CustomTime::getUnixTimeMilliseconds();
+                for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
+                    bool resolve = false;
+                    if (acquireMutex(&_channelDataMutex)) {
+                        if (_channelData[i].startMeasuringUnixTimeMs == 0) {
+                            _channelData[i].startMeasuringUnixTimeMs = nowMs;
+                            resolve = true;
+                        }
+                        releaseMutex(&_channelDataMutex);
+                    }
+                    if (resolve) {
+                        _saveChannelDataToPreferences(i);
+                        LOG_INFO("Channel %u startMeasuringUnixTimeMs resolved from unset to %llu", i, nowMs);
+                    }
+                }
             }
 
             if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(SAVE_ENERGY_INTERVAL)) > 0) {
@@ -3481,7 +3524,7 @@ namespace Ade7953
         bool needsMigration = false;
 
         snprintf(key, sizeof(key), ENERGY_ACTIVE_IMP_KEY, channelIndex);
-        // This may trigger getBytes(): not enough space in buffer: 4 < 8, but we will handle that by checking the returned value 
+        // This may trigger getBytes(): not enough space in buffer: 4 < 8, but we will handle that by checking the returned value
         double doubleValue = preferences.getDouble(key, -1.0); // Use -1.0 as sentinel (energy can't be negative)
         float floatValue = preferences.getFloat(key, -1.0f);
         LOG_DEBUG("Ch %d activeEnergyImported: getDouble=%.4f, getFloat=%.4f", channelIndex, doubleValue, floatValue);
