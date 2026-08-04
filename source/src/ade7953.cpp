@@ -3330,6 +3330,19 @@ namespace Ade7953
                 hasValidField = true;
             }
 
+            // Device-reported reset boundary validation. Rejects the whole partial update on an
+            // implausible value, consistent with every other field above - a standalone realign
+            // request (just index + this field) must count as a valid field on its own, otherwise
+            // it silently fails the "no valid fields found" check below.
+            if (jsonDocument["startMeasuringUnixTimeMs"].is<uint64_t>()) {
+                uint64_t val = jsonDocument["startMeasuringUnixTimeMs"].as<uint64_t>();
+                if (!ShadowLogic::isPlausibleStartMeasuringUnixTimeMs(val, MIN_PLAUSIBLE_START_MEASURING_UNIX_TIME_MS, MAX_PLAUSIBLE_START_MEASURING_UNIX_TIME_MS)) {
+                    LOG_WARNING("Invalid startMeasuringUnixTimeMs value: %llu", val);
+                    return false;
+                }
+                hasValidField = true;
+            }
+
             if (!hasValidField) {
                 LOG_WARNING("No valid fields found for partial update");
                 return false;
