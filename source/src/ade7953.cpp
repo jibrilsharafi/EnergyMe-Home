@@ -2985,6 +2985,10 @@ namespace Ade7953
             LOG_DEBUG("Migrated channel %u role from old bool keys: %s", channelIndex, channelRoleToString(channelData.role));
         }
 
+        // Device-reported reset boundary (issue #314). 0 default = never set.
+        snprintf(key, sizeof(key), CHANNEL_START_MEASURING_KEY, channelIndex);
+        channelData.startMeasuringUnixTimeMs = preferences.getULong64(key, 0);
+
         preferences.end();
 
         // armTransients=false: this is a boot-time restore, not a user/API change.
@@ -3045,6 +3049,10 @@ namespace Ade7953
         // Channel role
         snprintf(key, sizeof(key), CHANNEL_ROLE_KEY, channelIndex);
         preferences.putUChar(key, static_cast<uint8_t>(channelData.role));
+
+        // Device-reported reset boundary (issue #314)
+        snprintf(key, sizeof(key), CHANNEL_START_MEASURING_KEY, channelIndex);
+        preferences.putULong64(key, channelData.startMeasuringUnixTimeMs);
 
         preferences.end();
 

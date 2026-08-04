@@ -306,6 +306,15 @@
 #define CHANNEL_IS_PRODUCTION_KEY_LEGACY "is_prod_%u" // Format: is_prod_0 (10 chars)
 #define CHANNEL_IS_BATTERY_KEY_LEGACY "is_batt_%u" // Format: is_batt_0 (10 chars)
 
+// Per-channel "counters have been accumulating continuously since this timestamp" (issue #314, edge side).
+// 0 = unset. Resolved to a real unix ms timestamp by the _energySaveTask drain the first time the
+// clock is synced while the value is still 0 - covers a fresh channel, a reset, and (once, on
+// upgrade) an existing device that never had this field before. Any other value is a real timestamp.
+#define CHANNEL_START_MEASURING_KEY "start_meas_%u" // Format: start_meas_0 (13 chars)
+// Sanity floor for externally-supplied (shadow delta) values: rejects a plausible-seconds value sent by
+// mistake instead of ms. 2020-01-01T00:00:00Z in ms - comfortably below any real device timestamp.
+#define MIN_PLAUSIBLE_START_MEASURING_UNIX_TIME_MS 1577836800000ULL
+
 // Default channel values
 #define DEFAULT_CHANNEL_ACTIVE false
 #define DEFAULT_CHANNEL_0_ACTIVE true // Channel 0 must always be active
@@ -459,6 +468,10 @@ struct ChannelData
   // Channel role
   ChannelRole role;
 
+  // Device-reported "counters have been accumulating continuously since this timestamp" (unix ms).
+  // 0 = never set. See CHANNEL_START_MEASURING_KEY above for the full sentinel contract.
+  uint64_t startMeasuringUnixTimeMs;
+
   // Transient runtime flags (NOT persisted to NVS, NOT exported to JSON).
   // Set on inactive->active transition (and on role change for the polarity check).
   // Used by the scheduler / meter task to give a freshly activated channel a
@@ -474,6 +487,7 @@ struct ChannelData
       phase(PHASE_1),
       ctSpecification(CtSpecification()),
       role(DEFAULT_CHANNEL_ROLE),
+      startMeasuringUnixTimeMs(0),
       _pendingPriorityRead(false),
       _pendingPolarityCheck(false)
     {
@@ -488,6 +502,7 @@ struct ChannelData
       phase(DEFAULT_CHANNEL_PHASE),
       ctSpecification(CtSpecification()),
       role(idx == 0 ? DEFAULT_CHANNEL_0_ROLE : DEFAULT_CHANNEL_ROLE),
+      startMeasuringUnixTimeMs(0),
       _pendingPriorityRead(false),
       _pendingPolarityCheck(false)
     {
