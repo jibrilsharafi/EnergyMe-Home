@@ -9,12 +9,12 @@
 // globals. src/customtime.cpp wraps this as CustomTime::isUnixTimeValid for
 // the rest of the firmware; this is the host-testable source of truth (see
 // test/test_unix_time) so the bounds math isn't silently reimplemented
-// elsewhere a "does this look like a real timestamp" question comes up (e.g.
-// ShadowLogic::isPlausibleStartMeasuringUnixTimeMs).
+// elsewhere whenever a "does this look like a real timestamp" question comes
+// up (e.g. ShadowLogic::isPlausibleStartMeasuringUnixTimeMs).
 namespace UnixTime {
 
-constexpr uint64_t MIN_SECONDS = 1000000000ULL;         // 2001-01-01T00:00:00Z
-constexpr uint64_t MIN_MILLISECONDS = 1000000000000ULL; // 2001-01-01T00:00:00Z
+constexpr uint64_t MIN_SECONDS = 1000000000ULL;         // 2001-09-09T01:46:40Z
+constexpr uint64_t MIN_MILLISECONDS = 1000000000000ULL; // 2001-09-09T01:46:40Z
 constexpr uint64_t MAX_SECONDS = 4102444800ULL;         // 2100-01-01T00:00:00Z
 constexpr uint64_t MAX_MILLISECONDS = 4102444800000ULL; // 2100-01-01T00:00:00Z
 
