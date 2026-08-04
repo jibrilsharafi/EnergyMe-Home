@@ -86,11 +86,20 @@ size_t parseChannelList(const char* spec, uint8_t channelCount,
                          bool* invalidTokenSeen);
 
 // Sanity check for an externally-supplied (shadow delta / REST) value for the
-// per-channel "startMeasuringUnixTimeMs" field: 0 (never set) is
-// always accepted; anything else must be at or above minPlausibleMs, a floor
-// the caller sets comfortably below any real device timestamp. Catches the
-// most common unit mistake - a caller sending unix seconds instead of ms,
-// which would land 1000x too small - without hard-coding the floor here.
-bool isPlausibleStartMeasuringUnixTimeMs(uint64_t valueMs, uint64_t minPlausibleMs);
+// per-channel "startMeasuringUnixTimeMs" field: 0 (never set) is always
+// accepted; anything else must fall within [minPlausibleMs, maxPlausibleMs],
+// bounds the caller sets comfortably around any real device timestamp.
+// Catches unit mistakes in either direction - seconds instead of ms (too
+// small) or microseconds/garbage (too large) - without hard-coding the
+// bounds here.
+bool isPlausibleStartMeasuringUnixTimeMs(uint64_t valueMs, uint64_t minPlausibleMs, uint64_t maxPlausibleMs);
+
+// Decides whether an incoming JSON field value should overwrite the current
+// startMeasuringUnixTimeMs. Absent (present=false) always means "leave
+// unchanged" - this is what makes a config update that never mentions the
+// field safe, whether it's a partial (shadow delta) or full (bulk PUT)
+// update. Present-but-implausible also leaves it unchanged (caller should
+// warn using the candidate it already has).
+bool shouldAdoptStartMeasuringUnixTimeMs(bool present, uint64_t candidateMs, uint64_t minPlausibleMs, uint64_t maxPlausibleMs);
 
 } // namespace ShadowLogic

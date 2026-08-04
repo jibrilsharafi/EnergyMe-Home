@@ -311,9 +311,11 @@
 // clock is synced while the value is still 0 - covers a fresh channel, a reset, and (once, on
 // upgrade) an existing device that never had this field before. Any other value is a real timestamp.
 #define CHANNEL_START_MEASURING_KEY "start_meas_%u" // Format: start_meas_0 (13 chars)
-// Sanity floor for externally-supplied (shadow delta) values: rejects a plausible-seconds value sent by
-// mistake instead of ms. 2020-01-01T00:00:00Z in ms - comfortably below any real device timestamp.
+// Sanity bounds for externally-supplied (shadow delta / REST) values: rejects a plausible-seconds
+// value sent by mistake instead of ms (too small) or a microseconds/garbage value (too large).
+// 2020-01-01T00:00:00Z / 2100-01-01T00:00:00Z in ms - comfortably around any real device timestamp.
 #define MIN_PLAUSIBLE_START_MEASURING_UNIX_TIME_MS 1577836800000ULL
+#define MAX_PLAUSIBLE_START_MEASURING_UNIX_TIME_MS 4102444800000ULL
 
 // Default channel values
 #define DEFAULT_CHANNEL_ACTIVE false
@@ -469,7 +471,7 @@ struct ChannelData
   ChannelRole role;
 
   // Device-reported "counters have been accumulating continuously since this timestamp" (unix ms).
-  // 0 = never set. See CHANNEL_START_MEASURING_KEY above for the full sentinel contract.
+  // 0 = unset. See CHANNEL_START_MEASURING_KEY above for the full contract.
   uint64_t startMeasuringUnixTimeMs;
 
   // Transient runtime flags (NOT persisted to NVS, NOT exported to JSON).

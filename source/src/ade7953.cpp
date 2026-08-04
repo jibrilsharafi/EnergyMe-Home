@@ -1010,8 +1010,7 @@ namespace Ade7953
         // Channel role
         jsonDocument["role"] = channelRoleToString(channelData.role);
 
-        // Device-reported reset boundary. Always reported, including the
-        // 0/"never set" and 1/"pending, clock not synced yet" sentinels.
+        // Device-reported reset boundary. Always reported, including the 0/"unset" value.
         jsonDocument["startMeasuringUnixTimeMs"] = channelData.startMeasuringUnixTimeMs;
 
         LOG_VERBOSE("Successfully converted channel data to JSON for channel %u", channelData.index);
@@ -1052,18 +1051,6 @@ namespace Ade7953
             if (jsonDocument["role"].is<const char*>()) {
                 channelData.role = channelRoleFromString(jsonDocument["role"].as<const char*>());
             }
-
-            // Device-reported reset boundary. Rejected (field left unchanged) if
-            // present but implausible, e.g. unix seconds sent instead of ms.
-            if (jsonDocument["startMeasuringUnixTimeMs"].is<uint64_t>()) {
-                uint64_t candidate = jsonDocument["startMeasuringUnixTimeMs"].as<uint64_t>();
-                if (ShadowLogic::isPlausibleStartMeasuringUnixTimeMs(candidate, MIN_PLAUSIBLE_START_MEASURING_UNIX_TIME_MS)) {
-                    channelData.startMeasuringUnixTimeMs = candidate;
-                } else {
-                    LOG_WARNING("Rejected implausible startMeasuringUnixTimeMs %llu for channel %u (looks like seconds, not ms)",
-                                candidate, channelData.index);
-                }
-            }
         } else {
             // Full update - set all fields
             channelData.index = jsonDocument["index"].as<uint8_t>();
@@ -1081,14 +1068,22 @@ namespace Ade7953
 
             // Channel role
             channelData.role = channelRoleFromString(jsonDocument["role"].as<const char*>());
+        }
 
-            // Device-reported reset boundary, same plausibility guard as the
-            // partial path. Rejected -> falls back to 0 (never set) rather than a bad value,
-            // consistent with a full replace treating an absent/invalid field as "unset".
-            uint64_t candidate = jsonDocument["startMeasuringUnixTimeMs"].as<uint64_t>();
-            channelData.startMeasuringUnixTimeMs =
-                ShadowLogic::isPlausibleStartMeasuringUnixTimeMs(candidate, MIN_PLAUSIBLE_START_MEASURING_UNIX_TIME_MS)
-                    ? candidate : 0;
+        // Device-reported reset boundary. Applies to both the partial and full paths above:
+        // channelData is always preloaded with the current value before this function runs (see
+        // setChannelDataFromJson), so absent or implausible (e.g. seconds/microseconds sent
+        // instead of ms) simply leaves it unchanged rather than fabricating a false reset.
+        bool startMeasuringPresent = jsonDocument["startMeasuringUnixTimeMs"].is<uint64_t>();
+        uint64_t startMeasuringCandidate = jsonDocument["startMeasuringUnixTimeMs"].as<uint64_t>();
+        if (ShadowLogic::shouldAdoptStartMeasuringUnixTimeMs(startMeasuringPresent, startMeasuringCandidate,
+                MIN_PLAUSIBLE_START_MEASURING_UNIX_TIME_MS, MAX_PLAUSIBLE_START_MEASURING_UNIX_TIME_MS)) {
+            channelData.startMeasuringUnixTimeMs = startMeasuringCandidate;
+        } else if (startMeasuringPresent) {
+            LOG_WARNING("Rejected implausible startMeasuringUnixTimeMs %llu for channel %u",
+                        startMeasuringCandidate, channelData.index);
+        } else if (!jsonDocument["startMeasuringUnixTimeMs"].isNull()) {
+            LOG_WARNING("Ignored startMeasuringUnixTimeMs for channel %u: wrong type (expected integer)", channelData.index);
         }
     }
 
