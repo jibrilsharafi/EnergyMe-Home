@@ -320,6 +320,33 @@ void test_parse_channel_list_null_invalid_flag_is_safe(void) {
 }
 
 // ============================================================================
+// isPlausibleStartMeasuringUnixTimeMs
+// ============================================================================
+
+static constexpr uint64_t FLOOR_2020_MS = 1577836800000ULL; // 2020-01-01T00:00:00Z
+
+void test_start_measuring_zero_is_always_plausible(void) {
+    TEST_ASSERT_TRUE(isPlausibleStartMeasuringUnixTimeMs(0, FLOOR_2020_MS));
+}
+
+void test_start_measuring_seconds_value_sent_by_mistake_is_rejected(void) {
+    // A unix-seconds "now" (~1.7e9) is ~1000x below a ms floor set around 2020 (~1.58e12).
+    TEST_ASSERT_FALSE(isPlausibleStartMeasuringUnixTimeMs(1700000000ULL, FLOOR_2020_MS));
+}
+
+void test_start_measuring_plausible_ms_value_is_accepted(void) {
+    TEST_ASSERT_TRUE(isPlausibleStartMeasuringUnixTimeMs(1700000000000ULL, FLOOR_2020_MS));
+}
+
+void test_start_measuring_exactly_at_floor_is_accepted(void) {
+    TEST_ASSERT_TRUE(isPlausibleStartMeasuringUnixTimeMs(FLOOR_2020_MS, FLOOR_2020_MS));
+}
+
+void test_start_measuring_one_below_floor_is_rejected(void) {
+    TEST_ASSERT_FALSE(isPlausibleStartMeasuringUnixTimeMs(FLOOR_2020_MS - 1, FLOOR_2020_MS));
+}
+
+// ============================================================================
 // Runner
 // ============================================================================
 
@@ -371,6 +398,12 @@ int main(int argc, char **argv) {
     RUN_TEST(test_parse_channel_list_respects_max_out);
     RUN_TEST(test_parse_channel_list_null_spec_is_safe);
     RUN_TEST(test_parse_channel_list_null_invalid_flag_is_safe);
+
+    RUN_TEST(test_start_measuring_zero_is_always_plausible);
+    RUN_TEST(test_start_measuring_seconds_value_sent_by_mistake_is_rejected);
+    RUN_TEST(test_start_measuring_plausible_ms_value_is_accepted);
+    RUN_TEST(test_start_measuring_exactly_at_floor_is_accepted);
+    RUN_TEST(test_start_measuring_one_below_floor_is_rejected);
 
     return UNITY_END();
 }

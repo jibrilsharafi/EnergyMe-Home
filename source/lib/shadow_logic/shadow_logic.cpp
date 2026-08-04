@@ -113,4 +113,8 @@ size_t parseChannelList(const char* spec, uint8_t channelCount,
     return written;
 }
 
+bool isPlausibleStartMeasuringUnixTimeMs(uint64_t valueMs, uint64_t minPlausibleMs) {
+    return valueMs == 0 || valueMs >= minPlausibleMs;
+}
+
 } // namespace ShadowLogic
