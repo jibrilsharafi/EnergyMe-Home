@@ -86,7 +86,7 @@ size_t parseChannelList(const char* spec, uint8_t channelCount,
                          bool* invalidTokenSeen);
 
 // Sanity check for an externally-supplied (shadow delta / REST) value for the
-// per-channel "startMeasuringUnixTimeMs" field (issue #314): 0 (never set) is
+// per-channel "startMeasuringUnixTimeMs" field: 0 (never set) is
 // always accepted; anything else must be at or above minPlausibleMs, a floor
 // the caller sets comfortably below any real device timestamp. Catches the
 // most common unit mistake - a caller sending unix seconds instead of ms,

@@ -192,7 +192,7 @@ namespace Ade7953
     // Energy data management
     static void _setEnergyFromPreferences(uint8_t channelIndex);
     static void _saveEnergyToPreferences(uint8_t channelIndex, bool forceSave = false); // Needed for saving data anyway on first setup (energy is 0 and not saved otherwise)
-    static void _clearStartMeasuring(uint8_t channelIndex); // issue #314: reset back to 0 (unset) on every reset
+    static void _clearStartMeasuring(uint8_t channelIndex); // reset back to 0 (unset) on every reset
     static void _saveHourlyEnergyToCsv(); // Not per channel so that we open the file only once
     static void _saveEnergyComplete();
     static bool _clearChannelHistoricalData(uint8_t channelIndex);
@@ -1000,7 +1000,7 @@ namespace Ade7953
         // Channel role
         jsonDocument["role"] = channelRoleToString(channelData.role);
 
-        // Device-reported reset boundary (issue #314). Always reported, including the
+        // Device-reported reset boundary. Always reported, including the
         // 0/"never set" and 1/"pending, clock not synced yet" sentinels.
         jsonDocument["startMeasuringUnixTimeMs"] = channelData.startMeasuringUnixTimeMs;
 
@@ -1043,7 +1043,7 @@ namespace Ade7953
                 channelData.role = channelRoleFromString(jsonDocument["role"].as<const char*>());
             }
 
-            // Device-reported reset boundary (issue #314). Rejected (field left unchanged) if
+            // Device-reported reset boundary. Rejected (field left unchanged) if
             // present but implausible, e.g. unix seconds sent instead of ms.
             if (jsonDocument["startMeasuringUnixTimeMs"].is<uint64_t>()) {
                 uint64_t candidate = jsonDocument["startMeasuringUnixTimeMs"].as<uint64_t>();
@@ -1072,7 +1072,7 @@ namespace Ade7953
             // Channel role
             channelData.role = channelRoleFromString(jsonDocument["role"].as<const char*>());
 
-            // Device-reported reset boundary (issue #314), same plausibility guard as the
+            // Device-reported reset boundary, same plausibility guard as the
             // partial path. Rejected -> falls back to 0 (never set) rather than a bad value,
             // consistent with a full replace treating an absent/invalid field as "unset".
             uint64_t candidate = jsonDocument["startMeasuringUnixTimeMs"].as<uint64_t>();
@@ -1128,7 +1128,7 @@ namespace Ade7953
     // Energy data management
     // ======================
 
-    // Clears startMeasuringUnixTimeMs back to 0 (unset) for a reset channel (issue #314). No
+    // Clears startMeasuringUnixTimeMs back to 0 (unset) for a reset channel. No
     // isTimeSynched() check here, deliberately: the _energySaveTask drain loop is the single
     // place that ever resolves 0 to a real timestamp, once the clock is synced.
     void _clearStartMeasuring(uint8_t channelIndex) {
@@ -1168,7 +1168,7 @@ namespace Ade7953
 
         for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
             _saveEnergyToPreferences(i);
-            _clearStartMeasuring(i); // issue #314
+            _clearStartMeasuring(i);
         }
 
         // Offload heavy file I/O to background task
@@ -1197,7 +1197,7 @@ namespace Ade7953
         releaseMutex(&_meterValuesMutex);
 
         _saveEnergyToPreferences(channelIndex, true); // Force save zeroed values
-        _clearStartMeasuring(channelIndex); // issue #314
+        _clearStartMeasuring(channelIndex);
 
         // Offload heavy file I/O to background task
         _spawnHistoryClearTask(channelIndex);
@@ -2293,7 +2293,7 @@ namespace Ade7953
                 if (drain) _saveChannelDataToPreferences(i);
             }
 
-            // Resolve unset start-measuring timestamps (issue #314): the first time the clock is
+            // Resolve unset start-measuring timestamps: the first time the clock is
             // synced while a channel's value is still 0, set it to now. Covers a fresh channel, a
             // reset, and (once, on upgrade) an existing device that never had this field before.
             // Not gated by isChannelActive - unlike the energy-save loop above - so a disabled
@@ -3053,7 +3053,7 @@ namespace Ade7953
             LOG_DEBUG("Migrated channel %u role from old bool keys: %s", channelIndex, channelRoleToString(channelData.role));
         }
 
-        // Device-reported reset boundary (issue #314). 0 default = never set.
+        // Device-reported reset boundary. 0 default = never set.
         snprintf(key, sizeof(key), CHANNEL_START_MEASURING_KEY, channelIndex);
         channelData.startMeasuringUnixTimeMs = preferences.getULong64(key, 0);
 
@@ -3118,7 +3118,7 @@ namespace Ade7953
         snprintf(key, sizeof(key), CHANNEL_ROLE_KEY, channelIndex);
         preferences.putUChar(key, static_cast<uint8_t>(channelData.role));
 
-        // Device-reported reset boundary (issue #314)
+        // Device-reported reset boundary
         snprintf(key, sizeof(key), CHANNEL_START_MEASURING_KEY, channelIndex);
         preferences.putULong64(key, channelData.startMeasuringUnixTimeMs);
 

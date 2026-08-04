@@ -306,7 +306,7 @@
 #define CHANNEL_IS_PRODUCTION_KEY_LEGACY "is_prod_%u" // Format: is_prod_0 (10 chars)
 #define CHANNEL_IS_BATTERY_KEY_LEGACY "is_batt_%u" // Format: is_batt_0 (10 chars)
 
-// Per-channel "counters have been accumulating continuously since this timestamp" (issue #314, edge side).
+// Per-channel "counters have been accumulating continuously since this timestamp".
 // 0 = unset. Resolved to a real unix ms timestamp by the _energySaveTask drain the first time the
 // clock is synced while the value is still 0 - covers a fresh channel, a reset, and (once, on
 // upgrade) an existing device that never had this field before. Any other value is a real timestamp.
