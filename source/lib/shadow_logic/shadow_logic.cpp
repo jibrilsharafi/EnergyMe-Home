@@ -113,12 +113,12 @@ size_t parseChannelList(const char* spec, uint8_t channelCount,
     return written;
 }
 
-bool isPlausibleStartMeasuringUnixTimeMs(uint64_t valueMs, uint64_t minPlausibleMs, uint64_t maxPlausibleMs) {
-    return valueMs == 0 || (valueMs >= minPlausibleMs && valueMs <= maxPlausibleMs);
+bool isPlausibleStartMeasuringUnixTimeMs(uint64_t valueMs) {
+    return valueMs == 0 || UnixTime::isValid(valueMs, /*isMilliseconds=*/true);
 }
 
-bool shouldAdoptStartMeasuringUnixTimeMs(bool present, uint64_t candidateMs, uint64_t minPlausibleMs, uint64_t maxPlausibleMs) {
-    return present && isPlausibleStartMeasuringUnixTimeMs(candidateMs, minPlausibleMs, maxPlausibleMs);
+bool shouldAdoptStartMeasuringUnixTimeMs(bool present, uint64_t candidateMs) {
+    return present && isPlausibleStartMeasuringUnixTimeMs(candidateMs);
 }
 
 } // namespace ShadowLogic

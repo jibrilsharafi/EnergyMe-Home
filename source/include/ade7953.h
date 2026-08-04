@@ -311,11 +311,9 @@
 // clock is synced while the value is still 0 - covers a fresh channel, a reset, and (once, on
 // upgrade) an existing device that never had this field before. Any other value is a real timestamp.
 #define CHANNEL_START_MEASURING_KEY "start_meas_%u" // Format: start_meas_0 (13 chars)
-// Sanity bounds for externally-supplied (shadow delta / REST) values: rejects a plausible-seconds
-// value sent by mistake instead of ms (too small) or a microseconds/garbage value (too large).
-// 2020-01-01T00:00:00Z / 2100-01-01T00:00:00Z in ms - comfortably around any real device timestamp.
-#define MIN_PLAUSIBLE_START_MEASURING_UNIX_TIME_MS 1577836800000ULL
-#define MAX_PLAUSIBLE_START_MEASURING_UNIX_TIME_MS 4102444800000ULL
+// Plausibility of externally-supplied (shadow delta / REST) values is checked via
+// ShadowLogic::isPlausibleStartMeasuringUnixTimeMs, which defers to UnixTime::isValid
+// (lib/unix_time) - the same "is this a real unix timestamp" check meter timestamps use.
 
 // Default channel values
 #define DEFAULT_CHANNEL_ACTIVE false

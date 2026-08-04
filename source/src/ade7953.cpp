@@ -1080,8 +1080,7 @@ namespace Ade7953
         // instead of ms) simply leaves it unchanged rather than fabricating a false reset.
         bool startMeasuringPresent = jsonDocument["startMeasuringUnixTimeMs"].is<uint64_t>();
         uint64_t startMeasuringCandidate = jsonDocument["startMeasuringUnixTimeMs"].as<uint64_t>();
-        if (ShadowLogic::shouldAdoptStartMeasuringUnixTimeMs(startMeasuringPresent, startMeasuringCandidate,
-                MIN_PLAUSIBLE_START_MEASURING_UNIX_TIME_MS, MAX_PLAUSIBLE_START_MEASURING_UNIX_TIME_MS)) {
+        if (ShadowLogic::shouldAdoptStartMeasuringUnixTimeMs(startMeasuringPresent, startMeasuringCandidate)) {
             channelData.startMeasuringUnixTimeMs = startMeasuringCandidate;
         } else if (startMeasuringPresent) {
             LOG_WARNING("Rejected implausible startMeasuringUnixTimeMs %llu for channel %u",
@@ -3336,7 +3335,7 @@ namespace Ade7953
             // it silently fails the "no valid fields found" check below.
             if (jsonDocument["startMeasuringUnixTimeMs"].is<uint64_t>()) {
                 uint64_t val = jsonDocument["startMeasuringUnixTimeMs"].as<uint64_t>();
-                if (!ShadowLogic::isPlausibleStartMeasuringUnixTimeMs(val, MIN_PLAUSIBLE_START_MEASURING_UNIX_TIME_MS, MAX_PLAUSIBLE_START_MEASURING_UNIX_TIME_MS)) {
+                if (!ShadowLogic::isPlausibleStartMeasuringUnixTimeMs(val)) {
                     LOG_WARNING("Invalid startMeasuringUnixTimeMs value: %llu", val);
                     return false;
                 }

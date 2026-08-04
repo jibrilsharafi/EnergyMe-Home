@@ -6,6 +6,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "unix_time.h"
+
 // Pure helpers for the AWS IoT Device Shadow config feature (issue #159).
 //
 // Everything here is free-standing: no Arduino, no ArduinoJson, no FreeRTOS, no
@@ -87,12 +89,11 @@ size_t parseChannelList(const char* spec, uint8_t channelCount,
 
 // Sanity check for an externally-supplied (shadow delta / REST) value for the
 // per-channel "startMeasuringUnixTimeMs" field: 0 (never set) is always
-// accepted; anything else must fall within [minPlausibleMs, maxPlausibleMs],
-// bounds the caller sets comfortably around any real device timestamp.
-// Catches unit mistakes in either direction - seconds instead of ms (too
-// small) or microseconds/garbage (too large) - without hard-coding the
-// bounds here.
-bool isPlausibleStartMeasuringUnixTimeMs(uint64_t valueMs, uint64_t minPlausibleMs, uint64_t maxPlausibleMs);
+// accepted; anything else must be a plausible real unix-ms timestamp per
+// UnixTime::isValid, the same bounds used for meter timestamps elsewhere -
+// catches unit mistakes in either direction (seconds instead of ms, or
+// microseconds/garbage) without a second, field-specific set of bounds.
+bool isPlausibleStartMeasuringUnixTimeMs(uint64_t valueMs);
 
 // Decides whether an incoming JSON field value should overwrite the current
 // startMeasuringUnixTimeMs. Absent (present=false) always means "leave
@@ -100,6 +101,6 @@ bool isPlausibleStartMeasuringUnixTimeMs(uint64_t valueMs, uint64_t minPlausible
 // field safe, whether it's a partial (shadow delta) or full (bulk PUT)
 // update. Present-but-implausible also leaves it unchanged (caller should
 // warn using the candidate it already has).
-bool shouldAdoptStartMeasuringUnixTimeMs(bool present, uint64_t candidateMs, uint64_t minPlausibleMs, uint64_t maxPlausibleMs);
+bool shouldAdoptStartMeasuringUnixTimeMs(bool present, uint64_t candidateMs);
 
 } // namespace ShadowLogic

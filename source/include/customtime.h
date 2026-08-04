@@ -6,9 +6,10 @@
 #include <AdvancedLogger.h>
 #include <Arduino.h>
 #include <Preferences.h>
- 
+
 #include "constants.h"
 #include "utils.h"
+#include "unix_time.h"
 
 // Fallback servers, tried after the default gateway (see CustomTime::begin/_checkAndSyncTime) -
 // NTP_SERVER_1 is a DNS-dependent public pool, NTP_SERVER_2 a raw IP so it still works if DNS fails.
@@ -22,12 +23,6 @@
 #define TIMESTAMP_ISO_FORMAT "%04d-%02d-%02dT%02d:%02d:%02d.%03ldZ" // ISO 8601 format with milliseconds
 #define DATE_FORMAT "%Y-%m-%d"
 #define DATE_ISO_FORMAT "%04d-%02d-%02d"
-
-// Time utilities
-#define MINIMUM_UNIX_TIME_SECONDS 1000000000 // Corresponds to 2001
-#define MINIMUM_UNIX_TIME_MILLISECONDS 1000000000000 // Corresponds to 2001
-#define MAXIMUM_UNIX_TIME_SECONDS 4102444800 // Corresponds to 2100
-#define MAXIMUM_UNIX_TIME_MILLISECONDS 4102444800000 // Corresponds to 2100
 
 namespace CustomTime {
     bool begin();
