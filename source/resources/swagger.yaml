@@ -2324,6 +2324,12 @@ paths:
                   type: string
                   enum: [load, grid, pv, battery, inverter]
                   description: "Channel role: load, grid (+ import/- export), pv (+ generation), battery (+ discharge/- charge), inverter (PV + battery DC-coupled)"
+                startMeasuringUnixTimeMs:
+                  type: integer
+                  format: int64
+                  minimum: 0
+                  description: "Reset boundary for this channel's energy counters, in unix ms. 0 = unset (no boundary). Omit to leave the current value unchanged; the device rejects any non-zero value outside a plausible range (year 2020-2100 in ms) and keeps the current value instead. Normally set by the device itself; write only to realign a device's boundary (e.g. after a firmware upgrade)."
+                  example: 1717000000000
               minProperties: 2
             examples:
               enable_channel:
@@ -3460,6 +3466,12 @@ components:
           description: "Channel role determining measurement behavior and sign convention"
           example: "load"
           default: "load"
+        startMeasuringUnixTimeMs:
+          type: integer
+          format: int64
+          minimum: 0
+          description: "Reset boundary for this channel's energy counters, in unix ms. 0 = unset (no boundary). Always reported. On write, omit to leave the current value unchanged; the device rejects any non-zero value outside a plausible range (year 2020-2100 in ms) and keeps the current value instead. Normally set by the device itself; write only to realign a device's boundary (e.g. after a firmware upgrade)."
+          example: 1717000000000
 
     MeterValues:
       type: object
