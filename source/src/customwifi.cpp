@@ -644,6 +644,13 @@ namespace CustomWifi
 
         case WIFI_EVENT_AP_STADISCONNECTED:
           LOG_DEBUG("SoftAP client disconnected (%d still associated)", WiFi.softAPgetStationNum());
+          // Nothing is watching any more, so the grace window has already delivered whatever
+          // it was going to deliver. Only meaningful while the AP is up: the driver also
+          // posts this event as the AP itself comes down, and feeding it then would hand the
+          // state machine a teardown it has already performed.
+          if (_apRaised && WiFi.softAPgetStationNum() == 0) {
+            _feedProvisioning(WifiProvisioning::Event::AP_LAST_CLIENT_LEFT);
+          }
           continue;
 
         default:
