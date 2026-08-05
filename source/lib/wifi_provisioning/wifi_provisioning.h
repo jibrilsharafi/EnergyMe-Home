@@ -91,7 +91,9 @@ bool shouldTearDownAp(const Context &context, uint64_t nowMs);
 // when it is restarted.
 bool shouldRaiseAp(const Context &context, uint64_t nowMs);
 
-// Applies the teardown, including the cooldown for the unprovisioned case.
+// Applies the teardown: the cooldown for the unprovisioned case, and the settle to
+// STA_ONLY when a grace window ends. Every path that lowers the AP goes through here,
+// so no caller can leave the state describing an AP that is no longer up.
 void tearDownAp(Context &context, uint64_t nowMs);
 
 // Applies the raise.

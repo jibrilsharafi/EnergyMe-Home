@@ -215,6 +215,27 @@ void test_grace_expires_at_the_configured_window(void) {
     TEST_ASSERT_TRUE(shouldTearDownAp(context, 2 * kMinute + WIFI_PROVISIONING_GRACE_MS));
 }
 
+// Regression: shouldTearDownAp() fires, the caller lowers the AP, and the state was left
+// at GRACE forever. Nothing else clears it, so the device kept reporting a grace window
+// for an AP that had been down for hours.
+void test_expired_grace_teardown_settles_on_sta_only(void) {
+    Context context = unprovisionedContext();
+    onEvent(context, Event::CREDENTIALS_SUBMITTED, kMinute);
+    onEvent(context, Event::STA_CONNECTED, 2 * kMinute);
+
+    uint64_t expiresAt = 2 * kMinute + WIFI_PROVISIONING_GRACE_MS;
+    TEST_ASSERT_TRUE(shouldTearDownAp(context, expiresAt));
+    tearDownAp(context, expiresAt);
+
+    TEST_ASSERT_EQUAL(State::STA_ONLY, context.state);
+    TEST_ASSERT_FALSE(context.apRaised);
+
+    // And no cooldown re-raise: only an unprovisioned device broadcasts again, and this
+    // one is on the LAN where the user can reach it.
+    TEST_ASSERT_FALSE(shouldRaiseAp(context, expiresAt + WIFI_PROVISIONING_AP_COOLDOWN_MS));
+    TEST_ASSERT_FALSE(shouldRaiseAp(context, expiresAt + 24ULL * 60ULL * kMinute));
+}
+
 void test_last_client_leaving_ends_grace_immediately(void) {
     Context context = unprovisionedContext();
     onEvent(context, Event::CREDENTIALS_SUBMITTED, kMinute);
@@ -495,6 +516,7 @@ int main(int, char **) {
     RUN_TEST(test_connect_with_ap_up_enters_grace);
     RUN_TEST(test_connect_with_ap_down_goes_straight_to_sta_only);
     RUN_TEST(test_grace_expires_at_the_configured_window);
+    RUN_TEST(test_expired_grace_teardown_settles_on_sta_only);
     RUN_TEST(test_last_client_leaving_ends_grace_immediately);
     RUN_TEST(test_max_lifetime_still_bounds_a_long_grace);
     RUN_TEST(test_losing_sta_during_grace_returns_to_connecting);

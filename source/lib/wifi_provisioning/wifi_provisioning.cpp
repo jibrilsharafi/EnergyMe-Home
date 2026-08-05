@@ -70,6 +70,13 @@ void tearDownAp(Context &context, uint64_t nowMs) {
     context.apRaisedAtMs = 0;
     context.graceStartedAtMs = 0;
 
+    // GRACE is the one state that describes an AP deliberately held up while STA is
+    // already connected, so lowering it settles the device into its steady state. Leaving
+    // the state alone would strand it there: shouldTearDownAp() goes false with apRaised,
+    // and nothing else clears GRACE, so a device that simply ran out its grace window
+    // would report GRACE until the next time it lost its network.
+    if (context.state == State::GRACE) context.state = State::STA_ONLY;
+
     // An unprovisioned device has no other way to be reached, so its AP comes back
     // after a cooldown. An in-service device in AP_ASSIST does not: it gets exactly one
     // bounded window per boot and recovers when its network returns or on a restart.
@@ -135,12 +142,10 @@ State onEvent(Context &context, Event event, uint64_t nowMs) {
             break;
 
         case Event::AP_LAST_CLIENT_LEFT:
-            // Nothing is watching, so the grace window has already delivered
-            // whatever it was going to deliver.
-            if (context.state == State::GRACE) {
-                tearDownAp(context, nowMs);
-                context.state = State::STA_ONLY;
-            }
+            // Nothing is watching, so the grace window has already delivered whatever it
+            // was going to deliver. Only meaningful in GRACE: in every other state the AP
+            // is up because the device needs it, client or no client.
+            if (context.state == State::GRACE) tearDownAp(context, nowMs);
             break;
 
         case Event::TICK:
