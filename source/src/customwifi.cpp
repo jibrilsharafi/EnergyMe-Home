@@ -76,7 +76,16 @@ namespace CustomWifi
   static DNSServer _dnsServer;
   static bool _dnsRunning = false;
   static bool _apRaised = false;
+  // Written from the AsyncTCP task by startScan(), read there too. The WiFi task never touches
+  // it, so the only writer is the request path and no synchronisation is needed for it alone.
   static uint64_t _lastScanStartedMs = 0;
+
+  // Host-order snapshot of the SoftAP address, 0 when no AP is up. Published here so the
+  // auth carve-out filter can compare against it without calling WiFi.softAPIP(), which is an
+  // esp_netif_get_ip_info() call and runs on the AsyncTCP task for every request to every path.
+  // Host order rather than the raw IPAddress dword for the reason _toHostOrder() documents.
+  // A uint32_t is written atomically on this target and readers only compare it for equality.
+  static volatile uint32_t _apAddressHostOrder = 0;
 
   // Private helper functions
   static void _onWiFiEvent(WiFiEvent_t event);
@@ -104,6 +113,8 @@ namespace CustomWifi
   static bool _isPowerReset();
   static void _sendOpenSourceTelemetry();
   static void _resolveApPassword(char* out, size_t outSize);
+  static uint32_t _toHostOrder(const IPAddress &address);
+  static IPAddress _fromHostOrder(uint32_t value);
   static bool _telemetrySent = false; // Ensures telemetry is sent only once per boot
 
   // Network configuration helpers
@@ -206,6 +217,13 @@ namespace CustomWifi
   bool isApServing()
   {
     return WiFi.AP.started() && WiFi.softAPIP() != IPAddress(0, 0, 0, 0);
+  }
+
+  bool isApAddress(const IPAddress &address)
+  {
+    uint32_t apAddress = _apAddressHostOrder;
+    if (apAddress == 0) return false; // No AP up: nothing can match
+    return _toHostOrder(address) == apAddress;
   }
 
   bool isNetworkServiceable()
@@ -1088,6 +1106,11 @@ namespace CustomWifi
 
     _apRaised = true;
 
+    // Publish the address the auth carve-out filter compares against. Set only after softAP()
+    // has succeeded, so isApAddress() is never true for an AP that does not exist, and taken
+    // from the address we configured rather than read back, which keeps it a plain store.
+    _apAddressHostOrder = chosen.address;
+
     // Same signal the WiFiManager portal used to give (its setAPCallback), so the meaning
     // of a fast blue blink does not change for anyone who has seen it before: "I am waiting
     // for you to configure me". PRIO_MEDIUM per D14, so genuine faults still win.
@@ -1107,6 +1130,10 @@ namespace CustomWifi
       _dnsServer.stop();
       _dnsRunning = false;
     }
+
+    // Retire the published address before the interface goes, so the carve-out filter stops
+    // matching on it no later than the AP stops existing.
+    _apAddressHostOrder = 0;
 
     WiFi.softAPdisconnect(true);
     _apRaised = false;

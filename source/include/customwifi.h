@@ -126,6 +126,12 @@ namespace CustomWifi
     // on it regardless of the STA link.
     bool isApServing();
 
+    // Lock-free check against the SoftAP's own address, published by the WiFi task when the AP
+    // is raised and cleared when it comes down. Safe from any task, including the AsyncTCP task
+    // inside a request filter: a plain volatile load and a compare, with no esp_netif call,
+    // unlike WiFi.softAPIP(). Always false while no AP is up.
+    bool isApAddress(const IPAddress &address);
+
     // STA connected OR serving on the SoftAP. This, not isFullyConnected(), is what
     // callers should gate on when the question is "can anyone reach this device":
     // a device serving on the AP with no upstream network is working as intended,

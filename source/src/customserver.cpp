@@ -249,7 +249,10 @@ namespace CustomServer
     // the SoftAP's own address. This is the whole auth carve-out (D3/D9).
     //
     // Runs on the AsyncTCP task for every request to every path, so it must stay a state
-    // read plus an address compare: no mutex, no NVS, no logging, no allocation.
+    // read plus an address compare: no mutex, no NVS, no logging, no allocation. Both reads
+    // are volatile loads of values the WiFi task publishes, which is why isApAddress() exists
+    // instead of WiFi.softAPIP() - the latter reads the netif through esp_netif_get_ip_info()
+    // on every request to every path.
     //
     // IMPORTANT, do not build on a guarantee this does not give: client()->localIP() reads
     // _pcb->local_ip (AsyncTCP.cpp:1341-1352), the destination address lwIP recorded for the
@@ -261,21 +264,19 @@ namespace CustomServer
     // Still preferred over ON_AP_FILTER (`WiFi.localIP() != client()->localIP()`), which
     // returns true for the device's own 127.0.0.1 health probe and true for EVERYTHING
     // whenever WiFi.localIP() is 0.0.0.0 - exactly the unprovisioned case, so it would open
-    // the entire UI on the LAN the moment STA dropped. Comparing against softAPIP() fixes
-    // both of those; it does not turn the check into an interface check.
+    // the entire UI on the LAN the moment STA dropped. Comparing against the SoftAP address
+    // fixes both of those; it does not turn the check into an interface check.
     static bool _isProvisioningOrigin(AsyncWebServerRequest *request)
     {
         // The state check carries the safety: outside UNPROVISIONED there is no bypass at
         // all, whatever the address comparison says.
         if (CustomWifi::getProvisioningState() != WifiProvisioning::State::UNPROVISIONED) return false;
 
-        IPAddress apAddress = WiFi.softAPIP();
-        if (apAddress == IPAddress(0, 0, 0, 0)) return false; // No AP up: nothing to carve out
-
         AsyncClient *client = request->client();
         if (client == nullptr) return false;
 
-        return client->localIP() == apAddress;
+        // False whenever no AP is up, so there is nothing to carve out until one exists.
+        return CustomWifi::isApAddress(client->localIP());
     }
 
     // Registers a route twice: an open handler that only matches provisioning-origin
