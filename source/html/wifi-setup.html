@@ -156,7 +156,10 @@
                 if (message) setStatus(message, kind);
             }
 
-            function pollScan() {
+            // `force` asks the device to touch the radio instead of re-serving its cached set.
+            // Only the first request of a scan sends it: on the polls that follow it would keep
+            // restarting the very scan they are waiting on.
+            function pollScan(force) {
                 // A scan that never reports complete must not leave the button disabled and
                 // the spinner turning forever; the only escape would be a page reload.
                 if (Date.now() - scanStartedAt > 25000) {
@@ -165,7 +168,7 @@
                     return;
                 }
 
-                fetch('/api/v1/network/wifi/scan', { cache: 'no-store' })
+                fetch('/api/v1/network/wifi/scan' + (force ? '?refresh=1' : ''), { cache: 'no-store' })
                     .then(function (r) { return r.json(); })
                     .then(function (data) {
                         if (data.status === 'running') return; // Keep polling
@@ -192,8 +195,8 @@
                 setStatus('Looking for networks...', 'info');
                 scanStartedAt = Date.now();
                 if (scanPoll) clearInterval(scanPoll);
-                scanPoll = setInterval(pollScan, 1200);
-                pollScan();
+                scanPoll = setInterval(function () { pollScan(false); }, 1200);
+                pollScan(true);
             }
 
             // Poll for the outcome after submitting. The AP is deliberately re-raised on the

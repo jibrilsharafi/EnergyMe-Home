@@ -1823,7 +1823,9 @@ namespace CustomServer
         _onOpenDuringProvisioning("/api/v1/network/wifi/scan", HTTP_GET, [](AsyncWebServerRequest *request) {
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
-            CustomWifi::getScanResultsAsJson(doc);
+            // ?refresh is the "Scan again" press, which must touch the radio rather than
+            // re-serve the cached set. The client's polling requests deliberately omit it.
+            CustomWifi::getScanResultsAsJson(doc, request->hasParam("refresh"));
             _sendJsonResponse(request, doc);
         });
 

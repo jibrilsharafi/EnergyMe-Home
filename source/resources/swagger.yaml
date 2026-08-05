@@ -1140,6 +1140,17 @@ paths:
         that has no stored credentials.
       tags:
         - Network
+      parameters:
+        - name: refresh
+          in: query
+          required: false
+          description: |
+            Present on an explicit rescan, absent while polling. A completed result set is
+            otherwise served from cache until it goes stale, so without this a "scan again"
+            action never touches the radio. Ignored when a scan is already running, and when
+            the radio is busy associating the cached set is served rather than discarded.
+          schema:
+            type: boolean
       responses:
         '200':
           description: Scan state and, when complete, the networks found

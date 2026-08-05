@@ -242,12 +242,22 @@ namespace CustomWifi
   // which is what this whole rework exists to avoid. Results are cached so a polling UI
   // does not restart a scan on every request - and, more importantly, so a scan is never
   // started while one is already running.
+  //
+  // Every start, read and free of the scan result buffer happens on the AsyncTCP task, which
+  // is single threaded. That is what makes the buffer safe to touch without a mutex, and it
+  // is why the buffer is NOT freed from the WiFi task on AP teardown: that would race a
+  // getScanResultsAsJson() mid-iteration over results the driver had just freed.
   bool startScan()
   {
     if (WiFi.scanComplete() == WIFI_SCAN_RUNNING) return true; // Already in flight
 
     // Never scan while an association attempt is in flight: esp_wifi_scan_start returns
     // ESP_ERR_WIFI_STATE during connect, and on some paths it aborts the attempt.
+    // _connectDeadlineMs belongs to the WiFi task and is read here, on the AsyncTCP task,
+    // without synchronisation. A uint64_t is two stores on this 32-bit core, so the read can
+    // tear, but only the zero/nonzero distinction is used and both tearing outcomes are
+    // already handled: a spurious nonzero refuses one scan, and a spurious zero lets a scan
+    // through that the driver then rejects with ESP_ERR_WIFI_STATE.
     if (_connectDeadlineMs != 0) {
       LOG_DEBUG("Scan requested during an association attempt - deferring");
       return false;
@@ -264,7 +274,7 @@ namespace CustomWifi
     return true;
   }
 
-  void getScanResultsAsJson(JsonDocument &jsonDocument)
+  void getScanResultsAsJson(JsonDocument &jsonDocument, bool forceRescan)
   {
     int16_t count = WiFi.scanComplete();
 
@@ -280,6 +290,43 @@ namespace CustomWifi
       jsonDocument["status"] = startScan() ? "running" : "unavailable";
       jsonDocument["networks"].to<JsonArray>();
       return;
+    }
+
+    // A completed set is served from cache, which is what stops a polling client restarting a
+    // scan on every request. Two things override that.
+    //
+    // `forceRescan` is the user pressing "Scan again". Without it that button re-renders the
+    // same cached list and never touches the radio, which is exactly the moment a user is
+    // pressing it because the network they want is missing.
+    //
+    // The TTL is about heap, not freshness: a completed set is a calloc() of _scanCount
+    // wifi_ap_record_t (WiFiScan.cpp:126), so it lands in internal RAM and a dense apartment
+    // block makes it several kilobytes, and nothing frees it until another scan starts, which
+    // on a device that provisioned successfully is never.
+    bool stale = (millis64() - _lastScanStartedMs) > WIFI_SCAN_RESULTS_TTL_MS;
+
+    if (forceRescan || stale) {
+      // scanNetworks() calls scanDelete() itself before it starts (WiFiScan.cpp:77), so
+      // starting the scan is what retires the old buffer. Deliberately NOT freeing first: a
+      // rescan that cannot start right now would otherwise throw away a list the user is
+      // still looking at.
+      if (startScan()) {
+        jsonDocument["status"] = "running";
+        jsonDocument["networks"].to<JsonArray>();
+        return;
+      }
+
+      if (stale) {
+        // Nothing is going to refresh this set and the driver holds it in internal RAM, so
+        // give the heap back even though it costs the client one empty poll. Freeing here, on
+        // the AsyncTCP task, is what keeps the buffer single threaded (see startScan).
+        WiFi.scanDelete();
+        jsonDocument["status"] = "unavailable";
+        jsonDocument["networks"].to<JsonArray>();
+        return;
+      }
+
+      // Forced but the radio is busy associating: serve the cached set rather than nothing.
     }
 
     jsonDocument["status"] = "complete";
