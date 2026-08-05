@@ -46,8 +46,6 @@ enum class Event : uint8_t {
     STA_ATTEMPT_FAILED,     // One association attempt gave up
     STA_LOST,               // Was connected, dropped
     CREDENTIALS_SUBMITTED,
-    AP_REQUESTED,           // Button, or a UI toggle while connected
-    AP_DISMISSED,           // User closed it
     AP_LAST_CLIENT_LEFT,    // No stations remain associated to the SoftAP
     TICK                    // Time passed; re-evaluate the timers
 };
@@ -74,7 +72,6 @@ struct Context {
     uint64_t apRaisedAtMs;
     uint64_t graceStartedAtMs;
     uint64_t apCooldownUntilMs;
-    bool apClientEverConnected;
 };
 
 // Sets the initial state from what NVS holds. `nowMs` seeds the AP timers when the
@@ -90,7 +87,8 @@ bool shouldTearDownAp(const Context &context, uint64_t nowMs);
 
 // True when an unprovisioned device with its AP down has waited out the cooldown
 // and should broadcast again. Never true for AP_ASSIST: an in-service device gets
-// one bounded window per boot, and the button is the way to ask for another.
+// exactly one bounded window per boot, and recovers when its network comes back or
+// when it is restarted.
 bool shouldRaiseAp(const Context &context, uint64_t nowMs);
 
 // Applies the teardown, including the cooldown for the unprovisioned case.

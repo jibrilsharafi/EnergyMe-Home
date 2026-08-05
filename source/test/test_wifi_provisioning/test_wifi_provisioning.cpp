@@ -168,8 +168,8 @@ void test_ap_assist_does_not_re_raise_after_teardown(void) {
     uint64_t teardownAt = kMinute + WIFI_PROVISIONING_AP_MAX_LIFETIME_MS;
     tearDownAp(context, teardownAt);
 
-    // A meter whose router died must not broadcast for weeks. The button is the
-    // documented way back.
+    // A meter whose router died must not broadcast for weeks. It gets its window back
+    // when the network returns, or on a restart.
     TEST_ASSERT_FALSE(shouldRaiseAp(context, teardownAt + 24ULL * 60ULL * kMinute));
 }
 
@@ -254,38 +254,6 @@ void test_clock_going_backwards_does_not_expire_timers(void) {
     onEvent(context, Event::STA_CONNECTED, 12 * kMinute);
 
     TEST_ASSERT_FALSE(shouldTearDownAp(context, kMinute));
-}
-
-// ============================================================================
-// On-demand AP
-// ============================================================================
-
-void test_user_request_from_sta_only_enters_ap_assist(void) {
-    Context context = provisionedContext();
-    onEvent(context, Event::STA_CONNECTED, kMinute);
-    TEST_ASSERT_EQUAL(State::STA_ONLY, context.state);
-
-    onEvent(context, Event::AP_REQUESTED, 2 * kMinute);
-    TEST_ASSERT_EQUAL(State::AP_ASSIST, context.state);
-    TEST_ASSERT_TRUE(context.apRaised);
-}
-
-void test_user_request_does_not_downgrade_unprovisioned(void) {
-    Context context = unprovisionedContext();
-    onEvent(context, Event::AP_REQUESTED, kMinute);
-
-    // Demanding the web password from a device still in setup would lock the user out.
-    TEST_ASSERT_EQUAL(State::UNPROVISIONED, context.state);
-}
-
-void test_dismissing_the_ap_during_grace_settles_on_sta_only(void) {
-    Context context = unprovisionedContext();
-    onEvent(context, Event::CREDENTIALS_SUBMITTED, kMinute);
-    onEvent(context, Event::STA_CONNECTED, 2 * kMinute);
-
-    onEvent(context, Event::AP_DISMISSED, 3 * kMinute);
-    TEST_ASSERT_EQUAL(State::STA_ONLY, context.state);
-    TEST_ASSERT_FALSE(context.apRaised);
 }
 
 // ============================================================================
@@ -531,10 +499,6 @@ int main(int, char **) {
     RUN_TEST(test_max_lifetime_still_bounds_a_long_grace);
     RUN_TEST(test_losing_sta_during_grace_returns_to_connecting);
     RUN_TEST(test_clock_going_backwards_does_not_expire_timers);
-
-    RUN_TEST(test_user_request_from_sta_only_enters_ap_assist);
-    RUN_TEST(test_user_request_does_not_downgrade_unprovisioned);
-    RUN_TEST(test_dismissing_the_ap_during_grace_settles_on_sta_only);
 
     RUN_TEST(test_serving_on_the_ap_alone_counts_as_serviceable);
     RUN_TEST(test_serving_on_sta_alone_counts_as_serviceable);

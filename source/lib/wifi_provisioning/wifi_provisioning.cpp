@@ -50,7 +50,6 @@ void init(Context &context, bool hasCredentials, uint64_t nowMs) {
     context.apRaisedAtMs = 0;
     context.graceStartedAtMs = 0;
     context.apCooldownUntilMs = 0;
-    context.apClientEverConnected = false;
 
     if (hasCredentials) {
         context.state = State::STA_CONNECTING;
@@ -64,7 +63,6 @@ void raiseAp(Context &context, uint64_t nowMs) {
     context.apRaised = true;
     context.apRaisedAtMs = nowMs;
     context.apCooldownUntilMs = 0;
-    context.apClientEverConnected = false;
 }
 
 void tearDownAp(Context &context, uint64_t nowMs) {
@@ -73,10 +71,10 @@ void tearDownAp(Context &context, uint64_t nowMs) {
     context.graceStartedAtMs = 0;
 
     // An unprovisioned device has no other way to be reached, so its AP comes back
-    // after a cooldown. An in-service device in AP_ASSIST does not: it gets one
-    // bounded window per boot and the button raises another. That asymmetry is the
-    // whole point of the lifetime bound - a meter whose router died must not sit
-    // there broadcasting for weeks.
+    // after a cooldown. An in-service device in AP_ASSIST does not: it gets exactly one
+    // bounded window per boot and recovers when its network returns or on a restart.
+    // That asymmetry is the whole point of the lifetime bound - a meter whose router
+    // died must not sit there broadcasting for weeks.
     if (context.state == State::UNPROVISIONED) {
         context.apCooldownUntilMs = nowMs + WIFI_PROVISIONING_AP_COOLDOWN_MS;
     } else {
@@ -134,18 +132,6 @@ State onEvent(Context &context, Event event, uint64_t nowMs) {
             context.staRetryAttempts = 0;
             context.apRaiseTriggers = 0;
             context.state = State::STA_CONNECTING;
-            break;
-
-        case Event::AP_REQUESTED:
-            if (!context.apRaised) raiseAp(context, nowMs);
-            // An explicit request from a device that has credentials is assistance,
-            // not provisioning, so it keeps full authentication.
-            if (context.state != State::UNPROVISIONED) context.state = State::AP_ASSIST;
-            break;
-
-        case Event::AP_DISMISSED:
-            tearDownAp(context, nowMs);
-            if (context.state == State::GRACE) context.state = State::STA_ONLY;
             break;
 
         case Event::AP_LAST_CLIENT_LEFT:
