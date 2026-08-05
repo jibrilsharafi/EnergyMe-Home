@@ -110,6 +110,40 @@ void test_failed_credentials_keep_unprovisioned_device_open(void) {
     TEST_ASSERT_TRUE(context.apRaised);
 }
 
+// Regression: `hasCredentials` was a boot snapshot, so a device provisioned during this
+// boot still looked unprovisioned to the branch above. Losing its network then dropped it
+// back into UNPROVISIONED, which opens the auth carve-out on the AP - setup page, scan,
+// diagnostics and the credentials POST, all unauthenticated to anyone who can join an AP
+// whose PSK is the SSID suffix on community hardware - and re-raises that AP every
+// cooldown for as long as the outage lasts. It belongs in AP_ASSIST: it holds the user's
+// data now, and it gets one bounded window.
+void test_device_provisioned_this_boot_falls_back_to_ap_assist(void) {
+    Context context = unprovisionedContext();
+    onEvent(context, Event::CREDENTIALS_SUBMITTED, kMinute);
+    onEvent(context, Event::STA_CONNECTED, 2 * kMinute);
+    TEST_ASSERT_EQUAL(State::GRACE, context.state);
+
+    // End the grace window first, so the AP is genuinely down when the outage starts.
+    // Without this the AP is still up from provisioning and the raise below proves nothing.
+    uint64_t graceEnd = 2 * kMinute + WIFI_PROVISIONING_GRACE_MS;
+    onEvent(context, Event::AP_LAST_CLIENT_LEFT, graceEnd);
+    TEST_ASSERT_EQUAL(State::STA_ONLY, context.state);
+    TEST_ASSERT_FALSE(context.apRaised);
+
+    onEvent(context, Event::STA_LOST, graceEnd + kMinute);
+    for (int i = 0; i < WIFI_PROVISIONING_AP_RAISE_THRESHOLD; i++) {
+        onEvent(context, Event::STA_ATTEMPT_FAILED, graceEnd + 2 * kMinute);
+        // Not even the first failure may reopen the device.
+        TEST_ASSERT_TRUE(context.state != State::UNPROVISIONED);
+    }
+
+    TEST_ASSERT_EQUAL(State::AP_ASSIST, context.state);
+    TEST_ASSERT_TRUE(context.apRaised);
+
+    // The property that was broken: full digest auth on that AP.
+    TEST_ASSERT_FALSE(isAuthBypassAllowed(context.state, true, false));
+}
+
 // ============================================================================
 // Unbounded-AP regression
 // ============================================================================
@@ -483,6 +517,7 @@ int main(int, char **) {
     RUN_TEST(test_ap_raises_only_after_threshold_failures);
     RUN_TEST(test_successful_connection_clears_both_counters);
     RUN_TEST(test_failed_credentials_keep_unprovisioned_device_open);
+    RUN_TEST(test_device_provisioned_this_boot_falls_back_to_ap_assist);
 
     RUN_TEST(test_ap_assist_is_torn_down_at_max_lifetime);
     RUN_TEST(test_ap_assist_does_not_re_raise_after_teardown);

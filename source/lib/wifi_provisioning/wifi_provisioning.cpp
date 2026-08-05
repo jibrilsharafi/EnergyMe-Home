@@ -43,7 +43,7 @@ uint64_t elapsedSince(uint64_t startMs, uint64_t nowMs) {
 }  // namespace
 
 void init(Context &context, bool hasCredentials, uint64_t nowMs) {
-    context.hadCredentialsAtBoot = hasCredentials;
+    context.hasCredentials = hasCredentials;
     context.staRetryAttempts = 0;
     context.apRaiseTriggers = 0;
     context.apRaised = false;
@@ -89,6 +89,14 @@ State onEvent(Context &context, Event event, uint64_t nowMs) {
         case Event::STA_CONNECTED:
             context.staRetryAttempts = 0;
             context.apRaiseTriggers = 0;
+
+            // An association is the only proof the stored credentials work, and it is
+            // what makes a device provisioned regardless of how it booted. Not recording
+            // it here leaves a device provisioned during this boot taking the branch
+            // below meant for a device still in setup, so the next outage would reopen
+            // the auth carve-out on its AP and re-raise that AP every cooldown.
+            context.hasCredentials = true;
+
             if (context.apRaised) {
                 context.state = State::GRACE;
                 context.graceStartedAtMs = nowMs;
@@ -104,7 +112,7 @@ State onEvent(Context &context, Event event, uint64_t nowMs) {
             // Retries driven by the periodic timer bump staRetryAttempts alone.
             context.apRaiseTriggers++;
 
-            if (!context.hadCredentialsAtBoot) {
+            if (!context.hasCredentials) {
                 // Still being provisioned: keep the AP up and let the user try
                 // again rather than demanding the web password mid-setup.
                 context.state = State::UNPROVISIONED;

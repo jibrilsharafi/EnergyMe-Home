@@ -54,7 +54,13 @@ enum class Event : uint8_t {
 
 struct Context {
     State state;
-    bool hadCredentialsAtBoot;
+
+    // Live, not a boot snapshot. Seeded by init() from what the driver has stored, and
+    // set again on every successful association, which is proof the stored credentials
+    // work. A device provisioned during this boot must therefore fall back to AP_ASSIST
+    // when its network later drops, not to UNPROVISIONED: the latter opens the auth
+    // carve-out on the AP and re-raises it every cooldown for as long as the outage lasts.
+    bool hasCredentials;
 
     // These two must stay separate. `_forceReconnectInternal()` fires from the
     // periodic check every 30 s while STA is down and increments the retry
