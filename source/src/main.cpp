@@ -151,10 +151,26 @@ void setup()
   // would be unreachable - the AP would be up with nothing listening on it (D7).
   // Safe only because the health check now gates on isNetworkServiceable() too; on
   // isFullyConnected() it would fail every 30 s with the AP up and restart the device.
-  while (!CustomWifi::isNetworkServiceable())
+  //
+  // Bounded, because "neither interface" is a reachable state, not a transient one: if every
+  // candidate subnet collides, _raiseAp() fails closed and there is no AP to wait for. An
+  // unbounded wait there is the worst possible outcome - no STA, no AP, and no web server on
+  // any interface, so nothing to diagnose or fix it with. Give up and carry on instead: every
+  // downstream service gates on isFullyConnected() by itself, and starting the server anyway
+  // means it is already listening the moment any interface appears.
+  uint64_t networkWaitStartMs = millis64();
+  while (!CustomWifi::isNetworkServiceable() &&
+         (millis64() - networkWaitStartMs) < SETUP_NETWORK_WAIT_TIMEOUT_MS)
   {
     LOG_DEBUG("Waiting for WiFi connection or SoftAP...");
     delay(1000);
+  }
+
+  if (!CustomWifi::isNetworkServiceable())
+  {
+    LOG_ERROR("No STA link and no SoftAP after %llu s - continuing boot anyway. The device is "
+              "unreachable until one of them comes up; the WiFi task keeps retrying both",
+              (uint64_t)(SETUP_NETWORK_WAIT_TIMEOUT_MS / 1000ULL));
   }
 
   // Add custom logging setup after WiFi
