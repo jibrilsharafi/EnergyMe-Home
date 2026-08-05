@@ -209,7 +209,7 @@ Only after Phases 1 to 5 are green on hardware.
 
 ## Implementation status
 
-Everything below is **compile-verified only**. 48/48 native tests pass for the pure logic in `lib/wifi_provisioning`; nothing has run on hardware.
+Everything below is **compile-verified only**. `pio test -e native` is green (352 cases, 49 of them the pure logic in `lib/wifi_provisioning`) and `pio run -e esp32s3-dev` builds; nothing has run on hardware.
 
 Landed: WiFiManager fully removed (`1a9f511`), non-blocking connect and SoftAP lifecycle, D7 boot gate, auth carve-out and provisioning API, WiFi setup page and async scan, AP LED state, Modbus no longer exposed on the AP, documentation and swagger.
 
@@ -217,6 +217,17 @@ Three review passes were run and all three found real defects, since fixed:
 - **Device-bricking.** `onEvent()` set `Context.apRaised` itself on the move to `AP_ASSIST`, and `shouldRaiseAp()` is `UNPROVISIONED`-only, so the predicate-polling caller could never raise the radio. A device with wrong credentials would have come up with no AP, and `main.cpp` blocks before `CustomServer::begin()`, leaving it silent and recoverable only by physical access (`93615eb`). Ownership is now split: the pure library decides, `customwifi` reconciles the radio to it.
 - Byte-order across the `IPAddress` boundary would have raised the AP on a reversed address with an inverted mask, and made the subnet-overlap check unable to fire (`98b7c7b`). Native tests could not catch it: the library is internally consistent and the bug lived at the Arduino boundary.
 - The auth carve-out missed the credentials endpoint itself, so the flow would have 401'd at its last step (`d9227a8`).
+
+A fourth pass reviewed the whole branch against `development` and found more, all fixed:
+- **The auth carve-out reopened on a device that had already been provisioned.** `hadCredentialsAtBoot` was a boot snapshot, so a device provisioned during this boot still took the "still in setup" branch when its network later dropped: back to `UNPROVISIONED`, which opens the carve-out on a meter that now holds the user's data, leaks the home SSID and BSSID through `/diagnostics`, accepts an unauthenticated credentials POST, and re-raises the AP every cooldown for the length of the outage. A successful association now records that the credentials work (`02a4b75`).
+- `tearDownAp()` left `state` untouched, so a grace window that simply expired lowered the AP and left the device reporting `GRACE` forever (`b104528`).
+- `AP_REQUESTED`, `AP_DISMISSED` and `apClientEverConnected` were never fed or read, and both `shouldRaiseAp()` and `tearDownAp()` documented the button as an `AP_ASSIST` device's way to another window. That path does not exist. The events are gone and the comments now describe the real behaviour (`5dc840f`); whether the button should raise the AP is a UX decision left open, not something the docs may keep implying.
+- `AP_LAST_CLIENT_LEFT` was defined but nothing raised it, so the grace window always ran its full five minutes (`6193dbb`).
+- `_raiseAp()` read `_configuration` off the WiFi task without its mutex (`02015ec`).
+- The disconnect pulse and the AP blink are both `PRIO_MEDIUM` and last-write-wins, so a failing link overwrote the AP indication within seconds of raising it (`087d48d`).
+- `setup()` waited forever for an interface, so a fail-closed subnet selection left the device with no server on any interface (`b662b86`).
+- Scan results were never freed, and "Scan again" re-served the cache without touching the radio (`0de0bcd`).
+- `_isProvisioningOrigin()` called `WiFi.softAPIP()`, an `esp_netif_get_ip_info()` call, on the AsyncTCP task for every request to every path (`feb129c`).
 
 Not done, and deliberately so:
 - **3.7 (D2 channel handling).** Only the stop -> `softAPConfig` -> `softAP(ssid,pw,N)` sequence is implemented, which is correct whichever way Bench-1 lands. Choosing the target channel from the scan cache waits for Bench-1.
