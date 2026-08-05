@@ -611,7 +611,12 @@ namespace CustomWifi
 
         case WIFI_EVENT_DISCONNECTED:
           statistics.wifiConnectionError++;
-          Led::pulseBlue(Led::PRIO_MEDIUM);
+          // Not while the SoftAP is up. _ledTask accepts on priority >= current, so this
+          // pulse and the AP's fast blink are last-write-wins at PRIO_MEDIUM, and a link
+          // that keeps failing fires this event exactly while the AP is broadcasting - the
+          // one time the AP indication has something to say. The AP owns the LED until it
+          // comes down, and _tearDownAp() hands it back.
+          if (!_apRaised) Led::pulseBlue(Led::PRIO_MEDIUM);
           LOG_WARNING("WiFi disconnected - auto-reconnect will handle");
           _lastWifiConnectedMillis = 0; // Reset stabilization timer on disconnect
           _feedProvisioning(WifiProvisioning::Event::STA_LOST);
@@ -1156,9 +1161,13 @@ namespace CustomWifi
     WiFi.softAPdisconnect(true);
     _apRaised = false;
 
-    // Drop the provisioning blink. Whatever the STA side is doing owns the LED again.
+    // Drop the provisioning blink and hand the LED back to whatever the STA side is doing.
+    // clearPattern() alone is not enough: it also drops the disconnected pulse that
+    // WIFI_EVENT_DISCONNECTED suppresses while the AP is up, which would leave a device that
+    // is still searching for its network showing nothing at all.
     Led::clearPattern(Led::PRIO_MEDIUM);
     if (isFullyConnected()) Led::setGreen(Led::PRIO_NORMAL);
+    else Led::pulseBlue(Led::PRIO_MEDIUM);
 
     LOG_INFO("SoftAP torn down");
   }
