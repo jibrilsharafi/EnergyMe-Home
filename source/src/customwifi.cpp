@@ -1067,16 +1067,27 @@ namespace CustomWifi
       }
     }
 
+    // Through getConfiguration(), never off _configuration directly: this runs on the WiFi
+    // task while the server task can be inside setConfiguration(), and the fields read below
+    // are char arrays, so an unlocked read can catch a half-written address. A failure to
+    // take the copy means the static IP cannot be considered at all, which is safe: the STA
+    // comparison still applies and the candidate list still fails closed.
+    WifiConfiguration config;
+    bool haveConfig = getConfiguration(config);
+    if (!haveConfig) {
+      LOG_WARNING("Could not read the network configuration - ignoring the static IP for overlap checks");
+    }
+
     bool staticValid = false;
     uint32_t staticAddr = 0;
     uint8_t staticCidr = 24;
-    if (_configuration.useStaticIp && _configuration.ip[0] != '\0') {
+    if (haveConfig && config.useStaticIp && config.ip[0] != '\0') {
       IPAddress parsed;
-      if (parsed.fromString(_configuration.ip)) {
+      if (parsed.fromString(config.ip)) {
         staticValid = true;
         staticAddr = _toHostOrder(parsed);
         IPAddress parsedMask;
-        if (_configuration.subnet[0] != '\0' && parsedMask.fromString(_configuration.subnet)) {
+        if (config.subnet[0] != '\0' && parsedMask.fromString(config.subnet)) {
           uint8_t derived = WifiProvisioning::cidrFromNetmask(_toHostOrder(parsedMask));
           if (derived != 0) staticCidr = derived;
         }
