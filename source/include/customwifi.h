@@ -23,7 +23,7 @@
 #include "wifi_provisioning.h" // Pure provisioning decision logic (Arduino-free, host-testable)
 
 #define WIFI_TASK_NAME "wifi_task"
-#define WIFI_TASK_STACK_SIZE (8 * 1024) // Week-long high-water mark hit 5580 bytes (only 564 bytes free at 6 KB) - bumped to 8 KB for ~30% safety margin on portal/credential paths
+#define WIFI_TASK_STACK_SIZE (8 * 1024) // Week-long high-water mark hit 5580 bytes (only 564 bytes free at 6 KB) on the pre-rework task, so 8 KB for margin. Those were the WiFiManager portal paths and they are gone; the AP lifecycle, DNS and scan paths that replaced them have not been measured on hardware
 #define WIFI_TASK_PRIORITY 5
 
 #define WIFI_CONFIG_PORTAL_SSID "EnergyMe"
@@ -31,9 +31,6 @@
 
 #define WIFI_CONNECT_TIMEOUT_SECONDS 10
 #define WIFI_CONNECT_TIMEOUT_POWER_RESET_SECONDS (5 * 60)  // Extended timeout after power reset (router likely rebooting)
-#define WIFI_PORTAL_TIMEOUT_SECONDS (5 * 60)        // Leave enough time to avoid the user being locked out while providing the credentials, but not too high to ensure we retry the connection to the saved WiFi
-#define WIFI_INITIAL_MAX_RECONNECT_ATTEMPTS 3       // How many times to try connecting (with timeout) before giving up
-#define WIFI_MAX_CONSECUTIVE_RECONNECT_ATTEMPTS 5   // Maximum WiFi reconnection attempts before restart
 #define WIFI_DISCONNECT_DELAY (15 * 1000)           // Delay after WiFi disconnected to allow automatic reconnection
 #define WIFI_AP_LIFECYCLE_TICK_MS (10 * 1000)       // How often the AP lifetime/grace predicates are evaluated while the SoftAP is up
 #define WIFI_SCAN_MS_PER_CHANNEL 120                // Per-channel dwell. The default (~300 ms) makes a full scan long enough that a phone on the SoftAP times out waiting
