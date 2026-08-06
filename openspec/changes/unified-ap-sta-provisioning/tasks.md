@@ -2,7 +2,7 @@
 
 Phase 0 is a throwaway instrumented build, preserved on branch `feat/bench-apsta-probe` at tag `bench/apsta-probe-v1`.
 
-**Revised sequencing.** The original plan gated all implementation on the Phase 0 bench results. At the user's direction (no hardware available), implementation proceeds ahead of the bench and everything is tested together at the end. D13 in `design.md` records the two decisions that were narrowed so a bench answer cannot invalidate built code. Bench-2 remains the one gate that can invalidate the architecture rather than adjust it.
+**Revised sequencing.** The original plan gated all implementation on the Phase 0 bench results. At the user's direction (no hardware available), implementation proceeds ahead of the bench and everything is tested together at the end. D13 in `design.md` records the two decisions that were narrowed so a bench answer cannot invalidate built code. Bench-2 was the one gate that could invalidate the architecture rather than adjust it; it is **closed** — see the hardware validation section.
 
 Phase 2 was moved ahead of Phase 1: `pio test -e native` is the only verification available without hardware, so the phase that produces runnable tests came first. Every phase after that is **compile-verified only** until the bench runs.
 
@@ -69,7 +69,7 @@ Grep the capture for `[BENCH]`. Every probe line carries that prefix; AdvancedLo
   - Primary channel **unchanged** confirms the refutation. D2 stays as written (stop, reconfigure, restart on N).
   - Primary channel **changed** means the in-place re-raise works. Simplify D2 and re-test whether clients survive.
 
-### Bench-2: APSTA heap in the unprovisioned-first-boot configuration (**pass/fail, pre-committed**)
+### Bench-2: APSTA heap in the unprovisioned-first-boot configuration (**CLOSED — obsolete, superseded by the hardware runs**)
 
 - [ ] 0.6 Erase NVS WiFi credentials so the device boots genuinely unprovisioned (`esp_wifi_restore()` in the probe build, or `pio run -t erase` then reflash).
 - [ ] 0.7 Force the D7 code path: allow boot to proceed past the WiFi wait with AP raised and STA down, so `CustomTime`, `IssueRegistry`, `CustomServer`, `ModbusTcp`, `Mqtt`, `CustomMqtt`, `InfluxDbClient` all start with no route. This is the configuration that matters, not steady-state APSTA.
@@ -87,7 +87,7 @@ Grep the capture for `[BENCH]`. Every probe line carries that prefix; AdvancedLo
 
 ### Decision gate
 
-- [ ] 0.15 Write results into `review-findings.md`. If Bench-2 fails, stop and reopen the descoped alternative (non-blocking WiFiManager portal via `setConfigPortalBlocking(false)` + `process()`, verified at `WiFiManager.h:371`, `:272`). If Bench-3 fails, proceed with the amended UX only.
+- [x] 0.15 ~~Write results into `review-findings.md`. If Bench-2 fails, stop and reopen the descoped alternative.~~ Moot: Bench-2 and Bench-3 are both closed from the hardware sessions, and the descoped WiFiManager alternative is not needed.
 - [ ] 0.16 Delete `feat/bench-apsta-probe` **only after the bench has run**. The branch and tag `bench/apsta-probe-v1` are the reproducible history point for the probe binary; deleting them before the measurements exist would throw away the only build that can take them.
 
 ---
@@ -210,7 +210,7 @@ Only after Phases 1 to 5 are green on hardware.
 
 ## Implementation status
 
-`pio test -e native` is green (354 cases, 51 of them the pure logic in `lib/wifi_provisioning`) and `pio run -e esp32s3-dev` builds. **The feature has now run on hardware** — see "Hardware validation" below. F1, F2 and F3 pass; F4, F5 and F6 remain.
+`pio test -e native` is green (354 cases, 54 of them the pure logic in `lib/wifi_provisioning`) and `pio run -e esp32s3-dev` builds. **The feature has now run on hardware** — see "Hardware validation" below. F1, F2, F3 and F6 pass; F4 and F7 are closed as obsolete; only F5 remains.
 
 Landed: WiFiManager fully removed (`1a9f511`), non-blocking connect and SoftAP lifecycle, D7 boot gate, auth carve-out and provisioning API, WiFi setup page and async scan, AP LED state, Modbus no longer exposed on the AP, documentation and swagger.
 
@@ -286,7 +286,9 @@ In none of them does the client disconnect at the association; it leaves 36-83 s
 - **F5**, 30 min AP-only with zero reboots and a flat `_consecutiveResetCount`. Partly covered by today's sessions (the device sat AP-only for several minutes at a time without restarting) but not yet run as a continuous 30-minute observation.
 - **Bench-3 on iOS.** Android and macOS both pass; iOS is expected to behave the same and no device is available to check.
 
-**F4 / Bench-2 should be dropped rather than run.** Its 40 KB / 32 KB thresholds trace to commit `546c9d6` with no measurement behind them, and the shipping firmware already reads ~33 KB idle and ~31 KB under load with **no AP running at all** — so the gate as written fails a device that works. Either re-derive the numbers from a real same-binary STA-only baseline, or delete the gate.
+**F4 / Bench-2 CLOSED — obsolete, not run.** The gate was a proxy for "will APSTA run on this SoC without starving internal RAM", written before any hardware was available. Hardware is available now and the answer is direct: the feature has run through repeated full provisioning cycles, with the AP and STA up together, a phone loading the whole UI over the SoftAP, and Modbus and the web server serving throughout, across many sessions on 2026-08-06 without a single heap-related fault. A measured proxy cannot overturn the observation it was standing in for.
+
+Its thresholds were never defensible anyway: the 40 KB / 32 KB figures trace to commit `546c9d6` with no measurement behind them, and the shipping firmware reads ~33 KB idle and ~31 KB under load with **no AP running at all**, so the gate fails its own baseline.
 
 ---
 
@@ -309,12 +311,12 @@ What has to go on hardware, and what each flash actually proves. Kept current as
 | F1 | Phase 5 | **First end-to-end run.** Unprovisioned boot -> AP raised on the selected subnet -> phone associates -> captive probe redirects -> credentials submitted -> STA associates -> AP torn down. This is the whole feature in one pass. | Needs the WiFi driver, lwIP, DHCP, a real phone's captive-portal detection |
 | F2 | Phase 5 | **AP_ASSIST path.** Flash with deliberately wrong stored credentials: 5 failed attempts -> AP raised -> full digest auth still required on the AP (not the unprovisioned carve-out) | Needs real association failures and their timing |
 | F3 | Phase 4 or 5 | **Bench-4, ships-blocking.** LAN host with a static route to the AP subnet gets 401, not 200. The auth carve-out's IP compare must not be satisfiable from the STA netif | lwIP weak-host-model behaviour has no host equivalent |
-| F4 | Phase 5 | **Bench-2, the heap gate.** `heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL \| MALLOC_CAP_8BIT)` in the APSTA unprovisioned configuration under web load | Internal PBUF pressure is invisible off-target. Note 1a9f511 freed 16,288 B of internal RAM, so headroom is materially better than when the gate was written |
+| F4 | Phase 5 | **Bench-2, the heap gate.** | **CLOSED, not run** — a proxy for "does APSTA run on this SoC", answered directly by the feature running on hardware |
 | F5 | Phase 5 | **Phase 1 backstop.** 30 min AP-only: zero reboots, `_consecutiveResetCount` flat | Needs the real health check on a real timer |
 | F6 | Phase 6 | **Bench-3.** Does the phone stay on the AP after STA connects, iOS and Android? Decides whether the grace window survives | Phone OS behaviour |
 | F7 | Phase 6 | **Bench-1, informational.** Does `softAP(ssid,pw,N)` move a live AP? Selects the D2 implementation | **CLOSED, not run** — no client drop observed at STA-connect, so there is nothing to select between |
 
-**Minimum viable path:** F1 + F3 + F4 in one session after Phase 5. F3 and F4 are the two that can block shipping; F1 is the one that tells us the feature works at all. The rest can follow.
+**Minimum viable path:** F1 + F3 in one session after Phase 5. F3 is the one that can block shipping; F1 is the one that tells us the feature works at all. ~~F4~~ is closed as obsolete. Both have passed.
 
 **What host tests cover instead**, so the flash sessions are about integration rather than logic: everything in `lib/wifi_provisioning` (state transitions, both retry counters, grace and lifetime arithmetic, subnet overlap and selection, the auth-bypass predicate including OTA-never-carved-out, the DNS predicate). Run with `pio test -e native` **from WSL**. Anything that touches `WiFi.`, `esp_wifi_`, lwIP or `AsyncWebServer` cannot be host-tested and is what the flash list above exists for.
 
@@ -324,7 +326,7 @@ What has to go on hardware, and what each flash actually proves. Kept current as
 
 | Gate | Blocks | Pass criterion | Status |
 |---|---|---|---|
-| Bench-2 | Everything after Phase 0 | `heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL \| MALLOC_CAP_8BIT)` >= 40 KB steady, never < 32 KB under load, unprovisioned-first-boot config | outstanding |
+| Bench-2 | Everything after Phase 0 | ~~>= 40 KB steady, never < 32 KB under load~~ | **CLOSED** — obsolete. The feature runs on hardware, which is what the gate was a proxy for |
 | Bench-3 | The grace window in D1/D4 | Phone stays associated >= 60 s after STA connect, iOS and Android | **PASS** — Android and macOS, 2026-08-06. iOS untested, expected to match |
 | Bench-1 | D2 implementation choice | Informational | **CLOSED** — superseded, the client drop it mitigates does not occur |
 | Bench-4 | Phase 4 ship | LAN host via static route gets 401, not 200 | **PASS** — unreachable entirely, 2026-08-06 |
