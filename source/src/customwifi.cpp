@@ -706,6 +706,14 @@ namespace CustomWifi
             _feedProvisioning(WifiProvisioning::Event::CREDENTIALS_SUBMITTED);
             _reconnectAttempts = 0;
             _disconnectDeadlineMs = 0;
+
+            // Never give a user-submitted attempt the post-power-cut timeout. That window
+            // exists for a router still booting after a mains cut, and a mains-wired meter
+            // reports POWERON on every boot - so a first provisioning attempt inherited it
+            // and a wrong password took five minutes to resolve instead of ten seconds.
+            // Somebody is standing in front of the device typing: their router is up.
+            _powerResetGraceUsed = true;
+
             WiFi.disconnect(false);
             _startStaAttempt();
           }
