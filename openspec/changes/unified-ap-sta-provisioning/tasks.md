@@ -256,7 +256,21 @@ Plus a reported-state defect: `STA_LOST` demoted unconditionally, so a device in
 
 **Bench notes.** Early runs showed repeated `BROWNOUT_RST`; that was the programmer's 3.3 V rail and a poor physical connection, fixed by the user, not a firmware fault. `netsh wlan show networks` served a stale cache that reported the AP absent while association to it succeeded immediately — AP presence must be probed by associating, never by scanning.
 
-**Still outstanding:** F4 (Bench-2 heap gate), F5 (extended AP-only stability), F6 (Bench-3 phone stickiness, needs a real phone), Bench-1 (informational).
+**Second hardware session, 2026-08-06 (real phone).** F1 re-run end to end from an Android phone and **passes**: setup page, scan, credentials, association, the connected view, and `energyme.local` reachable afterwards.
+
+**F6 / Bench-3 PASS.** The phone stayed associated to the SoftAP after STA connected — the user's words were that the meter's network was still there and the phone "takes a bit" to go back to the home WiFi. The grace window therefore delivers what D1/D4 assumed, and the A1 amendment is not needed.
+
+**Five more defects, all outside `lib/wifi_provisioning`:**
+
+4. **The radio broadcast a SoftAP nobody raised.** `persistent(true)` leaves ESP-IDF storage on `WIFI_STORAGE_FLASH`, so `esp_wifi_set_mode(APSTA)` restored the last SoftAP config from NVS and beaconed it at boot on the default `192.168.4.1`. Confirmed live: a device in `STA_ONLY` on the LAN reported `apServing: true, apIp: 192.168.4.1` and served its interface there. Because `_apAddressHostOrder` is 0 for an AP nobody raised, both the Modbus TCP block and the auth carve-out read requests arriving on it as LAN traffic. Fixed with `softAPdisconnect(true)` immediately after the mode is set.
+5. **A user-submitted association inherited the post-power-cut timeout.** A mains-wired meter reports `POWERON` on every boot, so the first credentials submitted through the setup page waited 300 s to resolve. The page can learn nothing during that window, which is what produced defect 6. Now consumed before the submitted attempt.
+6. **The setup page claimed a success it could not prove.** With the status endpoint 401ing throughout a long attempt, the page's fallback told the user the meter had joined and the light was green while it was still blinking blue and getting nowhere. Now reports honestly and points at the LED.
+7. **The periodic reconnect never counted its failures.** `_forceReconnectInternal()` calls `WiFi.reconnect()` with no deadline armed, so nothing fed `STA_ATTEMPT_FAILED`. A device retrying only from there accumulated zero `apRaiseTriggers` and **never raised its SoftAP** — observed as a meter with a wrong password unreachable indefinitely, no LAN address and no AP. Now re-enters `_startStaAttempt()`.
+8. **A WiFi reset could leave the device unreachable.** `setRestartSystem()` logged "restart delayed: minimum uptime not reached" and **dropped the request**; nothing retried it. The credentials were already erased, so the device kept retrying an association it could no longer make with a context that still claimed `hasCredentials`. Fixed on both sides: the request is now held and retried from the maintenance loop, and `resetWifi()` feeds a new `CREDENTIALS_CLEARED` event so the AP comes back regardless of the restart.
+
+Also: a rejected WPA2 password reports `4WAY_HANDSHAKE_TIMEOUT`, not `AUTH_FAIL`, so the setup page now maps the driver's codes to plain language and keeps the raw code alongside.
+
+**Still outstanding:** F4 (Bench-2 heap gate — see the note below, the thresholds are unsubstantiated), F5 (extended AP-only stability), Bench-1 (informational).
 
 ---
 
@@ -295,7 +309,7 @@ What has to go on hardware, and what each flash actually proves. Kept current as
 | Gate | Blocks | Pass criterion | Status |
 |---|---|---|---|
 | Bench-2 | Everything after Phase 0 | `heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL \| MALLOC_CAP_8BIT)` >= 40 KB steady, never < 32 KB under load, unprovisioned-first-boot config | outstanding |
-| Bench-3 | The grace window in D1/D4 | Phone stays associated >= 60 s after STA connect, iOS and Android | outstanding, needs a real phone |
+| Bench-3 | The grace window in D1/D4 | Phone stays associated >= 60 s after STA connect, iOS and Android | **PASS** — Android, 2026-08-06. iOS untested |
 | Bench-1 | D2 implementation choice | Informational | outstanding |
 | Bench-4 | Phase 4 ship | LAN host via static route gets 401, not 200 | **PASS** — unreachable entirely, 2026-08-06 |
 | Phase 1 bench | D7 / Phase 6.8 | Extended AP-only, zero reboots, reset counter flat | partial: health check confirmed green AP-only; the long run is outstanding |
