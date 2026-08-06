@@ -18,11 +18,12 @@
 
     <title>EnergyMe - Setup</title>
     <style>
-        /* Only what the shared sheets do not already cover. Every asset here is served
-           from the SoftAP, so nothing may depend on a CDN. */
+        /* Only what the shared sheets do not cover. Every asset here is served from the
+           SoftAP, so nothing may depend on a CDN. */
         .setup-box { width: 30rem; }
 
-        .choice-row { display: flex; flex-direction: column; gap: .6rem; }
+        .stack { display: flex; flex-direction: column; align-items: stretch; gap: .35rem; }
+        .stack .buttonForm { width: 100%; }
 
         .kv { display: flex; justify-content: space-between; gap: 1rem; padding: .45rem 0; border-bottom: 1px solid #eee; }
         .kv:last-child { border-bottom: none; }
@@ -33,11 +34,18 @@
         .network-list li { display: flex; align-items: center; gap: .5rem; padding: .7rem .85rem; cursor: pointer; border-bottom: 1px solid #eee; }
         .network-list li:last-child { border-bottom: none; }
         .network-list li:hover, .network-list li.selected { background: #f0f0f0; }
-        /* min-width:0 is load-bearing: flex items default to min-width:auto, so a long
-           SSID refuses to shrink and pushes the row wider than the phone. body has
-           overflow-x:hidden, so that overflow is silently clipped rather than scrollable. */
+        /* min-width:0 is load-bearing: flex items default to min-width:auto, so a long SSID
+           refuses to shrink and pushes the row wider than the phone. body sets
+           overflow-x:hidden, so that overflow is clipped rather than scrollable. */
         .network-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .network-meta { flex: none; font-size: .78rem; color: #808080; white-space: nowrap; }
+        .network-meta { flex: none; display: flex; align-items: center; gap: .45rem; font-size: .8rem; }
+
+        .bars { display: inline-flex; align-items: flex-end; gap: 2px; height: .8rem; }
+        .bars .bar { display: block; width: 3px; background: #d0d0d0; border-radius: 1px; }
+        .bars .bar.on { background: var(--green); }
+        .bars .bar-1 { height: .35rem; }
+        .bars .bar-2 { height: .58rem; }
+        .bars .bar-3 { height: .8rem; }
 
         .status-box { padding: .8rem 1rem; border-radius: 10px; margin-bottom: 1rem; display: none; }
         .status-box.visible { display: block; }
@@ -46,12 +54,15 @@
         .status-ok { background: #e9f7ef; border: 1px solid #b7e1c6; }
 
         .muted { color: #808080; font-size: .85rem; }
-        .full-width { width: 100%; }
         .row-gap { margin-bottom: .85rem; }
         .spinner { display: inline-block; width: .8rem; height: .8rem; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -1px; }
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        .where { font-size: 1.1rem; font-weight: bold; word-break: break-all; }
+        .where { font-size: 1.15rem; font-weight: bold; word-break: break-all; }
+        .led { display: inline-block; width: .7rem; height: .7rem; border-radius: 50%; vertical-align: -1px; margin-right: .3rem; }
+        .led-blue { background: var(--blue); }
+        .led-green { background: var(--green); }
+        .led-legend { display: flex; flex-direction: column; gap: .3rem; }
 
         @media screen and (max-width: 768px) {
             .setup-box { width: 95%; }
@@ -63,21 +74,20 @@
     <div class="header">EnergyMe</div>
     <div class="subheader">Home</div>
 
-    <!-- Landing: say what this device is, then offer the two things you can do here. -->
-    <div id="welcome" class="section-box setup-box">
+    <!-- Landing -->
+    <div id="welcome" class="section-box setup-box" style="display:none;">
         <h2>Welcome</h2>
-        <p id="welcome-line">This meter is not connected to your WiFi yet.</p>
-
-        <div class="choice-row">
-            <button id="go-setup" class="button button-primary full-width" type="button">Connect it to WiFi</button>
-            <button id="go-device" class="button button-secondary full-width" type="button">See the device</button>
+        <p>This meter is not connected to your WiFi yet.</p>
+        <div class="stack">
+            <button id="go-setup" class="buttonForm" type="button">Connect it to WiFi</button>
+            <button id="go-device" class="buttonForm" type="button">See the device</button>
         </div>
     </div>
 
-    <!-- Device panel: only what is readable without authentication on the SoftAP. -->
+    <!-- Device panel: only what is readable without authentication on the SoftAP -->
     <div id="device" class="section-box setup-box" style="display:none;">
         <h2>Device</h2>
-        <dl id="device-info" style="margin:0;">
+        <dl style="margin:0;">
             <div class="kv"><dt>Model</dt><dd>EnergyMe - Home</dd></div>
             <div class="kv"><dt>Device ID</dt><dd id="d-id">-</dd></div>
             <div class="kv"><dt>Firmware</dt><dd id="d-fw">-</dd></div>
@@ -88,7 +98,7 @@
         <p class="muted" style="margin-top:1rem;">
             The full dashboard needs the meter on your own network. Connect it first, then open it there.
         </p>
-        <button id="back-1" class="button button-secondary full-width" type="button">Back</button>
+        <div class="stack"><button id="back-1" class="buttonForm" type="button">Back</button></div>
     </div>
 
     <!-- Setup -->
@@ -98,8 +108,8 @@
 
         <div id="status" class="status-box"></div>
 
-        <div class="row-gap">
-            <button id="rescan" class="button button-secondary full-width" type="button">Scan again</button>
+        <div class="stack row-gap">
+            <button id="rescan" class="buttonForm" type="button">Scan again</button>
         </div>
 
         <ul id="networks" class="network-list"></ul>
@@ -107,53 +117,73 @@
         <form id="credentials-form" autocomplete="off">
             <div class="row-gap">
                 <label class="form-label" for="ssid">Network name</label>
-                <input class="form-input full-width" type="text" id="ssid" name="ssid" maxlength="31" required
+                <input class="form-input" style="width:100%;" type="text" id="ssid" name="ssid" maxlength="31" required
                     placeholder="Pick one above, or type it in">
             </div>
             <div class="row-gap">
                 <label class="form-label" for="password">Password</label>
-                <input class="form-input full-width" type="password" id="password" name="password" maxlength="63"
+                <input class="form-input" style="width:100%;" type="password" id="password" name="password" maxlength="63"
                     placeholder="Leave empty for an open network">
             </div>
-            <button id="submit" class="button button-primary full-width" type="submit">Connect</button>
+            <div class="stack">
+                <button id="submit" class="buttonForm" type="submit">Connect</button>
+                <button id="back-2" class="buttonForm" type="button">Back</button>
+            </div>
         </form>
-
-        <button id="back-2" class="button button-secondary full-width" type="button" style="margin-top:.85rem;">Back</button>
     </div>
 
-    <!-- Where to find it afterwards. Shown on submit, not after a poll: the moment the
-         credentials land the device leaves UNPROVISIONED, which closes the auth carve-out,
-         so this page can no longer read the result over the SoftAP. -->
+    <!-- Waiting for the association to resolve -->
+    <div id="working" class="section-box setup-box" style="display:none;">
+        <h2>Connecting</h2>
+        <p>The meter is joining <strong id="work-ssid">your network</strong>.</p>
+        <div class="status-box visible status-info">
+            <span class="spinner"></span> Waiting for it to associate. This takes a few seconds.
+        </div>
+        <p class="muted led-legend">
+            <span><span class="led led-blue"></span> Blinking blue means it is still working.</span>
+            <span><span class="led led-green"></span> Solid green means it is connected.</span>
+        </p>
+    </div>
+
+    <!-- Connected -->
     <div id="done" class="section-box setup-box" style="display:none;">
-        <h2>Credentials sent</h2>
-        <p>The meter is joining <strong id="done-ssid">your network</strong>.
-            Watch the light on the device: <strong>green</strong> means it is connected.</p>
+        <h2>Connected</h2>
+        <p>The meter joined <strong id="done-ssid">your network</strong>. The light is
+            <span class="led led-green"></span> <strong>solid green</strong>.</p>
 
         <div class="status-box visible status-ok">
-            <p style="margin:0 0 .35rem;">Then find it at</p>
+            <p style="margin:0 0 .35rem;">Find it at</p>
             <p class="where" id="done-where">http://energyme.local</p>
+            <p class="muted" id="done-alt" style="margin:.35rem 0 0;"></p>
         </div>
 
         <p class="muted">
-            Rejoin your usual WiFi on this phone, then open the address above. If the name does not
-            work, look for the meter in your router's device list.
+            Rejoin your usual WiFi on this phone, then open the address above. This setup network
+            stays up for a few minutes and then disappears on its own.
         </p>
-        <p class="muted">
-            Light still red after a minute? The password was probably wrong. This setup network comes
-            back so you can try again.
-        </p>
+    </div>
 
-        <button id="retry" class="button button-secondary full-width" type="button">Enter different details</button>
+    <!-- Failed -->
+    <div id="failed" class="section-box setup-box" style="display:none;">
+        <h2>Could not connect</h2>
+        <div class="status-box visible status-error">
+            <p style="margin:0;" id="fail-reason">The meter could not join that network.</p>
+        </div>
+        <p class="muted">
+            The light is still <span class="led led-blue"></span> blinking blue. The password is the
+            usual cause. This setup network stays up, so you can try again straight away.
+        </p>
+        <div class="stack"><button id="retry" class="buttonForm" type="button">Try again</button></div>
     </div>
 
     <script>
         (function () {
             'use strict';
 
-            var welcomeEl = document.getElementById('welcome');
-            var deviceEl = document.getElementById('device');
-            var setupEl = document.getElementById('setup');
-            var doneEl = document.getElementById('done');
+            var views = {};
+            ['welcome', 'device', 'setup', 'working', 'done', 'failed'].forEach(function (id) {
+                views[id] = document.getElementById(id);
+            });
 
             var statusEl = document.getElementById('status');
             var listEl = document.getElementById('networks');
@@ -163,14 +193,13 @@
             var rescanEl = document.getElementById('rescan');
             var formEl = document.getElementById('credentials-form');
 
-            var scanPoll = null;
-            var scanStartedAt = 0;
-            var scanned = false;
+            var scanPoll = null, connectPoll = null;
+            var scanStartedAt = 0, scanned = false;
             var hostname = 'energyme.local';
 
-            function show(el) {
-                [welcomeEl, deviceEl, setupEl, doneEl].forEach(function (e) {
-                    e.style.display = (e === el) ? '' : 'none';
+            function show(name) {
+                Object.keys(views).forEach(function (k) {
+                    views[k].style.display = (k === name) ? '' : 'none';
                 });
                 window.scrollTo(0, 0);
             }
@@ -194,33 +223,52 @@
                 return m + 'm';
             }
 
-            // Identity comes from the status endpoint, which is open on the SoftAP only
-            // while the device is unprovisioned. Failure here is not worth reporting.
-            function loadDeviceInfo() {
-                fetch('/api/v1/network/wifi/status', { cache: 'no-store' })
-                    .then(function (r) { return r.ok ? r.json() : null; })
-                    .then(function (d) {
-                        if (!d) return;
-                        if (d.hostname) hostname = d.hostname;
-                        document.getElementById('d-id').textContent = d.deviceId || '-';
-                        document.getElementById('d-fw').textContent = d.firmwareVersion || '-';
-                        document.getElementById('d-up').textContent = humanUptime(d.uptime);
-                        document.getElementById('d-ap').textContent = d.apIp || '-';
-                        if (d.connected && d.ip && d.ip !== '0.0.0.0') {
-                            document.getElementById('d-sta').textContent = d.ssid + ' (' + d.ip + ')';
-                        } else if (d.ssid) {
-                            document.getElementById('d-sta').textContent = d.ssid + ' (not connected)';
-                        }
-                        document.getElementById('done-where').textContent = 'http://' + hostname;
-                    })
-                    .catch(function () { });
+            function showConnected(d) {
+                document.getElementById('done-ssid').textContent = d.ssid || 'your network';
+                document.getElementById('done-where').textContent = 'http://' + (d.hostname || hostname);
+                document.getElementById('done-alt').textContent =
+                    (d.ip && d.ip !== '0.0.0.0') ? 'or http://' + d.ip : '';
+                show('done');
             }
 
-            function signalLabel(rssi) {
-                if (rssi >= -60) return 'strong';
-                if (rssi >= -70) return 'ok';
-                if (rssi >= -80) return 'weak';
-                return 'very weak';
+            // Reads state. Returns null when the request was refused, which is itself
+            // information: the carve-out is open only while UNPROVISIONED or during the grace
+            // window, so a 401 means the device is mid-association.
+            function readStatus() {
+                return fetch('/api/v1/network/wifi/status', { cache: 'no-store' })
+                    .then(function (r) { return r.ok ? r.json() : null; })
+                    .catch(function () { return null; });
+            }
+
+            function applyDeviceInfo(d) {
+                if (!d) return;
+                if (d.hostname) hostname = d.hostname;
+                document.getElementById('d-id').textContent = d.deviceId || '-';
+                document.getElementById('d-fw').textContent = d.firmwareVersion || '-';
+                document.getElementById('d-up').textContent = humanUptime(d.uptime);
+                document.getElementById('d-ap').textContent = d.apIp || '-';
+                if (d.connected && d.ip && d.ip !== '0.0.0.0') {
+                    document.getElementById('d-sta').textContent = d.ssid + ' (' + d.ip + ')';
+                } else if (d.ssid) {
+                    document.getElementById('d-sta').textContent = d.ssid + ' (not connected)';
+                }
+            }
+
+            // Three levels, drawn as bars. There is no emoji for signal strength - Unicode
+            // has a single antenna glyph and no weak/medium/strong variants - so the bars
+            // are drawn rather than picked from a font that renders them inconsistently
+            // across phones.
+            function signalBars(rssi) {
+                var filled = rssi >= -60 ? 3 : (rssi >= -72 ? 2 : 1);
+                var span = document.createElement('span');
+                span.className = 'bars';
+                span.title = rssi + ' dBm';
+                for (var i = 1; i <= 3; i++) {
+                    var bar = document.createElement('i');
+                    bar.className = 'bar bar-' + i + (i <= filled ? ' on' : '');
+                    span.appendChild(bar);
+                }
+                return span;
             }
 
             function renderNetworks(networks) {
@@ -251,7 +299,13 @@
 
                         var meta = document.createElement('span');
                         meta.className = 'network-meta';
-                        meta.textContent = (network.secure ? 'locked, ' : 'open, ') + signalLabel(network.rssi);
+                        if (network.secure) {
+                            var lock = document.createElement('span');
+                            lock.textContent = '🔒';
+                            lock.title = 'Password protected';
+                            meta.appendChild(lock);
+                        }
+                        meta.appendChild(signalBars(network.rssi));
 
                         item.appendChild(name);
                         item.appendChild(meta);
@@ -279,8 +333,6 @@
             // Only the first request of a scan sends it: on the polls that follow it would keep
             // restarting the very scan they are waiting on.
             function pollScan(force) {
-                // A scan that never reports complete must not leave the button disabled and
-                // the spinner turning forever; the only escape would be a page reload.
                 if (Date.now() - scanStartedAt > 25000) {
                     stopScanning('Scanning is taking too long. Type the network name in manually, '
                         + 'or try again.', 'error');
@@ -301,10 +353,10 @@
                         }
                         clearStatus();
                         renderNetworks(data.networks || []);
-                        scanStartedAt = Date.now(); // Completed; do not let the cap fire retroactively
+                        scanStartedAt = Date.now();
                     })
                     .catch(function () {
-                        // A dropped request during scanning is normal on a busy radio; keep polling.
+                        // A dropped request during scanning is normal on a busy radio.
                     });
             }
 
@@ -319,24 +371,82 @@
                 scanned = true;
             }
 
+            function showFailure(message) {
+                if (message) {
+                    document.getElementById('fail-reason').textContent = message;
+                    show('failed');
+                    return;
+                }
+                fetch('/api/v1/network/wifi/diagnostics', { cache: 'no-store' })
+                    .then(function (r) { return r.ok ? r.json() : null; })
+                    .then(function (diag) {
+                        var reason = diag && diag.reason;
+                        document.getElementById('fail-reason').textContent = reason
+                            ? 'The meter could not join that network: ' + reason + '.'
+                            : 'The meter could not join that network.';
+                    })
+                    .catch(function () { })
+                    .then(function () { show('failed'); });
+            }
+
+            // After submitting, state leaves UNPROVISIONED and the carve-out shuts, so polls
+            // answer 401 while the association is in flight. Two outcomes reopen it: success
+            // puts the device in GRACE (readable, connected true), and failure drops it back
+            // to UNPROVISIONED (readable, state 0). So a 401 means "still trying", and either
+            // readable answer is a verdict.
+            function pollOutcome(startedAt) {
+                readStatus().then(function (d) {
+                    if (!d) {
+                        if (Date.now() - startedAt > 60000) {
+                            clearInterval(connectPoll); connectPoll = null;
+                            // Never resolved either way. Do NOT call this a success: an
+                            // earlier build did, and on a wrong password it told the user
+                            // the meter had joined and the light was green while the device
+                            // was in fact still blinking blue and getting nowhere.
+                            showFailure('The meter has not reported back. It may still be '
+                                + 'trying, or the password may be wrong. Check the light on '
+                                + 'the device: solid green means it made it, blinking blue '
+                                + 'means it did not.');
+                        }
+                        return;
+                    }
+
+                    if (d.connected) {
+                        clearInterval(connectPoll); connectPoll = null;
+                        showConnected(d);
+                        return;
+                    }
+
+                    // Back to UNPROVISIONED means the attempt was given up on. The device
+                    // leaves that state in the same instant it accepts the credentials, so
+                    // the only reason to wait at all is the gap between the POST returning
+                    // and the WiFi task picking the notification up.
+                    if (d.state === 0 && Date.now() - startedAt > 4000) {
+                        clearInterval(connectPoll); connectPoll = null;
+                        showFailure();
+                    }
+                });
+            }
+
             document.getElementById('go-setup').addEventListener('click', function () {
-                show(setupEl);
+                show('setup');
                 if (!scanned) startScan();
             });
             document.getElementById('go-device').addEventListener('click', function () {
-                loadDeviceInfo();
-                show(deviceEl);
+                readStatus().then(applyDeviceInfo);
+                show('device');
             });
-            document.getElementById('back-1').addEventListener('click', function () { show(welcomeEl); });
+            document.getElementById('back-1').addEventListener('click', function () { show('welcome'); });
             document.getElementById('back-2').addEventListener('click', function () {
                 stopScanning();
-                show(welcomeEl);
+                show('welcome');
             });
             document.getElementById('retry').addEventListener('click', function () {
                 submitEl.disabled = false;
                 submitEl.textContent = 'Connect';
                 clearStatus();
-                show(setupEl);
+                show('setup');
+                if (!scanned) startScan();
             });
             rescanEl.addEventListener('click', startScan);
 
@@ -360,13 +470,11 @@
                 })
                     .then(function (response) {
                         if (!response.ok) throw new Error('rejected');
-                        // Do not wait for a result that cannot arrive. Accepting the credentials
-                        // moves the device out of UNPROVISIONED, which shuts the auth carve-out,
-                        // so every later request from this page is answered with 401. Tell the
-                        // user where the meter will be instead of spinning until a timeout.
-                        document.getElementById('done-ssid').textContent = ssid;
-                        document.getElementById('done-where').textContent = 'http://' + hostname;
-                        show(doneEl);
+                        document.getElementById('work-ssid').textContent = ssid;
+                        show('working');
+                        var startedAt = Date.now();
+                        if (connectPoll) clearInterval(connectPoll);
+                        connectPoll = setInterval(function () { pollOutcome(startedAt); }, 2000);
                     })
                     .catch(function () {
                         submitEl.disabled = false;
@@ -375,7 +483,13 @@
                     });
             });
 
-            loadDeviceInfo();
+            // Opening the page during the grace window - a reload right after a successful
+            // setup - must not look like a fresh install.
+            readStatus().then(function (d) {
+                applyDeviceInfo(d);
+                if (d && d.connected) showConnected(d);
+                else show('welcome');
+            });
         })();
     </script>
 </body>
