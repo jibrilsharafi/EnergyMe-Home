@@ -31,6 +31,7 @@
 
 #define WIFI_CONNECT_TIMEOUT_SECONDS 10
 #define WIFI_CONNECT_TIMEOUT_POWER_RESET_SECONDS (5 * 60)  // Extended timeout for the FIRST attempt after a power reset only (router likely rebooting)
+#define WIFI_CREDENTIAL_WRITE_RETRY_DELAY_MS 250    // Settle time between a disconnect and retrying esp_wifi_set_config(), which is refused while the STA is connecting
 #define WIFI_DISCONNECT_DELAY (15 * 1000)           // Delay after WiFi disconnected to allow automatic reconnection
 #define WIFI_AP_LIFECYCLE_TICK_MS (10 * 1000)       // How often the AP lifetime/grace predicates are evaluated while the SoftAP is up
 #define WIFI_SCAN_MS_PER_CHANNEL 120                // Per-channel dwell. The default (~300 ms) makes a full scan long enough that a phone on the SoftAP times out waiting
@@ -146,6 +147,12 @@ namespace CustomWifi
 
     // SSID the driver has stored, i.e. what WiFi.begin() would try. Empty when unprovisioned.
     void getStoredSsid(char *out, size_t outSize);
+
+    // True when the last credential submission could not be written to the driver.
+    // setCredentials() answers as soon as the request is queued, so the HTTP 200 is sent
+    // before the write is attempted; without surfacing this, a rejected write looks like
+    // success to the user and the password is silently discarded.
+    bool lastCredentialWriteFailed();
 
     // Async network scan for the provisioning UI. startScan() returns false when a scan
     // cannot be started right now (an association attempt is in flight); the results call

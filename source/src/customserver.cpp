@@ -1815,6 +1815,11 @@ namespace CustomServer
             doc["hostname"] = MDNS_HOSTNAME ".local";
             doc["rssi"] = WiFi.RSSI();
 
+            // The credentials POST answers as soon as the request is queued, so its 200 says
+            // nothing about whether the driver accepted the write. This is where the client
+            // finds that out, which is why the POST's message points here.
+            doc["credentialWriteFailed"] = CustomWifi::lastCredentialWriteFailed();
+
             _sendJsonResponse(request, doc);
         });
 

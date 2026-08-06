@@ -46,6 +46,12 @@ namespace CustomWifi
   static char _pendingPassword[WIFI_PASSWORD_BUFFER_SIZE] = {0};
   static bool _hasPendingCredentials = false;
 
+  // Outcome of the last credential write. setCredentials() returns the moment the request
+  // is queued, so the HTTP response is sent before the write is even attempted; the status
+  // endpoint reports this so a failed store is visible instead of silently discarded.
+  // Lock-free single-word read, same discipline as _publishedState.
+  static volatile bool _lastCredentialWriteFailed = false;
+
   // Diagnostic info for fallback portal
   static char _lastAttemptedSSID[WIFI_SSID_BUFFER_SIZE] = {0};
   static uint8_t _lastDisconnectReason = 0;
@@ -355,6 +361,11 @@ namespace CustomWifi
     _readStoredSsid(out, outSize);
   }
 
+  bool lastCredentialWriteFailed()
+  {
+    return _lastCredentialWriteFailed;
+  }
+
   void getDisconnectDiagnosticsAsJson(JsonDocument &jsonDocument)
   {
     jsonDocument["lastAttemptedSsid"] = _lastAttemptedSSID;
@@ -636,16 +647,40 @@ namespace CustomWifi
             wifi_config_t wifi_config = {};
             snprintf((char*)wifi_config.sta.ssid, sizeof(wifi_config.sta.ssid), "%s", _pendingSSID);
             snprintf((char*)wifi_config.sta.password, sizeof(wifi_config.sta.password), "%s", _pendingPassword);
-            
+
+            // Stop any association in flight FIRST. ESP-IDF rejects esp_wifi_set_config()
+            // while the STA is connecting, and a device that cannot associate is retrying
+            // almost continuously - so without this the write fails exactly when the user
+            // is trying to correct the credentials, which is the whole point of AP_ASSIST.
+            // Observed on hardware as 12/12 submissions refused with ESP_ERR_WIFI_CONN.
+            _connectDeadlineMs = 0; // The attempt we are cancelling must not report a timeout
+            esp_wifi_disconnect();
+
             esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+            if (err != ESP_OK) {
+              // One retry after a short settle: disconnect is asynchronous, so the driver
+              // may still have been leaving the connecting state on the first try.
+              LOG_WARNING("Credential write refused (%s), retrying after disconnect settles",
+                          esp_err_to_name(err));
+              vTaskDelay(pdMS_TO_TICKS(WIFI_CREDENTIAL_WRITE_RETRY_DELAY_MS));
+              err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+            }
+
             if (err != ESP_OK) {
               LOG_ERROR("Failed to save WiFi credentials: %s", esp_err_to_name(err));
               memset(_pendingSSID, 0, sizeof(_pendingSSID));
               memset(_pendingPassword, 0, sizeof(_pendingPassword));
               _hasPendingCredentials = false;
+              // Record it so the caller can find out. setCredentials() returns as soon as
+              // the request is queued, so the HTTP 200 has already gone out by now and this
+              // is the only way the user learns the password was not stored.
+              _lastCredentialWriteFailed = true;
+              _startStaAttempt(); // Resume trying with whatever credentials we still have
               continue;
             }
-            
+
+            _lastCredentialWriteFailed = false;
+
             // Clear pending credentials from memory
             memset(_pendingSSID, 0, sizeof(_pendingSSID));
             memset(_pendingPassword, 0, sizeof(_pendingPassword));
