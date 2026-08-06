@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "mqtt.h"
+#include "issueregistry.h"
 #include "shadow.h"
 #include "shadow_logic.h"
 #include "taskprofiler.h"
@@ -1222,6 +1223,39 @@ namespace Mqtt
                 return;
             }
             _publishCommandStatus(executionId, "SUCCEEDED", nullptr, nullptr);
+        } else if (strcmp(operation, "issue_ack") == 0) {
+            // Same two payload shapes as the local REST issue-ack endpoint
+            // (customserver.cpp's ackIssueHandler): {"all": true} or
+            // {"code": "...", "channel": <optional>}. AWS IoT Commands deliver
+            // params string-typed end-to-end (same constraint as energy_reset's
+            // channels above), so "all" and "channel" each also accept their
+            // string-encoded form.
+            JsonVariantConst all = doc["all"];
+            bool ackAllRequested = (all.is<bool>() && all.as<bool>()) ||
+                                   (all.is<const char*>() && strcmp(all.as<const char*>(), "true") == 0);
+            if (ackAllRequested) {
+                uint32_t ackedCount = IssueRegistry::ackAll();
+                LOG_INFO("Command %s: acknowledged %lu issue(s)", executionId, (unsigned long)ackedCount);
+                _publishCommandStatus(executionId, "SUCCEEDED", nullptr, nullptr);
+            } else if (!doc["code"].is<const char*>()) {
+                _publishCommandStatus(executionId, "REJECTED", "MISSING_CODE", "No 'code' (or 'all') field");
+            } else {
+                uint8_t channel = ISSUE_GLOBAL_SCOPE;
+                JsonVariantConst channelField = doc["channel"];
+                if (channelField.is<uint8_t>()) {
+                    channel = channelField.as<uint8_t>();
+                } else if (channelField.is<const char*>()) {
+                    // Falls back to ISSUE_GLOBAL_SCOPE on an invalid/out-of-range
+                    // digit string; a bogus channel then just misses in ack()
+                    // below and reports NO_SUCH_ISSUE rather than misparsing.
+                    ShadowLogic::parseChannelIndex(channelField.as<const char*>(), globalHwProfile->totalChannelCount, &channel);
+                }
+                if (IssueRegistry::ack(doc["code"].as<const char*>(), channel)) {
+                    _publishCommandStatus(executionId, "SUCCEEDED", nullptr, nullptr);
+                } else {
+                    _publishCommandStatus(executionId, "REJECTED", "NO_SUCH_ISSUE", "Unknown issue code or no matching instance");
+                }
+            }
         } else {
             LOG_WARNING("Unknown command operation: %s", operation);
             _publishCommandStatus(executionId, "REJECTED", "UNKNOWN_OPERATION", operation);
