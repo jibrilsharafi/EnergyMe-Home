@@ -168,11 +168,28 @@ namespace CustomWifi
     WiFi.setAutoReconnect(false);
     WiFi.persistent(true);
     
-    // APSTA from boot rather than switching modes later: a mode change on a live netif
-    // drops the STA association, which is exactly what must not happen when the SoftAP is
-    // raised to rescue a device that is still half-connected. Mode alone does not
-    // broadcast anything - the AP only exists once softAP() is called.
+    // APSTA from boot rather than switching modes later: adding or removing the AP bit
+    // leaves the STA interface untouched (WiFiGenericClass::mode only enables/disables an
+    // interface whose bit actually changed), but creating the AP netif once here keeps the
+    // raise path to a single softAP() call.
     WiFi.mode(WIFI_AP_STA);
+
+    // Mode alone DOES broadcast. persistent(true) above leaves ESP-IDF's storage on FLASH,
+    // so esp_wifi_set_mode(APSTA) restores whatever SoftAP config was last written to NVS
+    // and starts beaconing it immediately - on the default 192.168.4.1, because the netif
+    // addressing is not part of that config. Observed on hardware: a device sitting in
+    // STA_ONLY on the LAN reported apServing true with apIp 192.168.4.1 and served its web
+    // interface there, with _raiseAp() never having run.
+    //
+    // That is not cosmetic. _apAddressHostOrder stays 0 for an AP nobody raised, so
+    // isApAddress() is false for requests arriving on it: the Modbus TCP block and the
+    // authentication carve-out both key off that test and both read the rogue AP as if it
+    // were the LAN. It also pins apServing true forever, which makes isNetworkServiceable()
+    // unconditionally true and stops the health check from ever restarting a dead device.
+    //
+    // Clear it before anything can associate. This also erases the stale NVS copy, so a
+    // device that has been running the old behaviour stops resurrecting it every boot.
+    WiFi.softAPdisconnect(true);
     WiFi.setSleep(false); // Disable WiFi sleep to prevent handshake timeouts
 
     // Load persisted network configuration, applying defaults and writing them back to
