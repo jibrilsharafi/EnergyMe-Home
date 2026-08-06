@@ -816,11 +816,29 @@ namespace CustomWifi
             // while the AP is up.
             LOG_DEBUG("Periodic check: unprovisioned, not forcing a reconnect");
           }
+          else if (_connectDeadlineMs != 0 || _disconnectDeadlineMs != 0)
+          {
+            // An attempt is already in flight and carries its own deadline, which is what
+            // reports the failure. Interfering here would restart the radio underneath it.
+            LOG_DEBUG("Periodic check: association attempt in flight, leaving it alone");
+          }
+          else if (_provisioning.hasCredentials)
+          {
+            // Re-enter the attempt machinery rather than calling WiFi.reconnect() directly.
+            // _forceReconnectInternal() arms no deadline, so nothing ever fed
+            // STA_ATTEMPT_FAILED for the failures it caused: a device retrying only from
+            // here accumulated zero apRaiseTriggers and never raised its SoftAP. On the
+            // bench that left a meter with a wrong password unreachable indefinitely -
+            // no LAN address, no AP, retrying every 30 s forever.
+            LOG_WARNING("Periodic check: WiFi not fully connected - starting a fresh attempt");
+            _reconnectAttempts++;
+            _lastReconnectAttempt = millis64();
+            statistics.wifiConnectionError++;
+            _startStaAttempt();
+          }
           else
           {
-            // WiFi not connected or no IP - force reconnection
-            LOG_WARNING("Periodic check: WiFi not fully connected - forcing reconnection");
-            _forceReconnectInternal();
+            LOG_DEBUG("Periodic check: no stored credentials, nothing to attempt");
           }
         }
       }
