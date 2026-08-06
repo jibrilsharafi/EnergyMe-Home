@@ -176,6 +176,21 @@ The SoftAP SHALL be assigned a subnet that does not overlap the STA subnet, beca
 - **WHEN** the AP is raised while unprovisioned and STA later obtains a lease that overlaps the AP subnet
 - **THEN** the condition is logged and the AP is torn down rather than left routing ambiguously
 
+### Requirement: The setup page tells the user where the meter went
+
+A client on the SoftAP loses the ability to read the device's state the moment it submits credentials, because that transition closes the auth carve-out. The page SHALL therefore tell the user where to find the meter at submit time, and SHALL NOT present a pending state it cannot resolve.
+
+#### Scenario: Credentials accepted
+
+- **WHEN** the setup page submits credentials successfully over the SoftAP
+- **THEN** it immediately shows the address the meter will be reachable at, and what the device LED will do
+- **AND** it does not wait on a status endpoint that will answer 401 from that moment on
+
+#### Scenario: Landing on the setup page
+
+- **WHEN** an unprovisioned device serves its setup page
+- **THEN** the user is offered both connecting the meter to WiFi and inspecting the device, rather than only a credentials form
+
 ### Requirement: Connection diagnostics survive the removal of the configuration portal
 
 Disconnect diagnostics that are currently available only through the WiFiManager diagnostic page SHALL remain available through the device's own API.

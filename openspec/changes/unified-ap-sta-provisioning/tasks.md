@@ -167,9 +167,10 @@ So **3.4a and 3.4b below are inserted before 3.5**, pulling the Context ownershi
 
 ## Phase 5: Web UI
 
-- [ ] 5.1 WiFi setup page. Captive portal lands here; navigation to the rest of the UI stays available (D9).
-- [ ] 5.2 Client flow: scan, select, submit, poll status across a multi-second association gap with retry (D2 guarantees at least one drop).
-- [ ] 5.3 Surface the LAN address and `energyme.local` **on submit**, not only after connect. Mandatory if Bench-3 failed; good practice either way. mDNS over the AP is verified working.
+- [x] 5.1 WiFi setup page. Captive portal lands here. Opens on a choice between connecting the meter and looking at it, rather than dropping the user straight into a form. Uses the shared stylesheets (`section.css` included, which the first version missed) so it looks like the rest of the device.
+- [x] 5.2 Client flow: scan, select, submit. **Polling for the outcome was dropped: it cannot work.** Accepting credentials moves the device out of `UNPROVISIONED`, which closes the auth carve-out, so the very next request from the SoftAP client is answered with 401. The first implementation polled anyway, treated the 401 as a transport hiccup, spun for 90 s and then reported failure on a connection that had in fact succeeded. Seen on a phone.
+- [x] 5.3 Surface the LAN address and `energyme.local` **on submit**, not only after connect. Now the only mechanism, per 5.2. `hostname` is read from the status endpoint before submitting, while that endpoint is still reachable.
+- [x] 5.8 Device panel on the AP, built only from what is readable unauthenticated: device id, firmware, uptime, AP address. `deviceId`, `firmwareVersion` and `uptime` were added to the status endpoint for it. The real dashboard is not reachable on the SoftAP because its data endpoints require auth, and opening those is not worth the surface.
 - [ ] 5.4 Embed plumbing: `platformio.ini` `board_build.embed_txtfiles`, `extern ... asm("_binary_html_setup_html_start")` pair in `include/binaries.h`, `server.on()` in `_serveStaticContent`.
 - [ ] 5.5 Static assets on the AP: either a `/css/*` prefix handler registered before the ~14 exact matches (`customserver.cpp:762-807`), or inline the setup page CSS.
 - [ ] 5.6 LED states for AP provisioning; resolve the priority collision (open question in `design.md`).
