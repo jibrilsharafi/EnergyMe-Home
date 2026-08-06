@@ -153,8 +153,10 @@
 
         <div class="status-box visible status-ok">
             <p style="margin:0 0 .35rem;">Find it at</p>
-            <p class="where" id="done-where">http://energyme.local</p>
-            <p class="muted" id="done-alt" style="margin:.35rem 0 0;"></p>
+            <p class="where"><a id="done-where" href="#">http://energyme.local</a></p>
+            <p class="muted" style="margin:.35rem 0 0;">
+                <a id="done-alt" href="#" style="display:none;"></a>
+            </p>
         </div>
 
         <p class="muted">
@@ -168,10 +170,11 @@
         <h2>Could not connect</h2>
         <div class="status-box visible status-error">
             <p style="margin:0;" id="fail-reason">The meter could not join that network.</p>
+            <p class="muted" style="margin:.35rem 0 0;" id="fail-code"></p>
         </div>
         <p class="muted">
-            The light is still <span class="led led-blue"></span> blinking blue. The password is the
-            usual cause. This setup network stays up, so you can try again straight away.
+            The light is still <span class="led led-blue"></span> blinking blue. This setup
+            network stays up, so you can try again straight away.
         </p>
         <div class="stack"><button id="retry" class="buttonForm" type="button">Try again</button></div>
     </div>
@@ -223,11 +226,25 @@
                 return m + 'm';
             }
 
+            // The links are live so the phone can follow them once it is back on the LAN.
+            // They resolve to nothing while it is still on the SoftAP, which is the same
+            // situation as reading the address off the screen and typing it in later.
+            function setLink(id, url, text) {
+                var el = document.getElementById(id);
+                el.href = url;
+                el.textContent = text;
+                el.style.display = '';
+            }
+
             function showConnected(d) {
                 document.getElementById('done-ssid').textContent = d.ssid || 'your network';
-                document.getElementById('done-where').textContent = 'http://' + (d.hostname || hostname);
-                document.getElementById('done-alt').textContent =
-                    (d.ip && d.ip !== '0.0.0.0') ? 'or http://' + d.ip : '';
+                var host = 'http://' + (d.hostname || hostname);
+                setLink('done-where', host, host);
+                if (d.ip && d.ip !== '0.0.0.0') {
+                    setLink('done-alt', 'http://' + d.ip, 'or http://' + d.ip);
+                } else {
+                    document.getElementById('done-alt').style.display = 'none';
+                }
                 show('done');
             }
 
@@ -371,9 +388,36 @@
                 scanned = true;
             }
 
+            // The driver's disconnect reason is diagnostic, not an explanation. A wrong WPA2
+            // password does not report AUTH_FAIL: the AP accepts the association and the
+            // four-way handshake then fails, so the code is 4WAY_HANDSHAKE_TIMEOUT. Showing
+            // that verbatim tells the user nothing. The raw code is still kept alongside for
+            // anyone who needs it, and the diagnostics endpoint always has it.
+            var WRONG_PASSWORD = {
+                'AUTH_EXPIRE': 1, 'AUTH_LEAVE': 1, 'AUTH_FAIL': 1,
+                '4WAY_HANDSHAKE_TIMEOUT': 1, 'HANDSHAKE_TIMEOUT': 1,
+                'GROUP_KEY_UPDATE_TIMEOUT': 1, 'IE_IN_4WAY_DIFFERS': 1,
+                'MIC_FAILURE': 1, 'IEEE_802_1X_AUTH_FAILED': 1,
+                'NO_AP_AUTHMODE_THRESHOLD': 1
+            };
+            var NOT_FOUND = { 'NO_AP_FOUND': 1, 'BEACON_TIMEOUT': 1, 'NO_AP_RSSI_THRESHOLD': 1 };
+
+            function explainReason(reason) {
+                if (!reason) return 'The meter could not join that network.';
+                if (WRONG_PASSWORD[reason]) {
+                    return 'The password was not accepted. Check it and try again.';
+                }
+                if (NOT_FOUND[reason]) {
+                    return 'The meter could not find that network. Check the name, and that '
+                        + 'the meter is close enough to the router.';
+                }
+                return 'The meter could not join that network: ' + reason + '.';
+            }
+
             function showFailure(message) {
                 if (message) {
                     document.getElementById('fail-reason').textContent = message;
+                    document.getElementById('fail-code').textContent = '';
                     show('failed');
                     return;
                 }
@@ -381,9 +425,9 @@
                     .then(function (r) { return r.ok ? r.json() : null; })
                     .then(function (diag) {
                         var reason = diag && diag.reason;
-                        document.getElementById('fail-reason').textContent = reason
-                            ? 'The meter could not join that network: ' + reason + '.'
-                            : 'The meter could not join that network.';
+                        document.getElementById('fail-reason').textContent = explainReason(reason);
+                        document.getElementById('fail-code').textContent =
+                            reason ? 'Reported by the radio as ' + reason + '.' : '';
                     })
                     .catch(function () { })
                     .then(function () { show('failed'); });
