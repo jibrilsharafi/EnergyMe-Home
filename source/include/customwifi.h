@@ -30,7 +30,7 @@
 #define WIFI_HOSTNAME_PREFIX "energyme-home"
 
 #define WIFI_CONNECT_TIMEOUT_SECONDS 10
-#define WIFI_CONNECT_TIMEOUT_POWER_RESET_SECONDS (5 * 60)  // Extended timeout after power reset (router likely rebooting)
+#define WIFI_CONNECT_TIMEOUT_POWER_RESET_SECONDS (5 * 60)  // Extended timeout for the FIRST attempt after a power reset only (router likely rebooting)
 #define WIFI_DISCONNECT_DELAY (15 * 1000)           // Delay after WiFi disconnected to allow automatic reconnection
 #define WIFI_AP_LIFECYCLE_TICK_MS (10 * 1000)       // How often the AP lifetime/grace predicates are evaluated while the SoftAP is up
 #define WIFI_SCAN_MS_PER_CHANNEL 120                // Per-channel dwell. The default (~300 ms) makes a full scan long enough that a phone on the SoftAP times out waiting

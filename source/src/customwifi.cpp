@@ -116,6 +116,7 @@ namespace CustomWifi
   static uint32_t _toHostOrder(const IPAddress &address);
   static IPAddress _fromHostOrder(uint32_t value);
   static bool _telemetrySent = false; // Ensures telemetry is sent only once per boot
+  static bool _powerResetGraceUsed = false; // The extended post-power-cut timeout is for the first attempt only
 
   // Network configuration helpers
   static void _loadConfiguration();
@@ -1065,11 +1066,19 @@ namespace CustomWifi
   // failure, restarted the device instead of letting it fall back to provisioning.
   static void _startStaAttempt()
   {
-    bool powerReset = _isPowerReset();
+    // The extended timeout is a one-shot for the first attempt after a power cut, to let
+    // a router that lost power at the same time finish booting. esp_reset_reason() is
+    // fixed for the whole boot, so testing it per attempt kept every later retry at 5
+    // minutes too - and since a mains-wired meter powers on from POWERON every time, that
+    // made WIFI_CONNECT_TIMEOUT_SECONDS unreachable in the field and pushed AP_ASSIST out
+    // to ~25 minutes instead of ~50 seconds.
+    bool powerReset = _isPowerReset() && !_powerResetGraceUsed;
+    _powerResetGraceUsed = true;
+
     _connectTimeoutMs = (powerReset ? WIFI_CONNECT_TIMEOUT_POWER_RESET_SECONDS
                                     : WIFI_CONNECT_TIMEOUT_SECONDS) * 1000UL;
     if (powerReset) {
-      LOG_INFO("Power reset detected - extended WiFi timeout (%lu s) to let the router reboot",
+      LOG_INFO("Power reset detected - extended WiFi timeout (%lu s) for the first attempt",
                (unsigned long)(_connectTimeoutMs / 1000UL));
     }
 
