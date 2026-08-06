@@ -171,6 +171,12 @@ The SoftAP SHALL be assigned a subnet that does not overlap the STA subnet, beca
 - **WHEN** a configuration backup from a different LAN is restored and its static IP overlaps the SoftAP subnet
 - **THEN** subnet selection accounts for the configured static IP, not only the live STA lease
 
+#### Scenario: Radio brought up in AP+STA mode
+
+- **WHEN** the WiFi mode is set to AP+STA at boot with persistent storage enabled
+- **THEN** no SoftAP is broadcast until the device decides to raise one, because the driver restores the last SoftAP config from NVS and would otherwise beacon it on a subnet no collision check ever approved
+- **AND** the address the authentication carve-out and the Modbus TCP block compare against is never left unset while an AP is reachable
+
 #### Scenario: Collision appears after the AP is raised
 
 - **WHEN** the AP is raised while unprovisioned and STA later obtains a lease that overlaps the AP subnet
@@ -199,6 +205,12 @@ Disconnect diagnostics that are currently available only through the WiFiManager
 
 - **WHEN** STA association fails and the user opens the interface from the SoftAP
 - **THEN** the last attempted SSID, disconnect reason, disconnect BSSID and RSSI are retrievable
+
+#### Scenario: Wrong password during setup
+
+- **WHEN** the user submits a password the network rejects
+- **THEN** the setup page says the password was not accepted, rather than repeating the driver's disconnect code, because WPA2 reports a rejected password as a four-way handshake timeout rather than as an authentication failure
+- **AND** the raw code stays visible alongside it for anyone diagnosing something else
 
 ### Requirement: Power-cut recovery does not raise the SoftAP
 

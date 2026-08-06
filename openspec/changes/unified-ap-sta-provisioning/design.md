@@ -164,6 +164,10 @@ lwIP does **not** longest-prefix match. `ip4_route` walks `netif_list` and retur
 
 Constraints from `NetworkInterface::config`: **CIDR must be /24 to /28** (`NetworkInterface.cpp:440-443`, hard fail outside), and the DHCP pool is **10 addresses** starting at `ap_ip + 1` (`:448-453`).
 
+**Confirmed on hardware, and worse than "briefly".** `WiFi.persistent(true)` leaves ESP-IDF's config storage on `WIFI_STORAGE_FLASH`, so `esp_wifi_set_mode(WIFI_MODE_APSTA)` at boot restores the last SoftAP config from NVS and starts beaconing it **immediately**, at the default `192.168.4.1` - the netif addressing is not part of `wifi_config_t`, so subnet selection never gets a say. A device sitting in `STA_ONLY` on the LAN reported `apServing: true` with `apIp: 192.168.4.1` and served its web interface there, with `_raiseAp()` never having run.
+
+This defeats two guarantees, not just the subnet choice. `_apAddressHostOrder` is 0 for an AP nobody raised, so `isApAddress()` is false for requests arriving on it - and that is the test both the Modbus TCP block and the authentication carve-out key off. It also pins `apServing` true for the life of the boot, making `isNetworkServiceable()` unconditionally true so the health check can never restart a dead device. The fix is a `softAPdisconnect(true)` straight after the mode is set, which also erases the stale NVS copy so the behaviour does not resurrect on the next boot.
+
 Ordering matters. `softAPConfig()` calls `AP.begin()` -> `enableAP(true)` (`WiFiAP.cpp:71-73`), raising the AP interface **before** SSID and channel are set, briefly beaconing the previous or NVS-stored config:
 
 ```
