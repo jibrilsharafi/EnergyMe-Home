@@ -124,7 +124,11 @@ State onEvent(Context &context, Event event, uint64_t nowMs) {
             break;
 
         case Event::STA_LOST:
-            context.state = State::STA_CONNECTING;
+            // AP_ASSIST already means "cannot associate", so a further drop is the
+            // condition it describes, not a change of situation. Demoting here made the
+            // reported state flap AP_ASSIST -> STA_CONNECTING on every retry cycle, seen
+            // on hardware as a 1 <-> 2 oscillation while the AP stayed up throughout.
+            if (context.state != State::AP_ASSIST) context.state = State::STA_CONNECTING;
             context.graceStartedAtMs = 0;
             break;
 

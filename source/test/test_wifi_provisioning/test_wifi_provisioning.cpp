@@ -281,6 +281,29 @@ void test_losing_sta_during_grace_returns_to_connecting(void) {
     TEST_ASSERT_TRUE(context.apRaised);
 }
 
+// Regression, found on hardware: a device sitting in AP_ASSIST reported
+// AP_ASSIST -> STA_CONNECTING -> AP_ASSIST on every retry cycle, because each failed
+// attempt raised STA_LOST and STA_LOST demoted unconditionally. The AP stayed up
+// throughout, so it was the reported state that was wrong, not the radio.
+void test_losing_sta_again_keeps_ap_assist(void) {
+    Context context = provisionedContext();
+    for (int i = 0; i < WIFI_PROVISIONING_AP_RAISE_THRESHOLD; i++) {
+        onEvent(context, Event::STA_ATTEMPT_FAILED, kMinute);
+    }
+    TEST_ASSERT_EQUAL(State::AP_ASSIST, context.state);
+
+    onEvent(context, Event::STA_LOST, 2 * kMinute);
+    TEST_ASSERT_EQUAL(State::AP_ASSIST, context.state);
+
+    // And it survives a whole run of them, which is what the retry loop produces.
+    for (int i = 0; i < 5; i++) {
+        onEvent(context, Event::STA_ATTEMPT_FAILED, 3 * kMinute);
+        onEvent(context, Event::STA_LOST, 3 * kMinute);
+    }
+    TEST_ASSERT_EQUAL(State::AP_ASSIST, context.state);
+    TEST_ASSERT_TRUE(context.apRaised);
+}
+
 void test_clock_going_backwards_does_not_expire_timers(void) {
     Context context = unprovisionedContext(10 * kMinute);
     onEvent(context, Event::CREDENTIALS_SUBMITTED, 11 * kMinute);
@@ -533,6 +556,7 @@ int main(int, char **) {
     RUN_TEST(test_last_client_leaving_ends_grace_immediately);
     RUN_TEST(test_grace_is_measured_from_the_connect);
     RUN_TEST(test_losing_sta_during_grace_returns_to_connecting);
+    RUN_TEST(test_losing_sta_again_keeps_ap_assist);
     RUN_TEST(test_clock_going_backwards_does_not_expire_timers);
 
     RUN_TEST(test_serving_on_the_ap_alone_counts_as_serviceable);
