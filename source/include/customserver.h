@@ -83,10 +83,6 @@
 #define HTTP_MAX_CONTENT_LENGTH_NETWORK 256
 #define HTTP_MAX_CONTENT_LENGTH_ISSUES_ACK 128
 
-// Crash dump chunk sizes
-#define CRASH_DUMP_DEFAULT_CHUNK_SIZE (1 * 1024)
-#define CRASH_DUMP_MAX_CHUNK_SIZE (4 * 1024) // Maximum chunk size for core dump retrieval. Can be set high thanks to chunked transfer, but above 4-8 kB it will crash the wdt
-
 class CustomMiddleware : public AsyncMiddleware {
 public:
     void run(AsyncWebServerRequest *request, ArMiddlewareNext next) override {

@@ -86,6 +86,8 @@ namespace CustomServer
     static void _serveFileEndpoints();
 #ifdef ENV_DEV
     static void _serveShadowDevEndpoints();
+    static void _serveCrashTestEndpoints();
+    static void __attribute__((noinline)) _crashTestStackOverflow(uint32_t depth);
 #endif
     
     // Authentication endpoints
@@ -623,6 +625,7 @@ namespace CustomServer
         _serveAde7953Endpoints();
 #ifdef ENV_DEV
         _serveShadowDevEndpoints();
+        _serveCrashTestEndpoints();
 #endif
         _serveCustomMqttEndpoints();
         _serveInfluxDbEndpoints();
@@ -2000,6 +2003,57 @@ namespace CustomServer
 
         LOG_DEBUG("Registered dev-only shadow delta + command injection endpoints");
     }
+
+    // Recursive helper for the stack-overflow crash trigger below. noinline so
+    // -O2 release-style builds can't flatten the recursion into a loop; not
+    // that this ever compiles into a prod build, but keep it honest.
+    // Deliberately unbounded - the MAX_LOOP_ITERATIONS convention doesn't
+    // apply here since running out of stack IS the point.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winfinite-recursion"
+    static void __attribute__((noinline)) _crashTestStackOverflow(uint32_t depth) {
+        volatile uint8_t padding[512]; // Real per-frame stack consumption, not just a return address
+        memset((void *)padding, (int)depth, sizeof(padding));
+        _crashTestStackOverflow(depth + 1);
+    }
+#pragma GCC diagnostic pop
+
+    // Dev-only: crash the device on purpose to exercise the crash archive and
+    // single-message publish pipeline on real hardware (coredump capture,
+    // gzip, LittleFS archive, MQTT publish, frozen resetReason). Each route
+    // faults through a different mechanism so the panic handler and backtrace
+    // unwinder are exercised more than one way. Never compiled into the
+    // production firmware. No response is ever sent - the device resets
+    // before the handler can return, so a client just sees the connection
+    // drop, which is the expected result.
+    static void _serveCrashTestEndpoints() {
+        server.on("/api/v1/debug/crash/null-deref", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
+            if (!_validateRequest(request, "POST")) return;
+
+            LOG_WARNING("Debug endpoint: forcing a null pointer dereference");
+            volatile uint32_t *nullPtr = nullptr;
+            *nullPtr = 0xDEADBEEF;
+        });
+
+        server.on("/api/v1/debug/crash/abort", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
+            if (!_validateRequest(request, "POST")) return;
+
+            LOG_WARNING("Debug endpoint: forcing abort()");
+            abort();
+        });
+
+        server.on("/api/v1/debug/crash/stack-overflow", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
+            if (!_validateRequest(request, "POST")) return;
+
+            LOG_WARNING("Debug endpoint: forcing a stack overflow");
+            _crashTestStackOverflow(0);
+        });
+
+        LOG_DEBUG("Registered dev-only crash test endpoints: null-deref, abort, stack-overflow");
+    }
 #endif
 
     // === ADE7953 ENDPOINTS ===
@@ -2712,71 +2766,81 @@ namespace CustomServer
     }
 
     // === CRASH MONITOR ENDPOINTS ===
+    // Core dumps are copied off the coredump partition to /crashes/ on the boot
+    // they are detected, so these endpoints read the archive rather than the
+    // partition. Each record is a frozen metadata sidecar plus the gzipped dump.
     static void _serveCrashEndpoints()
     {
-        // Get crash information and analysis
+        // List archived crashes with their frozen metadata
         server.on("/api/v1/crash/info", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
-            
-            if (CrashMonitor::getCoreDumpInfoJson(doc)) {
+
+            if (CrashMonitor::listArchivedCrashes(doc)) {
                 _sendJsonResponse(request, doc);
             } else {
                 _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to retrieve crash information");
             }
         });
 
-        // Get core dump data (with offset and chunk size parameters)
+        // Download one archived core dump. Serves the stored gzip bytes in a
+        // single response: no JSON wrapper, no chunk reassembly by the client.
         server.on("/api/v1/crash/dump", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            // Parse query parameters
-            size_t offset = 0;
-            size_t chunkSize = CRASH_DUMP_DEFAULT_CHUNK_SIZE;
+            char baseName[CRASH_ARCHIVE_NAME_BUFFER_SIZE];
+            bool found = false;
 
-            if (request->hasParam("offset")) {
-                offset = request->getParam("offset")->value().toInt();
-            }
-            
-            if (request->hasParam("size")) {
-                chunkSize = request->getParam("size")->value().toInt();
-                // Limit maximum chunk size to prevent memory issues
-                if (chunkSize > CRASH_DUMP_MAX_CHUNK_SIZE) {
-                    LOG_DEBUG("Chunk size too large, limiting to %zu bytes", CRASH_DUMP_MAX_CHUNK_SIZE);
-                    chunkSize = CRASH_DUMP_MAX_CHUNK_SIZE;
-                }
-                if (chunkSize == 0) {
-                    chunkSize = CRASH_DUMP_DEFAULT_CHUNK_SIZE;
-                }
+            if (request->hasParam("id")) {
+                found = CrashMonitor::findArchivedCrashById(
+                    request->getParam("id")->value().c_str(), baseName, sizeof(baseName));
+            } else {
+                // No id given: hand back the oldest, which is also the next to publish
+                found = CrashMonitor::getOldestArchivedCrash(baseName, sizeof(baseName));
             }
 
-            if (!CrashMonitor::hasCoreDump()) {
-                _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "No core dump available");
+            if (!found) {
+                _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "No matching core dump available");
                 return;
             }
 
-            SpiRamAllocator allocator;
-            JsonDocument doc(&allocator);
-            
-            if (CrashMonitor::getCoreDumpChunkJson(doc, offset, chunkSize)) {
-                _sendJsonResponse(request, doc);
-            } else {
-                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to retrieve core dump data");
+            char path[CRASH_ARCHIVE_PATH_BUFFER_SIZE];
+            CrashMonitor::buildArchivedCrashDumpPath(baseName, path, sizeof(path));
+
+            AsyncWebServerResponse *response = request->beginResponse(LittleFS, path, "application/gzip");
+            if (!response) {
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to open the archived core dump");
+                return;
             }
+
+            // Declaring the encoding lets HTTP clients inflate transparently, so
+            // the device never has to spend a decompress pass reproducing bytes
+            // the client can trivially produce itself
+            response->addHeader("Content-Encoding", "gzip");
+
+            char disposition[CRASH_ARCHIVE_NAME_BUFFER_SIZE + 40];
+            snprintf(disposition, sizeof(disposition), "attachment; filename=\"%s%s\"", baseName, CRASH_ARCHIVE_DUMP_SUFFIX);
+            response->addHeader("Content-Disposition", disposition);
+
+            request->send(response);
         });
 
-        // Clear core dump from flash
+        // Delete every archived crash record
         server.on("/api/v1/crash/clear", HTTP_POST, [](AsyncWebServerRequest *request)
                   {
             if (!_validateRequest(request, "POST")) return;
 
-            if (CrashMonitor::hasCoreDump()) {
-                CrashMonitor::clearCoreDump();
-                LOG_INFO("Core dump cleared via API");
-                _sendSuccessResponse(request, "Core dump cleared successfully");
-            } else {
-                _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "No core dump available to clear");
+            uint32_t removed = CrashMonitor::clearArchivedCrashes();
+            if (removed == 0) {
+                _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "No archived crashes to clear");
+                return;
             }
+
+            LOG_INFO("Cleared %lu archived crash record(s) via API", removed);
+
+            char message[STATUS_BUFFER_SIZE];
+            snprintf(message, sizeof(message), "Cleared %lu archived crash record(s)", removed);
+            _sendSuccessResponse(request, message);
         });
     }
 

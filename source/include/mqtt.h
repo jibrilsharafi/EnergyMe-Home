@@ -60,7 +60,10 @@
 #define MQTT_BUFFER_SIZE (9 * 1024)
 #define MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE (32 * 1024) // PSRAM buffer for MQTT subscribe messages (reduced for efficiency)
 #define CERTIFICATE_BUFFER_SIZE (16 * 1024)   // PSRAM buffer for certificate storage (was 4KB)
-#define CORE_DUMP_CHUNK_SIZE (4 * 1024) // Do not exceed 4kB to avoid stability issues
+// Bytes that the "coreDump" key, its quotes and the separating comma add on top
+// of the already-measured metadata, when sizing a crash message against the
+// publish limit
+#define CRASH_PUBLISH_COREDUMP_FIELD_OVERHEAD 16
 
 #define DEFAULT_CLOUD_SERVICES_ENABLED false // Always off by default, and enabled only explicitly by the user
 #define DEFAULT_SEND_POWER_DATA_ENABLED true // Send all the data by default

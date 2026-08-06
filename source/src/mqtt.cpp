@@ -3,12 +3,14 @@
 
 #include "mqtt.h"
 #include "issueregistry.h"
+#include "crashmonitor.h" // After mqtt.h: crashmonitor.h includes it, and both are pragma-once
 #include "shadow.h"
 #include "shadow_logic.h"
 #include "taskprofiler.h"
 #include "duration_format.h"
 #include "mqtt_grid_schedule.h"
 #include "mqtt_energy_publish_gate.h"
+#include "crash_archive_policy.h"
 #include <algorithm>
 
 namespace Mqtt
@@ -1851,7 +1853,11 @@ namespace Mqtt
             return;
         }
 
-        _publishMqtt.crash = false;
+        // One record per cycle. A backlog of archived crashes is a few hundred kB
+        // of back-to-back publishes, so re-arming lets it drain across cycles
+        // while meter and log traffic still gets a turn.
+        _publishMqtt.crash = CrashMonitor::hasArchivedCrash();
+        if (_publishMqtt.crash) LOG_DEBUG("More archived crashes pending, publishing the next one on the following cycle");
     }
 
     static void _publishOtaJobsRequest() {
@@ -2261,94 +2267,110 @@ namespace Mqtt
         }
     }
 
+    // Publishes the oldest archived crash as a single message. The previous
+    // chunked sequence (crashInfo + N crashChunk + crashComplete) had no resume
+    // or retry granularity, so a failure part-way left a record that was
+    // permanently incomplete and undetectable downstream - 10% of production
+    // crash events never produced their crashComplete. One message either lands
+    // whole or does not land at all.
     static bool _publishCrashJson() {
-        // Generate a unique crash ID for this crash event
-        uint64_t crashId = CustomTime::getUnixTimeMilliseconds();
-        
-        // First, publish crash info metadata
+        char baseName[CRASH_ARCHIVE_NAME_BUFFER_SIZE];
+        if (!CrashMonitor::getOldestArchivedCrash(baseName, sizeof(baseName))) {
+            LOG_DEBUG("No archived crash pending publication");
+            return true; // Nothing to do is not a failure
+        }
+
+        // Metadata was frozen when the dump was archived, so it describes the
+        // boot that actually crashed however long ago that was
         SpiRamAllocator allocator;
-        JsonDocument docInfo(&allocator);
-        docInfo["unixTime"] = crashId; // Use same timestamp as crash ID
-        docInfo["crashId"] = crashId;
-        docInfo["messageType"] = "crashInfo";
-        
-        SpiRamAllocator allocatorCrashInfo;
-        JsonDocument docCoreDump(&allocatorCrashInfo);
-        CrashMonitor::getCoreDumpInfoJson(docCoreDump);
-        docInfo["crashInfo"] = docCoreDump;
-
-        if (!_publishJsonStreaming(docInfo, _mqttTopicCrash)) {
-            LOG_ERROR("Failed to publish crash info metadata");
-            return false;
-        }
-        LOG_DEBUG("Crash info metadata published successfully with crash ID: %llu", crashId);
-
-        // Then, send each core dump chunk as a separate message
-        size_t coreDumpSize = CrashMonitor::getCoreDumpSize();
-        LOG_DEBUG("Core dump size to send via MQTT: %zu bytes", coreDumpSize);
-        size_t offset = 0;
-        uint32_t chunkIndex = 0;
-        uint32_t totalChunks = (coreDumpSize + CORE_DUMP_CHUNK_SIZE - 1) / CORE_DUMP_CHUNK_SIZE; // Calculate total chunks
-
-        uint32_t loops = 0;
-        while (offset < coreDumpSize && loops < MAX_LOOP_ITERATIONS) {
-            loops++;
-            size_t thisChunkSize = (coreDumpSize - offset) < CORE_DUMP_CHUNK_SIZE ? (coreDumpSize - offset) : CORE_DUMP_CHUNK_SIZE;
-
-            SpiRamAllocator allocatorChunk;
-            JsonDocument docChunk(&allocatorChunk);
-            docChunk["unixTime"] = CustomTime::getUnixTimeMilliseconds();
-            docChunk["crashId"] = crashId; // Same crash ID for all chunks
-            docChunk["messageType"] = "crashChunk";
-            docChunk["chunkIndex"] = chunkIndex;
-            docChunk["totalChunks"] = totalChunks;
-
-            SpiRamAllocator allocatorCoreDumpChunk;
-            JsonDocument docJsonCoreDumpChunk(&allocatorCoreDumpChunk);
-            if (!CrashMonitor::getCoreDumpChunkJson(docJsonCoreDumpChunk, offset, thisChunkSize)) {
-                LOG_ERROR("Failed to get core dump chunk at offset %zu", offset);
-                return false;
-            }
-            
-            // Copy chunk data directly into the message
-            docChunk["chunk"] = docJsonCoreDumpChunk;
-            
-            if (!_publishJsonStreaming(docChunk, _mqttTopicCrash)) {
-                LOG_ERROR("Failed to publish crash chunk %u/%u at offset %zu", chunkIndex + 1, totalChunks, offset);
-                return false;
-            }
-            
-            LOG_DEBUG("Published crash chunk %u/%u (crash ID: %llu, offset %zu, size %zu bytes)", chunkIndex + 1, totalChunks, crashId, offset, thisChunkSize);
-            
-            offset += thisChunkSize;
-            chunkIndex++;
-        }
-
-        // Publish a final message to indicate completion
-        SpiRamAllocator allocatorFinal;
-        JsonDocument docFinal(&allocatorFinal);
-        docFinal["unixTime"] = CustomTime::getUnixTimeMilliseconds();
-        docFinal["crashId"] = crashId;
-        docFinal["messageType"] = "crashComplete";
-
-        if (!_publishJsonStreaming(docFinal, _mqttTopicCrash)) {
-            LOG_ERROR("Failed to publish crash completion message");
+        JsonDocument doc(&allocator);
+        if (!CrashMonitor::getArchivedCrashMetadata(baseName, doc)) {
+            // Unparseable metadata will never become publishable, and leaving it
+            // in place would block every later record behind it
+            LOG_ERROR("Dropping archived crash %s: its metadata could not be read", baseName);
+            CrashMonitor::removeArchivedCrash(baseName);
             return false;
         }
 
-        _publishMqtt.crash = false;
-        
-        // Clear core dump after successful transmission
-        if (CrashMonitor::hasCoreDump()) {
-            #ifndef ENV_DEV // In dev environment we keep the core dump for testing purposes, and eventually delete via API
-            CrashMonitor::clearCoreDump();
-            LOG_INFO("Core dump cleared after successful MQTT transmission");
-            #else
-            LOG_DEBUG("Core dump will not be cleared in DEV environment for testing purposes");
-            #endif
+        size_t compressedSize = CrashMonitor::getArchivedCrashDumpSize(baseName);
+        if (compressedSize == 0) {
+            LOG_ERROR("Dropping archived crash %s: its core dump is missing or empty", baseName);
+            CrashMonitor::removeArchivedCrash(baseName);
+            return false;
         }
-        
-        LOG_DEBUG("All crash data published successfully: %u chunks sent for crash ID %llu", totalChunks, crashId);
+
+        doc["unixTime"] = CustomTime::getUnixTimeMilliseconds();
+        doc["coreDumpEncoding"] = "gzip+base64";
+
+        // Check the size before spending PSRAM encoding it. The ceiling is
+        // PubSubClient's 16-bit MQTT remaining-length field, which is narrower
+        // than AWS IoT Core's 128 kB publish limit: overshooting it truncates the
+        // header and desynchronises the broker rather than failing cleanly.
+        size_t topicLength = strlen(_mqttTopicCrash);
+        size_t metadataBytes = measureJson(doc) + CRASH_PUBLISH_COREDUMP_FIELD_OVERHEAD;
+        if (!CrashArchivePolicy::fitsPublishLimit(compressedSize, metadataBytes, topicLength)) {
+            LOG_ERROR(
+                "Archived crash %s does not fit one publish: %zu compressed bytes plus %zu bytes of metadata exceed the %zu byte payload limit. Record kept on flash for retrieval over the local API.",
+                baseName, compressedSize, metadataBytes, CrashArchivePolicy::maxPublishPayloadBytes(topicLength)
+            );
+            return false;
+        }
+
+        uint8_t* compressed = (uint8_t*)ps_malloc(compressedSize);
+        if (compressed == nullptr) {
+            LOG_ERROR("Failed to allocate %zu bytes in PSRAM for the archived core dump", compressedSize);
+            return false;
+        }
+
+        size_t readSize = 0;
+        if (!CrashMonitor::readArchivedCrashDump(baseName, compressed, compressedSize, &readSize) || readSize == 0) {
+            LOG_ERROR("Failed to read the archived core dump for %s", baseName);
+            free(compressed);
+            return false;
+        }
+
+        size_t base64Length = 0;
+        int32_t ret = mbedtls_base64_encode(NULL, 0, &base64Length, compressed, readSize);
+        if (ret != MBEDTLS_ERR_BASE64_BUFFER_TOO_SMALL) {
+            LOG_ERROR("Failed to size the base64 buffer for crash %s (mbedtls: %d)", baseName, ret);
+            free(compressed);
+            return false;
+        }
+
+        uint8_t* encoded = (uint8_t*)ps_malloc(base64Length + 1); // +1 for the null terminator
+        if (encoded == nullptr) {
+            LOG_ERROR("Failed to allocate %zu bytes in PSRAM for the base64 core dump", base64Length + 1);
+            free(compressed);
+            return false;
+        }
+
+        size_t encodedLength = 0;
+        ret = mbedtls_base64_encode(encoded, base64Length, &encodedLength, compressed, readSize);
+        free(compressed);
+
+        if (ret != 0) {
+            LOG_ERROR("Base64 encoding failed for crash %s (mbedtls: %d)", baseName, ret);
+            free(encoded);
+            return false;
+        }
+        encoded[encodedLength] = '\0';
+
+        // Linked, not copied: the document holds the pointer, so `encoded` has to
+        // outlive serialization and must not be freed before the publish returns
+        doc["coreDump"] = JsonString((const char*)encoded, encodedLength, true);
+
+        bool published = _publishJsonStreaming(doc, _mqttTopicCrash);
+        free(encoded);
+
+        if (!published) {
+            LOG_ERROR("Failed to publish archived crash %s, keeping it on flash to retry", baseName);
+            return false;
+        }
+
+        LOG_INFO("Published crash %s in a single message (%zu bytes of gzipped dump, %zu bytes encoded)",
+                 baseName, readSize, encodedLength);
+
+        CrashMonitor::removeArchivedCrash(baseName);
         return true;
     }
 
