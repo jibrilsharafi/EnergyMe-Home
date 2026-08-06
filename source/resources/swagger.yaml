@@ -1344,9 +1344,20 @@ paths:
                       type: object
                       properties:
                         crashId:
+                          type: string
+                          description: >-
+                            Identifies the record everywhere. A 16 hex character prefix of the
+                            SHA-256 of the core dump, so it is derived from the crash itself
+                            rather than from the clock, which is not yet set when a record is
+                            written on a cold boot.
+                          example: "3f8a1c9d2e4b7016"
+                        timestamp:
                           type: integer
                           format: int64
-                          description: Unix time in milliseconds at archive time; identifies the record everywhere
+                          description: >-
+                            Unix time in milliseconds when the record was written. Orders the
+                            archive; not an identity. Records are archived before WiFi and so
+                            before NTP, so after a cold boot this is close to epoch.
                           example: 1754467200123
                         firmwareVersion:
                           type: string
@@ -1413,12 +1424,13 @@ paths:
                                   example: false
                                 addresses:
                                   type: array
+                                  description: >-
+                                    Decode against the ELF whose SHA-256 prefix matches
+                                    appElfSha256, e.g. xtensa-esp32-elf-addr2line -pfC -e
+                                    firmware.elf 0x4205051c 0x4037edca
                                   items:
                                     type: integer
                                   example: [1107625244, 1077407178]
-                                debugCommand:
-                                  type: string
-                                  example: "xtensa-esp32-elf-addr2line -pfC -e .pio/build/esp32dev/firmware.elf 0x4205051c 0x4037edca "
         '500':
           $ref: '#/components/responses/InternalServerError'
 
@@ -1438,9 +1450,8 @@ paths:
           description: crashId of the record to download. Defaults to the oldest archived record.
           required: false
           schema:
-            type: integer
-            format: int64
-            example: 1754467200123
+            type: string
+            example: "3f8a1c9d2e4b7016"
       responses:
         '200':
           description: Core dump retrieved successfully
@@ -1452,7 +1463,7 @@ paths:
             Content-Disposition:
               schema:
                 type: string
-                example: 'attachment; filename="1754467200123_820c1a865.bin.gz"'
+                example: 'attachment; filename="1754467200123_3f8a1c9d2e4b7016.bin.gz"'
           content:
             application/gzip:
               schema:
