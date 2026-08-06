@@ -150,8 +150,14 @@ namespace CustomWifi
     snprintf(hostname, sizeof(hostname), "%s-%s", WIFI_HOSTNAME_PREFIX, DEVICE_ID);
     WiFi.setHostname(hostname); // Allow for easier identification in the router/network client list
 
-    // Configure WiFi for better authentication reliability
-    WiFi.setAutoReconnect(true);
+    // This loop owns the connect path, so Arduino must not also drive one. With
+    // auto-reconnect on, STAClass re-calls esp_wifi_connect() the instant a disconnect
+    // arrives, and ESP-IDF then refuses esp_wifi_set_config() with "sta is connecting,
+    // cannot set config". On hardware that meant a device which could not associate could
+    // not be given new credentials either: 12 consecutive submissions were accepted by the
+    // API and discarded by the driver. It also made every _startStaAttempt() a no-op whose
+    // 10 s deadline expired into a failure that never actually ran.
+    WiFi.setAutoReconnect(false);
     WiFi.persistent(true);
     
     // APSTA from boot rather than switching modes later: a mode change on a live netif
@@ -1070,7 +1076,21 @@ namespace CustomWifi
     _readStoredSsid(_lastAttemptedSSID, sizeof(_lastAttemptedSSID));
     LOG_INFO("Starting WiFi association attempt to '%s'", _lastAttemptedSSID);
 
-    WiFi.begin(); // No arguments: uses the credentials the driver has stored
+    // WiFi.begin() calls esp_wifi_set_config() internally, which ESP-IDF refuses while a
+    // previous association is still in flight. Clearing it first keeps every attempt real:
+    // without this the call silently no-ops and the deadline below times out an attempt
+    // that never started, which is what produced the phantom failures seen on hardware.
+    esp_wifi_disconnect();
+
+    if (!WiFi.begin()) { // No arguments: uses the credentials the driver has stored
+      // Do not arm a deadline for an attempt that did not start; report it now so the
+      // state machine counts a real failure rather than waiting out a fictional one.
+      LOG_WARNING("WiFi.begin() refused - treating as an immediate association failure");
+      _connectDeadlineMs = 0;
+      _feedProvisioning(WifiProvisioning::Event::STA_ATTEMPT_FAILED);
+      return;
+    }
+
     _connectDeadlineMs = millis64() + _connectTimeoutMs;
   }
 
@@ -1089,8 +1109,11 @@ namespace CustomWifi
     LOG_WARNING("Association attempt timed out after %lu s", (unsigned long)(_connectTimeoutMs / 1000UL));
     _feedProvisioning(WifiProvisioning::Event::STA_ATTEMPT_FAILED);
 
-    // Retry unless the AP-raise predicate wants the radio for provisioning instead.
-    if (!WifiProvisioning::shouldRaiseAp(_provisioning, millis64())) {
+    // Keep trying for as long as there is something to try. Raising the AP is no longer a
+    // reason to stop: under APSTA both interfaces run at once, so the device can host the
+    // portal and still rejoin by itself the moment the router comes back. Without
+    // credentials there is nothing to attempt, and WiFi.begin() would just churn the radio.
+    if (_provisioning.hasCredentials) {
       _startStaAttempt();
     }
   }
