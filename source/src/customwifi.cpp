@@ -34,6 +34,7 @@ namespace CustomWifi
   static const uint32_t WIFI_EVENT_AP_START = 7;
   static const uint32_t WIFI_EVENT_AP_STACONNECTED = 8;
   static const uint32_t WIFI_EVENT_AP_STADISCONNECTED = 9;
+  static const uint32_t WIFI_EVENT_CREDENTIALS_CLEARED = 10;
 
   // Task state management
   static bool _taskShouldRun = false;
@@ -636,6 +637,18 @@ namespace CustomWifi
           _forceReconnectInternal();
           continue; // No further action needed
 
+        case WIFI_EVENT_CREDENTIALS_CLEARED:
+          // resetWifi() erased the driver's stored credentials from another task. Bring the
+          // context back in line here, where it is owned: UNPROVISIONED with the AP raised,
+          // no deadlines armed and nothing left to associate to.
+          LOG_INFO("Stored credentials cleared - returning to provisioning");
+          _connectDeadlineMs = 0;
+          _disconnectDeadlineMs = 0;
+          _reconnectAttempts = 0;
+          WiFi.disconnect(false);
+          _feedProvisioning(WifiProvisioning::Event::CREDENTIALS_CLEARED);
+          continue; // No further action needed
+
         case WIFI_EVENT_NEW_CREDENTIALS:
           if (_hasPendingCredentials)
           {
@@ -830,6 +843,15 @@ namespace CustomWifi
     esp_err_t err = esp_wifi_restore();
     if (err != ESP_OK) {
       LOG_ERROR("Failed to erase stored WiFi credentials: %s", esp_err_to_name(err));
+    }
+
+    // The restart below is the intended path - it is what applies the static-IP reset - but
+    // it is not guaranteed: the minimum-uptime gate refuses it during the first 30 s, and
+    // safe mode refuses it for far longer. Tell the WiFi task the credentials are gone so
+    // the SoftAP comes back either way, instead of leaving the device retrying an
+    // association it can no longer make with no way in.
+    if (_wifiTaskHandle != NULL) {
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_CREDENTIALS_CLEARED, eSetValueWithOverwrite);
     }
 
     setRestartSystem("Restart after WiFi reset");

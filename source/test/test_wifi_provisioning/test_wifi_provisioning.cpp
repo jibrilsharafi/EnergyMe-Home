@@ -256,6 +256,56 @@ void test_last_client_leaving_ends_grace_immediately(void) {
     TEST_ASSERT_FALSE(context.apRaised);
 }
 
+// ============================================================================
+// Credentials cleared (WiFi reset)
+// ============================================================================
+
+// Regression, found on hardware. resetWifi() erased the stored credentials but nothing
+// told the context, so it kept reporting hasCredentials and sat in STA_CONNECTING -
+// which shouldRaiseAp() does not cover. The restart that normally hides this was refused
+// by the minimum-uptime gate, and the device stayed off the LAN with no AP, unreachable
+// until it was power-cycled.
+void test_clearing_credentials_returns_to_unprovisioned_with_the_ap_up(void) {
+    Context context = provisionedContext();
+    onEvent(context, Event::STA_CONNECTED, kMinute);
+    TEST_ASSERT_EQUAL(State::STA_ONLY, context.state);
+    TEST_ASSERT_FALSE(context.apRaised);
+
+    onEvent(context, Event::CREDENTIALS_CLEARED, 2 * kMinute);
+
+    TEST_ASSERT_EQUAL(State::UNPROVISIONED, context.state);
+    TEST_ASSERT_FALSE(context.hasCredentials);
+    TEST_ASSERT_TRUE(context.apRaised);
+}
+
+// A failure after the reset must keep the device in setup rather than counting toward
+// AP_ASSIST, which would demand the web password on the AP of a device the user has
+// just deliberately wiped.
+void test_failure_after_clearing_credentials_stays_in_setup(void) {
+    Context context = provisionedContext();
+    onEvent(context, Event::STA_CONNECTED, kMinute);
+    onEvent(context, Event::CREDENTIALS_CLEARED, 2 * kMinute);
+
+    for (int i = 0; i < WIFI_PROVISIONING_AP_RAISE_THRESHOLD + 2; i++) {
+        onEvent(context, Event::STA_ATTEMPT_FAILED, 3 * kMinute + i);
+    }
+
+    TEST_ASSERT_EQUAL(State::UNPROVISIONED, context.state);
+    TEST_ASSERT_TRUE(context.apRaised);
+}
+
+// Clearing while the AP is already up must not restart the grace clock or double-raise.
+void test_clearing_credentials_with_the_ap_already_up_is_idempotent(void) {
+    Context context = unprovisionedContext();
+    uint64_t raisedAt = context.apRaisedAtMs;
+
+    onEvent(context, Event::CREDENTIALS_CLEARED, 5 * kMinute);
+
+    TEST_ASSERT_EQUAL(State::UNPROVISIONED, context.state);
+    TEST_ASSERT_TRUE(context.apRaised);
+    TEST_ASSERT_EQUAL(raisedAt, context.apRaisedAtMs);
+}
+
 // The grace window is measured from the connect, not from when the AP went up, so a
 // long provisioning session does not eat into the time the user gets to read the
 // "here is my new address" page.
@@ -554,6 +604,9 @@ int main(int, char **) {
     RUN_TEST(test_grace_expires_at_the_configured_window);
     RUN_TEST(test_expired_grace_teardown_settles_on_sta_only);
     RUN_TEST(test_last_client_leaving_ends_grace_immediately);
+    RUN_TEST(test_clearing_credentials_returns_to_unprovisioned_with_the_ap_up);
+    RUN_TEST(test_failure_after_clearing_credentials_stays_in_setup);
+    RUN_TEST(test_clearing_credentials_with_the_ap_already_up_is_idempotent);
     RUN_TEST(test_grace_is_measured_from_the_connect);
     RUN_TEST(test_losing_sta_during_grace_returns_to_connecting);
     RUN_TEST(test_losing_sta_again_keeps_ap_assist);

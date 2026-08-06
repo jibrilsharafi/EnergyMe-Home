@@ -49,6 +49,7 @@ enum class Event : uint8_t {
     STA_ATTEMPT_FAILED,     // One association attempt gave up
     STA_LOST,               // Was connected, dropped
     CREDENTIALS_SUBMITTED,
+    CREDENTIALS_CLEARED,    // The stored credentials were erased (WiFi reset)
     AP_LAST_CLIENT_LEFT,    // No stations remain associated to the SoftAP
     TICK                    // Time passed; re-evaluate the timers
 };

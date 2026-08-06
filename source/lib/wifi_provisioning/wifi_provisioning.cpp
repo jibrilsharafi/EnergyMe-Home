@@ -138,6 +138,21 @@ State onEvent(Context &context, Event event, uint64_t nowMs) {
             context.state = State::STA_CONNECTING;
             break;
 
+        case Event::CREDENTIALS_CLEARED:
+            // A WiFi reset erases the credentials the driver stores, so the context must
+            // stop claiming the device has any. Leaving hasCredentials set left the device
+            // retrying an association it could no longer make: STA_CONNECTING is not a
+            // state shouldRaiseAp() covers, so the SoftAP never came back and the meter was
+            // unreachable until someone power-cycled it. Seen on hardware when the restart
+            // that normally follows the reset was refused by the minimum-uptime gate.
+            context.hasCredentials = false;
+            context.staRetryAttempts = 0;
+            context.apRaiseTriggers = 0;
+            context.graceStartedAtMs = 0;
+            context.state = State::UNPROVISIONED;
+            if (!context.apRaised) raiseAp(context, nowMs);
+            break;
+
         case Event::AP_LAST_CLIENT_LEFT:
             // Nothing is watching, so the grace window has already delivered whatever it
             // was going to deliver. Only meaningful in GRACE: in every other state the AP
