@@ -49,7 +49,6 @@ void init(Context &context, bool hasCredentials, uint64_t nowMs) {
     context.apRaised = false;
     context.apRaisedAtMs = 0;
     context.graceStartedAtMs = 0;
-    context.apCooldownUntilMs = 0;
 
     if (hasCredentials) {
         context.state = State::STA_CONNECTING;
@@ -62,10 +61,11 @@ void init(Context &context, bool hasCredentials, uint64_t nowMs) {
 void raiseAp(Context &context, uint64_t nowMs) {
     context.apRaised = true;
     context.apRaisedAtMs = nowMs;
-    context.apCooldownUntilMs = 0;
 }
 
 void tearDownAp(Context &context, uint64_t nowMs) {
+    (void)nowMs;
+
     context.apRaised = false;
     context.apRaisedAtMs = 0;
     context.graceStartedAtMs = 0;
@@ -77,16 +77,9 @@ void tearDownAp(Context &context, uint64_t nowMs) {
     // would report GRACE until the next time it lost its network.
     if (context.state == State::GRACE) context.state = State::STA_ONLY;
 
-    // An unprovisioned device has no other way to be reached, so its AP comes back
-    // after a cooldown. An in-service device in AP_ASSIST does not: it gets exactly one
-    // bounded window per boot and recovers when its network returns or on a restart.
-    // That asymmetry is the whole point of the lifetime bound - a meter whose router
-    // died must not sit there broadcasting for weeks.
-    if (context.state == State::UNPROVISIONED) {
-        context.apCooldownUntilMs = nowMs + WIFI_PROVISIONING_AP_COOLDOWN_MS;
-    } else {
-        context.apCooldownUntilMs = 0;
-    }
+    // No cooldown to arm. In UNPROVISIONED and AP_ASSIST the AP is raised again
+    // immediately by shouldRaiseAp(), because in both the device has no other way to be
+    // reached; only associating takes it down for good.
 }
 
 State onEvent(Context &context, Event event, uint64_t nowMs) {
@@ -158,20 +151,21 @@ State onEvent(Context &context, Event event, uint64_t nowMs) {
 bool shouldTearDownAp(const Context &context, uint64_t nowMs) {
     if (!context.apRaised) return false;
 
-    if (context.state == State::GRACE &&
-        elapsedSince(context.graceStartedAtMs, nowMs) >= WIFI_PROVISIONING_GRACE_MS) {
-        return true;
-    }
-
-    // The hard bound. Applies in every state, including GRACE, so no single AP
-    // window can outlive it regardless of which timer the caller is watching.
-    return elapsedSince(context.apRaisedAtMs, nowMs) >= WIFI_PROVISIONING_AP_MAX_LIFETIME_MS;
+    // The only timed teardown. Everywhere else the AP is up because the device cannot
+    // be reached without it, and the cure is associating, not waiting.
+    return context.state == State::GRACE &&
+           elapsedSince(context.graceStartedAtMs, nowMs) >= WIFI_PROVISIONING_GRACE_MS;
 }
 
 bool shouldRaiseAp(const Context &context, uint64_t nowMs) {
+    (void)nowMs;
+
     if (context.apRaised) return false;
-    if (context.state != State::UNPROVISIONED) return false;
-    return nowMs >= context.apCooldownUntilMs;
+
+    // Both states mean "unreachable over the network": UNPROVISIONED has nothing to
+    // connect to, AP_ASSIST has credentials that do not work. Neither is time-limited,
+    // so a device that loses its network stays fixable in place.
+    return context.state == State::UNPROVISIONED || context.state == State::AP_ASSIST;
 }
 
 bool isNetworkServiceable(bool staConnected, bool apServing) {

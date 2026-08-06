@@ -145,41 +145,51 @@ void test_device_provisioned_this_boot_falls_back_to_ap_assist(void) {
 }
 
 // ============================================================================
-// Unbounded-AP regression
+// The AP is up while the device is unreachable, and only then
 // ============================================================================
 
-void test_ap_assist_is_torn_down_at_max_lifetime(void) {
+// The AP used to be bounded to 30 minutes per boot, which meant a meter whose router
+// was replaced went dark until someone power-cycled it. It is now held for as long as
+// the device cannot associate, because the assist AP keeps full authentication and
+// being fixable in place matters more than the airtime.
+void test_ap_assist_ap_is_not_time_limited(void) {
     Context context = provisionedContext();
     for (int i = 0; i < WIFI_PROVISIONING_AP_RAISE_THRESHOLD; i++) {
         onEvent(context, Event::STA_ATTEMPT_FAILED, kMinute);
     }
     TEST_ASSERT_EQUAL(State::AP_ASSIST, context.state);
 
-    TEST_ASSERT_FALSE(shouldTearDownAp(context, kMinute + WIFI_PROVISIONING_AP_MAX_LIFETIME_MS - 1));
-    TEST_ASSERT_TRUE(shouldTearDownAp(context, kMinute + WIFI_PROVISIONING_AP_MAX_LIFETIME_MS));
+    TEST_ASSERT_FALSE(shouldTearDownAp(context, kMinute + 30ULL * kMinute));
+    TEST_ASSERT_FALSE(shouldTearDownAp(context, 30ULL * 24ULL * 60ULL * kMinute));
 }
 
-void test_ap_assist_does_not_re_raise_after_teardown(void) {
+void test_ap_assist_re_raises_immediately_if_lowered(void) {
     Context context = provisionedContext();
     for (int i = 0; i < WIFI_PROVISIONING_AP_RAISE_THRESHOLD; i++) {
         onEvent(context, Event::STA_ATTEMPT_FAILED, kMinute);
     }
 
-    uint64_t teardownAt = kMinute + WIFI_PROVISIONING_AP_MAX_LIFETIME_MS;
+    uint64_t teardownAt = 10 * kMinute;
     tearDownAp(context, teardownAt);
 
-    // A meter whose router died must not broadcast for weeks. It gets its window back
-    // when the network returns, or on a restart.
-    TEST_ASSERT_FALSE(shouldRaiseAp(context, teardownAt + 24ULL * 60ULL * kMinute));
+    // Still cannot associate, so it still needs the AP. No cooldown to wait out.
+    TEST_ASSERT_TRUE(shouldRaiseAp(context, teardownAt));
 }
 
-void test_unprovisioned_ap_re_raises_after_cooldown(void) {
+void test_unprovisioned_ap_re_raises_immediately_if_lowered(void) {
     Context context = unprovisionedContext();
-    uint64_t teardownAt = WIFI_PROVISIONING_AP_MAX_LIFETIME_MS;
-    tearDownAp(context, teardownAt);
+    tearDownAp(context, 10 * kMinute);
 
-    TEST_ASSERT_FALSE(shouldRaiseAp(context, teardownAt + WIFI_PROVISIONING_AP_COOLDOWN_MS - 1));
-    TEST_ASSERT_TRUE(shouldRaiseAp(context, teardownAt + WIFI_PROVISIONING_AP_COOLDOWN_MS));
+    TEST_ASSERT_TRUE(shouldRaiseAp(context, 10 * kMinute));
+}
+
+// Associating is the one thing that ends the AP for good.
+void test_ap_is_not_raised_once_connected(void) {
+    Context context = provisionedContext();
+    onEvent(context, Event::STA_CONNECTED, kMinute);
+    TEST_ASSERT_EQUAL(State::STA_ONLY, context.state);
+
+    TEST_ASSERT_FALSE(shouldRaiseAp(context, 24ULL * 60ULL * kMinute));
 }
 
 void test_no_teardown_while_ap_is_down(void) {
@@ -230,9 +240,9 @@ void test_expired_grace_teardown_settles_on_sta_only(void) {
     TEST_ASSERT_EQUAL(State::STA_ONLY, context.state);
     TEST_ASSERT_FALSE(context.apRaised);
 
-    // And no cooldown re-raise: only an unprovisioned device broadcasts again, and this
-    // one is on the LAN where the user can reach it.
-    TEST_ASSERT_FALSE(shouldRaiseAp(context, expiresAt + WIFI_PROVISIONING_AP_COOLDOWN_MS));
+    // And it stays down: the device is on the LAN now, which is the only condition
+    // that keeps the AP from coming back.
+    TEST_ASSERT_FALSE(shouldRaiseAp(context, expiresAt));
     TEST_ASSERT_FALSE(shouldRaiseAp(context, expiresAt + 24ULL * 60ULL * kMinute));
 }
 
@@ -246,17 +256,19 @@ void test_last_client_leaving_ends_grace_immediately(void) {
     TEST_ASSERT_FALSE(context.apRaised);
 }
 
-void test_max_lifetime_still_bounds_a_long_grace(void) {
+// The grace window is measured from the connect, not from when the AP went up, so a
+// long provisioning session does not eat into the time the user gets to read the
+// "here is my new address" page.
+void test_grace_is_measured_from_the_connect(void) {
     Context context = unprovisionedContext();
     onEvent(context, Event::CREDENTIALS_SUBMITTED, 0);
 
-    // Connect right at the edge of the lifetime so the grace window would otherwise
-    // push the AP past the hard bound.
-    uint64_t connectAt = WIFI_PROVISIONING_AP_MAX_LIFETIME_MS - kMinute;
+    uint64_t connectAt = 45ULL * kMinute;  // AP had been up a long time already
     onEvent(context, Event::STA_CONNECTED, connectAt);
     TEST_ASSERT_EQUAL(State::GRACE, context.state);
 
-    TEST_ASSERT_TRUE(shouldTearDownAp(context, WIFI_PROVISIONING_AP_MAX_LIFETIME_MS));
+    TEST_ASSERT_FALSE(shouldTearDownAp(context, connectAt + WIFI_PROVISIONING_GRACE_MS - 1));
+    TEST_ASSERT_TRUE(shouldTearDownAp(context, connectAt + WIFI_PROVISIONING_GRACE_MS));
 }
 
 void test_losing_sta_during_grace_returns_to_connecting(void) {
@@ -508,9 +520,10 @@ int main(int, char **) {
     RUN_TEST(test_failed_credentials_keep_unprovisioned_device_open);
     RUN_TEST(test_device_provisioned_this_boot_falls_back_to_ap_assist);
 
-    RUN_TEST(test_ap_assist_is_torn_down_at_max_lifetime);
-    RUN_TEST(test_ap_assist_does_not_re_raise_after_teardown);
-    RUN_TEST(test_unprovisioned_ap_re_raises_after_cooldown);
+    RUN_TEST(test_ap_assist_ap_is_not_time_limited);
+    RUN_TEST(test_ap_assist_re_raises_immediately_if_lowered);
+    RUN_TEST(test_unprovisioned_ap_re_raises_immediately_if_lowered);
+    RUN_TEST(test_ap_is_not_raised_once_connected);
     RUN_TEST(test_no_teardown_while_ap_is_down);
 
     RUN_TEST(test_connect_with_ap_up_enters_grace);
@@ -518,7 +531,7 @@ int main(int, char **) {
     RUN_TEST(test_grace_expires_at_the_configured_window);
     RUN_TEST(test_expired_grace_teardown_settles_on_sta_only);
     RUN_TEST(test_last_client_leaving_ends_grace_immediately);
-    RUN_TEST(test_max_lifetime_still_bounds_a_long_grace);
+    RUN_TEST(test_grace_is_measured_from_the_connect);
     RUN_TEST(test_losing_sta_during_grace_returns_to_connecting);
     RUN_TEST(test_clock_going_backwards_does_not_expire_timers);
 

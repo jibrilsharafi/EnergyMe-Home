@@ -1265,8 +1265,9 @@ namespace CustomWifi
     }
   }
 
-  // Every AP window is bounded, so this runs the decision predicates each loop, then makes
-  // the radio match.
+  // Runs the decision predicates each loop, then makes the radio match. The only timed
+  // window left is grace; the AP is otherwise up exactly while the device cannot be
+  // reached over its own network, so this mostly just re-asserts that.
   static void _serviceApLifecycle()
   {
     uint64_t nowMs = millis64();
@@ -1275,8 +1276,8 @@ namespace CustomWifi
       WifiProvisioning::tearDownAp(_provisioning, nowMs);
       _publishedState = _provisioning.state;
     } else if (WifiProvisioning::shouldRaiseAp(_provisioning, nowMs)) {
-      // The UNPROVISIONED re-raise after a cooldown (D12). AP_ASSIST does not come through
-      // here; onEvent() has already decided that, and _reconcileApWithState() acts on it.
+      // Covers both the first raise and any later one: if the AP is somehow down while the
+      // device still cannot associate, this puts it back rather than leaving it dark.
       WifiProvisioning::raiseAp(_provisioning, nowMs);
       _publishedState = _provisioning.state;
     }

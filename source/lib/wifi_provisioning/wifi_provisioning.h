@@ -20,10 +20,13 @@
 
 namespace WifiProvisioning {
 
-// Timing. All milliseconds, all bounded.
+// Timing. Milliseconds.
+//
+// Only the grace window is timed. The AP itself is not on a clock: it is up exactly
+// while the device cannot be reached over its own network, and comes down when it can.
+// A meter whose router died must stay fixable by walking up to it, and the assist AP
+// keeps full authentication (see isAuthBypassAllowed), so holding it up costs little.
 #define WIFI_PROVISIONING_GRACE_MS (5UL * 60UL * 1000UL)         // AP stays up this long after a successful connect
-#define WIFI_PROVISIONING_AP_MAX_LIFETIME_MS (30UL * 60UL * 1000UL)  // Hard bound on any single AP window
-#define WIFI_PROVISIONING_AP_COOLDOWN_MS (5UL * 60UL * 1000UL)   // Gap before an unprovisioned device re-raises
 
 // Consecutive association failures before the AP is raised to ask for help.
 #define WIFI_PROVISIONING_AP_RAISE_THRESHOLD 5
@@ -69,9 +72,8 @@ struct Context {
     uint32_t apRaiseTriggers;
 
     bool apRaised;
-    uint64_t apRaisedAtMs;
+    uint64_t apRaisedAtMs;   // Diagnostics only; the AP is not lifetime-bounded
     uint64_t graceStartedAtMs;
-    uint64_t apCooldownUntilMs;
 };
 
 // Sets the initial state from what NVS holds. `nowMs` seeds the AP timers when the
@@ -82,18 +84,20 @@ void init(Context &context, bool hasCredentials, uint64_t nowMs);
 State onEvent(Context &context, Event event, uint64_t nowMs);
 
 // Timer evaluation, safe to call as often as the caller likes. Returns true when
-// the caller should tear the AP down.
+// the caller should tear the AP down. Only a finished grace window does that: every
+// other reason to lower the AP is a state change, not the passage of time.
 bool shouldTearDownAp(const Context &context, uint64_t nowMs);
 
-// True when an unprovisioned device with its AP down has waited out the cooldown
-// and should broadcast again. Never true for AP_ASSIST: an in-service device gets
-// exactly one bounded window per boot, and recovers when its network comes back or
-// when it is restarted.
+// True when the device cannot be reached over its own network and has no AP up yet.
+// Holds for UNPROVISIONED (nothing to connect to) and for AP_ASSIST (credentials that
+// do not work), and keeps holding until STA associates. Nothing expires it, so a
+// device that loses its network stays reachable by walking up to it rather than going
+// dark until someone power-cycles it.
 bool shouldRaiseAp(const Context &context, uint64_t nowMs);
 
-// Applies the teardown: the cooldown for the unprovisioned case, and the settle to
-// STA_ONLY when a grace window ends. Every path that lowers the AP goes through here,
-// so no caller can leave the state describing an AP that is no longer up.
+// Applies the teardown, including the settle to STA_ONLY when a grace window ends.
+// Every path that lowers the AP goes through here, so no caller can leave the state
+// describing an AP that is no longer up.
 void tearDownAp(Context &context, uint64_t nowMs);
 
 // Applies the raise.
