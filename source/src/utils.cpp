@@ -13,6 +13,16 @@ static bool _maintenanceTaskShouldRun = false;
 
 static esp_timer_handle_t _failsafeTimer = NULL;
 
+// A restart request refused by the uptime gate is held here and retried from the
+// maintenance loop. Dropping it - which is what returning false alone did - loses the
+// request entirely: a WiFi reset issued in the first 30 s of uptime erased the
+// credentials, logged "restart delayed" and then never restarted, leaving the device
+// running on state that no longer matched what was stored. Deferring keeps the
+// anti-restart-loop protection intact; it only stops the request from evaporating.
+static bool _pendingRestart = false;
+static bool _pendingRestartFactoryReset = false;
+static char _pendingRestartReason[STATUS_BUFFER_SIZE] = {0};
+
 static TaskHeartbeat _maintenanceHeartbeat;
 
 // Static function declarations
@@ -423,6 +433,16 @@ static void _maintenanceTask(void* parameter) {
     while (_maintenanceTaskShouldRun) {
         TASK_HEARTBEAT(_maintenanceHeartbeat);
 
+        // Retry a restart the uptime gate refused earlier, now that it may be allowed.
+        if (_pendingRestart && CrashMonitor::canRestartNow()) {
+            char reason[STATUS_BUFFER_SIZE];
+            snprintf(reason, sizeof(reason), "%s", _pendingRestartReason);
+            bool factoryReset = _pendingRestartFactoryReset;
+            _pendingRestart = false;
+            LOG_INFO("Retrying restart that was delayed by the uptime gate");
+            setRestartSystem(reason, factoryReset);
+        }
+
         // Update and print statistics
         printStatistics();
         printDeviceStatusDynamic();
@@ -622,11 +642,27 @@ bool setRestartSystem(const char* reason, bool factoryReset) {
         } else {
             LOG_WARNING(
                 "Restart delayed: minimum uptime not reached (%lu s remaining to "
-                "prevent rapid restart loops)", 
+                "prevent rapid restart loops)",
                 remainingSec
             );
         }
-        
+
+        // Hold the request rather than discarding it. The gate exists to space restarts
+        // out, not to cancel them, and a caller that has already changed persistent state
+        // (resetWifi() erases the credentials before asking) cannot undo its half of the
+        // operation when this returns false. First request wins: a later one would only
+        // overwrite the reason for the same restart.
+        if (!_pendingRestart) {
+            _pendingRestart = true;
+            _pendingRestartFactoryReset = factoryReset;
+            snprintf(_pendingRestartReason, sizeof(_pendingRestartReason), "%s", reason);
+        } else if (factoryReset && !_pendingRestartFactoryReset) {
+            // A factory reset is the stronger request and must not be masked by a plain
+            // restart that happened to be asked for first.
+            _pendingRestartFactoryReset = true;
+            snprintf(_pendingRestartReason, sizeof(_pendingRestartReason), "%s", reason);
+        }
+
         return false;
     }
 
