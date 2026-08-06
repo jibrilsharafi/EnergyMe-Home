@@ -35,11 +35,15 @@ from _device_auth import add_device_args, resolve_credentials
 
 
 class CrashDumpAnalyzer:
-    def __init__(self, device_ip: str, username: Optional[str] = None, password: Optional[str] = None):
+    def __init__(self, device_ip: str, username: Optional[str] = None, password: Optional[str] = None,
+                 elf_path: Optional[str] = None):
         self.device_ip = device_ip
         self.base_url = f"http://{device_ip}"
         self.session = requests.Session()
-        
+        # Explicit ELF wins over both the releases lookup and the default build
+        # path, which is what makes non-default environments usable here
+        self.elf_path = elf_path
+
         # Set up authentication if provided
         if username and password:
             self.session.auth = HTTPDigestAuth(username, password)
@@ -160,7 +164,7 @@ class CrashDumpAnalyzer:
             return None
 
         if crash_id is not None:
-            record = next((c for c in crashes if c.get('crashId') == crash_id), None)
+            record = next((c for c in crashes if str(c.get('crashId')) == str(crash_id)), None)
             if record is None:
                 available = ', '.join(str(c.get('crashId')) for c in crashes)
                 print(f"❌ No archived crash with id {crash_id}. Available: {available}")
@@ -172,7 +176,8 @@ class CrashDumpAnalyzer:
                       f"(crashId {record.get('crashId')}). Use --crash-id to pick another.")
 
         flattened = dict(record.get('crashInfo', {}))
-        for key in ('crashId', 'firmwareVersion', 'coreDumpRawSize', 'coreDumpCompressedSize'):
+        for key in ('crashId', 'timestamp', 'firmwareVersion',
+                    'coreDumpRawSize', 'coreDumpCompressedSize'):
             if key in record:
                 flattened[key] = record[key]
 
@@ -188,8 +193,15 @@ class CrashDumpAnalyzer:
         
         # Basic crash information
         if crash_info.get('crashId'):
-            print(f"Crash ID: {crash_info['crashId']} "
-                  f"({datetime.fromtimestamp(crash_info['crashId'] / 1000).strftime('%Y-%m-%d %H:%M:%S')})")
+            print(f"Crash ID: {crash_info['crashId']}")
+        # Written before NTP on a cold boot, so a near-epoch value is expected
+        # rather than wrong - show it raw in that case instead of pretending
+        timestamp = crash_info.get('timestamp')
+        if timestamp:
+            archived_at = datetime.fromtimestamp(timestamp / 1000)
+            when = archived_at.strftime('%Y-%m-%d %H:%M:%S') if archived_at.year > 2000 \
+                else f"{timestamp} ms - clock was not set when this was archived"
+            print(f"Archived at: {when}")
         print(f"Firmware Version: {crash_info.get('firmwareVersion', 'Unknown')}")
         print(f"Reset Reason: {crash_info.get('resetReason', 'Unknown')}")
         print(f"Reset Code: {crash_info.get('resetReasonCode', 'Unknown')}")
@@ -218,16 +230,34 @@ class CrashDumpAnalyzer:
                 if addresses:
                     print(f"Addresses: {' '.join([f'0x{addr:08x}' for addr in addresses])}")
                 
-                debug_cmd = backtrace.get('debugCommand')
+                # Built here rather than taken from the device: the ELF is the
+                # one resolved locally (--elf, or the releases lookup), which is
+                # the only path that means anything on this machine
+                debug_cmd = self._build_addr2line_command(addresses, crash_info)
                 if debug_cmd:
                     print(f"\n🔧 DEBUG COMMAND:")
                     print(f"{debug_cmd}")
-                    
-                    # Run the debug command
+
                     debug_output = self._run_debug_command(debug_cmd)
-        
+
         print("="*80)
         return debug_output
+
+    def _build_addr2line_command(self, addresses, crash_info: Dict[str, Any]) -> Optional[str]:
+        """Compose an addr2line invocation for `addresses` against the local ELF."""
+        if not addresses:
+            return None
+
+        elf = self.elf_path or self.find_matching_elf_in_releases(
+            crash_info.get('appElfSha256', ''), crash_info.get('firmwareVersion')
+        )
+        if not elf:
+            print("ℹ️  No local ELF resolved yet, skipping backtrace decode "
+                  "(pass --elf to decode against a specific build)")
+            return None
+
+        joined = ' '.join(f'0x{addr:08x}' for addr in addresses)
+        return f'xtensa-esp32-elf-addr2line -pfC -e "{elf}" {joined}'
 
     def download_core_dump(self, crash_id: Optional[int] = None) -> Optional[bytes]:
         """Download one archived core dump and return the raw ELF bytes.
@@ -320,16 +350,11 @@ class CrashDumpAnalyzer:
                     if addresses:
                         f.write(f"Addresses: {' '.join([f'0x{addr:08x}' for addr in addresses])}\n")
                     
-                    debug_cmd = backtrace.get('debugCommand')
-                    if debug_cmd:
-                        f.write(f"\nDEBUG COMMAND:\n")
-                        f.write(f"{debug_cmd}\n")
-                        
-                        if debug_output:
-                            f.write(f"\nDEBUG OUTPUT:\n")
-                            f.write("-"*40 + "\n")
-                            f.write(debug_output)
-                            f.write("\n")
+                    if debug_output:
+                        f.write(f"\nDEBUG OUTPUT:\n")
+                        f.write("-"*40 + "\n")
+                        f.write(debug_output)
+                        f.write("\n")
                 
                 f.write("\n" + "="*80 + "\n")
                 
@@ -601,9 +626,15 @@ class CrashDumpAnalyzer:
             firmware_version = crash_info.get('firmwareVersion')
             firmware_path = None
 
-            if device_sha256 or firmware_version:
+            if self.elf_path:
+                if not os.path.exists(self.elf_path):
+                    print(f"❌ ELF file not found: {self.elf_path}")
+                    return False
+                firmware_path = self.elf_path
+                print(f"📎 Using the ELF given on the command line: {firmware_path}")
+            elif device_sha256 or firmware_version:
                 firmware_path = self.find_matching_elf_in_releases(device_sha256, firmware_version)
-            
+
             # Fallback to current build if no match found in releases
             if not firmware_path:
                 firmware_path = ".pio/build/esp32s3-dev/firmware.elf"
@@ -762,10 +793,14 @@ def main():
                        help='crashId of the archived record to analyze (default: the oldest)')
     parser.add_argument('--clear', action='store_true',
                        help='Delete every archived crash from the device after analysis')
+    parser.add_argument('--elf', default=None,
+                       help='ELF to decode against, bypassing the releases lookup and the '
+                            'default build path (needed for non-default environments, '
+                            'e.g. .pio/build/esp32s3-dev-v5-bench/firmware.elf)')
     args = parser.parse_args()
 
     username, password = resolve_credentials(args)
-    analyzer = CrashDumpAnalyzer(args.host, username, password)
+    analyzer = CrashDumpAnalyzer(args.host, username, password, elf_path=args.elf)
 
     try:
         # Run analysis automatically (no prompts)
