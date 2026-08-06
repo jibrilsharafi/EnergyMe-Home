@@ -109,7 +109,7 @@ Required before D7. Without it, AP-only provisioning reboots every ~150 s and re
 - [x] 2.1 `source/lib/wifi_provisioning/wifi_provisioning.h` (+ `.cpp` if needed). SPDX header, `#pragma once`, `<cstdint>` / `<cstddef>` only. No Arduino, FreeRTOS or ESP headers.
 - [x] 2.2 State enum and transition table per D8: `UNPROVISIONED`, `STA_CONNECTING`, `AP_ASSIST`, `GRACE`, `STA_ONLY`.
 - [x] 2.3 AP-raise predicate. **Separate "STA retry attempts" from "AP-raise trigger count"** so `_forceReconnectInternal()` cannot poison it (D8).
-- [x] 2.4 Grace-window and `WIFI_AP_MAX_LIFETIME` arithmetic, both bounded (D1).
+- [x] 2.4 Grace-window arithmetic (D1). The AP lifetime bound and cooldown that originally sat here were removed when D1 was revised: the AP is now up while the device is unreachable, with grace the only timer.
 - [x] 2.5 AP subnet candidate selection with overlap detection against a given STA subnet. CIDR /24 to /28 only.
 - [x] 2.6 `source/test/test_wifi_provisioning/test_wifi_provisioning.cpp`. Explicit `main()` with `UNITY_BEGIN` / `RUN_TEST` / `UNITY_END`.
 - [x] 2.7 Cover: unbounded-AP regression, counter-poisoning regression, subnet overlap including a foreign restored static IP, grace expiry, lifetime expiry.
@@ -209,7 +209,7 @@ Only after Phases 1 to 5 are green on hardware.
 
 ## Implementation status
 
-Everything below is **compile-verified only**. `pio test -e native` is green (352 cases, 49 of them the pure logic in `lib/wifi_provisioning`) and `pio run -e esp32s3-dev` builds; nothing has run on hardware.
+`pio test -e native` is green (354 cases, 51 of them the pure logic in `lib/wifi_provisioning`) and `pio run -e esp32s3-dev` builds. **The feature has now run on hardware** — see "Hardware validation" below. F1, F2 and F3 pass; F4, F5 and F6 remain.
 
 Landed: WiFiManager fully removed (`1a9f511`), non-blocking connect and SoftAP lifecycle, D7 boot gate, auth carve-out and provisioning API, WiFi setup page and async scan, AP LED state, Modbus no longer exposed on the AP, documentation and swagger.
 
@@ -229,8 +229,39 @@ A fourth pass reviewed the whole branch against `development` and found more, al
 - Scan results were never freed, and "Scan again" re-served the cache without touching the radio (`0de0bcd`).
 - `_isProvisioningOrigin()` called `WiFi.softAPIP()`, an `esp_netif_get_ip_info()` call, on the AsyncTCP task for every request to every path (`feb129c`).
 
+---
+
+## Hardware validation (2026-08-06)
+
+Run on a **v5 board** over a USB-serial adapter, not the v6.1 dev unit: `[env:esp32s3-dev-v5-bench]` and a `version = 50` entry in `PCB_PROFILES[]` exist only to make that board usable while away from the office, and are **deliberately uncommitted**. Flash was fully erased first, so the device was genuinely unprovisioned and in community mode. Driven by scripts that switch the laptop's WiFi between the SoftAP and the LAN, with the device's serial log captured throughout for cross-checking.
+
+**Passing**
+
+| Test | Result |
+|---|---|
+| **F1** end-to-end provisioning | 24/24. Unprovisioned boot -> AP on `172.31.42.1` -> phone/laptop associates -> setup page unauthenticated -> scan -> credentials -> STA associates -> AP torn down |
+| **F2** AP_ASSIST security | 11/11. Every route on the assist AP returns 401 (`/`, `/wifi-setup.html`, scan, status, network config, captive probes) including the credentials POST; `/api/v1/health` open by design |
+| **F3 / Bench-4** ships-blocking | **PASS.** A LAN host with a static route to `172.31.42.0/24` via the STA address cannot reach the AP at all — lwIP rejected the packet, so the carve-out's address compare is unreachable from the STA netif. The open question in `isAuthBypassAllowed`'s comment is settled |
+
+Also confirmed in passing: grace teardown at 300.6 s against a 300 s constant; carve-out closing the instant state leaves `UNPROVISIONED`; health check green while AP-only (the Phase 1 fix); Modbus starting only at `STA link up`; captive DNS started on AP and stopped on STA-connect (D4); all 7 captive probes returning 302 to the AP; credentials surviving a reboot with the device coming back `STA_CONNECTING -> STA_ONLY` and no AP.
+
+**Three defects found that host tests could not reach.** All live at the Arduino/ESP-IDF boundary, outside `lib/wifi_provisioning`:
+
+1. **A device that could not associate could not be re-provisioned.** `esp_wifi_set_config()` is refused while the STA is connecting, and `setAutoReconnect(true)` kept a failing device permanently connecting — so the write failed exactly when the user was correcting the password. Observed as **12/12 submissions accepted with HTTP 200 and discarded by the driver**, with the credentials wiped from the pending buffer and no retry. This is the feature's core promise failing. Fixed by disconnecting before the write, retrying once, and reporting the outcome via `credentialWriteFailed` on the status endpoint.
+2. **Two reconnect loops raced.** Arduino's auto-reconnect against this branch's own retry loop, giving no-op `WiFi.begin()` calls whose 10 s deadlines expired into failures that never ran. Fixed with `setAutoReconnect(false)` plus an `esp_wifi_disconnect()` before each attempt, and by treating a refused `begin()` as an immediate failure instead of arming a deadline.
+3. **`_isPowerReset()` was evaluated per attempt.** `esp_reset_reason()` is fixed for a whole boot, so on any power-on or brownout boot *every* attempt waited 300 s — making `WIFI_CONNECT_TIMEOUT_SECONDS` unreachable on mains hardware and pushing `AP_ASSIST` out to ~25 minutes. Now a one-shot for the first attempt.
+
+Plus a reported-state defect: `STA_LOST` demoted unconditionally, so a device in `AP_ASSIST` flapped `AP_ASSIST -> STA_CONNECTING` on every retry cycle while the AP stayed up throughout.
+
+**Bench notes.** Early runs showed repeated `BROWNOUT_RST`; that was the programmer's 3.3 V rail and a poor physical connection, fixed by the user, not a firmware fault. `netsh wlan show networks` served a stale cache that reported the AP absent while association to it succeeded immediately — AP presence must be probed by associating, never by scanning.
+
+**Still outstanding:** F4 (Bench-2 heap gate), F5 (extended AP-only stability), F6 (Bench-3 phone stickiness, needs a real phone), Bench-1 (informational).
+
+---
+
 Not done, and deliberately so:
 - **3.7 (D2 channel handling).** Only the stop -> `softAPConfig` -> `softAP(ssid,pw,N)` sequence is implemented, which is correct whichever way Bench-1 lands. Choosing the target channel from the scan cache waits for Bench-1.
+- **Multiple saved networks (up to 5).** Deferred to its own openspec change. `esp_wifi` stores exactly one STA config and this change reads it directly, so supporting several means owning a credential store in NVS, deciding candidate ordering, and reshaping the credentials API into a collection. Every credential read already funnels through `_hasStoredCredentials()` and `_readStoredSsid()`, so the store can be swapped without touching the state machine or the AP lifecycle.
 - **NTP re-trigger (D7).** Verified unnecessary: `TIME_SYNC_RETRY_IF_NOT_SYNCHED` is 60 s and `_configureNtpServers()` re-reads the gateway on every attempt, so a never-synced device picks up the real gateway within a minute of STA connecting.
 - **Issue suppression while unprovisioned (D7).** `ntp_not_synced`, `cloud_mqtt_disconnected` and `custom_mqtt_connect_failed` will raise during provisioning. Cosmetic, and the registry is the wrong place to special-case a transient state without hardware to confirm the actual noise.
 
@@ -260,11 +291,13 @@ What has to go on hardware, and what each flash actually proves. Kept current as
 
 ## Verification summary
 
-| Gate | Blocks | Pass criterion |
-|---|---|---|
-| Bench-2 | Everything after Phase 0 | `heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL \| MALLOC_CAP_8BIT)` >= 40 KB steady, never < 32 KB under load, unprovisioned-first-boot config |
-| Bench-3 | The grace window in D1/D4 | Phone stays associated >= 60 s after STA connect, iOS and Android |
-| Bench-1 | D2 implementation choice | Informational |
-| Bench-4 | Phase 4 ship | LAN host via static route gets 401, not 200 |
-| Phase 1 bench | D7 / Phase 6.8 | 30 min AP-only, zero reboots, reset counter flat |
-| `pio test -e native` | Phase 2 | All green, from WSL |
+| Gate | Blocks | Pass criterion | Status |
+|---|---|---|---|
+| Bench-2 | Everything after Phase 0 | `heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL \| MALLOC_CAP_8BIT)` >= 40 KB steady, never < 32 KB under load, unprovisioned-first-boot config | outstanding |
+| Bench-3 | The grace window in D1/D4 | Phone stays associated >= 60 s after STA connect, iOS and Android | outstanding, needs a real phone |
+| Bench-1 | D2 implementation choice | Informational | outstanding |
+| Bench-4 | Phase 4 ship | LAN host via static route gets 401, not 200 | **PASS** — unreachable entirely, 2026-08-06 |
+| Phase 1 bench | D7 / Phase 6.8 | Extended AP-only, zero reboots, reset counter flat | partial: health check confirmed green AP-only; the long run is outstanding |
+| `pio test -e native` | Phase 2 | All green, from WSL | **PASS** — 354 cases |
+| F1 end-to-end | The feature working at all | Unprovisioned boot through to AP teardown | **PASS** — 2026-08-06 |
+| F2 AP_ASSIST auth | Ship | Every route on the assist AP requires auth | **PASS** — 2026-08-06 |

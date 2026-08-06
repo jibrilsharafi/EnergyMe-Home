@@ -25,12 +25,12 @@ The device SHALL start the web server and local integrations when the SoftAP is 
 
 #### Scenario: Health check during AP-only operation
 
-- **WHEN** the device serves on the AP netif with STA down for 30 minutes
+- **WHEN** the device serves on the AP netif with STA down for an extended period
 - **THEN** the health check reports healthy, the device does not restart, and the consecutive-reset counter does not increase
 
-### Requirement: The SoftAP has a bounded lifetime
+### Requirement: The SoftAP is raised while the device is unreachable, and only then
 
-The SoftAP SHALL NOT remain raised indefinitely. Every path that raises it SHALL have a teardown condition.
+The SoftAP SHALL be raised whenever the device cannot be reached over its own network, and SHALL be torn down once it can. Association, not elapsed time, is the teardown condition.
 
 #### Scenario: Successful provisioning
 
@@ -39,23 +39,24 @@ The SoftAP SHALL NOT remain raised indefinitely. Every path that raises it SHALL
 
 #### Scenario: Nobody ever connects
 
-- **WHEN** the AP is raised and no client associates within the maximum AP lifetime
-- **THEN** the AP is torn down
+- **WHEN** the AP is raised and no client associates
+- **THEN** the AP stays raised, because a device nobody can reach is not made more useful by going quiet
 
 #### Scenario: Device loses its network permanently
 
 - **WHEN** the device enters AP-assist because its network is gone and the user never intervenes
-- **THEN** the AP is torn down at the maximum lifetime rather than broadcasting indefinitely
+- **THEN** the AP stays raised indefinitely, with full authentication still required on it, so the device remains fixable in place rather than needing a power cycle
+- **AND** STA association attempts continue throughout, so the device rejoins by itself if the network returns
 
-#### Scenario: Unprovisioned device left alone past the maximum lifetime
+#### Scenario: Unprovisioned device left alone
 
-- **WHEN** a device with no stored credentials reaches the maximum AP lifetime with nobody connected
-- **THEN** the AP is torn down and raised again after a cooldown, because a device with no credentials has no other way to be reached
+- **WHEN** a device with no stored credentials is left running
+- **THEN** the AP remains raised, because it has no other way to be reached
 
-#### Scenario: User asks for the AP after it was torn down
+#### Scenario: The AP is lowered while the device is still unreachable
 
-- **WHEN** the user makes the on-demand request on a device whose AP window has closed
-- **THEN** the AP is raised again with a fresh lifetime
+- **WHEN** the AP comes down for any reason while the device still cannot associate
+- **THEN** it is raised again on the next lifecycle tick, with no cooldown to wait out
 
 ### Requirement: Local integrations are not exposed on the SoftAP
 
@@ -74,6 +75,20 @@ Changing the WiFi SSID or password SHALL apply without a restart. Changing the s
 
 - **WHEN** the user submits new WiFi credentials
 - **THEN** the device associates to the new network without restarting, and reports the outcome through a status endpoint
+
+### Requirement: New credentials can always be stored, including on a device that cannot associate
+
+Submitting credentials SHALL store them regardless of the current association state. A device that cannot reach its network is precisely the device whose credentials need correcting, so the retry activity of that state SHALL NOT block the write.
+
+#### Scenario: Correcting credentials on a device in AP-assist
+
+- **WHEN** the user submits new credentials to a device that is repeatedly failing to associate
+- **THEN** any association in flight is stopped first so the driver accepts the write, and the new credentials are stored and attempted
+
+#### Scenario: The driver rejects the write
+
+- **WHEN** the credential write is refused by the WiFi driver
+- **THEN** the failure is retried once, and if it still fails the device SHALL report it through the status endpoint rather than leaving the caller with the success response the request already received
 
 #### Scenario: Static IP change
 

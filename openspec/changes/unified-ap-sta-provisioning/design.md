@@ -66,15 +66,22 @@ The meter is **not** blocked. `Ade7953::begin()` (`main.cpp:131`) starts five ta
 
 ## Decisions
 
-### D1: On-demand AP, bounded lifetime
+### D1: The AP is up while the device is unreachable (REVISED after hardware testing)
 
-Raise the AP when: no credentials in NVS, or STA has failed `WIFI_MAX_CONSECUTIVE_RECONNECT_ATTEMPTS` consecutive times, or the user asks (button, or a UI toggle while connected).
+Raise the AP when the device cannot be reached over its own network: no credentials in NVS (`UNPROVISIONED`), or STA has failed `WIFI_PROVISIONING_AP_RAISE_THRESHOLD` consecutive association attempts (`AP_ASSIST`).
 
-Tear it down when: 5 minutes have elapsed after a successful STA association initiated from the AP (the grace window), **or** `WIFI_AP_MAX_LIFETIME` (30 min) has elapsed with no client ever connecting, **or** the user dismisses it.
+Tear it down when the device becomes reachable: STA associates, plus a 5-minute grace window if the AP was up at the time so the client that submitted credentials can see the result. **No lifetime bound and no cooldown.** The only timer left is grace.
 
-The `AP_ASSIST` lifetime bound is not optional. Today `startConfigPortal()` times out after `WIFI_PORTAL_TIMEOUT_SECONDS` and `customwifi.cpp:694` restarts, so the AP window is bounded at 5 minutes per boot. An unbounded `AP_ASSIST` would leave a device whose router died, or whose owner moved house, broadcasting indefinitely. Preserve the bound.
+**This reverses the original decision.** Revision 1 bounded `AP_ASSIST` to 30 minutes per boot with no re-raise, reasoning that a meter whose router died must not broadcast indefinitely. Two things changed that:
 
-*Rejected: always-on AP.* Permanent radio and RAM cost, and on community devices the AP PSK falls back to `DEVICE_ID`, which is the SSID suffix.
+- **The premise was pre-APSTA.** The bound was inherited from `startConfigPortal()`, which *replaced* STA mode, so an open portal meant no reconnection. Under `WIFI_AP_STA` both interfaces run at once: the device keeps retrying STA the whole time the AP is up, and rejoins by itself when the router comes back. Holding the AP costs airtime, not recoverability.
+- **The failure mode was worse than the thing it prevented.** A bounded window means a device that misses it goes dark until someone power-cycles it. For a DIN-rail meter in a cabinet that is a truck roll; for a user whose router was replaced it is unrecoverable without tools.
+
+The AP keeps **full digest authentication** in `AP_ASSIST` (see D9 / `isAuthBypassAllowed`), so an indefinitely-raised assist AP is not an open door — it is a WPA2 network that still demands the web password. That is what makes the trade acceptable.
+
+*Residual risk, accepted:* on community devices the AP PSK falls back to `DEVICE_ID`, which is the SSID suffix, so the L2 network is effectively joinable by anyone in range for as long as the AP is up. Authentication is the control, not the PSK. If that becomes unacceptable, the fix is a better factory AP password, not a shorter window.
+
+*Rejected: duty-cycling (30 min up, 30 min down).* Bounds exposure but makes "walk up and fix it" a coin flip on timing, which is the worst of both.
 
 ### D2: AP restart on the target channel (REWRITTEN)
 
@@ -245,14 +252,13 @@ Deleting `_setupWiFiManager` deletes these by accident unless they are moved fir
 
 Also: `customserver.h:6` includes `<WiFiManager.h>` directly. Removing the dependency breaks that file.
 
-### D12: AP re-raise is asymmetric between UNPROVISIONED and AP_ASSIST
+### D12: UNPROVISIONED and AP_ASSIST are treated identically (REVISED)
 
-D1 bounds every AP window, which raises the question of what happens after the bound fires. The answer differs by state, and the difference is deliberate:
+Revision 1 made re-raise asymmetric: `UNPROVISIONED` came back after a 5-minute cooldown, `AP_ASSIST` got one window per boot and nothing more. With D1 revised, the asymmetry has no reason to exist — both states mean exactly the same thing operationally, "this device cannot be reached over its network", and both are answered the same way: the AP is up, and stays up, until STA associates.
 
-- **`UNPROVISIONED`**: the AP comes back after `WIFI_AP_COOLDOWN` (5 min). A device with no credentials has no other way to be reached, and a first-boot user who walks away for 40 minutes must not return to a dark device. Each window is still bounded, so the radio is not on permanently.
-- **`AP_ASSIST`**: no automatic re-raise. One window per boot, and the button raises another. This is the "router died" and "owner moved house" case the bound exists for; a meter that broadcasts an open-ish SSID for weeks is exactly what D1 set out to prevent.
+`shouldRaiseAp()` is now `state == UNPROVISIONED || state == AP_ASSIST`, with no clock in it at all. `shouldTearDownAp()` fires only for an expired grace window. `WIFI_PROVISIONING_AP_MAX_LIFETIME_MS`, `WIFI_PROVISIONING_AP_COOLDOWN_MS` and `Context::apCooldownUntilMs` are gone.
 
-Both paths are unit-tested (`test_unprovisioned_ap_re_raises_after_cooldown`, `test_ap_assist_does_not_re_raise_after_teardown`).
+Unit-tested by `test_ap_assist_ap_is_not_time_limited`, `test_ap_assist_re_raises_immediately_if_lowered`, `test_unprovisioned_ap_re_raises_immediately_if_lowered` and `test_ap_is_not_raised_once_connected`.
 
 ### D13: Decisions made while the bench gates are outstanding
 
