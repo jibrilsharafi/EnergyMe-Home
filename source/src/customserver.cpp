@@ -279,6 +279,27 @@ namespace CustomServer
         return CustomWifi::isApAddress(client->localIP());
     }
 
+    // Same origin test, but also true during GRACE: the window right after credentials are
+    // accepted, while the AP is deliberately held up so the user can see where the meter
+    // went. Without this the setup page 401s the moment it succeeds - reloading it gets a
+    // browser password prompt, and the grace window has nothing to show, which defeats its
+    // entire purpose.
+    //
+    // Used only for reading: the page, its assets, the captive probes and the status
+    // endpoint. Anything that changes the device (credentials, scan) stays on the strict
+    // UNPROVISIONED test above, and AP_ASSIST remains fully closed either way.
+    static bool _isProvisioningSession(AsyncWebServerRequest *request)
+    {
+        WifiProvisioning::State state = CustomWifi::getProvisioningState();
+        if (state != WifiProvisioning::State::UNPROVISIONED &&
+            state != WifiProvisioning::State::GRACE) return false;
+
+        AsyncClient *client = request->client();
+        if (client == nullptr) return false;
+
+        return CustomWifi::isApAddress(client->localIP());
+    }
+
     // Registers a route twice: an open handler that only matches provisioning-origin
     // requests, then the normal authenticated one.
     //
@@ -291,6 +312,19 @@ namespace CustomServer
     {
         server.on(uri, method, handler)
               .setFilter(_isProvisioningOrigin)
+              .skipServerMiddlewares()
+              .addMiddleware(&rateLimit);
+
+        server.on(uri, method, handler);
+    }
+
+    // As above, but open for the whole provisioning session including GRACE. Read-only
+    // routes only.
+    static void _onOpenDuringSession(const char *uri, WebRequestMethodComposite method,
+                                     ArRequestHandlerFunction handler)
+    {
+        server.on(uri, method, handler)
+              .setFilter(_isProvisioningSession)
               .skipServerMiddlewares()
               .addMiddleware(&rateLimit);
 
@@ -824,50 +858,50 @@ namespace CustomServer
         const char* etag = _getSketchEtag();
 
         // CSS files
-        _onOpenDuringProvisioning("/css/button.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/css/button.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/css", EMBEDDED(button_css), etag);
         });
-        _onOpenDuringProvisioning("/css/forms.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/css/forms.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/css", EMBEDDED(forms_css), etag);
         });
-        _onOpenDuringProvisioning("/css/index.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/css/index.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/css", EMBEDDED(index_css), etag);
         });
-        _onOpenDuringProvisioning("/css/styles.css", HTTP_GET, [etag](AsyncWebServerRequest *request) { 
+        _onOpenDuringSession("/css/styles.css", HTTP_GET, [etag](AsyncWebServerRequest *request) { 
             _sendStaticWithEtag(request, "text/css", EMBEDDED(styles_css), etag);
         });
-        _onOpenDuringProvisioning("/css/section.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/css/section.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/css", EMBEDDED(section_css), etag);
         });
-        _onOpenDuringProvisioning("/css/tooltip.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/css/tooltip.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/css", EMBEDDED(tooltip_css), etag);
         });
-        _onOpenDuringProvisioning("/css/typography.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/css/typography.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/css", EMBEDDED(typography_css), etag);
         });
 
         // JavaScript files
-        _onOpenDuringProvisioning("/js/api-client.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/js/api-client.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "application/javascript", EMBEDDED(api_client_js), etag);
         });
-        _onOpenDuringProvisioning("/js/chart-helpers.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/js/chart-helpers.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "application/javascript", EMBEDDED(chart_helpers_js), etag);
         });
-        _onOpenDuringProvisioning("/js/data-helpers.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/js/data-helpers.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "application/javascript", EMBEDDED(data_helpers_js), etag);
         });
-        _onOpenDuringProvisioning("/js/issues.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/js/issues.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "application/javascript", EMBEDDED(issues_js), etag);
         });
-        _onOpenDuringProvisioning("/js/power-flow.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/js/power-flow.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "application/javascript", EMBEDDED(power_flow_js), etag);
         });
-        _onOpenDuringProvisioning("/js/tooltip.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/js/tooltip.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "application/javascript", EMBEDDED(tooltip_js), etag);
         });
 
         // Resources
-        _onOpenDuringProvisioning("/favicon.svg", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/favicon.svg", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "image/svg+xml", EMBEDDED(favicon_svg), etag);
         });
 
@@ -878,7 +912,7 @@ namespace CustomServer
         // dashboard, unchanged.
         server.on("/", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/html", EMBEDDED(wifi_setup_html), etag);
-        }).setFilter(_isProvisioningOrigin)
+        }).setFilter(_isProvisioningSession)
           .skipServerMiddlewares()
           .addMiddleware(&rateLimit);
 
@@ -888,7 +922,7 @@ namespace CustomServer
 
         // Also reachable by name, so a provisioned device can be re-pointed at another
         // network from the normal UI without erasing its credentials first.
-        _onOpenDuringProvisioning("/wifi-setup.html", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/wifi-setup.html", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/html", EMBEDDED(wifi_setup_html), etag);
         });
 
@@ -1780,7 +1814,7 @@ namespace CustomServer
         };
 
         for (size_t i = 0; i < sizeof(kProbePaths) / sizeof(kProbePaths[0]); i++) {
-            _onOpenDuringProvisioning(kProbePaths[i], HTTP_GET, [](AsyncWebServerRequest *request) {
+            _onOpenDuringSession(kProbePaths[i], HTTP_GET, [](AsyncWebServerRequest *request) {
                 char location[IP_ADDRESS_BUFFER_SIZE + 16];
                 snprintf(location, sizeof(location), "http://%s/", WiFi.softAPIP().toString().c_str());
 
@@ -1798,7 +1832,7 @@ namespace CustomServer
         // Provisioning status: what the device is doing, and where to reach it afterwards.
         // Open on the AP while unprovisioned because the setup page polls this before any
         // password could have been entered.
-        _onOpenDuringProvisioning("/api/v1/network/wifi/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/api/v1/network/wifi/status", HTTP_GET, [](AsyncWebServerRequest *request) {
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
 
