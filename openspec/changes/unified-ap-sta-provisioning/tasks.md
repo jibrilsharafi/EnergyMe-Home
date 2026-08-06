@@ -142,7 +142,7 @@ So **3.4a and 3.4b below are inserted before 3.5**, pulling the Context ownershi
   - Open: `resetWifi()` uses `WiFiManager::resetSettings()`; it and `_hasStoredCredentials()` must agree on where credentials live, or a reset device reads as provisioned. `esp_wifi_restore()` is the replacement.
 - [x] 3.5 AP raise/teardown in the documented order: `softAPConfig` -> `softAP(ssid, pw, ch)` -> wait `AP_START` -> `enableDhcpCaptivePortal()`.
 - [x] 3.6 DNS lifecycle per D4, always `start(53, "*", WiFi.softAPIP())`, stopped on STA-connected.
-- [ ] 3.7 D2 channel handling, in whichever form Bench-1 selected.
+- [x] 3.7 D2 channel handling, in whichever form Bench-1 selected. **Closed as not needed:** the stop -> `softAPConfig` -> `softAP(ssid,pw,N)` sequence is implemented and no channel pre-pinning is warranted, because clients do not drop at STA-connect (see Bench-1 below).
 - [x] 3.8 Async scan with a cache, `max_ms_per_chan` per 0.14. Never scan during `STA_CONNECTING` (`ESP_ERR_WIFI_STATE`).
 - [ ] 3.9 Bench: full provisioning cycle on .174. Capture serial.
 - [ ] 3.10 Commits, one concern each: events, disconnect deadline, AP lifecycle, DNS lifecycle, scan cache.
@@ -270,12 +270,28 @@ Plus a reported-state defect: `STA_LOST` demoted unconditionally, so a device in
 
 Also: a rejected WPA2 password reports `4WAY_HANDSHAKE_TIMEOUT`, not `AUTH_FAIL`, so the setup page now maps the driver's codes to plain language and keeps the raw code alongside.
 
-**Still outstanding:** F4 (Bench-2 heap gate — see the note below, the thresholds are unsubstantiated), F5 (extended AP-only stability), Bench-1 (informational).
+**F7 / Bench-1 CLOSED — superseded, not run.** Bench-1 exists only to pick between two implementations of D2, and D2 exists only to manage the AP client dropping when STA associates and drags the single radio to the STA channel. That drop does not happen. Four successful provisioning runs on 2026-08-06, with two client operating systems:
+
+| AP client joined | STA connected (state 1 -> 3) | Client left | Gap |
+|---|---|---|---|
+| 406 s | 478 s | 547 s | +69 s |
+| 133 s | 150 s | 186 s | +36 s |
+| 26 s | 119 s | 203 s | +83 s |
+| 29 s | 71 s | still associated | — |
+
+In none of them does the client disconnect at the association; it leaves 36-83 s later on its own schedule. Running the throwaway probe build to answer a driver question about a mitigation for a problem that does not reproduce is not worth losing the working firmware. **Caveat:** the AP and STA channels were not measured, so whether the channels happened to coincide or the clients followed a channel-switch announcement is unknown. A client dropping at the moment of success in the field is the signal to reopen this.
+
+**Still outstanding — two items, neither blocking:**
+
+- **F5**, 30 min AP-only with zero reboots and a flat `_consecutiveResetCount`. Partly covered by today's sessions (the device sat AP-only for several minutes at a time without restarting) but not yet run as a continuous 30-minute observation.
+- **Bench-3 on iOS.** Android and macOS both pass; iOS is expected to behave the same and no device is available to check.
+
+**F4 / Bench-2 should be dropped rather than run.** Its 40 KB / 32 KB thresholds trace to commit `546c9d6` with no measurement behind them, and the shipping firmware already reads ~33 KB idle and ~31 KB under load with **no AP running at all** — so the gate as written fails a device that works. Either re-derive the numbers from a real same-binary STA-only baseline, or delete the gate.
 
 ---
 
 Not done, and deliberately so:
-- **3.7 (D2 channel handling).** Only the stop -> `softAPConfig` -> `softAP(ssid,pw,N)` sequence is implemented, which is correct whichever way Bench-1 lands. Choosing the target channel from the scan cache waits for Bench-1.
+- **3.7 (D2 channel handling).** Done. Only the stop -> `softAPConfig` -> `softAP(ssid,pw,N)` sequence is implemented, which is correct whichever way Bench-1 would have landed. Choosing the target channel from the scan cache is not implemented and is no longer wanted: it exists to force an early client drop, and no drop occurs.
 - **Multiple saved networks (up to 5).** Deferred to its own openspec change. `esp_wifi` stores exactly one STA config and this change reads it directly, so supporting several means owning a credential store in NVS, deciding candidate ordering, and reshaping the credentials API into a collection. Every credential read already funnels through `_hasStoredCredentials()` and `_readStoredSsid()`, so the store can be swapped without touching the state machine or the AP lifecycle.
 - **NTP re-trigger (D7).** Verified unnecessary: `TIME_SYNC_RETRY_IF_NOT_SYNCHED` is 60 s and `_configureNtpServers()` re-reads the gateway on every attempt, so a never-synced device picks up the real gateway within a minute of STA connecting.
 - **Issue suppression while unprovisioned (D7).** `ntp_not_synced`, `cloud_mqtt_disconnected` and `custom_mqtt_connect_failed` will raise during provisioning. Cosmetic, and the registry is the wrong place to special-case a transient state without hardware to confirm the actual noise.
@@ -296,7 +312,7 @@ What has to go on hardware, and what each flash actually proves. Kept current as
 | F4 | Phase 5 | **Bench-2, the heap gate.** `heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL \| MALLOC_CAP_8BIT)` in the APSTA unprovisioned configuration under web load | Internal PBUF pressure is invisible off-target. Note 1a9f511 freed 16,288 B of internal RAM, so headroom is materially better than when the gate was written |
 | F5 | Phase 5 | **Phase 1 backstop.** 30 min AP-only: zero reboots, `_consecutiveResetCount` flat | Needs the real health check on a real timer |
 | F6 | Phase 6 | **Bench-3.** Does the phone stay on the AP after STA connects, iOS and Android? Decides whether the grace window survives | Phone OS behaviour |
-| F7 | Phase 6 | **Bench-1, informational.** Does `softAP(ssid,pw,N)` move a live AP? Selects the D2 implementation | Driver behaviour |
+| F7 | Phase 6 | **Bench-1, informational.** Does `softAP(ssid,pw,N)` move a live AP? Selects the D2 implementation | **CLOSED, not run** — no client drop observed at STA-connect, so there is nothing to select between |
 
 **Minimum viable path:** F1 + F3 + F4 in one session after Phase 5. F3 and F4 are the two that can block shipping; F1 is the one that tells us the feature works at all. The rest can follow.
 
@@ -309,8 +325,8 @@ What has to go on hardware, and what each flash actually proves. Kept current as
 | Gate | Blocks | Pass criterion | Status |
 |---|---|---|---|
 | Bench-2 | Everything after Phase 0 | `heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL \| MALLOC_CAP_8BIT)` >= 40 KB steady, never < 32 KB under load, unprovisioned-first-boot config | outstanding |
-| Bench-3 | The grace window in D1/D4 | Phone stays associated >= 60 s after STA connect, iOS and Android | **PASS** — Android, 2026-08-06. iOS untested |
-| Bench-1 | D2 implementation choice | Informational | outstanding |
+| Bench-3 | The grace window in D1/D4 | Phone stays associated >= 60 s after STA connect, iOS and Android | **PASS** — Android and macOS, 2026-08-06. iOS untested, expected to match |
+| Bench-1 | D2 implementation choice | Informational | **CLOSED** — superseded, the client drop it mitigates does not occur |
 | Bench-4 | Phase 4 ship | LAN host via static route gets 401, not 200 | **PASS** — unreachable entirely, 2026-08-06 |
 | Phase 1 bench | D7 / Phase 6.8 | Extended AP-only, zero reboots, reset counter flat | partial: health check confirmed green AP-only; the long run is outstanding |
 | `pio test -e native` | Phase 2 | All green, from WSL | **PASS** — 354 cases |
