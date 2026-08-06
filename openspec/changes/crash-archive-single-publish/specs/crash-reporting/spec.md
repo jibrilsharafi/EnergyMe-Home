@@ -1,11 +1,11 @@
 ## ADDED Requirements
 
 ### Requirement: Core dumps are archived to flash at detection
-The system SHALL, during `CrashMonitor::begin()` and whenever a core dump image is present in the coredump partition, write the dump to LittleFS as two files under `/crashes/`: `<crashId>_<elfSha256>.json` carrying the crash metadata and `<crashId>_<elfSha256>.bin.gz` carrying the gzip-compressed raw ELF dump. `crashId` SHALL be the Unix time in milliseconds captured at archive time and SHALL be identical in the filename, the metadata and any subsequent publish of that record. The system SHALL erase the coredump partition only after both files are fully written and closed, and SHALL delete both files and leave the partition intact if either write fails.
+The system SHALL, during `CrashMonitor::begin()` and whenever a core dump image is present in the coredump partition, write the dump to LittleFS as two files under `/crashes/`: `<timestamp>_<crashId>.json` carrying the crash metadata and `<timestamp>_<crashId>.bin.gz` carrying the gzip-compressed raw ELF dump. The system SHALL erase the coredump partition only after both files are fully written and closed, and SHALL delete both files and leave the partition intact if either write fails.
 
 #### Scenario: Crash produces an archived record
 - **WHEN** the device boots with a core dump image present in the coredump partition
-- **THEN** `/crashes/<crashId>_<elfSha256>.json` and `/crashes/<crashId>_<elfSha256>.bin.gz` exist, and the coredump partition no longer reports an image
+- **THEN** `/crashes/<timestamp>_<crashId>.json` and `/crashes/<timestamp>_<crashId>.bin.gz` exist, and the coredump partition no longer reports an image
 
 #### Scenario: Archive write fails
 - **WHEN** writing either archive file fails
@@ -14,6 +14,36 @@ The system SHALL, during `CrashMonitor::begin()` and whenever a core dump image 
 #### Scenario: Dump compresses to a valid gzip stream
 - **WHEN** an archived `.bin.gz` is read off the device
 - **THEN** it decompresses with any standard gzip implementation to the raw ELF core dump, whose length and CRC-32 match the gzip trailer
+
+### Requirement: Record identity is derived from the dump, not the clock
+The system SHALL identify each archived record by a `crashId` that is the first 16 hexadecimal characters of the SHA-256 of the raw ELF core dump, and SHALL carry the Unix time in milliseconds at archive time as a separate `timestamp` field. The `crashId` SHALL be identical in the filename, the metadata and any publish of that record. The `timestamp` SHALL order the archive and SHALL NOT be used as an identity: records are archived during `CrashMonitor::begin()`, before the network is up and therefore before NTP, so after a cold boot it is close to the Unix epoch and not unique.
+
+#### Scenario: Identity survives an unset clock
+- **WHEN** two different crashes are archived on cold boots before the clock is set, and so share a near-identical timestamp
+- **THEN** they receive different `crashId` values and both records exist, neither having overwritten the other
+
+#### Scenario: Identity is reproducible from the dump
+- **WHEN** an archived dump is decompressed and hashed with any standard SHA-256 implementation
+- **THEN** the first 16 hexadecimal characters of the digest equal the record's `crashId`
+
+#### Scenario: Retried archive does not duplicate
+- **WHEN** archiving the same pending dump is attempted again after a failed attempt
+- **THEN** the record is written under the same name rather than added a second time beside itself
+
+### Requirement: Archiving cannot render the device unbootable
+The system SHALL perform the archive on a dedicated FreeRTOS task with a stack sized for the deflate implementation, and SHALL NOT run it on the Arduino loop task. The system SHALL count each archive attempt in RTC-backed storage before the attempt begins, SHALL discard the pending dump and clear the coredump partition once `MAX_CRASH_ARCHIVE_ATTEMPTS` attempts have been spent, and SHALL reset that count on a successful archive. The system SHALL bound its wait for the archive task and continue booting if that bound is exceeded. `_handleCounters()`, which performs the rollback and factory-reset recovery, SHALL run before the archive so a fault in the archive path cannot prevent recovery.
+
+#### Scenario: Archive faults on every boot
+- **WHEN** the archive path crashes or hangs on each of `MAX_CRASH_ARCHIVE_ATTEMPTS` consecutive boots
+- **THEN** the pending dump is discarded, the coredump partition is cleared, and the device completes boot rather than looping
+
+#### Scenario: Compression does not exhaust the boot stack
+- **WHEN** a core dump is compressed during boot
+- **THEN** the compression runs on the dedicated archive task and the loop task's stack canary is not tripped
+
+#### Scenario: Recovery precedes the risky work
+- **WHEN** the consecutive crash or reset counters have reached their limits on a boot that also has a dump pending
+- **THEN** the rollback or factory-reset path runs before the archive is attempted
 
 ### Requirement: Crash metadata reflects the boot that crashed
 The system SHALL capture `esp_reset_reason()` into RTC-backed storage at the point in `CrashMonitor::begin()` where `isLastResetDueToCrash()` is true, and SHALL report that frozen value - not a fresh `esp_reset_reason()` call - as `resetReason` and `resetReasonCode` in the archived metadata while a core dump is pending. The frozen value SHALL be cleared when the RTC magic word is reset and once it has been durably written into an archived record.
@@ -38,7 +68,7 @@ The system SHALL retain at most 10 archived crash records totalling at most 500 
 - **THEN** records are deleted oldest-first until it fits, and no more than that
 
 ### Requirement: One crash is published as one MQTT message
-The system SHALL publish each archived crash record to the crash topic as a single message containing `crashId`, `unixTime`, `firmwareVersion`, a `crashInfo` object carrying the frozen metadata, and the base64 encoding of the gzipped dump in `coreDump` with `coreDumpEncoding` set to `"gzip+base64"`, alongside `coreDumpRawSize` and `coreDumpCompressedSize`. The system SHALL NOT emit `messageType`, `chunkIndex`, `totalChunks` or any multi-message sequence. The system SHALL delete an archived record only after its publish succeeds, and SHALL publish at most one record per publish cycle, re-arming the crash publish request while records remain.
+The system SHALL publish each archived crash record to the crash topic as a single message containing `crashId`, `timestamp`, `unixTime`, `firmwareVersion`, a `crashInfo` object carrying the frozen metadata, and the base64 encoding of the gzipped dump in `coreDump` with `coreDumpEncoding` set to `"gzip+base64"`, alongside `coreDumpRawSize` and `coreDumpCompressedSize`. The published fields SHALL be the stored metadata document verbatim plus the dump, so a record's representation over MQTT and over the local HTTP API cannot diverge. `timestamp` is when the record was archived; `unixTime` is when it was published. The system SHALL NOT emit `messageType`, `chunkIndex`, `totalChunks` or any multi-message sequence. The system SHALL delete an archived record only after its publish succeeds, and SHALL publish at most one record per publish cycle, re-arming the crash publish request while records remain.
 
 #### Scenario: Successful publish
 - **WHEN** an archived crash record is published successfully
@@ -69,6 +99,13 @@ The system SHALL include a `firmwareVersion` string field carrying `FIRMWARE_BUI
 #### Scenario: Published record carries both identifiers
 - **WHEN** a crash record is published
 - **THEN** the payload contains `firmwareVersion` (e.g. `"2.2.1"`) and `appElfSha256`
+
+### Requirement: Crash records carry backtrace addresses, not a decode command
+The system SHALL report the backtrace as its `depth`, `corrupted` flag and `addresses` array, and SHALL NOT include a prebuilt `addr2line` invocation in the record or in the boot log. A decode command names an ELF by its build path, which identifies nothing on any machine other than the one that produced the firmware, while the record exists to be read elsewhere.
+
+#### Scenario: Record is consumed off-device
+- **WHEN** an archived or published crash record is read
+- **THEN** it contains `addresses` and `appElfSha256`, and contains no `debugCommand` field
 
 ### Requirement: Archived dumps are retrievable over HTTP in one request
 The system SHALL expose the archived records over the local HTTP API: a listing endpoint returning each record's metadata, a retrieval endpoint returning a single record's stored gzip bytes in one response as `application/gzip`, and a clear endpoint deleting all archived records. The retrieval endpoint SHALL NOT wrap the dump in JSON or require the client to reassemble chunks.
