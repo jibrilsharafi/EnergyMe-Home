@@ -1179,11 +1179,16 @@ paths:
     get:
       summary: Provisioning and connection status
       description: |
-        What the device is doing and where to reach it. Polled by the setup page after
-        credentials are submitted.
+        What the device is doing, where to reach it, and which device it is. Read by the
+        setup page before any authenticated endpoint is reachable.
 
         Reachable without authentication when the request arrives on the SoftAP of a device
         that has no stored credentials.
+
+        **Not usable to poll for the outcome of a credentials submission.** Accepting
+        credentials moves the device out of `UNPROVISIONED`, which closes the carve-out, so
+        the very next request from an unauthenticated SoftAP client is answered with 401.
+        Clients must tell the user where the device will appear at submit time instead.
       tags:
         - Network
       responses:
@@ -1204,6 +1209,21 @@ paths:
                   apIp: { type: string }
                   hostname: { type: string }
                   rssi: { type: integer }
+                  deviceId:
+                    type: string
+                    description: Also the SoftAP SSID suffix, so this exposes nothing new
+                  firmwareVersion: { type: string }
+                  uptime:
+                    type: integer
+                    format: int64
+                    description: Milliseconds since boot
+                  credentialWriteFailed:
+                    type: boolean
+                    description: >
+                      True when the last credentials submission could not be written to the
+                      WiFi driver. The submission endpoint answers as soon as the request is
+                      queued, so its 200 does not mean the credentials were stored; this is
+                      where that outcome is reported.
 
   /api/v1/network/wifi/diagnostics:
     get:
@@ -1239,14 +1259,21 @@ paths:
         Save new WiFi credentials and associate to that network. **The device does not
         restart**; the WiFi task applies them directly.
 
-        The API returns as soon as the credentials are saved, before the outcome is known.
-        Poll `/api/v1/network/wifi/status` for the result and
-        `/api/v1/network/wifi/diagnostics` if it fails.
+        The API returns as soon as the request is **queued**, before the credentials have
+        been written to the WiFi driver and long before the association is attempted. A 200
+        therefore means "accepted", not "stored" and not "connected". Check
+        `credentialWriteFailed` on `/api/v1/network/wifi/status` for the write outcome and
+        `/api/v1/network/wifi/diagnostics` for an association failure reason.
 
-        **Note:** when submitted over the SoftAP, the access point moves to the target
-        network's radio channel before associating, so the client will lose its connection
-        for several seconds. Clients must tolerate that gap and retry rather than reporting
-        failure.
+        **An unauthenticated SoftAP client cannot poll for any of that.** Accepting the
+        credentials moves the device out of `UNPROVISIONED`, which closes the auth carve-out,
+        so the next request is answered with 401. Such clients must show the user where the
+        device will appear (`hostname` from the status endpoint, read *before* submitting)
+        rather than waiting for a result that cannot arrive.
+
+        **Note:** when submitted over the SoftAP, the access point may move to the target
+        network's radio channel before associating, so the client can lose its connection
+        for several seconds.
 
         Reachable without authentication when the request arrives on the SoftAP of a device
         that has no stored credentials; this is the one action an unprovisioned user must be

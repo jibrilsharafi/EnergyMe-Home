@@ -1,48 +1,100 @@
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Copyright (C) 2025 Jibril Sharafi -->
+
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EnergyMe - WiFi Setup</title>
+
+    <link rel="stylesheet" type="text/css" href="/css/button.css">
+    <link rel="stylesheet" type="text/css" href="/css/styles.css">
+    <link rel="stylesheet" type="text/css" href="/css/section.css">
+    <link rel="stylesheet" type="text/css" href="/css/typography.css">
+    <link rel="stylesheet" type="text/css" href="/css/forms.css">
+    <link rel="stylesheet" type="text/css" href="/css/index.css">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-    <link rel="stylesheet" href="/css/typography.css">
-    <link rel="stylesheet" href="/css/styles.css">
-    <link rel="stylesheet" href="/css/button.css">
-    <link rel="stylesheet" href="/css/forms.css">
+
+    <title>EnergyMe - Setup</title>
     <style>
-        /* Self-contained layout: this page must render on a phone joined to the SoftAP,
-           where the only assets available are the ones embedded in the firmware. */
-        .setup-wrap { max-width: 30rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
-        .setup-header { text-align: center; margin-bottom: 1.5rem; }
-        .setup-header h1 { margin: 0 0 .25rem; font-size: 1.5rem; }
-        .setup-header p { margin: 0; opacity: .75; font-size: .9rem; }
+        /* Only what the shared sheets do not already cover. Every asset here is served
+           from the SoftAP, so nothing may depend on a CDN. */
+        .setup-box { width: 30rem; }
 
-        .network-list { list-style: none; margin: 0 0 1rem; padding: 0; border: 1px solid rgba(128,128,128,.3); border-radius: .5rem; overflow: hidden; }
-        .network-list li { display: flex; align-items: center; gap: .5rem; padding: .7rem .85rem; cursor: pointer; border-bottom: 1px solid rgba(128,128,128,.18); }
+        .choice-row { display: flex; flex-direction: column; gap: .6rem; }
+
+        .kv { display: flex; justify-content: space-between; gap: 1rem; padding: .45rem 0; border-bottom: 1px solid #eee; }
+        .kv:last-child { border-bottom: none; }
+        .kv dt { color: #808080; }
+        .kv dd { margin: 0; text-align: right; word-break: break-word; }
+
+        .network-list { list-style: none; margin: 0 0 1rem; padding: 0; border: 1px solid #ddd; border-radius: 10px; overflow: hidden; }
+        .network-list li { display: flex; align-items: center; gap: .5rem; padding: .7rem .85rem; cursor: pointer; border-bottom: 1px solid #eee; }
         .network-list li:last-child { border-bottom: none; }
-        .network-list li:hover, .network-list li.selected { background: rgba(128,128,128,.14); }
-        .network-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .network-meta { font-size: .78rem; opacity: .65; white-space: nowrap; }
+        .network-list li:hover, .network-list li.selected { background: #f0f0f0; }
+        /* min-width:0 is load-bearing: flex items default to min-width:auto, so a long
+           SSID refuses to shrink and pushes the row wider than the phone. body has
+           overflow-x:hidden, so that overflow is silently clipped rather than scrollable. */
+        .network-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .network-meta { flex: none; font-size: .78rem; color: #808080; white-space: nowrap; }
 
-        .status-box { padding: .8rem 1rem; border-radius: .5rem; margin-bottom: 1rem; font-size: .9rem; display: none; }
+        .status-box { padding: .8rem 1rem; border-radius: 10px; margin-bottom: 1rem; display: none; }
         .status-box.visible { display: block; }
-        .status-info { background: rgba(70,130,220,.15); border: 1px solid rgba(70,130,220,.4); }
-        .status-error { background: rgba(220,70,70,.15); border: 1px solid rgba(220,70,70,.45); }
-        .status-ok { background: rgba(60,180,110,.15); border: 1px solid rgba(60,180,110,.45); }
+        .status-info { background: #e8f1fb; border: 1px solid #b6d4f2; }
+        .status-error { background: #fdecea; border: 1px solid #f5c2bd; }
+        .status-ok { background: #e9f7ef; border: 1px solid #b7e1c6; }
 
-        .muted { opacity: .7; font-size: .82rem; }
+        .muted { color: #808080; font-size: .85rem; }
         .full-width { width: 100%; }
         .row-gap { margin-bottom: .85rem; }
         .spinner { display: inline-block; width: .8rem; height: .8rem; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -1px; }
         @keyframes spin { to { transform: rotate(360deg); } }
+
+        .where { font-size: 1.1rem; font-weight: bold; word-break: break-all; }
+
+        @media screen and (max-width: 768px) {
+            .setup-box { width: 95%; }
+        }
     </style>
 </head>
+
 <body>
-    <div class="setup-wrap">
-        <div class="setup-header">
-            <h1>Connect to WiFi</h1>
-            <p>Choose the network this meter should join.</p>
+    <div class="header">EnergyMe</div>
+    <div class="subheader">Home</div>
+
+    <!-- Landing: say what this device is, then offer the two things you can do here. -->
+    <div id="welcome" class="section-box setup-box">
+        <h2>Welcome</h2>
+        <p id="welcome-line">This meter is not connected to your WiFi yet.</p>
+
+        <div class="choice-row">
+            <button id="go-setup" class="button button-primary full-width" type="button">Connect it to WiFi</button>
+            <button id="go-device" class="button button-secondary full-width" type="button">See the device</button>
         </div>
+    </div>
+
+    <!-- Device panel: only what is readable without authentication on the SoftAP. -->
+    <div id="device" class="section-box setup-box" style="display:none;">
+        <h2>Device</h2>
+        <dl id="device-info" style="margin:0;">
+            <div class="kv"><dt>Model</dt><dd>EnergyMe - Home</dd></div>
+            <div class="kv"><dt>Device ID</dt><dd id="d-id">-</dd></div>
+            <div class="kv"><dt>Firmware</dt><dd id="d-fw">-</dd></div>
+            <div class="kv"><dt>Running for</dt><dd id="d-up">-</dd></div>
+            <div class="kv"><dt>Setup network</dt><dd id="d-ap">-</dd></div>
+            <div class="kv"><dt>Your WiFi</dt><dd id="d-sta">not configured</dd></div>
+        </dl>
+        <p class="muted" style="margin-top:1rem;">
+            The full dashboard needs the meter on your own network. Connect it first, then open it there.
+        </p>
+        <button id="back-1" class="button button-secondary full-width" type="button">Back</button>
+    </div>
+
+    <!-- Setup -->
+    <div id="setup" class="section-box setup-box" style="display:none;">
+        <h2>Connect to WiFi</h2>
+        <p class="muted">Choose the network this meter should join.</p>
 
         <div id="status" class="status-box"></div>
 
@@ -56,24 +108,52 @@
             <div class="row-gap">
                 <label class="form-label" for="ssid">Network name</label>
                 <input class="form-input full-width" type="text" id="ssid" name="ssid" maxlength="31" required
-                       placeholder="Pick one above, or type it in">
+                    placeholder="Pick one above, or type it in">
             </div>
             <div class="row-gap">
                 <label class="form-label" for="password">Password</label>
                 <input class="form-input full-width" type="password" id="password" name="password" maxlength="63"
-                       placeholder="Leave empty for an open network">
+                    placeholder="Leave empty for an open network">
             </div>
             <button id="submit" class="button button-primary full-width" type="submit">Connect</button>
         </form>
 
-        <p class="muted" id="footer-note" style="margin-top:1.25rem;">
-            After connecting, this network will disappear and the meter moves to your WiFi.
+        <button id="back-2" class="button button-secondary full-width" type="button" style="margin-top:.85rem;">Back</button>
+    </div>
+
+    <!-- Where to find it afterwards. Shown on submit, not after a poll: the moment the
+         credentials land the device leaves UNPROVISIONED, which closes the auth carve-out,
+         so this page can no longer read the result over the SoftAP. -->
+    <div id="done" class="section-box setup-box" style="display:none;">
+        <h2>Credentials sent</h2>
+        <p>The meter is joining <strong id="done-ssid">your network</strong>.
+            Watch the light on the device: <strong>green</strong> means it is connected.</p>
+
+        <div class="status-box visible status-ok">
+            <p style="margin:0 0 .35rem;">Then find it at</p>
+            <p class="where" id="done-where">http://energyme.local</p>
+        </div>
+
+        <p class="muted">
+            Rejoin your usual WiFi on this phone, then open the address above. If the name does not
+            work, look for the meter in your router's device list.
         </p>
+        <p class="muted">
+            Light still red after a minute? The password was probably wrong. This setup network comes
+            back so you can try again.
+        </p>
+
+        <button id="retry" class="button button-secondary full-width" type="button">Enter different details</button>
     </div>
 
     <script>
         (function () {
             'use strict';
+
+            var welcomeEl = document.getElementById('welcome');
+            var deviceEl = document.getElementById('device');
+            var setupEl = document.getElementById('setup');
+            var doneEl = document.getElementById('done');
 
             var statusEl = document.getElementById('status');
             var listEl = document.getElementById('networks');
@@ -84,8 +164,16 @@
             var formEl = document.getElementById('credentials-form');
 
             var scanPoll = null;
-            var connectPoll = null;
             var scanStartedAt = 0;
+            var scanned = false;
+            var hostname = 'energyme.local';
+
+            function show(el) {
+                [welcomeEl, deviceEl, setupEl, doneEl].forEach(function (e) {
+                    e.style.display = (e === el) ? '' : 'none';
+                });
+                window.scrollTo(0, 0);
+            }
 
             function setStatus(message, kind) {
                 statusEl.className = 'status-box visible status-' + (kind || 'info');
@@ -95,6 +183,37 @@
             function clearStatus() {
                 statusEl.className = 'status-box';
                 statusEl.textContent = '';
+            }
+
+            function humanUptime(ms) {
+                var s = Math.floor((ms || 0) / 1000);
+                var d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600);
+                var m = Math.floor((s % 3600) / 60);
+                if (d) return d + 'd ' + h + 'h';
+                if (h) return h + 'h ' + m + 'm';
+                return m + 'm';
+            }
+
+            // Identity comes from the status endpoint, which is open on the SoftAP only
+            // while the device is unprovisioned. Failure here is not worth reporting.
+            function loadDeviceInfo() {
+                fetch('/api/v1/network/wifi/status', { cache: 'no-store' })
+                    .then(function (r) { return r.ok ? r.json() : null; })
+                    .then(function (d) {
+                        if (!d) return;
+                        if (d.hostname) hostname = d.hostname;
+                        document.getElementById('d-id').textContent = d.deviceId || '-';
+                        document.getElementById('d-fw').textContent = d.firmwareVersion || '-';
+                        document.getElementById('d-up').textContent = humanUptime(d.uptime);
+                        document.getElementById('d-ap').textContent = d.apIp || '-';
+                        if (d.connected && d.ip && d.ip !== '0.0.0.0') {
+                            document.getElementById('d-sta').textContent = d.ssid + ' (' + d.ip + ')';
+                        } else if (d.ssid) {
+                            document.getElementById('d-sta').textContent = d.ssid + ' (not connected)';
+                        }
+                        document.getElementById('done-where').textContent = 'http://' + hostname;
+                    })
+                    .catch(function () { });
             }
 
             function signalLabel(rssi) {
@@ -197,48 +316,29 @@
                 if (scanPoll) clearInterval(scanPoll);
                 scanPoll = setInterval(function () { pollScan(false); }, 1200);
                 pollScan(true);
+                scanned = true;
             }
 
-            // Poll for the outcome after submitting. The AP is deliberately re-raised on the
-            // target channel before associating, so the phone WILL drop for a few seconds
-            // here. Failed requests are expected and must not be reported as failure.
-            function pollConnectResult(startedAt) {
-                fetch('/api/v1/network/wifi/status', { cache: 'no-store' })
-                    .then(function (r) { return r.json(); })
-                    .then(function (data) {
-                        if (data.connected) {
-                            if (connectPoll) { clearInterval(connectPoll); connectPoll = null; }
-                            var where = data.ip && data.ip !== '0.0.0.0' ? data.ip : data.hostname;
-                            setStatus('Connected. The meter is now reachable on your network at '
-                                + '<strong>' + where + '</strong>'
-                                + (data.hostname ? ' (or <strong>http://' + data.hostname + '</strong>)' : '')
-                                + '.<br>You can rejoin your usual WiFi now.', 'ok');
-                            submitEl.disabled = false;
-                            submitEl.textContent = 'Connect';
-                            return;
-                        }
-
-                        // Give up waiting well before the AP's own lifetime bound, and show the
-                        // driver's reason rather than a generic failure.
-                        if (Date.now() - startedAt > 90000) {
-                            if (connectPoll) { clearInterval(connectPoll); connectPoll = null; }
-                            submitEl.disabled = false;
-                            submitEl.textContent = 'Connect';
-                            fetch('/api/v1/network/wifi/diagnostics', { cache: 'no-store' })
-                                .then(function (r) { return r.json(); })
-                                .then(function (diag) {
-                                    setStatus('Could not connect: <strong>' + (diag.reason || 'unknown') + '</strong>. '
-                                        + 'Check the password and try again.', 'error');
-                                })
-                                .catch(function () {
-                                    setStatus('Could not connect. Check the password and try again.', 'error');
-                                });
-                        }
-                    })
-                    .catch(function () {
-                        // Expected while the radio moves; keep polling until the deadline above.
-                    });
-            }
+            document.getElementById('go-setup').addEventListener('click', function () {
+                show(setupEl);
+                if (!scanned) startScan();
+            });
+            document.getElementById('go-device').addEventListener('click', function () {
+                loadDeviceInfo();
+                show(deviceEl);
+            });
+            document.getElementById('back-1').addEventListener('click', function () { show(welcomeEl); });
+            document.getElementById('back-2').addEventListener('click', function () {
+                stopScanning();
+                show(welcomeEl);
+            });
+            document.getElementById('retry').addEventListener('click', function () {
+                submitEl.disabled = false;
+                submitEl.textContent = 'Connect';
+                clearStatus();
+                show(setupEl);
+            });
+            rescanEl.addEventListener('click', startScan);
 
             formEl.addEventListener('submit', function (event) {
                 event.preventDefault();
@@ -250,10 +350,7 @@
                 }
 
                 submitEl.disabled = true;
-                submitEl.innerHTML = '<span class="spinner"></span> Connecting';
-                setStatus('Sending credentials. This network may briefly disappear while the meter '
-                    + 'switches channels - that is expected, stay on this page.', 'info');
-
+                submitEl.innerHTML = '<span class="spinner"></span> Sending';
                 if (scanPoll) { clearInterval(scanPoll); scanPoll = null; }
 
                 fetch('/api/v1/network/wifi/credentials', {
@@ -263,9 +360,13 @@
                 })
                     .then(function (response) {
                         if (!response.ok) throw new Error('rejected');
-                        var startedAt = Date.now();
-                        if (connectPoll) clearInterval(connectPoll);
-                        connectPoll = setInterval(function () { pollConnectResult(startedAt); }, 2000);
+                        // Do not wait for a result that cannot arrive. Accepting the credentials
+                        // moves the device out of UNPROVISIONED, which shuts the auth carve-out,
+                        // so every later request from this page is answered with 401. Tell the
+                        // user where the meter will be instead of spinning until a timeout.
+                        document.getElementById('done-ssid').textContent = ssid;
+                        document.getElementById('done-where').textContent = 'http://' + hostname;
+                        show(doneEl);
                     })
                     .catch(function () {
                         submitEl.disabled = false;
@@ -274,9 +375,9 @@
                     });
             });
 
-            rescanEl.addEventListener('click', startScan);
-            startScan();
+            loadDeviceInfo();
         })();
     </script>
 </body>
+
 </html>
