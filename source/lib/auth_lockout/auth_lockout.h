@@ -58,7 +58,7 @@ struct Table {
     Entry entries[AUTH_LOCKOUT_TABLE_SIZE];
 };
 
-// Clears every slot. Must be called before the table is used.
+// Must be called before the table is used.
 void init(Table &table);
 
 // True when this source is currently locked out. When it returns true,

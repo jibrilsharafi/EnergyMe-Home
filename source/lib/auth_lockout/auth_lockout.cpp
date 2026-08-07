@@ -113,7 +113,7 @@ bool recordFailure(Table &table, uint32_t address, uint64_t nowMs) {
         if (entry->lockCount < 0xFFFF) entry->lockCount++;
         entry->lockedUntilMs = nowMs + (uint64_t)lockoutSecondsFor(entry->lockCount) * 1000ULL;
         entry->consecutiveFailures = 0;
-        return true;  // just crossed into locked - the caller logs/counts this once
+        return true;
     }
 
     return false;
@@ -123,7 +123,7 @@ void recordSuccess(Table &table, uint32_t address, uint64_t nowMs) {
     if (address == AUTH_LOCKOUT_LOOPBACK_IP) return;
 
     Entry *entry = findEntry(table, address);
-    if (entry == nullptr) return;  // nothing held against this source
+    if (entry == nullptr) return;
 
     // Free the slot outright. Keeping lockCount would mean a user who once mistyped their way
     // into a lockout carries a longer next one forever, which punishes the owner rather than
