@@ -589,6 +589,18 @@ static void _applyMqttLogLevel(int level) {
 static void _reportSystem(JsonDocument& doc) {
     JsonObject rep = doc["state"]["reported"].to<JsonObject>();
     rep["led_brightness"] = Led::getBrightness();
+
+    // Reported only. A desired LED colour is deliberately not accepted: the shadow
+    // would re-apply it on every reconnect, which is exactly how a user override
+    // ends up outliving the reason it was set.
+    const Led::Snapshot ledState = Led::getState();
+    rep["led_pattern"] = LedState::patternName(ledState.pattern);
+    rep["led_layer"] = ledState.any ? LedState::layerName(ledState.layer) : nullptr;
+    JsonObject ledColor = rep["led_color"].to<JsonObject>();
+    ledColor["red"] = ledState.color.red;
+    ledColor["green"] = ledState.color.green;
+    ledColor["blue"] = ledState.color.blue;
+
     rep["send_power_data"] = Mqtt::getSendPowerData();
     rep["send_grid_data"] = Mqtt::getSendGridData();
     rep["meter_publish_threshold_bytes"] = Mqtt::getMeterPublishThresholdBytes();
