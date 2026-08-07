@@ -4,18 +4,59 @@
 #include "crashmonitor.h"
 #include "duration_format.h"
 
+#include <LittleFS.h>
+
+#include "crash_archive_policy.h"
+
+// miniz lives in the ESP32-S3 mask ROM (see esp32s3.rom.ld, "Group miniz"), so
+// deflate costs no flash and adds no dependency. The header unconditionally
+// defines MINIZ_NO_ZLIB_APIS and MINIZ_NO_ZLIB_COMPATIBLE_NAMES, so it leaks no
+// compress()/crc32() macros into anything included after it.
+#include "esp_rom_crc.h"
+#include "mbedtls/sha256.h"
+#include "miniz.h"
+
 namespace CrashMonitor
 {
     // Static state variables
     static TaskHandle_t _crashResetTaskHandle = NULL;
     static TaskHandle_t _safeModeTaskHandle = NULL;
 
+    // gzip container (RFC 1952) around miniz's raw deflate output: a fixed
+    // 10-byte header, then CRC-32 and the uncompressed length as little-endian
+    // 32-bit values.
+    #define GZIP_HEADER_SIZE 10
+    #define GZIP_TRAILER_SIZE 8
+
+    // A record on disk, as found by a directory scan. recordBytes covers both
+    // files, since CRASH_ARCHIVE_MAX_BYTES is a ceiling on the directory.
+    struct ArchivedCrashEntry {
+        char baseName[CRASH_ARCHIVE_NAME_BUFFER_SIZE];
+        uint64_t timestamp;
+        size_t dumpBytes;
+        size_t recordBytes;
+    };
+
     // Private function declarations
     static void _handleCounters();
     static void _crashResetTask(void *parameter);
     static void _safeModeTask(void *parameter);
-    static void _checkAndPrintCoreDump();
     static void _logCompleteCrashData();
+    static esp_reset_reason_t _getCrashResetReason();
+    static bool _hasCoreDump();
+    static size_t _getCoreDumpSize();
+    static bool _getCoreDumpInfo(size_t* size, size_t* address);
+    static bool _getCoreDumpChunk(uint8_t* buffer, size_t offset, size_t chunkSize, size_t* bytesRead);
+    static bool _getFullCoreDump(uint8_t* buffer, size_t bufferSize, size_t* actualSize);
+    static void _clearCoreDump();
+    static void _getCoreDumpInfoJson(JsonObject doc);
+    static size_t _gzipCompress(const uint8_t* source, size_t sourceSize, uint8_t* destination, size_t destinationSize);
+    static void _buildArchivePath(const char* baseName, const char* suffix, char* path, size_t pathSize);
+    static uint32_t _scanArchive(ArchivedCrashEntry* entries, uint32_t maxEntries);
+    static bool _enforceArchiveRetention(size_t incomingBytes);
+    static bool _archiveCoreDump();
+    static void _archiveCoreDumpTask(void *parameter);
+    static void _archivePendingCoreDump();
 
     // RTC memory variables (persist across restarts)
     RTC_NOINIT_ATTR uint32_t _magicWord = MAGIC_WORD_RTC; // Magic word to check RTC data validity
@@ -31,6 +72,17 @@ namespace CrashMonitor
     RTC_NOINIT_ATTR uint32_t _quickRestartCount = 0; // Number of quick consecutive restarts (resets when restart > 60s uptime)
     RTC_NOINIT_ATTR uint64_t _lastBootTimestamp = 0; // Unix timestamp (ms) when last boot occurred
     RTC_NOINIT_ATTR bool _safeModeActive = false; // Whether safe mode is currently active
+
+    // Archive attempts already spent on the dump currently on the partition.
+    // Bounds a pre-WiFi path that can panic: see MAX_CRASH_ARCHIVE_ATTEMPTS.
+    RTC_NOINIT_ATTR uint32_t _archiveAttemptCount = 0;
+
+    // Reset reason of the boot that crashed, frozen while a dump is pending.
+    // esp_reset_reason() describes the CURRENT boot, so reading it when the dump
+    // is finally archived reports whatever caused that later boot - in production
+    // this surfaced as panics logged with "resetReason":"Software".
+    RTC_NOINIT_ATTR uint32_t _crashResetReason = 0;
+    RTC_NOINIT_ATTR bool _crashResetReasonValid = false;
 
     bool isLastResetDueToCrash() {
         // Only case in which it is not crash is when the reset reason is not
@@ -106,6 +158,9 @@ namespace CrashMonitor
             _quickRestartCount = 0;
             _lastBootTimestamp = 0;
             _safeModeActive = false;
+            _crashResetReason = 0;
+            _crashResetReasonValid = false;
+            _archiveAttemptCount = 0;
         }
 
         // === SAFE MODE: First line of defense against rapid restart loops ===
@@ -158,27 +213,31 @@ namespace CrashMonitor
         // Store current boot timestamp for next boot comparison
         _lastBootTimestamp = currentBootTimestamp;
 
-        esp_core_dump_init();        
+        esp_core_dump_init();
+
+        // Checked once: every check re-reads and re-hashes the whole partition
+        bool coreDumpPending = _hasCoreDump();
 
         // If it was a crash, increment counter
         if (isLastResetDueToCrash()) {
             _crashCount++;
             _consecutiveCrashCount++;
-            _checkAndPrintCoreDump();
+            // The only moment esp_reset_reason() describes the crash rather than
+            // some later boot, so freeze it before anything can defer the read
+            _crashResetReason = (uint32_t)esp_reset_reason();
+            _crashResetReasonValid = true;
+            if (coreDumpPending) _logCompleteCrashData();
         }
-
-        // Regardless if last crash was due to a reset or crash, send this data if available (maybe previously we didn't have time to send it to the cloud)
-        if (!globalCommunityMode && hasCoreDump()) Mqtt::requestCrashPublish();
 
         // Increment reset count (always)
         _resetCount++;
         _consecutiveResetCount++;
 
         LOG_INFO(
-            "Boot tracking - Crashes: %d (%d consecutive), Resets: %d (%d consecutive), Quick restarts: %lu", 
+            "Boot tracking - Crashes: %d (%d consecutive), Resets: %d (%d consecutive), Quick restarts: %lu",
             _crashCount, _consecutiveCrashCount, _resetCount, _consecutiveResetCount, _quickRestartCount
         );
-        
+
         if (_safeModeActive) {
             LOG_INFO("Safe mode monitoring started - restarts blocked for %lu min, auto-clears after %lu min stable",
                         SAFE_MODE_MIN_UPTIME / (60 * 1000), SAFE_MODE_DISABLE_TIMEOUT / (60 * 1000));
@@ -200,8 +259,26 @@ namespace CrashMonitor
         }
         
         // === ROLLBACK/FACTORY RESET: Last resort for persistent failures ===
-        // This handles the case where crashes/resets keep happening even after safe mode
+        // This handles the case where crashes/resets keep happening even after safe mode.
+        // Deliberately ahead of the archive below: the archive is the riskiest
+        // thing this function does and runs before WiFi, so the escape hatch has
+        // to get its turn first. Behind it, a bug in the archive path would take
+        // the recovery down with it on every boot.
         _handleCounters();
+
+        // Runs on every boot, not just the crashing one, so a dump left behind by
+        // a failed archive is retried rather than lost to the next crash
+        if (coreDumpPending) {
+            _archivePendingCoreDump();
+        } else {
+            // The budget belongs to the dump on the partition. Cleared here
+            // because the archive-task timeout path returns with an attempt
+            // already spent and no way to observe the task's later success -
+            // without this, those spent attempts follow the NEXT dump.
+            _archiveAttemptCount = 0;
+        }
+
+        if (!globalCommunityMode && hasArchivedCrash()) Mqtt::requestCrashPublish();
 
         // Create task to handle the crash reset
         LOG_DEBUG("Starting crash reset task with %d bytes stack", CRASH_RESET_TASK_STACK_SIZE);
@@ -344,28 +421,16 @@ namespace CrashMonitor
         }
     }
 
-    static void _checkAndPrintCoreDump() {
-        LOG_DEBUG("Checking for core dump from previous crash...");
-        
-        // Check if a core dump image exists
-        esp_err_t image_check = esp_core_dump_image_check();
-        if (image_check != ESP_OK) {
-            LOG_DEBUG("No core dump found (esp_err: %s)", esp_err_to_name(image_check));
-            return;
-        }
-
-        // TODO: if we find a crash dump, save it immediately to LittleFS (how? binary blob?) in a folder for crashes, with the current unix time in seconds, in the folder the binary blob anad a JSON with metadata. But we must also ensure (with robust logic) this data gets erased once sent, or in any case that we don't fill the memory with this data
-        LOG_INFO("Core dump found from previous crash, retrieving summary...");
-        
-        // Log only essential crash data for analysis
-        _logCompleteCrashData();
+    static esp_reset_reason_t _getCrashResetReason() {
+        if (_crashResetReasonValid) return (esp_reset_reason_t)_crashResetReason;
+        return esp_reset_reason();
     }
 
-    bool hasCoreDump() {
+    static bool _hasCoreDump() {
         return esp_core_dump_image_check() == ESP_OK;
     }
 
-    size_t getCoreDumpSize() {
+    static size_t _getCoreDumpSize() {
         size_t size = 0;
         size_t address = 0;
         if (esp_core_dump_image_get(&address, &size) == ESP_OK) {
@@ -376,11 +441,11 @@ namespace CrashMonitor
         return 0;
     }
 
-    bool getCoreDumpInfo(size_t* size, size_t* address) {
+    static bool _getCoreDumpInfo(size_t* size, size_t* address) {
         return esp_core_dump_image_get(address, size) == ESP_OK;
     }
 
-    bool getCoreDumpChunk(uint8_t* buffer, size_t offset, size_t chunkSize, size_t* bytesRead) {
+    static bool _getCoreDumpChunk(uint8_t* buffer, size_t offset, size_t chunkSize, size_t* bytesRead) {
         if (!buffer || !bytesRead) {
             return false;
         }
@@ -392,7 +457,7 @@ namespace CrashMonitor
         }
 
         // Get total core dump size to validate offset
-        size_t totalSize = getCoreDumpSize();
+        size_t totalSize = _getCoreDumpSize();
         if (totalSize == 0) {
             *bytesRead = 0;
             return false;
@@ -458,12 +523,12 @@ namespace CrashMonitor
         }
     }
 
-    bool getFullCoreDump(uint8_t* buffer, size_t bufferSize, size_t* actualSize) {
+    static bool _getFullCoreDump(uint8_t* buffer, size_t bufferSize, size_t* actualSize) {
         if (!buffer || !actualSize) {
             return false;
         }
 
-        size_t totalSize = getCoreDumpSize();
+        size_t totalSize = _getCoreDumpSize();
         if (totalSize == 0) {
             *actualSize = 0;
             return false;
@@ -476,12 +541,12 @@ namespace CrashMonitor
         }
 
         size_t bytesRead = 0;
-        bool success = getCoreDumpChunk(buffer, 0, totalSize, &bytesRead);
+        bool success = _getCoreDumpChunk(buffer, 0, totalSize, &bytesRead);
         *actualSize = bytesRead;
         return success;
     }
 
-    void clearCoreDump() {
+    static void _clearCoreDump() {
         esp_core_dump_image_erase();
         LOG_DEBUG("Core dump cleared from flash");
     }
@@ -490,7 +555,7 @@ namespace CrashMonitor
         LOG_WARNING("=== Crash Analysis ===");
         
         // Get reset reason and counters
-        esp_reset_reason_t resetReason = esp_reset_reason();
+        esp_reset_reason_t resetReason = _getCrashResetReason();
         LOG_WARNING("Reset reason: %s (%d) | crashes: %lu, consecutive: %lu",
                     getResetReasonString(resetReason), (int32_t)resetReason, 
                     _crashCount, _consecutiveCrashCount);
@@ -509,20 +574,15 @@ namespace CrashMonitor
                 LOG_WARNING("Backtrace depth: %d | Corrupted: %s", 
                             summary->exc_bt_info.depth, summary->exc_bt_info.corrupted ? "yes" : "no");
                 
-                // The key data for debugging - backtrace addresses
+                // On one line for easy copy-paste into addr2line
                 if (summary->exc_bt_info.depth > 0) {
-                    // Log all addresses in one line for easy copy-paste
                     char btAddresses[512] = "";
                     for (uint32_t i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
                         char addr[12];
                         snprintf(addr, sizeof(addr), "0x%08lx ", (uint32_t)summary->exc_bt_info.bt[i]);
                         strncat(btAddresses, addr, sizeof(btAddresses) - strlen(btAddresses) - 1);
                     }
-
-                    // Ready-to-use command for debugging
-                    char debugCommand[BACKTRACE_DECODE_CMD_SIZE];
-                    snprintf(debugCommand, sizeof(debugCommand), BACKTRACE_DECODE_CMD, btAddresses);
-                    LOG_WARNING("Command: %s", debugCommand);
+                    LOG_WARNING("Backtrace: %s", btAddresses);
                 }
                 
                 // Core dump availability info
@@ -541,162 +601,611 @@ namespace CrashMonitor
         LOG_WARNING("=== End Crash Analysis ===");
     }
 
-    bool getCoreDumpInfoJson(JsonDocument &doc) {
-        // Basic crash information
-        esp_reset_reason_t resetReason = esp_reset_reason();
+    // The reset reason is the frozen one: this is built when the dump is
+    // archived, which can be a later boot than the crash if an earlier archive
+    // attempt failed.
+    static void _getCoreDumpInfoJson(JsonObject doc) {
+        esp_reset_reason_t resetReason = _getCrashResetReason();
         doc["resetReason"] = getResetReasonString(resetReason);
         doc["resetReasonCode"] = (int32_t)resetReason;
         doc["crashCount"] = _crashCount;
         doc["consecutiveCrashCount"] = _consecutiveCrashCount;
         doc["resetCount"] = _resetCount;
         doc["consecutiveResetCount"] = _consecutiveResetCount;
-        
-        bool hasDump = hasCoreDump();
+
+        size_t dumpSize = 0;
+        size_t dumpAddress = 0;
+        bool hasDump = _getCoreDumpInfo(&dumpSize, &dumpAddress);
         doc["hasCoreDump"] = hasDump;
+        if (!hasDump) return;
 
-        if (hasDump) {
-            // Core dump size and address info
-            size_t dumpSize = 0;
-            size_t dumpAddress = 0;
-            if (getCoreDumpInfo(&dumpSize, &dumpAddress)) {
-                doc["coreDumpSize"] = dumpSize;
-                doc["coreDumpAddress"] = dumpAddress;
-            }
+        doc["coreDumpSize"] = dumpSize;
+        doc["coreDumpAddress"] = dumpAddress;
 
-            // Get detailed crash summary if available
-            esp_core_dump_summary_t *summary = (esp_core_dump_summary_t*)ps_malloc(sizeof(esp_core_dump_summary_t));
-            if (summary) {
-                esp_err_t err = esp_core_dump_get_summary(summary);
-                if (err == ESP_OK) {
-                    doc["taskName"] = summary->exc_task;
-                    doc["programCounter"] = (uint32_t)summary->exc_pc;
-                    doc["taskControlBlock"] = (uint32_t)summary->exc_tcb;
-                    doc["appElfSha256"] = summary->app_elf_sha256;
-                    
-                    // Backtrace information
-                    JsonObject backtrace = doc["backtrace"].to<JsonObject>();
-                    backtrace["depth"] = summary->exc_bt_info.depth;
-                    backtrace["corrupted"] = summary->exc_bt_info.corrupted;
-                    
-                    // Backtrace addresses array
-                    if (summary->exc_bt_info.depth > 0) {
-                        JsonArray addresses = backtrace["addresses"].to<JsonArray>();
-                        for (uint32_t i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
-                            addresses.add((uint32_t)summary->exc_bt_info.bt[i]);
-                        }
-                        
-                        // Command for debugging
-                        char btAddresses[512] = "";
-                        for (uint32_t i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
-                            char addr[12];
-                            snprintf(addr, sizeof(addr), "0x%08lx ", (uint32_t)summary->exc_bt_info.bt[i]);
-                            strncat(btAddresses, addr, sizeof(btAddresses) - strlen(btAddresses) - 1);
-                        }
-                        
-                        char debugCommand[600];
-                        snprintf(debugCommand, sizeof(debugCommand), 
-                                BACKTRACE_DECODE_CMD, 
-                                btAddresses);
-                        backtrace["debugCommand"] = debugCommand;
-                    }
-                } else {
-                    doc["summaryError"] = err;
+        esp_core_dump_summary_t *summary = (esp_core_dump_summary_t*)ps_malloc(sizeof(esp_core_dump_summary_t));
+        if (!summary) return;
+
+        esp_err_t err = esp_core_dump_get_summary(summary);
+        if (err == ESP_OK) {
+            doc["taskName"] = summary->exc_task;
+            doc["programCounter"] = (uint32_t)summary->exc_pc;
+            doc["taskControlBlock"] = (uint32_t)summary->exc_tcb;
+            doc["appElfSha256"] = summary->app_elf_sha256;
+
+            JsonObject backtrace = doc["backtrace"].to<JsonObject>();
+            backtrace["depth"] = summary->exc_bt_info.depth;
+            backtrace["corrupted"] = summary->exc_bt_info.corrupted;
+
+            if (summary->exc_bt_info.depth > 0) {
+                JsonArray addresses = backtrace["addresses"].to<JsonArray>();
+                for (uint32_t i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
+                    addresses.add((uint32_t)summary->exc_bt_info.bt[i]);
                 }
-                free(summary);
             }
+        } else {
+            doc["summaryError"] = err;
+        }
+
+        free(summary);
+    }
+
+    // On-flash crash archive
+
+    static void _buildArchivePath(const char* baseName, const char* suffix, char* path, size_t pathSize) {
+        snprintf(path, pathSize, "%s/%s%s", CRASH_ARCHIVE_DIR, baseName, suffix);
+    }
+
+    void buildArchivedCrashDumpPath(const char* baseName, char* path, size_t pathSize) {
+        _buildArchivePath(baseName, CRASH_ARCHIVE_DUMP_SUFFIX, path, pathSize);
+    }
+
+    // Records are found by their dump file; the metadata sidecar is derived from
+    // the base name rather than scanned for separately, so a stray .json cannot
+    // be mistaken for a record.
+    static uint32_t _scanArchive(ArchivedCrashEntry* entries, uint32_t maxEntries) {
+        if (entries == nullptr || maxEntries == 0) return 0;
+        if (!LittleFS.exists(CRASH_ARCHIVE_DIR)) return 0;
+
+        File dir = LittleFS.open(CRASH_ARCHIVE_DIR);
+        if (!dir) return 0;
+        if (!dir.isDirectory()) {
+            dir.close();
+            return 0;
+        }
+
+        const size_t suffixLength = strlen(CRASH_ARCHIVE_DUMP_SUFFIX);
+        uint32_t found = 0;
+        uint32_t examined = 0;
+
+        File entry = dir.openNextFile();
+        while (entry && examined < CRASH_ARCHIVE_SCAN_FILES_MAX && found < maxEntries) {
+            examined++;
+
+            const char* name = entry.name(); // Leaf name, not the full path
+            size_t nameLength = strlen(name);
+
+            if (endsWith(name, CRASH_ARCHIVE_DUMP_SUFFIX) && nameLength > suffixLength) {
+                size_t baseLength = nameLength - suffixLength;
+                if (baseLength < CRASH_ARCHIVE_NAME_BUFFER_SIZE) {
+                    ArchivedCrashEntry& slot = entries[found];
+                    // %.*s takes its precision as an int specifically, not int32_t
+                    snprintf(slot.baseName, sizeof(slot.baseName), "%.*s", (int)baseLength, name);
+                    slot.timestamp = strtoull(slot.baseName, nullptr, 10);
+                    slot.dumpBytes = entry.size();
+                    found++;
+                }
+            }
+
+            entry.close();
+            entry = dir.openNextFile();
+        }
+
+        if (entry) entry.close();
+        dir.close();
+
+        // The sidecar is stat-ed separately rather than picked up in the walk
+        // above, which cannot rely on it being visited after its own dump file
+        for (uint32_t i = 0; i < found; i++) {
+            char metaPath[CRASH_ARCHIVE_PATH_BUFFER_SIZE];
+            _buildArchivePath(entries[i].baseName, CRASH_ARCHIVE_META_SUFFIX, metaPath, sizeof(metaPath));
+
+            size_t metaBytes = 0;
+            File metaFile = LittleFS.open(metaPath, FILE_READ);
+            if (metaFile) {
+                metaBytes = metaFile.size();
+                metaFile.close();
+            }
+            entries[i].recordBytes = entries[i].dumpBytes + metaBytes;
+        }
+
+        // Records written before the clock was set share a near-identical
+        // timestamp and so have no meaningful order between them - they still all
+        // get published, just not necessarily in the order they happened.
+        for (uint32_t i = 1; i < found; i++) {
+            ArchivedCrashEntry key = entries[i];
+            uint32_t j = i;
+            while (j > 0 && entries[j - 1].timestamp > key.timestamp) {
+                entries[j] = entries[j - 1];
+                j--;
+            }
+            entries[j] = key;
+        }
+
+        return found;
+    }
+
+    bool removeArchivedCrash(const char* baseName) {
+        if (baseName == nullptr || baseName[0] == '\0') return false;
+
+        char path[CRASH_ARCHIVE_PATH_BUFFER_SIZE];
+
+        _buildArchivePath(baseName, CRASH_ARCHIVE_DUMP_SUFFIX, path, sizeof(path));
+        bool removedDump = LittleFS.exists(path) ? LittleFS.remove(path) : true;
+
+        _buildArchivePath(baseName, CRASH_ARCHIVE_META_SUFFIX, path, sizeof(path));
+        bool removedMeta = LittleFS.exists(path) ? LittleFS.remove(path) : true;
+
+        if (!removedDump || !removedMeta) {
+            LOG_ERROR("Failed to fully remove archived crash %s (dump: %s, metadata: %s)",
+                      baseName, removedDump ? "ok" : "failed", removedMeta ? "ok" : "failed");
+            return false;
+        }
+
+        LOG_DEBUG("Removed archived crash %s", baseName);
+        return true;
+    }
+
+    uint32_t clearArchivedCrashes() {
+        ArchivedCrashEntry entries[CRASH_ARCHIVE_SCAN_MAX];
+        uint32_t count = _scanArchive(entries, CRASH_ARCHIVE_SCAN_MAX);
+
+        uint32_t removed = 0;
+        for (uint32_t i = 0; i < count; i++) {
+            if (removeArchivedCrash(entries[i].baseName)) removed++;
+        }
+
+        if (removed > 0) LOG_INFO("Cleared %lu archived crash record(s)", removed);
+        return removed;
+    }
+
+    // Single-entry scan: _scanArchive stops as soon as maxEntries is reached, so
+    // this costs one ArchivedCrashEntry of stack rather than the full array. It
+    // is called from the MQTT task and from AsyncTCP request handlers.
+    bool hasArchivedCrash() {
+        ArchivedCrashEntry entry;
+        return _scanArchive(&entry, 1) > 0;
+    }
+
+    bool getArchivedCrashAt(uint32_t index, char* baseName, size_t baseNameSize) {
+        if (baseName == nullptr || baseNameSize == 0) return false;
+
+        ArchivedCrashEntry entries[CRASH_ARCHIVE_SCAN_MAX];
+        if (_scanArchive(entries, CRASH_ARCHIVE_SCAN_MAX) <= index) return false;
+
+        snprintf(baseName, baseNameSize, "%s", entries[index].baseName);
+        return true;
+    }
+
+    bool findArchivedCrashById(const char* crashId, char* baseName, size_t baseNameSize) {
+        if (crashId == nullptr || crashId[0] == '\0') return false;
+        if (baseName == nullptr || baseNameSize == 0) return false;
+
+        ArchivedCrashEntry entries[CRASH_ARCHIVE_SCAN_MAX];
+        uint32_t count = _scanArchive(entries, CRASH_ARCHIVE_SCAN_MAX);
+
+        for (uint32_t i = 0; i < count; i++) {
+            const char* separator = strchr(entries[i].baseName, '_');
+            if (separator == nullptr) continue;
+
+            if (strcmp(separator + 1, crashId) == 0) {
+                snprintf(baseName, baseNameSize, "%s", entries[i].baseName);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    size_t getArchivedCrashDumpSize(const char* baseName) {
+        if (baseName == nullptr) return 0;
+
+        char path[CRASH_ARCHIVE_PATH_BUFFER_SIZE];
+        _buildArchivePath(baseName, CRASH_ARCHIVE_DUMP_SUFFIX, path, sizeof(path));
+
+        File file = LittleFS.open(path, FILE_READ);
+        if (!file) return 0;
+
+        size_t size = file.size();
+        file.close();
+        return size;
+    }
+
+    bool readArchivedCrashDump(const char* baseName, uint8_t* buffer, size_t bufferSize, size_t* actualSize) {
+        if (baseName == nullptr || buffer == nullptr || actualSize == nullptr) return false;
+        *actualSize = 0;
+
+        char path[CRASH_ARCHIVE_PATH_BUFFER_SIZE];
+        _buildArchivePath(baseName, CRASH_ARCHIVE_DUMP_SUFFIX, path, sizeof(path));
+
+        File file = LittleFS.open(path, FILE_READ);
+        if (!file) {
+            LOG_ERROR("Archived crash dump not readable: %s", path);
+            return false;
+        }
+
+        size_t size = file.size();
+        if (size > bufferSize) {
+            LOG_ERROR("Buffer too small for archived dump %s: need %zu bytes, have %zu", baseName, size, bufferSize);
+            file.close();
+            return false;
+        }
+
+        size_t read = file.read(buffer, size);
+        file.close();
+
+        if (read != size) {
+            LOG_ERROR("Short read on archived dump %s: expected %zu bytes, got %zu", baseName, size, read);
+            return false;
+        }
+
+        *actualSize = read;
+        return true;
+    }
+
+    bool getArchivedCrashMetadata(const char* baseName, JsonDocument &doc) {
+        if (baseName == nullptr) return false;
+
+        char path[CRASH_ARCHIVE_PATH_BUFFER_SIZE];
+        _buildArchivePath(baseName, CRASH_ARCHIVE_META_SUFFIX, path, sizeof(path));
+
+        File file = LittleFS.open(path, FILE_READ);
+        if (!file) {
+            LOG_ERROR("Archived crash metadata not readable: %s", path);
+            return false;
+        }
+
+        DeserializationError error = deserializeJson(doc, file);
+        file.close();
+
+        if (error) {
+            LOG_ERROR("Archived crash metadata %s is malformed: %s", baseName, error.c_str());
+            return false;
         }
 
         return true;
     }
 
-    bool getCoreDumpChunkJson(JsonDocument &doc, size_t offset, size_t chunkSize) {
-        if (!hasCoreDump()) {
-            doc["error"] = "No core dump available";
-            return false;
-        }
+    bool listArchivedCrashes(JsonDocument &doc) {
+        ArchivedCrashEntry entries[CRASH_ARCHIVE_SCAN_MAX];
+        uint32_t count = _scanArchive(entries, CRASH_ARCHIVE_SCAN_MAX);
 
-        // Get the raw size first
-        size_t rawTotalSize = getCoreDumpSize();
-        
-        // Allocate buffer for the chunk to get the actual size after processing
-        uint8_t* buffer = (uint8_t*)ps_malloc(chunkSize);
-        if (!buffer) {
-            doc["error"] = "Failed to allocate buffer";
-            return false;
-        }
+        JsonArray crashes = doc["crashes"].to<JsonArray>();
+        for (uint32_t i = 0; i < count; i++) {
+            SpiRamAllocator allocator;
+            JsonDocument metadata(&allocator);
 
-        size_t bytesRead = 0;
-        bool success = getCoreDumpChunk(buffer, offset, chunkSize, &bytesRead);
-        
-        if (success) {            
-            // If this is the first chunk and we successfully read data, 
-            // we can calculate the actual ELF size by checking how the chunk function processed it
-            static bool elfSizeCalculated = false;
-            
-            if (!elfSizeCalculated && offset == 0 && bytesRead > 0) {
-                // The getCoreDumpChunk function has found the ELF offset and adjusted the size
-                // We can't directly access the static variables, so we'll estimate
-                // For now, use a safer approach: when bytesRead < chunkSize at offset 0, 
-                // it means we've hit the end, so totalSize = offset + bytesRead
-                elfSizeCalculated = true;
-            }
-            
-            doc["totalSize"] = rawTotalSize; // Keep reporting raw size for now
-            doc["offset"] = offset;
-            doc["requestedChunkSize"] = chunkSize;
-            doc["actualChunkSize"] = bytesRead;
-            
-            // Fix hasMore calculation: if we read less than requested, we're at the end
-            bool hasMore = (bytesRead == chunkSize); // If we got full chunk, there might be more
-            if (hasMore) {
-                // Double-check by trying to read one more byte at the next offset
-                uint8_t testByte;
-                size_t testBytesRead = 0;
-                bool testSuccess = getCoreDumpChunk(&testByte, offset + bytesRead, 1, &testBytesRead);
-                hasMore = (testSuccess && testBytesRead > 0);
-            }
-            
-            doc["hasMore"] = hasMore;
-
-            if (bytesRead > 0) {
-                // Encode binary data as base64 using mbedtls
-                size_t base64Length = 0;
-                
-                // First call to get required buffer size
-                int32_t ret = mbedtls_base64_encode(NULL, 0, &base64Length, buffer, bytesRead);
-                if (ret == MBEDTLS_ERR_BASE64_BUFFER_TOO_SMALL) {
-                    uint8_t* base64Buffer = (uint8_t*)ps_malloc(base64Length + 1); // +1 for null terminator
-                    if (base64Buffer) {
-                        size_t actualLength = 0;
-                        ret = mbedtls_base64_encode(base64Buffer, base64Length, &actualLength, buffer, bytesRead);
-                        if (ret == 0) {
-                            base64Buffer[actualLength] = '\0'; // Null terminate
-                            doc["data"] = base64Buffer;
-                            doc["encoding"] = "base64";
-                        } else {
-                            doc["error"] = "Base64 encoding failed";
-                        }
-                        free(base64Buffer);
-                    } else {
-                        doc["error"] = "Failed to allocate base64 buffer";
-                    }
-                } else {
-                    doc["error"] = "Failed to calculate base64 buffer size";
-                }
+            if (getArchivedCrashMetadata(entries[i].baseName, metadata)) {
+                crashes.add(metadata);
             } else {
-                doc["error"] = "No data read";
+                // A dump with unreadable metadata is still worth surfacing: the
+                // dump itself can be fetched and analysed offline
+                JsonObject partial = crashes.add<JsonObject>();
+                const char* separator = strchr(entries[i].baseName, '_');
+                if (separator != nullptr) partial["crashId"] = separator + 1;
+                partial["timestamp"] = entries[i].timestamp;
+                partial["coreDumpCompressedSize"] = entries[i].dumpBytes;
+                partial["metadataError"] = "unreadable";
+            }
+        }
+
+        doc["count"] = count;
+        return true;
+    }
+
+    // miniz's low-level API never allocates - the ~164 kB tdefl_compressor is
+    // caller-owned - so the state goes in PSRAM instead of the internal heap
+    // that tdefl_compress_mem_to_mem() would have used. Flags are built by hand
+    // because tdefl_create_comp_flags_from_zip_params() is not among the ROM
+    // exports; omitting TDEFL_WRITE_ZLIB_HEADER yields the raw deflate stream a
+    // gzip container wants. Returns the total gzip length, or 0 on failure.
+    static size_t _gzipCompress(const uint8_t* source, size_t sourceSize, uint8_t* destination, size_t destinationSize) {
+        if (source == nullptr || destination == nullptr) return 0;
+        if (destinationSize <= GZIP_HEADER_SIZE + GZIP_TRAILER_SIZE) return 0;
+
+        tdefl_compressor* compressor = (tdefl_compressor*)ps_malloc(sizeof(tdefl_compressor));
+        if (compressor == nullptr) {
+            LOG_ERROR("Failed to allocate %zu bytes in PSRAM for the gzip compressor", sizeof(tdefl_compressor));
+            return 0;
+        }
+
+        size_t deflateSize = 0;
+        tdefl_status status = tdefl_init(compressor, NULL, NULL, TDEFL_DEFAULT_MAX_PROBES);
+        if (status == TDEFL_STATUS_OKAY) {
+            size_t consumed = sourceSize;
+            deflateSize = destinationSize - GZIP_HEADER_SIZE - GZIP_TRAILER_SIZE;
+
+            status = tdefl_compress(compressor, source, &consumed,
+                                    destination + GZIP_HEADER_SIZE, &deflateSize, TDEFL_FINISH);
+
+            // TDEFL_STATUS_OKAY here means "call me again", which for a
+            // single-shot compress means the output buffer was too small
+            if (status != TDEFL_STATUS_DONE || consumed != sourceSize) {
+                LOG_ERROR("Deflate failed (status %d, consumed %zu of %zu bytes)", (int32_t)status, consumed, sourceSize);
+                deflateSize = 0;
             }
         } else {
-            doc["totalSize"] = rawTotalSize;
-            doc["offset"] = offset;
-            doc["requestedChunkSize"] = chunkSize;
-            doc["actualChunkSize"] = 0;
-            doc["hasMore"] = false;
-            doc["error"] = "Failed to read core dump chunk";
+            LOG_ERROR("Failed to initialise the gzip compressor (status %d)", (int32_t)status);
         }
 
-        free(buffer);
-        return success;
+        free(compressor);
+        if (deflateSize == 0) return 0;
+
+        // Magic, deflate, no flags, no mtime, no extra flags, unknown OS
+        static const uint8_t GZIP_HEADER[GZIP_HEADER_SIZE] = {
+            0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff};
+        memcpy(destination, GZIP_HEADER, sizeof(GZIP_HEADER));
+
+        // gzip wants CRC-32 with init 0xFFFFFFFF and xorout 0xFFFFFFFF. Following
+        // the ~-convention documented in esp_rom_crc.h, that is
+        // ~esp_rom_crc32_le(~0xFFFFFFFF, ...) ^ 0xFFFFFFFF, which reduces to a
+        // plain call with init 0.
+        uint32_t crc = esp_rom_crc32_le(0, source, (uint32_t)sourceSize);
+        uint32_t isize = (uint32_t)sourceSize;
+
+        uint8_t* trailer = destination + GZIP_HEADER_SIZE + deflateSize;
+        for (uint8_t i = 0; i < 4; i++) trailer[i] = (uint8_t)((crc >> (8 * i)) & 0xff);
+        for (uint8_t i = 0; i < 4; i++) trailer[4 + i] = (uint8_t)((isize >> (8 * i)) & 0xff);
+
+        return GZIP_HEADER_SIZE + deflateSize + GZIP_TRAILER_SIZE;
+    }
+
+    static bool _enforceArchiveRetention(size_t incomingBytes) {
+        if (!CrashArchivePolicy::canStore(incomingBytes, CRASH_ARCHIVE_MAX_BYTES)) {
+            LOG_ERROR("Crash record of %zu bytes exceeds the %d byte archive budget, refusing to store it",
+                      incomingBytes, CRASH_ARCHIVE_MAX_BYTES);
+            return false;
+        }
+
+        ArchivedCrashEntry entries[CRASH_ARCHIVE_SCAN_MAX];
+        uint32_t count = _scanArchive(entries, CRASH_ARCHIVE_SCAN_MAX);
+
+        size_t sizes[CRASH_ARCHIVE_SCAN_MAX];
+        for (uint32_t i = 0; i < count; i++) sizes[i] = entries[i].recordBytes;
+
+        uint32_t toEvict = (uint32_t)CrashArchivePolicy::evictionCount(
+            sizes, count, incomingBytes, CRASH_ARCHIVE_MAX_RECORDS, CRASH_ARCHIVE_MAX_BYTES);
+
+        for (uint32_t i = 0; i < toEvict; i++) {
+            LOG_INFO("Evicting oldest archived crash %s to make room (%lu of %lu)",
+                     entries[i].baseName, i + 1, toEvict);
+            removeArchivedCrash(entries[i].baseName);
+        }
+
+        return true;
+    }
+
+    // The partition is only erased once both files are written and closed, so a
+    // failure anywhere here leaves the dump where the next boot will retry it.
+    static bool _archiveCoreDump() {
+        size_t rawSize = _getCoreDumpSize();
+        if (rawSize == 0) {
+            LOG_WARNING("Core dump image present but reports zero size, skipping archive");
+            return false;
+        }
+
+        if (!LittleFS.exists(CRASH_ARCHIVE_DIR) && !LittleFS.mkdir(CRASH_ARCHIVE_DIR)) {
+            LOG_ERROR("Failed to create %s, leaving the dump on the partition", CRASH_ARCHIVE_DIR);
+            return false;
+        }
+
+        SpiRamAllocator allocator;
+        JsonDocument metadata(&allocator);
+
+        uint8_t* raw = (uint8_t*)ps_malloc(rawSize);
+        if (raw == nullptr) {
+            LOG_ERROR("Failed to allocate %zu bytes in PSRAM for the core dump", rawSize);
+            return false;
+        }
+
+        size_t elfSize = 0;
+        if (!_getFullCoreDump(raw, rawSize, &elfSize) || elfSize == 0) {
+            LOG_ERROR("Failed to read the core dump off the partition");
+            free(raw);
+            return false;
+        }
+
+        // Taken over the raw dump rather than the gzip so the id describes the
+        // crash and not the compressor
+        uint8_t digest[32];
+        char crashId[CRASH_ARCHIVE_ID_BUFFER_SIZE];
+        if (mbedtls_sha256(raw, elfSize, digest, 0) != 0) {
+            LOG_ERROR("Failed to hash the core dump, leaving it on the partition");
+            free(raw);
+            return false;
+        }
+        for (size_t i = 0; i < CRASH_ARCHIVE_ID_HEX_CHARS / 2; i++) {
+            snprintf(crashId + (i * 2), 3, "%02x", digest[i]);
+        }
+
+        uint64_t timestamp = CustomTime::getUnixTimeMilliseconds();
+
+        char baseName[CRASH_ARCHIVE_NAME_BUFFER_SIZE];
+        snprintf(baseName, sizeof(baseName), "%llu_%s", timestamp, crashId);
+
+        // Worst case for incompressible input, with room to spare over the
+        // 5 bytes per 16 kB block that stored-mode deflate adds
+        size_t compressedCapacity = elfSize + (elfSize / 8) + GZIP_HEADER_SIZE + GZIP_TRAILER_SIZE + 64;
+        uint8_t* compressed = (uint8_t*)ps_malloc(compressedCapacity);
+        if (compressed == nullptr) {
+            LOG_ERROR("Failed to allocate %zu bytes in PSRAM for the compressed dump", compressedCapacity);
+            free(raw);
+            return false;
+        }
+
+        size_t compressedSize = _gzipCompress(raw, elfSize, compressed, compressedCapacity);
+        free(raw);
+
+        if (compressedSize == 0) {
+            LOG_ERROR("Failed to compress the core dump, leaving it on the partition");
+            free(compressed);
+            return false;
+        }
+
+        LOG_INFO("Core dump compressed: %zu bytes -> %zu bytes (%.1f%% of original)",
+                 elfSize, compressedSize, (float)compressedSize * 100.0f / (float)elfSize);
+
+        metadata["crashId"] = crashId;
+        metadata["timestamp"] = timestamp;
+        // The build that crashed, which is what the cloud needs to fetch the
+        // right ELF - not necessarily the build running when this is published
+        metadata["firmwareVersion"] = FIRMWARE_BUILD_VERSION;
+        metadata["coreDumpRawSize"] = elfSize;
+        metadata["coreDumpCompressedSize"] = compressedSize;
+        _getCoreDumpInfoJson(metadata["crashInfo"].to<JsonObject>());
+
+        // Both files count against the budget, so retention is decided once the
+        // sidecar's size is known
+        size_t metaExpected = measureJson(metadata);
+        if (!_enforceArchiveRetention(compressedSize + metaExpected)) {
+            free(compressed);
+            return false;
+        }
+
+        char path[CRASH_ARCHIVE_PATH_BUFFER_SIZE];
+
+        // Metadata first: it is small, so a full filesystem fails here rather
+        // than after a 12 kB dump write
+        _buildArchivePath(baseName, CRASH_ARCHIVE_META_SUFFIX, path, sizeof(path));
+        File metaFile = LittleFS.open(path, FILE_WRITE);
+        if (!metaFile) {
+            LOG_ERROR("Failed to open %s for writing", path);
+            free(compressed);
+            return false;
+        }
+
+        size_t metaWritten = serializeJson(metadata, metaFile);
+        metaFile.close();
+
+        // Compared against the measured length, not against zero: a nearly-full
+        // filesystem accepts a partial document and reports the bytes it took,
+        // which would otherwise pass as success and leave truncated JSON behind
+        // once the partition has already been erased
+        if (metaWritten != metaExpected) {
+            LOG_ERROR("Short write on %s: expected %zu bytes, wrote %zu", path, metaExpected, metaWritten);
+            removeArchivedCrash(baseName);
+            free(compressed);
+            return false;
+        }
+
+        // Written under a name no scan matches, then renamed in. A record is
+        // discovered by its dump file, so opening the final name here would make
+        // an empty record visible to the MQTT task the instant the file is
+        // created - see CRASH_ARCHIVE_TEMP_DUMP_PATH.
+        File dumpFile = LittleFS.open(CRASH_ARCHIVE_TEMP_DUMP_PATH, FILE_WRITE);
+        if (!dumpFile) {
+            LOG_ERROR("Failed to open %s for writing", CRASH_ARCHIVE_TEMP_DUMP_PATH);
+            removeArchivedCrash(baseName);
+            free(compressed);
+            return false;
+        }
+
+        size_t dumpWritten = dumpFile.write(compressed, compressedSize);
+        dumpFile.close();
+        free(compressed);
+
+        if (dumpWritten != compressedSize) {
+            LOG_ERROR("Short write on %s: expected %zu bytes, wrote %zu",
+                      CRASH_ARCHIVE_TEMP_DUMP_PATH, compressedSize, dumpWritten);
+            LittleFS.remove(CRASH_ARCHIVE_TEMP_DUMP_PATH);
+            removeArchivedCrash(baseName);
+            return false;
+        }
+
+        _buildArchivePath(baseName, CRASH_ARCHIVE_DUMP_SUFFIX, path, sizeof(path));
+        // A retry of the same crash lands on the same name, and rename over an
+        // existing file is not portable across FS implementations
+        if (LittleFS.exists(path)) LittleFS.remove(path);
+
+        if (!LittleFS.rename(CRASH_ARCHIVE_TEMP_DUMP_PATH, path)) {
+            LOG_ERROR("Failed to rename %s to %s", CRASH_ARCHIVE_TEMP_DUMP_PATH, path);
+            LittleFS.remove(CRASH_ARCHIVE_TEMP_DUMP_PATH);
+            removeArchivedCrash(baseName);
+            return false;
+        }
+
+        _clearCoreDump();
+
+        // The reason is durable in the record, so the RTC copy has done its job
+        _crashResetReasonValid = false;
+        _crashResetReason = 0;
+
+        LOG_INFO("Archived crash %s (%zu bytes on disk), core dump partition cleared", baseName, compressedSize);
+        return true;
+    }
+
+    // Completion signal for the archive task. Both are file-static rather than
+    // locals of the caller: on a timeout the task is left running, so anything
+    // it still writes to must outlive the frame that started it.
+    static bool _archiveTaskResult = false;
+    static SemaphoreHandle_t _archiveTaskDone = NULL;
+
+    static void _archiveCoreDumpTask(void *parameter) {
+        (void)parameter;
+        _archiveTaskResult = _archiveCoreDump();
+        xSemaphoreGive(_archiveTaskDone);
+        vTaskDelete(NULL);
+    }
+
+    // Runs before WiFi, so anything that can panic or block here is a brick risk:
+    // every failure path leaves the device able to continue.
+    static void _archivePendingCoreDump() {
+        if (_archiveAttemptCount >= MAX_CRASH_ARCHIVE_ATTEMPTS) {
+            LOG_ERROR("Core dump could not be archived in %lu attempts, discarding it to break the loop",
+                      _archiveAttemptCount);
+            _clearCoreDump();
+            _archiveAttemptCount = 0;
+            _crashResetReasonValid = false;
+            _crashResetReason = 0;
+            return;
+        }
+
+        // Spent before the work starts: a panic inside the archive must still
+        // cost an attempt, otherwise the budget never runs down
+        _archiveAttemptCount++;
+
+        if (_archiveTaskDone == NULL) _archiveTaskDone = xSemaphoreCreateBinary();
+        if (_archiveTaskDone == NULL) {
+            LOG_ERROR("Failed to create the crash archive semaphore, leaving the dump on the partition");
+            return;
+        }
+
+        LOG_DEBUG("Starting crash archive task with %d bytes stack (attempt %lu of %d)",
+                  CRASH_ARCHIVE_TASK_STACK_SIZE, _archiveAttemptCount, MAX_CRASH_ARCHIVE_ATTEMPTS);
+
+        _archiveTaskResult = false;
+        BaseType_t created = xTaskCreate(
+            _archiveCoreDumpTask,
+            CRASH_ARCHIVE_TASK_NAME,
+            CRASH_ARCHIVE_TASK_STACK_SIZE,
+            NULL,
+            CRASH_ARCHIVE_TASK_PRIORITY,
+            NULL);
+
+        if (created != pdPASS) {
+            LOG_ERROR("Failed to create the crash archive task, leaving the dump on the partition");
+            return;
+        }
+
+        if (xSemaphoreTake(_archiveTaskDone, pdMS_TO_TICKS(CRASH_ARCHIVE_TASK_TIMEOUT)) != pdTRUE) {
+            // Deliberately not deleted: it may be mid-write on LittleFS, and
+            // killing it there would leave a half-written record behind. Boot
+            // continues without it; the attempt has already been counted.
+            LOG_ERROR("Crash archive did not finish within %d ms, continuing boot without it",
+                      CRASH_ARCHIVE_TASK_TIMEOUT);
+            return;
+        }
+
+        if (_archiveTaskResult) _archiveAttemptCount = 0;
     }
 
     TaskInfo getTaskInfo()
