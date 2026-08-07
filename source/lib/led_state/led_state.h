@@ -31,15 +31,24 @@ namespace LedState {
 
 // Priority layers, lowest first. The numeric values ARE the priority order:
 // resolve() scans from the highest value down and returns the first occupied slot.
+//
+// USER sits directly above STATUS, not at the bottom. STATUS is the ambient
+// baseline - the firmware occupies it at boot and never releases it, so a user
+// colour underneath could never be seen on a healthy device, which would make the
+// whole API inert. Above STATUS it replaces the ambient indication and nothing
+// else: every layer that carries an actual event still outranks it.
 enum class Layer : uint8_t {
-    USER = 0,      // REST API / home automation. Lowest, so status always wins.
-    STATUS = 1,    // Normal operating status: boot stage, healthy, error
+    STATUS = 0,    // Ambient status: boot stage, healthy. Always occupied.
+    USER = 1,      // REST API / home automation
     NETWORK = 2,   // WiFi and connectivity
     ALERT = 3,     // Button feedback, updates, recoverable faults
     CRITICAL = 4   // Safe mode, factory reset, unrecoverable faults
 };
 
 constexpr uint8_t LAYER_COUNT = 5;
+
+// resolve() walks the slots with a signed index.
+static_assert(LAYER_COUNT <= 127, "Layer indices must fit in int8_t");
 
 enum class Pattern : uint8_t {
     OFF = 0,

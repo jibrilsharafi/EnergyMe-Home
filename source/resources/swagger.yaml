@@ -2203,10 +2203,11 @@ paths:
       summary: Get current LED state
       description: >
         Report what the LED is showing right now. The LED is driven by priority
-        layers (`user` < `status` < `network` < `alert` < `critical`); the highest
-        occupied layer wins and `layer` names it. Both `layer` and `remaining_ms`
-        are null when no layer is occupied and when the indication is indefinite,
-        respectively.
+        layers (`status` < `user` < `network` < `alert` < `critical`); the highest
+        occupied layer wins and `layer` names it. `status` is the ambient baseline
+        the device always holds, so a user colour sits directly above it. Both
+        `layer` and `remaining_ms` are null when no layer is occupied and when the
+        indication is indefinite, respectively.
       tags:
         - LED
       responses:
@@ -2224,7 +2225,7 @@ paths:
                   layer:
                     type: string
                     nullable: true
-                    enum: [user, status, network, alert, critical]
+                    enum: [status, user, network, alert, critical]
                     description: Layer owning the indication, or null when the LED is idle
                     example: network
                   color:
@@ -2248,15 +2249,24 @@ paths:
                     minimum: 0
                     maximum: 100
                     example: 75
+        '503':
+          description: The LED state could not be read. Retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /api/v1/led/color:
     put:
       summary: Set the user LED colour
       description: >
-        Drive the LED from an automation. This writes the `user` layer, which is the
-        lowest priority, so any system indication overrides it while active and the
-        user colour reappears once that indication is released. The user layer is not
-        persisted and is empty after a reboot.
+        Drive the LED from an automation. This writes the `user` layer, which sits
+        directly above the ambient `status` layer: it replaces the steady healthy
+        indication, and every eventful layer above it (`network`, `alert`,
+        `critical`) still overrides it while active, after which the user colour
+        reappears. Sending `pattern: "off"` keeps the layer occupied and dark, which
+        is how an automation suppresses the ambient status colour. The user layer is
+        not persisted and is empty after a reboot.
       tags:
         - LED
       requestBody:

@@ -12,7 +12,10 @@ namespace Led
     static uint8_t _redPin = INVALID_PIN;
     static uint8_t _greenPin = INVALID_PIN;
     static uint8_t _bluePin = INVALID_PIN;
-    static uint8_t _brightness = DEFAULT_LED_BRIGHTNESS_PERCENT;
+    // Written by the web/shadow/button tasks, read every tick by the render task.
+    // A byte cannot tear on Xtensa; volatile is here so the read is not hoisted out
+    // of the render loop.
+    static volatile uint8_t _brightness = DEFAULT_LED_BRIGHTNESS_PERCENT;
 
     static TaskHandle_t _ledTaskHandle = nullptr;
     static bool _ledTaskShouldRun = false;
@@ -147,10 +150,10 @@ namespace Led
             return false;
         }
 
-        _brightness = preferences.getUChar(PREFERENCES_BRIGHTNESS_KEY, DEFAULT_LED_BRIGHTNESS_PERCENT);
+        const uint8_t stored = preferences.getUChar(PREFERENCES_BRIGHTNESS_KEY, DEFAULT_LED_BRIGHTNESS_PERCENT);
         preferences.end();
 
-        _brightness = min(_brightness, (uint8_t)LED_MAX_BRIGHTNESS_PERCENT);
+        _brightness = min(stored, (uint8_t)LED_MAX_BRIGHTNESS_PERCENT);
         return true;
     }
 
@@ -172,7 +175,6 @@ namespace Led
 
     LedState::Layer layerForPriority(LedPriority priority)
     {
-        if (priority <= PRIO_USER) { return LedState::Layer::USER; }
         if (priority <= PRIO_NORMAL) { return LedState::Layer::STATUS; }
         if (priority <= PRIO_MEDIUM) { return LedState::Layer::NETWORK; }
         if (priority <= PRIO_URGENT) { return LedState::Layer::ALERT; }
@@ -212,12 +214,13 @@ namespace Led
         Snapshot snapshot;
         snapshot.brightness = _brightness;
 
-        if (!_lock()) { return snapshot; }
+        if (!_lock()) { return snapshot; } // valid stays false - the caller must not read this as "off"
         const uint64_t currentTime = millis64();
         LedState::expire(_table, currentTime);
         const LedState::Active active = LedState::resolve(_table, currentTime);
         _unlock();
 
+        snapshot.valid = true;
         if (!active.any) { return snapshot; }
 
         snapshot.any = true;

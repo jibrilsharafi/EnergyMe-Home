@@ -26,7 +26,13 @@ uint8_t _scale(uint8_t value, uint8_t brightnessPercent, uint32_t factorPermille
     if (factorPermille > FULL_PERMILLE) { factorPermille = FULL_PERMILLE; }
 
     const uint32_t scaled = (uint32_t)value * (uint32_t)brightnessPercent * factorPermille;
-    return (uint8_t)(scaled / (LED_STATE_MAX_BRIGHTNESS_PERCENT * FULL_PERMILLE));
+    const uint8_t result = (uint8_t)(scaled / (LED_STATE_MAX_BRIGHTNESS_PERCENT * FULL_PERMILLE));
+
+    // Truncation must not silence a channel that should be lit. At the 1% ALERT
+    // floor every channel below 100 divides to 0, so a dim colour would render
+    // completely dark exactly when the point of the floor is to be seen.
+    if (result == 0 && scaled > 0) { return 1; }
+    return result;
 }
 
 Rgb _scaleColor(Rgb color, uint8_t brightnessPercent, uint32_t factorPermille) {
@@ -165,13 +171,13 @@ const char *patternName(Pattern pattern) {
 
 const char *layerName(Layer layer) {
     switch (layer) {
-    case Layer::STATUS: return "status";
+    case Layer::USER: return "user";
     case Layer::NETWORK: return "network";
     case Layer::ALERT: return "alert";
     case Layer::CRITICAL: return "critical";
-    case Layer::USER: break;
+    case Layer::STATUS: break;
     }
-    return "user";
+    return "status";
 }
 
 bool patternFromName(const char *name, Pattern &out) {

@@ -50,7 +50,10 @@ typedef uint8_t LedPriority;
 namespace Led {
     // Priority constants. Kept as the public spelling for the ~40 existing call
     // sites; layerForPriority() maps them onto LedState::Layer.
-    const LedPriority PRIO_USER = 0;        // User/automation colour, always overridable
+    //
+    // There is deliberately no PRIO_* for the user layer. It is not part of this
+    // scale - it sits between STATUS and NETWORK - and reaching it goes through the
+    // Layer overload of setPattern(), which is what the API handlers use.
     const LedPriority PRIO_NORMAL = 1;      // Normal operation status
     const LedPriority PRIO_MEDIUM = 5;      // Network/connection status
     const LedPriority PRIO_URGENT = 10;     // Updates, errors, critical states
@@ -71,8 +74,11 @@ namespace Led {
         const Color OFF(0, 0, 0);
     }
 
-    // What the LED is showing right now, for the API and the shadow.
+    // What the LED is showing right now.
     struct Snapshot {
+        // False when the layer table could not be read. Distinct from `any` on
+        // purpose: "I could not look" must never be reported as "the LED is off".
+        bool valid = false;
         bool any = false;                           // false => no layer occupied, LED dark
         LedState::Layer layer = LedState::Layer::USER;  // meaningless unless `any`
         LedPattern pattern = LedPattern::OFF;
