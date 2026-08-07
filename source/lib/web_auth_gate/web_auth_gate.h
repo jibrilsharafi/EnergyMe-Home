@@ -37,6 +37,23 @@ enum class Action : uint8_t {
 // first thing it does: a device whose password has been changed must behave
 // exactly as it did before this code existed.
 //
+// isApOrigin is true when the request was addressed to the device's own SoftAP.
+// It widens the allowlist to the WiFi provisioning surface, and it is not a
+// nicety - without it the lockdown strands a device that loses its network.
+//
+// The provisioning carve-out in customserver.cpp only covers UNPROVISIONED, so in
+// GRACE and AP_ASSIST the provisioning routes run the full middleware chain and
+// this guard sees them. A meter on the default password whose router changed
+// would raise its assist AP, refuse /api/v1/network/wifi/credentials with 403,
+// and have no way back onto a network - the physical button resets the password
+// TO the default, so it cannot help. An AP-origin request already means physical
+// proximity plus the AP's own PSK, which is a higher bar than the web password
+// this lockdown exists because of.
+//
+// OTA is deliberately not widened. It is refused on the AP in every state, which
+// is what wifi-provisioning's "Firmware update always requires authentication"
+// requires.
+//
 // url is the request path, without query string (the caller passes
 // request->url(), which ESPAsyncWebServer has already split). A null or empty
 // url is treated as an unknown path.
@@ -44,6 +61,6 @@ enum class Action : uint8_t {
 // Matching is exact, never by prefix, except for the two static-asset
 // directories - so "/api/v1/auth/status-extra" is not allowlisted by looking
 // like "/api/v1/auth/status", and "/cssx/a" is not a stylesheet.
-Action evaluate(bool usingDefaultPassword, const char *url);
+Action evaluate(bool usingDefaultPassword, bool isApOrigin, const char *url);
 
 }  // namespace WebAuthGate

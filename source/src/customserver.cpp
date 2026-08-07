@@ -63,6 +63,7 @@ namespace CustomServer
     // Handlers and middlewares
     static void _setupMiddleware();
     static void _refreshDefaultPasswordFlag();
+    static bool _isApOrigin(AsyncWebServerRequest *request);
     static void _serveStaticContent();
     static void _serveApi();
 
@@ -313,6 +314,7 @@ namespace CustomServer
         // back onto the server chain.
         _refreshDefaultPasswordFlag();
         defaultPasswordGuard.setStateReader([]() { return _usingDefaultPassword; });
+        defaultPasswordGuard.setApOriginReader(_isApOrigin);
         server.addMiddleware(&defaultPasswordGuard);
 
         LOG_DEBUG("Default password guard configured");
@@ -372,6 +374,27 @@ namespace CustomServer
         AsyncClient *client = request->client();
         if (client == nullptr) return false;
 
+        return CustomWifi::isApAddress(client->localIP());
+    }
+
+    // True whenever the request was addressed to the device's own SoftAP, in ANY provisioning
+    // state. Deliberately weaker than the two tests above: it does not authorise a bypass of
+    // anything, it only tells the default-password guard to widen its allowlist to the WiFi
+    // provisioning surface (see lib/web_auth_gate).
+    //
+    // The state-carrying tests above cannot serve that purpose. They are UNPROVISIONED-only
+    // (and GRACE for reads), which is precisely the gap: in GRACE and AP_ASSIST the
+    // provisioning routes run the full middleware chain, so a meter on the default password
+    // whose router changed would raise its assist AP and then refuse the credentials endpoint
+    // it exists to offer.
+    //
+    // Same cost rules as the others - volatile load plus address compare, on the AsyncTCP task.
+    static bool _isApOrigin(AsyncWebServerRequest *request)
+    {
+        AsyncClient *client = request->client();
+        if (client == nullptr) return false;
+
+        // False whenever no AP is up.
         return CustomWifi::isApAddress(client->localIP());
     }
 

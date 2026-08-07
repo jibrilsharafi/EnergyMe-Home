@@ -141,11 +141,19 @@ public:
     // property stays visible at the call site.
     void setStateReader(std::function<bool()> usingDefaultPassword) { _usingDefaultPassword = usingDefaultPassword; }
 
-    void run(AsyncWebServerRequest *request, ArMiddlewareNext next) override {
-        // Fail closed: an unconfigured guard refuses rather than waves through.
-        bool locked = _usingDefaultPassword ? _usingDefaultPassword() : true;
+    // Tells the guard whether a request arrived on the device's own SoftAP, which widens
+    // the allowlist to the provisioning surface. Must stay as cheap as the provisioning
+    // filters it mirrors - a volatile load and an address compare, no lock, no NVS.
+    void setApOriginReader(std::function<bool(AsyncWebServerRequest *)> isApOrigin) { _isApOrigin = isApOrigin; }
 
-        switch (WebAuthGate::evaluate(locked, request->url().c_str())) {
+    void run(AsyncWebServerRequest *request, ArMiddlewareNext next) override {
+        // Fail closed: an unconfigured guard refuses rather than waves through. The AP
+        // reader fails closed the other way - unknown origin is treated as the LAN, which
+        // is the narrower allowlist.
+        bool locked = _usingDefaultPassword ? _usingDefaultPassword() : true;
+        bool fromAp = _isApOrigin ? _isApOrigin(request) : false;
+
+        switch (WebAuthGate::evaluate(locked, fromAp, request->url().c_str())) {
             case WebAuthGate::Action::ALLOW:
                 next();
                 return;
@@ -171,6 +179,7 @@ private:
     // Never store `next` and call it later: AsyncMiddlewareChain::_runChain captures it and
     // the list iterator by reference into a lambda that lives on its own stack frame.
     std::function<bool()> _usingDefaultPassword = nullptr;
+    std::function<bool(AsyncWebServerRequest *)> _isApOrigin = nullptr;
 };
 
 namespace CustomServer {

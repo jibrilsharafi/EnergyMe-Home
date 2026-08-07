@@ -37,6 +37,25 @@ const char *const ALLOWED_PREFIXES[] = {
 
 constexpr size_t ALLOWED_PREFIX_COUNT = sizeof(ALLOWED_PREFIXES) / sizeof(ALLOWED_PREFIXES[0]);
 
+// Additionally reachable when the request arrived on the device's own SoftAP.
+//
+// Without these, a meter on the default password that loses its network is stranded:
+// the assist AP comes up, the setup page loads, and submitting credentials returns
+// 403. The physical button cannot rescue it either - that resets the password TO the
+// default. Reaching the AP already requires physical proximity and its PSK.
+//
+// OTA is not here on purpose, and must not be added: firmware update requires
+// authentication on the AP in every provisioning state.
+const char *const AP_ORIGIN_PATHS[] = {
+    "/wifi-setup.html",
+    "/api/v1/network/wifi/status",
+    "/api/v1/network/wifi/scan",
+    "/api/v1/network/wifi/diagnostics",
+    "/api/v1/network/wifi/credentials"
+};
+
+constexpr size_t AP_ORIGIN_PATH_COUNT = sizeof(AP_ORIGIN_PATHS) / sizeof(AP_ORIGIN_PATHS[0]);
+
 constexpr char API_PREFIX[] = "/api/";
 
 bool startsWith(const char *text, const char *prefix) {
@@ -45,7 +64,7 @@ bool startsWith(const char *text, const char *prefix) {
 
 }  // namespace
 
-Action evaluate(bool usingDefaultPassword, const char *url) {
+Action evaluate(bool usingDefaultPassword, bool isApOrigin, const char *url) {
     // A device whose password has been changed behaves exactly as it did before this
     // code existed. First line, no exceptions, no lookups.
     if (!usingDefaultPassword) return Action::ALLOW;
@@ -59,6 +78,12 @@ Action evaluate(bool usingDefaultPassword, const char *url) {
 
     for (size_t i = 0; i < ALLOWED_PREFIX_COUNT; i++) {
         if (startsWith(url, ALLOWED_PREFIXES[i])) return Action::ALLOW;
+    }
+
+    if (isApOrigin) {
+        for (size_t i = 0; i < AP_ORIGIN_PATH_COUNT; i++) {
+            if (strcmp(url, AP_ORIGIN_PATHS[i]) == 0) return Action::ALLOW;
+        }
     }
 
     // Default-deny for the API, so a route added later is refused without anyone

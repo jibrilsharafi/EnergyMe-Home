@@ -14,8 +14,11 @@ void tearDown(void) {}
 
 namespace {
 
-Action locked(const char *url) { return evaluate(true, url); }
-Action unlocked(const char *url) { return evaluate(false, url); }
+// Locked down, request arriving on the LAN (the STA netif).
+Action locked(const char *url) { return evaluate(true, false, url); }
+// Locked down, request arriving on the device's own SoftAP.
+Action lockedOnAp(const char *url) { return evaluate(true, true, url); }
+Action unlocked(const char *url) { return evaluate(false, false, url); }
 
 }  // namespace
 
@@ -150,6 +153,57 @@ void test_favicon_matches_exactly(void) {
     TEST_ASSERT_EQUAL(Action::REDIRECT_TO_ROOT, locked("/favicon.svg.bak"));
 }
 
+// --- The SoftAP widening -------------------------------------------------------------
+//
+// These are the regression. The provisioning carve-out in customserver.cpp only covers
+// UNPROVISIONED, so in GRACE and AP_ASSIST the provisioning routes run the full chain and
+// this guard sees them. Without the widening, a meter on the default password whose
+// router changed raises its assist AP, refuses the credentials endpoint, and has no way
+// back onto a network - the physical button resets the password TO the default, so it
+// cannot rescue it either.
+
+void test_provisioning_is_reachable_from_the_ap_while_locked_down(void) {
+    TEST_ASSERT_EQUAL(Action::ALLOW, lockedOnAp("/wifi-setup.html"));
+    TEST_ASSERT_EQUAL(Action::ALLOW, lockedOnAp("/api/v1/network/wifi/status"));
+    TEST_ASSERT_EQUAL(Action::ALLOW, lockedOnAp("/api/v1/network/wifi/scan"));
+    TEST_ASSERT_EQUAL(Action::ALLOW, lockedOnAp("/api/v1/network/wifi/diagnostics"));
+    TEST_ASSERT_EQUAL(Action::ALLOW, lockedOnAp("/api/v1/network/wifi/credentials"));
+}
+
+// The widening is the whole point, so it must not reach past the AP onto the LAN.
+void test_the_provisioning_widening_does_not_apply_on_the_lan(void) {
+    TEST_ASSERT_EQUAL(Action::REDIRECT_TO_ROOT, locked("/wifi-setup.html"));
+    TEST_ASSERT_EQUAL(Action::DENY, locked("/api/v1/network/wifi/status"));
+    TEST_ASSERT_EQUAL(Action::DENY, locked("/api/v1/network/wifi/scan"));
+    TEST_ASSERT_EQUAL(Action::DENY, locked("/api/v1/network/wifi/diagnostics"));
+    TEST_ASSERT_EQUAL(Action::DENY, locked("/api/v1/network/wifi/credentials"));
+}
+
+// wifi-provisioning: "The OTA endpoint SHALL require authentication in every provisioning
+// state and on every netif, including the SoftAP." Being on the AP widens provisioning,
+// and provisioning only.
+void test_the_ap_never_widens_to_firmware_update_or_anything_else(void) {
+    TEST_ASSERT_EQUAL(Action::DENY, lockedOnAp("/api/v1/ota/upload"));
+    TEST_ASSERT_EQUAL(Action::DENY, lockedOnAp("/api/v1/ota/rollback"));
+    TEST_ASSERT_EQUAL(Action::DENY, lockedOnAp("/api/v1/system/factory-reset"));
+    TEST_ASSERT_EQUAL(Action::DENY, lockedOnAp("/api/v1/auth/reset-password"));
+    TEST_ASSERT_EQUAL(Action::DENY, lockedOnAp("/api/v1/system/info"));
+    TEST_ASSERT_EQUAL(Action::DENY, lockedOnAp("/api/v1/network/config"));
+    TEST_ASSERT_EQUAL(Action::REDIRECT_TO_ROOT, lockedOnAp("/configuration"));
+}
+
+void test_the_ap_widening_matches_exactly_not_by_prefix(void) {
+    TEST_ASSERT_EQUAL(Action::DENY, lockedOnAp("/api/v1/network/wifi/credentials-extra"));
+    TEST_ASSERT_EQUAL(Action::DENY, lockedOnAp("/api/v1/network/wifi/"));
+    TEST_ASSERT_EQUAL(Action::REDIRECT_TO_ROOT, lockedOnAp("/wifi-setup.html.bak"));
+}
+
+// A device whose password has been changed is unaffected on the AP too.
+void test_the_ap_changes_nothing_once_the_password_is_changed(void) {
+    TEST_ASSERT_EQUAL(Action::ALLOW, evaluate(false, true, "/api/v1/ota/upload"));
+    TEST_ASSERT_EQUAL(Action::ALLOW, evaluate(false, true, "/api/v1/system/info"));
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
 
@@ -172,6 +226,12 @@ int main(int, char **) {
     RUN_TEST(test_the_root_allowlist_entry_does_not_open_every_page);
     RUN_TEST(test_asset_directories_do_not_leak_to_lookalike_paths);
     RUN_TEST(test_favicon_matches_exactly);
+
+    RUN_TEST(test_provisioning_is_reachable_from_the_ap_while_locked_down);
+    RUN_TEST(test_the_provisioning_widening_does_not_apply_on_the_lan);
+    RUN_TEST(test_the_ap_never_widens_to_firmware_update_or_anything_else);
+    RUN_TEST(test_the_ap_widening_matches_exactly_not_by_prefix);
+    RUN_TEST(test_the_ap_changes_nothing_once_the_password_is_changed);
 
     return UNITY_END();
 }
