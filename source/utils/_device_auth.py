@@ -14,7 +14,14 @@ import argparse
 import os
 
 DEFAULT_USERNAME = "admin"
+
+# The bench devices' provisioning password, NOT the firmware's shipped default
+# (WEBSERVER_DEFAULT_PASSWORD, "energyme"). The two are deliberately different: a device
+# still holding the firmware default refuses every endpoint except the health check, the
+# auth status, and the password change, so any script reaching a device with `energyme`
+# should expect 403 with `"reason": "default_password"` rather than a working API.
 DEFAULT_PASSWORD = "energyme00"
+FIRMWARE_DEFAULT_PASSWORD = "energyme"
 
 
 def add_credential_args(parser: argparse.ArgumentParser) -> None:

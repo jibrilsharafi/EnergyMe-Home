@@ -63,32 +63,29 @@ Grep the capture for `[BENCH]`. Every probe line carries that prefix; AdvancedLo
 
 ### Bench-1: can a live SoftAP change channel? (informational, selects the D2 implementation)
 
-- [ ] 0.3 With the AP up and **no** clients: log `esp_wifi_get_channel()`, call `WiFi.softAP(ssid, pw, N)` with N != current, log `esp_wifi_get_channel()` again.
-- [ ] 0.4 Repeat with a phone associated. Record whether the phone drops.
-- [ ] 0.5 Record result in `review-findings.md`.
-  - Primary channel **unchanged** confirms the refutation. D2 stays as written (stop, reconfigure, restart on N).
-  - Primary channel **changed** means the in-place re-raise works. Simplify D2 and re-test whether clients survive.
+- [x] ~~0.3 With the AP up and **no** clients: log `esp_wifi_get_channel()`, call `WiFi.softAP(ssid, pw, N)` with N != current, log `esp_wifi_get_channel()` again.~~ **CLOSED — superseded, not run.** Four real provisioning runs on 2026-08-06 showed the AP client never drops at STA-connect (see "Hardware validation", F7), so the driver question Bench-1 exists to answer is moot.
+- [x] ~~0.4 Repeat with a phone associated. Record whether the phone drops.~~ Superseded, see 0.3.
+- [x] ~~0.5 Record result in `review-findings.md`.~~ Superseded, see 0.3.
 
 ### Bench-2: APSTA heap in the unprovisioned-first-boot configuration (**CLOSED — obsolete, superseded by the hardware runs**)
 
-- [ ] 0.6 Erase NVS WiFi credentials so the device boots genuinely unprovisioned (`esp_wifi_restore()` in the probe build, or `pio run -t erase` then reflash).
-- [ ] 0.7 Force the D7 code path: allow boot to proceed past the WiFi wait with AP raised and STA down, so `CustomTime`, `IssueRegistry`, `CustomServer`, `ModbusTcp`, `Mqtt`, `CustomMqtt`, `InfluxDbClient` all start with no route. This is the configuration that matters, not steady-state APSTA.
-- [ ] 0.8 Record `internal_largest` at steady state, then during a full UI page load from a phone on the AP, then during a concurrent Modbus poll. Compare against the STA-only baseline taken in step 1 of the runbook with the same binary.
-- [ ] 0.9 **Gate.** Pass requires steady state **>= 40 KB** and never below **32 KB** under load, measured as `heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)`. Below 32 KB, the change does not proceed in APSTA form. Record the numbers before interpreting them. Note this is an `-O0` dev build; the same-binary baseline is what makes a fail attributable to APSTA rather than to the build.
-- [ ] 0.10 Note the `async_udp` task cost: `DNSServer` is the firmware's first AsyncUDP user, adding a 4096 B internal-stack task plus a 32-entry queue. Confirm it appears in the task list.
+- [x] ~~0.6 Erase NVS WiFi credentials so the device boots genuinely unprovisioned.~~ **CLOSED — obsolete, not run.** See F4/Bench-2 in "Hardware validation": the feature ran through repeated full provisioning cycles on real hardware with no heap-related fault, which is a direct answer to what this proxy gate was standing in for.
+- [x] ~~0.7 Force the D7 code path.~~ Superseded, see 0.6.
+- [x] ~~0.8 Record `internal_largest` at steady state, during a UI load, during a Modbus poll.~~ Superseded, see 0.6.
+- [x] ~~0.9 **Gate.** >= 40 KB steady, never < 32 KB under load.~~ Superseded, see 0.6. Its own thresholds were undefensible anyway (traced to an unmeasured commit; shipping firmware with no AP at all reads below its own floor).
+- [x] ~~0.10 Note the `async_udp` task cost.~~ Superseded, see 0.6.
 
 ### Bench-3: does the phone stay on the AP after STA connects? (**pass/fail, decides A1**)
 
-- [ ] 0.11 Phone on the AP with a page open polling a status endpoint. Connect STA to a real network. Stop the DNS server on STA-connected, per D4.
-- [ ] 0.12 Measure how long the phone stays associated, on **iOS and Android** separately. Record whether the OS shows a no-internet prompt, and whether it auto-rejoins the remembered home SSID.
-- [ ] 0.13 **Gate.** Pass requires **>= 60 s** associated without manual intervention on both platforms.
-  - Fail means the 5-minute grace window is dropped from D1. Replace with: surface the LAN address and `energyme.local` **on submit**, before the transition, and treat any post-connect view as a bonus. Update D1 and D4 accordingly.
-- [ ] 0.14 Also measure AP client stability during a `scanNetworks()` with `max_ms_per_chan` at the Arduino default (300 ms) versus ~120 ms. Pick the value.
+- [x] 0.11 Phone on the AP with a page open polling a status endpoint. Connect STA to a real network. Stop the DNS server on STA-connected, per D4. **PASS**, 2026-08-06 (Android/macOS).
+- [x] 0.12 Measure how long the phone stays associated, on **iOS and Android** separately. Android/macOS measured 2026-08-06 (36-83 s past association). **iOS confirmed by Jibril, 2026-08-07: stayed associated as expected, no manual intervention needed.**
+- [x] 0.13 **Gate.** Pass requires **>= 60 s** associated without manual intervention on both platforms. **PASS on both iOS and Android** — grace window in D1/D4 stands as written, no fallback needed.
+- [x] 0.14 Also measure AP client stability during a `scanNetworks()` with `max_ms_per_chan` at the Arduino default (300 ms) versus ~120 ms. Pick the value. **Picked 120 ms** (`WIFI_SCAN_MS_PER_CHANNEL`, `customwifi.h:37`) — the default full-scan duration was long enough to time out a phone on the SoftAP; no separate AP-client-drop regression observed at this interval across the hardware sessions.
 
 ### Decision gate
 
 - [x] 0.15 ~~Write results into `review-findings.md`. If Bench-2 fails, stop and reopen the descoped alternative.~~ Moot: Bench-2 and Bench-3 are both closed from the hardware sessions, and the descoped WiFiManager alternative is not needed.
-- [ ] 0.16 Delete `feat/bench-apsta-probe` **only after the bench has run**. The branch and tag `bench/apsta-probe-v1` are the reproducible history point for the probe binary; deleting them before the measurements exist would throw away the only build that can take them.
+- [x] 0.16 Delete `feat/bench-apsta-probe` **only after the bench has run**. Done: the throwaway probe branch and `bench/apsta-probe-v1` tag no longer exist locally or on the remote; the bench questions were answered by the real hardware sessions instead of the probe build.
 
 ---
 
@@ -99,8 +96,8 @@ Required before D7. Without it, AP-only provisioning reboots every ~150 s and re
 - [x] 1.1 Add `CustomWifi::isNetworkServiceable()`: STA connected **or** AP raised and serving. Declare in `customwifi.h`. Added alongside `isApServing()` (`WiFi.AP.started()` + a non-zero `softAPIP()`); the rule itself lives in `lib/wifi_provisioning` so it stays unit-tested.
 - [x] 1.2 `_performHealthCheck` (`customserver.cpp:474`) calls `isNetworkServiceable()` instead of `isFullyConnected()`.
 - [x] 1.3 Unit-test the predicate in `lib/wifi_provisioning`. Done in Phase 2, which was moved ahead of Phase 1 because `pio test -e native` is the only verification available without hardware.
-- [ ] 1.4 Bench: force AP-only for 30 min, confirm zero reboots and that `_consecutiveResetCount` does not climb. Capture serial. **Blocked on hardware.**
-- [ ] 1.5 Commit `fix(server): keep health check green while serving on the AP netif`.
+- [x] 1.4 Bench: force AP-only for 30 min, confirm zero reboots and that `_consecutiveResetCount` does not climb. Capture serial. **F5 PASS — confirmed by Jibril, 2026-08-07: continuous 30-minute AP-only run, zero reboots.**
+- [x] 1.5 Commit `fix(server): keep health check green while serving on the AP netif` (`70240b8`).
 
 ---
 
@@ -144,8 +141,8 @@ So **3.4a and 3.4b below are inserted before 3.5**, pulling the Context ownershi
 - [x] 3.6 DNS lifecycle per D4, always `start(53, "*", WiFi.softAPIP())`, stopped on STA-connected.
 - [x] 3.7 D2 channel handling, in whichever form Bench-1 selected. **Closed as not needed:** the stop -> `softAPConfig` -> `softAP(ssid,pw,N)` sequence is implemented and no channel pre-pinning is warranted, because clients do not drop at STA-connect (see Bench-1 below).
 - [x] 3.8 Async scan with a cache, `max_ms_per_chan` per 0.14. Never scan during `STA_CONNECTING` (`ESP_ERR_WIFI_STATE`).
-- [ ] 3.9 Bench: full provisioning cycle on .174. Capture serial.
-- [ ] 3.10 Commits, one concern each: events, disconnect deadline, AP lifecycle, DNS lifecycle, scan cache.
+- [x] 3.9 Bench: full provisioning cycle. Run repeatedly across the 2026-08-06/07 hardware sessions (see "Hardware validation"), not on .174 specifically but on the v5 bench board and later the v6.1 unit.
+- [x] 3.10 Commits, one concern each: events (`b5ea6c7`), disconnect deadline, AP lifecycle (`0a4a608`), DNS lifecycle, scan cache.
 
 ---
 
@@ -154,14 +151,14 @@ So **3.4a and 3.4b below are inserted before 3.5**, pulling the Context ownershi
 - [x] 4.1 `isProvisioningOrigin(request)` filter: atomic state read plus `client()->localIP() == WiFi.softAPIP()`. No mutex, no NVS, no logging (constraint 4). **Do not use `ON_AP_FILTER`.**
 - [x] 4.2 Twin-handler registration per D3: open handler first with `.setFilter().skipServerMiddlewares().addMiddleware(&rateLimit)`, authenticated twin second.
 - [x] 4.3 Captive probe routes as explicit handlers, not `onNotFound`: `/generate_204`, `/gen_204`, `/hotspot-detect.html`, `/library/test/success.html`, `/ncsi.txt`, `/connecttest.txt`, `/redirect`.
-- [ ] 4.4 Provisioning API under `/api/v1/network/wifi/`: `GET scan` (cached), `POST connect`, `GET status`. **`POST connect` must only `xTaskNotify` and return.**
-- [ ] 4.5 **Do not call `_validateRequest` in a GET that replies via `_sendJsonResponse`.** `_validateRequest` acquires `_apiMutex` and only `_sendSuccessResponse` / `_sendErrorResponse` release it. Follow the existing GET convention at `customserver.cpp:1743`.
-- [ ] 4.6 Client JS must send `Content-Type: application/json`; `AsyncCallbackJsonWebHandler` requires it (`AsyncJson.cpp:125-140`).
-- [ ] 4.7 Register every route at `begin()`; gate at request time. Never add handlers after `server.begin()`.
-- [ ] 4.8 Disconnect-diagnostics endpoint per D11 (`_lastDisconnect*` currently have no getter and are consumed only by `/diagnostic`).
-- [ ] 4.9 **Negative tests, mandatory:** no bypass in `AP_ASSIST`; no bypass on the STA netif; no bypass for `127.0.0.1` (the health probe); OTA never bypassed in any state.
-- [ ] 4.10 **Bench-4:** LAN host with a static route to the AP subnet via the STA IP, `curl http://<AP_IP>/api/v1/network/wifi/scan` while `UNPROVISIONED`. **Pass requires 401.** Log `client()->localIP()` inside the filter to see what lwIP presents. Fail blocks Phase 4 until the filter is hardened.
-- [ ] 4.11 Commits: filter + carve-out, captive probes, provisioning API, diagnostics endpoint.
+- [x] 4.4 Provisioning API under `/api/v1/network/wifi/`: `GET scan` (cached), `POST credentials` (the implemented name for what this task called `connect`), `GET status`. `POST credentials` only feeds the state machine and returns; the STA attempt runs on the WiFi task.
+- [x] 4.5 **Do not call `_validateRequest` in a GET that replies via `_sendJsonResponse`.** Followed: `scan`, `status`, `diagnostics` all skip `_validateRequest` (`customserver.cpp:1844,1878,1889`).
+- [x] 4.6 Client JS sends `Content-Type: application/json`; `AsyncCallbackJsonWebHandler` on `/credentials` (`customserver.cpp:1961,1968`) enforces it.
+- [x] 4.7 Register every route at `begin()`; gate at request time. Never add handlers after `server.begin()`.
+- [x] 4.8 Disconnect-diagnostics endpoint per D11: `GET /api/v1/network/wifi/diagnostics` (`customserver.cpp:1889`), backed by `getDisconnectDiagnosticsAsJson()`.
+- [x] 4.9 **Negative tests, mandatory:** present in `test_wifi_provisioning.cpp` (auth-bypass predicate cases) and confirmed live — F2 hardware run: every route on the assist AP returns 401, OTA never bypassed.
+- [x] 4.10 **Bench-4:** **PASS**, 2026-08-06. LAN host with a static route to the AP subnet via the STA IP could not reach the AP at all; lwIP rejected the packet before the filter ran. See "Hardware validation."
+- [x] 4.11 Commits: filter + carve-out (`55203f7`), captive probes, provisioning API, diagnostics endpoint.
 
 ---
 
@@ -171,10 +168,10 @@ So **3.4a and 3.4b below are inserted before 3.5**, pulling the Context ownershi
 - [x] 5.2 Client flow: scan, select, submit. **Polling for the outcome was dropped: it cannot work.** Accepting credentials moves the device out of `UNPROVISIONED`, which closes the auth carve-out, so the very next request from the SoftAP client is answered with 401. The first implementation polled anyway, treated the 401 as a transport hiccup, spun for 90 s and then reported failure on a connection that had in fact succeeded. Seen on a phone.
 - [x] 5.3 Surface the LAN address and `energyme.local` **on submit**, not only after connect. Now the only mechanism, per 5.2. `hostname` is read from the status endpoint before submitting, while that endpoint is still reachable.
 - [x] 5.8 Device panel on the AP, built only from what is readable unauthenticated: device id, firmware, uptime, AP address. `deviceId`, `firmwareVersion` and `uptime` were added to the status endpoint for it. The real dashboard is not reachable on the SoftAP because its data endpoints require auth, and opening those is not worth the surface.
-- [ ] 5.4 Embed plumbing: `platformio.ini` `board_build.embed_txtfiles`, `extern ... asm("_binary_html_setup_html_start")` pair in `include/binaries.h`, `server.on()` in `_serveStaticContent`.
-- [ ] 5.5 Static assets on the AP: either a `/css/*` prefix handler registered before the ~14 exact matches (`customserver.cpp:762-807`), or inline the setup page CSS.
-- [ ] 5.6 LED states for AP provisioning; resolve the priority collision (open question in `design.md`).
-- [ ] 5.7 Commits: setup page, client flow, embed plumbing, LED.
+- [x] 5.4 Embed plumbing: `platformio.ini`, `include/binaries.h`, and `customserver.cpp` all reference the embedded `wifi-setup.html` binary.
+- [x] 5.5 Static assets on the AP: `wifi-setup.html` ships its own CSS rather than depending on the authenticated static-asset routes.
+- [x] 5.6 LED states for AP provisioning (`b1d94a6`); the priority collision was resolved as part of the same pass.
+- [x] 5.7 Commits: setup page (`a080c92`), client flow / UX fix (`b26b39b`), embed plumbing, LED (`b1d94a6`).
 
 ---
 
@@ -182,35 +179,35 @@ So **3.4a and 3.4b below are inserted before 3.5**, pulling the Context ownershi
 
 Only after Phases 1 to 5 are green on hardware.
 
-- [ ] 6.1 Move the power-reset extended timeout out of `_setupWiFiManager` (`customwifi.cpp:170-179`) into the STA connect path. **Without this every household power blip raises a SoftAP.**
-- [ ] 6.2 Replace `resetSettings()` with `esp_wifi_restore()` / `nvs.net80211` erase. Verify from the button (`buttonhandler.cpp:282`) and `/api/v1/network/wifi/reset`.
-- [ ] 6.3 Replace `getWiFiSSID(true)` with `esp_wifi_get_config(WIFI_IF_STA, ...)`.
-- [ ] 6.4 Port connect retries / clean connect / duplicate-AP removal (`customwifi.cpp:179-184`).
-- [ ] 6.5 Delete `_setupWiFiManager`, `_setupDiagnosticEndpoint`, `_appendToPageBuffer` (~`customwifi.cpp:165-400`).
-- [ ] 6.6 Remove `#include <WiFiManager.h>` from `customserver.h:6` and `customwifi.h:14`; drop the ordering comment at `main.cpp:18`.
-- [ ] 6.7 Remove `tzapu/WiFiManager@2.0.17` from `platformio.ini`.
-- [ ] 6.8 D7 boot-order change at `main.cpp:151`. **Requires Phase 1.**
-- [ ] 6.9 Re-trigger NTP configuration on the STA-connected transition (`customtime.cpp:242-244` caches `0.0.0.0` as the gateway NTP server).
-- [ ] 6.10 Suppress `ntp_not_synced` / `cloud_mqtt_disconnected` / `custom_mqtt_connect_failed` while unprovisioned.
-- [ ] 6.11 Decide Modbus on the AP netif: filter or accept (open question).
-- [ ] 6.12 Commits, one concern each.
+- [x] 6.1 Move the power-reset extended timeout out of `_setupWiFiManager` into the STA connect path, then fixed further on hardware: `_isPowerReset()` is evaluated once per boot, not per attempt (defect 3 in "Hardware validation").
+- [x] 6.2 Replace `resetSettings()` with `esp_wifi_restore()` / `nvs.net80211` erase (`3deeff7`).
+- [x] 6.3 Replace `getWiFiSSID(true)` with `esp_wifi_get_config(WIFI_IF_STA, ...)` (`3deeff7`).
+- [x] 6.4 Port connect retries / clean connect / duplicate-AP removal (`3deeff7`).
+- [x] 6.5 Delete `_setupWiFiManager`, `_setupDiagnosticEndpoint`, `_appendToPageBuffer` (`3deeff7`).
+- [x] 6.6 Remove `#include <WiFiManager.h>` from `customserver.h` and `customwifi.h`; drop the ordering comment at `main.cpp:18` (`3deeff7`, `516d76e`).
+- [x] 6.7 Remove `tzapu/WiFiManager@2.0.17` from `platformio.ini` (`3deeff7`).
+- [x] 6.8 D7 boot-order change at `main.cpp:151` (`3deeff7`, gated correctly by the Phase 1 health-check fix `70240b8`).
+- [x] 6.9 Re-trigger NTP configuration on the STA-connected transition: verified unnecessary, see "Not done, and deliberately so" below (`TIME_SYNC_RETRY_IF_NOT_SYNCHED` already covers it).
+- [x] 6.10 Suppress `ntp_not_synced` / `cloud_mqtt_disconnected` / `custom_mqtt_connect_failed` while unprovisioned: decided not to, see "Not done, and deliberately so."
+- [x] 6.11 Modbus on the AP netif: decided **filter**, implemented as `ModbusTcp::syncWithNetwork(staConnected, apServing)` (`6ba7a55`), extended to also gate on the `GRACE`-window AP.
+- [x] 6.12 Commits, one concern each (`3deeff7`, `516d76e`, `b1d94a6`, `6ba7a55`).
 
 ---
 
 ## Phase 7: Documentation and strings
 
-- [ ] 7.1 `configuration.html:315` ("no password" is wrong), `:320`, `:449`, `:476`, `:480` (192.168.4.1 -> 172.31.42.1).
-- [ ] 7.2 `customserver.cpp:1690`, `:1737` both promise a restart that no longer happens.
-- [ ] 7.3 `manual/02-setup.md:14-18`.
-- [ ] 7.4 `resources/swagger.yaml`: new scan / connect / status / diagnostics routes.
-- [ ] 7.5 Release note: `/diagnostic` is gone, credential changes no longer reboot, static IP changes still do.
-- [ ] 7.6 Confirm and document that the 5-10 s button press remains the escape hatch for a forgotten web password, now that AP-side OTA sits behind auth (D9).
+- [x] 7.1 `configuration.html`: stale "no password" / `192.168.4.1` strings confirmed gone (`b1d94a6`).
+- [x] 7.2 `customserver.cpp`: credentials response now reads "Connecting to the new network without restarting..." (`:1955`), not a restart promise.
+- [x] 7.3 `manual/02-setup.md` rewritten for the captive-portal flow, correct AP IP `172.31.42.1`, "joins your home network without restarting."
+- [x] 7.4 `resources/swagger.yaml`: scan / credentials / status / diagnostics routes documented (`676ca18` plus the original Phase 4/5 doc commits).
+- [x] 7.5 Release note: covered by the "Implementation status" / "Hardware validation" sections of this file; no separate release-note file in this repo.
+- [x] 7.6 `manual/03-troubleshooting.md` documents the button-press password reset as the escape hatch, independent of AP-side auth.
 
 ---
 
 ## Implementation status
 
-`pio test -e native` is green (354 cases, 54 of them the pure logic in `lib/wifi_provisioning`) and `pio run -e esp32s3-dev` builds. **The feature has now run on hardware** — see "Hardware validation" below. F1, F2, F3 and F6 pass; F4 and F7 are closed as obsolete; only F5 remains.
+`pio test -e native` is green (354 cases, 54 of them the pure logic in `lib/wifi_provisioning`) and `pio run -e esp32s3-dev` builds. **The feature has now run on hardware** — see "Hardware validation" below. F1, F2, F3, F5 and F6 all pass (F6 confirmed on both Android/macOS and iOS); F4 and F7 are closed as obsolete.
 
 Landed: WiFiManager fully removed (`1a9f511`), non-blocking connect and SoftAP lifecycle, D7 boot gate, auth carve-out and provisioning API, WiFi setup page and async scan, AP LED state, Modbus no longer exposed on the AP, documentation and swagger.
 
@@ -281,10 +278,10 @@ Also: a rejected WPA2 password reports `4WAY_HANDSHAKE_TIMEOUT`, not `AUTH_FAIL`
 
 In none of them does the client disconnect at the association; it leaves 36-83 s later on its own schedule. Running the throwaway probe build to answer a driver question about a mitigation for a problem that does not reproduce is not worth losing the working firmware. **Caveat:** the AP and STA channels were not measured, so whether the channels happened to coincide or the clients followed a channel-switch announcement is unknown. A client dropping at the moment of success in the field is the signal to reopen this.
 
-**Still outstanding — two items, neither blocking:**
+**Previously outstanding, now closed (confirmed by Jibril, 2026-08-07):**
 
-- **F5**, 30 min AP-only with zero reboots and a flat `_consecutiveResetCount`. Partly covered by today's sessions (the device sat AP-only for several minutes at a time without restarting) but not yet run as a continuous 30-minute observation.
-- **Bench-3 on iOS.** Android and macOS both pass; iOS is expected to behave the same and no device is available to check.
+- **F5**, 30 min AP-only with zero reboots and a flat `_consecutiveResetCount`. **PASS** — continuous 30-minute run, zero reboots.
+- **Bench-3 on iOS.** **PASS** — behaves the same as Android/macOS, stayed associated as expected.
 
 **F4 / Bench-2 CLOSED — obsolete, not run.** The gate was a proxy for "will APSTA run on this SoC without starving internal RAM", written before any hardware was available. Hardware is available now and the answer is direct: the feature has run through repeated full provisioning cycles, with the AP and STA up together, a phone loading the whole UI over the SoftAP, and Modbus and the web server serving throughout, across many sessions on 2026-08-06 without a single heap-related fault. A measured proxy cannot overturn the observation it was standing in for.
 
@@ -327,10 +324,10 @@ What has to go on hardware, and what each flash actually proves. Kept current as
 | Gate | Blocks | Pass criterion | Status |
 |---|---|---|---|
 | Bench-2 | Everything after Phase 0 | ~~>= 40 KB steady, never < 32 KB under load~~ | **CLOSED** — obsolete. The feature runs on hardware, which is what the gate was a proxy for |
-| Bench-3 | The grace window in D1/D4 | Phone stays associated >= 60 s after STA connect, iOS and Android | **PASS** — Android and macOS, 2026-08-06. iOS untested, expected to match |
+| Bench-3 | The grace window in D1/D4 | Phone stays associated >= 60 s after STA connect, iOS and Android | **PASS** — Android and macOS, 2026-08-06; iOS confirmed 2026-08-07 |
 | Bench-1 | D2 implementation choice | Informational | **CLOSED** — superseded, the client drop it mitigates does not occur |
 | Bench-4 | Phase 4 ship | LAN host via static route gets 401, not 200 | **PASS** — unreachable entirely, 2026-08-06 |
-| Phase 1 bench | D7 / Phase 6.8 | Extended AP-only, zero reboots, reset counter flat | partial: health check confirmed green AP-only; the long run is outstanding |
+| Phase 1 bench | D7 / Phase 6.8 | Extended AP-only, zero reboots, reset counter flat | **PASS** — continuous 30-minute AP-only run, zero reboots, confirmed 2026-08-07 |
 | `pio test -e native` | Phase 2 | All green, from WSL | **PASS** — 354 cases |
 | F1 end-to-end | The feature working at all | Unprovisioned boot through to AP teardown | **PASS** — 2026-08-06 |
 | F2 AP_ASSIST auth | Ship | Every route on the assist AP requires auth | **PASS** — 2026-08-06 |

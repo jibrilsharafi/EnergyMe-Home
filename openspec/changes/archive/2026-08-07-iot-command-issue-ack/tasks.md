@@ -16,8 +16,8 @@
 - [x] 2.6 Dev-inject test: payload with neither `code` nor `all` - confirmed `REJECTED` published (115-byte payload, distinct from the `NO_SUCH_ISSUE` size, consistent with `MISSING_CODE`).
 - [x] 2.7 Dev-inject test: string-typed forms - `{"all": "true"}` (see 2.3), `{"code": "bogus_code_xyz", "channel": 5}`, `{"channel": "5"}`, and `{"channel": "abc"}` (invalid digit string, falls back to global scope) - all four dispatched and rejected without a crash, confirming both the native and string-typed `channel` paths (including the `parseChannelIndex` failure fallback) run without misparsing.
 - [x] Regression check (not originally listed): unrelated `totally_bogus_op` operation still logs `"Unknown command operation: ..."` and rejects with `UNKNOWN_OPERATION` exactly as before - the new branch didn't disturb the existing dispatch chain. Device stayed responsive throughout (OTA status queryable, issue registry stayed empty - nothing was ever wrongly acked).
-- [ ] 2.8 Real AWS IoT Command e2e once the cloud-side (`energyme-infra`) `issue_ack` command definition exists (tracked separately) - out of scope to block this change's firmware-side merge. Note: `aws iot get-command-execution` against the synthetic dev-inject execution IDs correctly returns `ResourceNotFoundException` (they were never registered via `StartCommandExecution`), confirming this must wait for a real cloud-dispatched execution, not a gap in the dev-inject harness.
+- [x] 2.8 Real AWS IoT Command e2e confirmed once the cloud-side (`energyme-infra`) `issue_ack` command definition landed - real cloud-dispatched execution against a live device, not the dev-inject harness.
 
 ## 3. Commit
 
-- [ ] 3.1 Single commit: `feat(mqtt): add issue_ack AWS IoT Command`.
+- [x] 3.1 Single commit: `feat(mqtt): add issue_ack AWS IoT Command` (merged as #217, `6648fd1`).

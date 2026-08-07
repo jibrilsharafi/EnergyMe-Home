@@ -57,16 +57,62 @@ class EnergyMeAPI {
 
         try {
             const response = await this._fetchWithTimeout(url, config, timeoutMs);
-            
-            // For digest auth, 401 means credentials are required (browser will prompt)
-            if (response.status === 401) {
-                throw new Error('Authentication required - please refresh the page');
+
+            // The device refuses everything but the way out while it still holds the shipped
+            // default password. This is recovery, not enforcement - the server is what blocks
+            // the request. It exists for the tab that was already open when the physical button
+            // reset the password, which would otherwise just fill up with failed fetches.
+            if (response.status === 403) {
+                const reason = await this._readErrorReason(response);
+                if (reason === 'default_password') {
+                    window.location.href = '/';
+                    throw new Error('The default password is still in use - redirecting to set a new one');
+                }
             }
-            
+
+            // For digest auth, 401 means credentials are required (browser will prompt).
+            // Surface the server's own message when it sent one: change-password answers 401
+            // for a wrong current password with a real explanation, and replacing every 401
+            // with the same generic string made that message unreachable.
+            if (response.status === 401) {
+                const message = await this._readErrorMessage(response);
+                throw new Error(message || 'Authentication required - please refresh the page');
+            }
+
             return response;
         } catch (error) {
             console.error(`API call failed for ${url}:`, error);
             throw error;
+        }
+    }
+
+    /**
+     * Read the machine-readable `reason` from an error response without consuming the body
+     * for callers that still need it. Returns null when the body is absent or not JSON.
+     * @param {Response} response
+     * @returns {Promise<string|null>}
+     */
+    async _readErrorReason(response) {
+        try {
+            const body = await response.clone().json();
+            return body && body.reason ? body.reason : null;
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * Read the human-readable `error` from an error response, leaving the original body
+     * readable. Returns null when the body is absent or not JSON.
+     * @param {Response} response
+     * @returns {Promise<string|null>}
+     */
+    async _readErrorMessage(response) {
+        try {
+            const body = await response.clone().json();
+            return body && body.error ? body.error : null;
+        } catch {
+            return null;
         }
     }
 

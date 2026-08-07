@@ -66,6 +66,8 @@ extern const char waveform_html[]          asm("_binary_html_waveform_html_start
 extern const char waveform_html_end[]      asm("_binary_html_waveform_html_end");
 extern const char wifi_setup_html[]        asm("_binary_html_wifi_setup_html_start");
 extern const char wifi_setup_html_end[]    asm("_binary_html_wifi_setup_html_end");
+extern const char password_setup_html[]        asm("_binary_html_password_setup_html_start");
+extern const char password_setup_html_end[]    asm("_binary_html_password_setup_html_end");
 
 // Swagger / favicon
 extern const char swagger_yaml[]     asm("_binary_resources_swagger_yaml_start");

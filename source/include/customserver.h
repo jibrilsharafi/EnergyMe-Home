@@ -28,6 +28,7 @@
 #include "binaries.h"
 #include "utils.h"
 #include "led.h"
+#include "web_auth_gate.h"
 
 // Rate limiting
 #define WEBSERVER_MAX_REQUESTS 6000
@@ -56,7 +57,17 @@
 #define WEBSERVER_DEFAULT_PASSWORD "energyme"
 #define WEBSERVER_REALM "EnergyMe-Home"
 #define MAX_PASSWORD_LENGTH 64
-#define MIN_PASSWORD_LENGTH 4
+// MAX_PASSWORD_LENGTH + 1 for the terminator. NOT PASSWORD_BUFFER_SIZE (also 64), which is
+// one byte short: Preferences::getString() returns the length INCLUDING the NUL, and
+// _getWebPasswordFromPreferences rejects `res >= bufferSize`, so a 63-character password read
+// into a 64-byte buffer returns 64 and is reported as a failed read. With the lockdown failing
+// closed on a failed read, that locked the device out of its own gate - the change-password
+// endpoint uses the same reader, so the only way out returned 500.
+#define WEB_PASSWORD_BUFFER_SIZE (MAX_PASSWORD_LENGTH + 1)
+// Validated when a password is SET, never when one is used to authenticate, so a device
+// already holding a shorter password keeps working. Raised from 4 to match what the UI
+// has always promised - the firmware, not the browser, is the authority.
+#define MIN_PASSWORD_LENGTH 8
 
 // API Request Synchronization
 #define API_MUTEX_TIMEOUT_MS (2 * 1000) // Time to wait for API mutex for non-GET operations before giving up. Long timeouts cause wdt crash (like in async tcp)
@@ -121,6 +132,66 @@ public:
                         response->code());
         }
     }
+};
+
+// Refuses to serve a device that is still holding the shipped default web password.
+//
+// The rule itself is not here - it lives in lib/web_auth_gate and is unit-tested on the
+// host. This class is the adapter: read the cached flag, ask, act. Do not restate the
+// allowlist here, or in customserver.cpp. wifi_provisioning::isAuthBypassAllowed() is what
+// happens when that discipline slips: a tested rule nobody calls, and an untested inline
+// copy that has already drifted from it.
+class DefaultPasswordGuardMiddleware : public AsyncMiddleware {
+public:
+    // The flag lives in customserver.cpp; the middleware is handed a reader for it rather
+    // than reaching across, so the "no NVS, no lock, no allocation on the request path"
+    // property stays visible at the call site.
+    void setStateReader(std::function<bool()> usingDefaultPassword) { _usingDefaultPassword = usingDefaultPassword; }
+
+    // Tells the guard whether a request arrived on the device's own SoftAP, which widens
+    // the allowlist to the provisioning surface. Must stay as cheap as the provisioning
+    // filters it mirrors - a volatile load and an address compare, no lock, no NVS.
+    //
+    // Note this middleware is not free of allocation *overall*: AsyncMiddlewareChain::_runChain
+    // passes `next` by value, and that std::function exceeds SSO, so every middleware in the
+    // chain costs one heap alloc/free per request. Adding this one adds another. The members
+    // below are captureless and do not allocate when called; the chain does.
+    void setApOriginReader(std::function<bool(AsyncWebServerRequest *)> isApOrigin) { _isApOrigin = isApOrigin; }
+
+    void run(AsyncWebServerRequest *request, ArMiddlewareNext next) override {
+        // Fail closed: an unconfigured guard refuses rather than waves through. The AP
+        // reader fails closed the other way - unknown origin is treated as the LAN, which
+        // is the narrower allowlist.
+        bool locked = _usingDefaultPassword ? _usingDefaultPassword() : true;
+        bool fromAp = _isApOrigin ? _isApOrigin(request) : false;
+
+        switch (WebAuthGate::evaluate(locked, fromAp, request->url().c_str())) {
+            case WebAuthGate::Action::ALLOW:
+                next();
+                return;
+
+            case WebAuthGate::Action::REDIRECT_TO_ROOT: {
+                // "/" serves the password change page while locked down.
+                AsyncWebServerResponse *response = request->beginResponse(302, "text/plain", "Change the default password first");
+                response->addHeader("Location", "/");
+                request->send(response);
+                return;
+            }
+
+            case WebAuthGate::Action::DENY:
+                // Machine-readable, so the browser client can bounce a stale tab to the gate
+                // and a script can tell this apart from an ordinary authorization failure.
+                request->send(HTTP_CODE_FORBIDDEN, "application/json",
+                              "{\"success\":false,\"error\":\"The default web password is still in use. Change it at / before using the API.\",\"reason\":\"default_password\"}");
+                return;
+        }
+    }
+
+private:
+    // Never store `next` and call it later: AsyncMiddlewareChain::_runChain captures it and
+    // the list iterator by reference into a lambda that lives on its own stack frame.
+    std::function<bool()> _usingDefaultPassword = nullptr;
+    std::function<bool(AsyncWebServerRequest *)> _isApOrigin = nullptr;
 };
 
 namespace CustomServer {
