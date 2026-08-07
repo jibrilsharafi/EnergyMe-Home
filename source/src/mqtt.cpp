@@ -1876,6 +1876,11 @@ namespace Mqtt
                     return;
 
                 case CrashPublishOutcome::Empty:
+                    // Clock advanced even though nothing was sent: an archive
+                    // holding only Skip records still reports hasArchivedCrash(),
+                    // so _checkIfPublishCrashNeeded() would re-arm on the next
+                    // 100 ms tick and rescan the whole archive forever.
+                    _lastMillisCrashPublished = millis64();
                     _publishMqtt.crash = false;
                     return;
 
