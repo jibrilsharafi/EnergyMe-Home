@@ -2111,9 +2111,17 @@ namespace CustomServer
                 } else if (info.type == NVS_TYPE_STR) {
                     Preferences prefs;
                     if (prefs.begin(targetNamespace, true)) {
+                        // getString() returns 0 without touching the buffer when
+                        // the stored string is longer than it, so the buffer must
+                        // be primed and the result checked - otherwise 512 bytes
+                        // of uninitialised stack get serialised into the reply.
                         char value[NVS_DEBUG_STRING_VALUE_BUFFER_SIZE];
-                        prefs.getString(info.key, value, sizeof(value));
-                        obj["value"] = value;
+                        value[0] = '\0';
+                        if (prefs.getString(info.key, value, sizeof(value)) > 0) {
+                            obj["value"] = value;
+                        } else {
+                            obj["value"] = "<unreadable or too long>";
+                        }
                         prefs.end();
                     }
                 } else if (info.type == NVS_TYPE_I32) {
