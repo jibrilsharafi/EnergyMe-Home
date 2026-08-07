@@ -198,7 +198,7 @@ namespace CustomServer
 
     void updateAuthPasswordWithOneFromPreferences()
     {
-        char webPassword[PASSWORD_BUFFER_SIZE];
+        char webPassword[WEB_PASSWORD_BUFFER_SIZE];
         if (_getWebPasswordFromPreferences(webPassword, sizeof(webPassword)))
         {
             digestAuth.setPassword(webPassword);
@@ -221,7 +221,7 @@ namespace CustomServer
     // once per password change rather than once per request.
     static void _refreshDefaultPasswordFlag()
     {
-        char storedPassword[PASSWORD_BUFFER_SIZE];
+        char storedPassword[WEB_PASSWORD_BUFFER_SIZE];
         if (!_getWebPasswordFromPreferences(storedPassword, sizeof(storedPassword)))
         {
             // Fail closed. _setupMiddleware() already writes the default back when the read
@@ -260,7 +260,7 @@ namespace CustomServer
         digestAuth.setUsername(WEBSERVER_DEFAULT_USERNAME);
 
         // Load password from Preferences or use default
-        char webPassword[PASSWORD_BUFFER_SIZE];
+        char webPassword[WEB_PASSWORD_BUFFER_SIZE];
         if (_getWebPasswordFromPreferences(webPassword, sizeof(webPassword)))
         {
             digestAuth.setPassword(webPassword);
@@ -391,6 +391,22 @@ namespace CustomServer
     // Same cost rules as the others - volatile load plus address compare, on the AsyncTCP task.
     static bool _isApOrigin(AsyncWebServerRequest *request)
     {
+        // Restricted to the states where the device has NO working network of its own, which
+        // is the entire justification for the widening. GRACE is deliberately excluded: STA is
+        // connected there, so the user can reach the meter on the LAN and change the password
+        // the ordinary way - widening would buy nothing and would cost something real.
+        //
+        // That matters because localIP() is the destination lwIP recorded for the connection,
+        // not proof of arrival interface (see the comment on _isProvisioningOrigin). GRACE and
+        // AP_ASSIST are the states where AP and STA are up simultaneously, so a LAN host that
+        // can get a packet addressed to the AP address is only conceivable there. Excluding
+        // GRACE removes the case where that host could re-point a *connected* meter at another
+        // SSID; AP_ASSIST keeps it, but there the meter is already off the network, which is
+        // the situation the widening exists to fix.
+        WifiProvisioning::State state = CustomWifi::getProvisioningState();
+        if (state != WifiProvisioning::State::UNPROVISIONED &&
+            state != WifiProvisioning::State::AP_ASSIST) return false;
+
         AsyncClient *client = request->client();
         if (client == nullptr) return false;
 
@@ -878,6 +894,49 @@ namespace CustomServer
     }
 
     /**
+     * Get a sketch ETag qualified by which body is being served.
+     *
+     * "/" is registered three times and serves three different documents - the WiFi setup
+     * page, the password gate, and the dashboard - chosen by filters that change at runtime.
+     * The plain sketch ETag identifies the FIRMWARE, not the body, so all three would share
+     * one validator at one URL. A browser holding the gate page then sends
+     * If-None-Match after the password changes, the dashboard twin answers 304, and the
+     * browser re-renders the cached gate - which probes auth/status, sees the password is no
+     * longer default, and navigates to "/" again. That is an unbreakable reload loop, and the
+     * mirror case (cached dashboard, password reset by the button) hides the gate entirely.
+     *
+     * Only routes whose body varies at a fixed URL need this; everything else keeps the plain
+     * sketch ETag, which is still correct because their content is fixed per firmware.
+     */
+    static const char* _getVariantEtag(const char* variant)
+    {
+        // One buffer per variant, so each returned pointer stays valid for the server's
+        // lifetime - the route lambdas capture it once at registration.
+        static char gateEtag[MD5_BUFFER_SIZE + 16] = {0};
+        static char dashEtag[MD5_BUFFER_SIZE + 16] = {0};
+        static char wifiEtag[MD5_BUFFER_SIZE + 16] = {0};
+
+        char* buffer;
+        if (strcmp(variant, "gate") == 0) buffer = gateEtag;
+        else if (strcmp(variant, "dash") == 0) buffer = dashEtag;
+        else buffer = wifiEtag;
+
+        if (buffer[0] == '\0') {
+            // _getSketchEtag() is already quoted, so splice the variant inside the quotes
+            // rather than appending after them.
+            const char* sketchEtag = _getSketchEtag();
+            size_t length = strlen(sketchEtag);
+            if (length >= 2 && sketchEtag[length - 1] == '"') {
+                snprintf(buffer, MD5_BUFFER_SIZE + 16, "%.*s-%s\"", (int)(length - 1), sketchEtag, variant);
+            } else {
+                snprintf(buffer, MD5_BUFFER_SIZE + 16, "\"%s-%s\"", sketchEtag, variant);
+            }
+        }
+
+        return buffer;
+    }
+
+    /**
      * Generate ETag from file metadata
      * Uses file size as primary identifier 
      * Should be very accurate for append-only files like csv energy data and txt logs)
@@ -1010,8 +1069,14 @@ namespace CustomServer
         // own SoftAP lands on WiFi setup - which is what makes the captive-portal redirect
         // useful, since the OS opens "/" and nothing else. Everywhere else "/" is the
         // dashboard, unchanged.
-        server.on("/", HTTP_GET, [etag](AsyncWebServerRequest *request) {
-            _sendStaticWithEtag(request, "text/html", EMBEDDED(wifi_setup_html), etag);
+        // Each twin carries its own validator - see _getVariantEtag(). Sharing one would let a
+        // browser revalidate a cached gate page against the dashboard twin, get 304, and loop.
+        const char* wifiEtag = _getVariantEtag("wifi");
+        const char* gateEtag = _getVariantEtag("gate");
+        const char* dashEtag = _getVariantEtag("dash");
+
+        server.on("/", HTTP_GET, [wifiEtag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", EMBEDDED(wifi_setup_html), wifiEtag);
         }).setFilter(_isProvisioningSession)
           .skipServerMiddlewares()
           .addMiddleware(&rateLimit);
@@ -1023,12 +1088,12 @@ namespace CustomServer
         //
         // Deliberately no skipServerMiddlewares(): the user must still authenticate to see the
         // gate, and the guard allows "/" anyway.
-        server.on("/", HTTP_GET, [etag](AsyncWebServerRequest *request) {
-            _sendStaticWithEtag(request, "text/html", EMBEDDED(password_setup_html), etag);
+        server.on("/", HTTP_GET, [gateEtag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", EMBEDDED(password_setup_html), gateEtag);
         }).setFilter([](AsyncWebServerRequest *request) { (void)request; return _usingDefaultPassword; });
 
-        server.on("/", HTTP_GET, [etag](AsyncWebServerRequest *request) {
-            _sendStaticWithEtag(request, "text/html", EMBEDDED(index_html), etag);
+        server.on("/", HTTP_GET, [dashEtag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", EMBEDDED(index_html), dashEtag);
         });
 
         // Also reachable by name, so a provisioned device can be re-pointed at another
@@ -1111,6 +1176,10 @@ namespace CustomServer
             // strcmp. Two independent computations of "is this the default password" could
             // disagree, and the one the user can see would be the one that is wrong.
             doc["usingDefaultPassword"] = _usingDefaultPassword;
+            // Lets the gate page decide whether to offer the WiFi setup link. That link is
+            // only reachable from the SoftAP while locked down - on the LAN it redirects
+            // straight back to the gate - so offering it there would be a dead end.
+            doc["apOrigin"] = _isApOrigin(request);
             doc["username"] = WEBSERVER_DEFAULT_USERNAME;
             
             _sendJsonResponse(request, doc);
@@ -1139,7 +1208,7 @@ namespace CustomServer
                 }
 
                 // Validate current password
-                char storedPassword[PASSWORD_BUFFER_SIZE];
+                char storedPassword[WEB_PASSWORD_BUFFER_SIZE];
                 if (!_getWebPasswordFromPreferences(storedPassword, sizeof(storedPassword)))
                 {
                     _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to retrieve current password");
@@ -1253,12 +1322,57 @@ namespace CustomServer
         }
     }
 
-    static void _handleOtaUploadData(AsyncWebServerRequest *request, const String& filename, 
+    // Upload and body callbacks run DURING body parsing - WebRequest.cpp calls
+    // _handler->handleUpload() at :612 and :783 while _parseState is PARSE_REQ_BODY, and only
+    // reaches _runMiddlewareChain() at :233 once _parsedLength == _contentLength. Every server
+    // middleware therefore fires AFTER the bytes have already been handled, digestAuth
+    // included. For a firmware image that is far too late: Update.begin() has erased the
+    // partition and Update.end(true) has already called esp_ota_set_boot_partition().
+    //
+    // The library knows: WebRequest.cpp:610 carries a "check if authenticated before calling
+    // the upload" comment and then does not do it.
+    //
+    // So the upload routes must check for themselves, on the first chunk, before anything is
+    // written. Returns true when the caller should stop; the response is already set, and
+    // _handleOtaUploadComplete/_handleFileUploadData bail on request->getResponse().
+    static bool _rejectUploadIfNotPermitted(AsyncWebServerRequest *request)
+    {
+        char storedPassword[WEB_PASSWORD_BUFFER_SIZE];
+        bool passwordReadable = _getWebPasswordFromPreferences(storedPassword, sizeof(storedPassword));
+
+        if (!passwordReadable || !request->authenticate(WEBSERVER_DEFAULT_USERNAME, storedPassword, WEBSERVER_REALM))
+        {
+            LOG_WARNING("Refused an unauthenticated upload from %s before any data was written",
+                        request->client()->remoteIP().toString().c_str());
+            request->requestAuthentication(AsyncAuthType::AUTH_DIGEST, WEBSERVER_REALM, "The password is incorrect. Please try again.");
+            return true;
+        }
+
+        // The same allowlist the middleware applies, for the same reason - just early enough
+        // to matter.
+        if (WebAuthGate::evaluate(_usingDefaultPassword, _isApOrigin(request), request->url().c_str()) != WebAuthGate::Action::ALLOW)
+        {
+            LOG_WARNING("Refused an upload while the default password is still in use");
+            request->send(HTTP_CODE_FORBIDDEN, "application/json",
+                          "{\"success\":false,\"error\":\"The default web password is still in use. Change it at / before using the API.\",\"reason\":\"default_password\"}");
+            return true;
+        }
+
+        return false;
+    }
+
+    static void _handleOtaUploadData(AsyncWebServerRequest *request, const String& filename,
                                    size_t index, uint8_t *data, size_t len, bool final)
     {
         static bool otaInitialized = false;
-        
+
         if (!index) {
+            // Before Update.begin() erases anything. See _rejectUploadIfNotPermitted().
+            if (_rejectUploadIfNotPermitted(request)) {
+                otaInitialized = false;
+                return;
+            }
+
             // First chunk - initialize OTA
             if (!_initializeOtaUpload(request, filename)) {
                 return;
@@ -1432,8 +1546,11 @@ namespace CustomServer
     {
         static File uploadFile;
         static String targetPath;
-        
+
         if (!index) {
+            // Before any file is opened or truncated. See _rejectUploadIfNotPermitted().
+            if (_rejectUploadIfNotPermitted(request)) return;
+
             // First chunk - extract path from URL and create file
             String url = request->url();
             targetPath = url.substring(url.indexOf("/api/v1/files/") + 14); // Remove "/api/v1/files/" prefix
@@ -2536,6 +2653,15 @@ namespace CustomServer
 
                 if (ok) {
                     LOG_WARNING("Dev endpoint: wrote NVS %s::%s (type=%s)", ns, key, type);
+                    // This is the one writer of auth_ns that does not go through
+                    // _setWebPassword, so the cached lockdown flag and the live digestAuth
+                    // credential would both go stale until the next boot - silently
+                    // disabling the lockdown on a device someone just set back to the
+                    // default password.
+                    if (strcmp(ns, PREFERENCES_NAMESPACE_AUTH) == 0) {
+                        LOG_WARNING("Dev endpoint touched the auth namespace - reloading the web password");
+                        updateAuthPasswordWithOneFromPreferences();
+                    }
                     _sendSuccessResponse(request, "NVS entry written");
                 } else {
                     _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Unknown type, or write failed");
@@ -2565,6 +2691,11 @@ namespace CustomServer
 
             if (ok) {
                 LOG_WARNING("Dev endpoint: removed NVS %s::%s", ns, key);
+                // Same reason as the write path above.
+                if (strcmp(ns, PREFERENCES_NAMESPACE_AUTH) == 0) {
+                    LOG_WARNING("Dev endpoint removed an auth entry - reloading the web password");
+                    updateAuthPasswordWithOneFromPreferences();
+                }
                 _sendSuccessResponse(request, "NVS entry removed");
             } else {
                 _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "Key not found");
@@ -3581,6 +3712,9 @@ namespace CustomServer
                 static bool restoreInProgress = false;
 
                 if (!index) {
+                    // Before any file is opened. See _rejectUploadIfNotPermitted().
+                    if (_rejectUploadIfNotPermitted(request)) return;
+
                     // First chunk - check if restore already in progress
                     if (restoreInProgress) {
                         LOG_WARNING("Configuration restore already in progress, rejecting new request");
@@ -3794,6 +3928,9 @@ namespace CustomServer
                 static bool restoreInProgress = false;
 
                 if (!index) {
+                    // Before any file is opened. See _rejectUploadIfNotPermitted().
+                    if (_rejectUploadIfNotPermitted(request)) return;
+
                     // First chunk - check if restore already in progress
                     if (restoreInProgress) {
                         LOG_WARNING("Filesystem restore already in progress, rejecting new request");

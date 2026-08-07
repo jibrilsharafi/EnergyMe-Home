@@ -57,6 +57,13 @@
 #define WEBSERVER_DEFAULT_PASSWORD "energyme"
 #define WEBSERVER_REALM "EnergyMe-Home"
 #define MAX_PASSWORD_LENGTH 64
+// MAX_PASSWORD_LENGTH + 1 for the terminator. NOT PASSWORD_BUFFER_SIZE (also 64), which is
+// one byte short: Preferences::getString() returns the length INCLUDING the NUL, and
+// _getWebPasswordFromPreferences rejects `res >= bufferSize`, so a 63-character password read
+// into a 64-byte buffer returns 64 and is reported as a failed read. With the lockdown failing
+// closed on a failed read, that locked the device out of its own gate - the change-password
+// endpoint uses the same reader, so the only way out returned 500.
+#define WEB_PASSWORD_BUFFER_SIZE (MAX_PASSWORD_LENGTH + 1)
 // Validated when a password is SET, never when one is used to authenticate, so a device
 // already holding a shorter password keeps working. Raised from 4 to match what the UI
 // has always promised - the firmware, not the browser, is the authority.
@@ -144,6 +151,11 @@ public:
     // Tells the guard whether a request arrived on the device's own SoftAP, which widens
     // the allowlist to the provisioning surface. Must stay as cheap as the provisioning
     // filters it mirrors - a volatile load and an address compare, no lock, no NVS.
+    //
+    // Note this middleware is not free of allocation *overall*: AsyncMiddlewareChain::_runChain
+    // passes `next` by value, and that std::function exceeds SSO, so every middleware in the
+    // chain costs one heap alloc/free per request. Adding this one adds another. The members
+    // below are captureless and do not allocate when called; the chain does.
     void setApOriginReader(std::function<bool(AsyncWebServerRequest *)> isApOrigin) { _isApOrigin = isApOrigin; }
 
     void run(AsyncWebServerRequest *request, ArMiddlewareNext next) override {

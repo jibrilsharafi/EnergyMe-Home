@@ -68,6 +68,9 @@ paths:
                   usingDefaultPassword:
                     type: boolean
                     description: True while the stored password equals the shipped default
+                  apOrigin:
+                    type: boolean
+                    description: True when this request arrived on the device's own SoftAP
                   username:
                     type: string
 
@@ -105,24 +108,7 @@ paths:
         '200':
           $ref: '#/components/responses/Success'
         '400':
-          description: >
-            The new password is shorter than 8 characters, longer than 64, or is the
-            shipped default.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-              examples:
-                default_reused:
-                  summary: New password is the shipped default
-                  value:
-                    success: false
-                    error: "The new password cannot be the default password"
-                too_short:
-                  summary: New password fails the length rule
-                  value:
-                    success: false
-                    error: "New password must be between 8 and 64 characters"
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '500':
@@ -3229,7 +3215,7 @@ components:
           example:
             success: false
             error: "Authentication required"
-
+    
     DefaultPasswordLockdown:
       description: >
         The device is still using the password it shipped with, and refuses every endpoint
@@ -3307,7 +3293,7 @@ components:
             Machine-readable cause, present only where a client is expected to act on it
             rather than just display the message. Currently only `default_password`.
           enum: [default_password]
-
+    
     LogLevel:
       type: string
       enum: [VERBOSE, DEBUG, INFO, WARNING, ERROR, FATAL]

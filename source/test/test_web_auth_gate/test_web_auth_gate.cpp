@@ -204,6 +204,46 @@ void test_the_ap_changes_nothing_once_the_password_is_changed(void) {
     TEST_ASSERT_EQUAL(Action::ALLOW, evaluate(false, true, "/api/v1/system/info"));
 }
 
+void test_a_missing_url_on_the_ap_still_goes_to_the_gate(void) {
+    TEST_ASSERT_EQUAL(Action::REDIRECT_TO_ROOT, lockedOnAp(nullptr));
+    TEST_ASSERT_EQUAL(Action::REDIRECT_TO_ROOT, lockedOnAp(""));
+}
+
+// Trailing slashes are a distinct path, and the allowlist is exact. ESPAsyncWebServer's
+// handler matching treats "/x/..." as matching "/x", so these must not ALLOW - otherwise
+// "/api/v1/auth/status/" would be waved through to whatever handler claims it.
+void test_trailing_slashes_are_not_allowlisted(void) {
+    TEST_ASSERT_EQUAL(Action::DENY, locked("/api/v1/auth/status/"));
+    TEST_ASSERT_EQUAL(Action::DENY, locked("/api/v1/auth/change-password/"));
+    TEST_ASSERT_EQUAL(Action::DENY, locked("/api/v1/health/"));
+    TEST_ASSERT_EQUAL(Action::DENY, lockedOnAp("/api/v1/network/wifi/credentials/"));
+}
+
+// Documents a known asymmetry rather than asserting it is ideal: the "/api/" default-deny
+// prefix is case-sensitive, so an uppercase API path falls through to REDIRECT_TO_ROOT
+// instead of DENY. Harmless today because handler matching is case-sensitive too, so such a
+// request reaches no handler either way - but if anyone enables case-insensitive routing or
+// adds a rewrite, this test is where the mismatch surfaces.
+void test_uppercase_api_paths_redirect_rather_than_deny(void) {
+    TEST_ASSERT_EQUAL(Action::REDIRECT_TO_ROOT, locked("/API/v1/system/info"));
+    TEST_ASSERT_EQUAL(Action::REDIRECT_TO_ROOT, locked("//api/v1/system/info"));
+}
+
+// The gate page must be able to fetch everything it references. If someone adds an /img/ or
+// /fonts/ asset to password-setup.html, this is the test that should fail.
+void test_every_asset_the_gate_page_loads_is_reachable(void) {
+    TEST_ASSERT_EQUAL(Action::ALLOW, locked("/css/button.css"));
+    TEST_ASSERT_EQUAL(Action::ALLOW, locked("/css/styles.css"));
+    TEST_ASSERT_EQUAL(Action::ALLOW, locked("/css/section.css"));
+    TEST_ASSERT_EQUAL(Action::ALLOW, locked("/css/typography.css"));
+    TEST_ASSERT_EQUAL(Action::ALLOW, locked("/css/forms.css"));
+    TEST_ASSERT_EQUAL(Action::ALLOW, locked("/css/index.css"));
+    TEST_ASSERT_EQUAL(Action::ALLOW, locked("/favicon.svg"));
+    // and the two endpoints its script calls
+    TEST_ASSERT_EQUAL(Action::ALLOW, locked("/api/v1/auth/status"));
+    TEST_ASSERT_EQUAL(Action::ALLOW, locked("/api/v1/auth/change-password"));
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
 
@@ -232,6 +272,10 @@ int main(int, char **) {
     RUN_TEST(test_the_ap_never_widens_to_firmware_update_or_anything_else);
     RUN_TEST(test_the_ap_widening_matches_exactly_not_by_prefix);
     RUN_TEST(test_the_ap_changes_nothing_once_the_password_is_changed);
+    RUN_TEST(test_a_missing_url_on_the_ap_still_goes_to_the_gate);
+    RUN_TEST(test_trailing_slashes_are_not_allowlisted);
+    RUN_TEST(test_uppercase_api_paths_redirect_rather_than_deny);
+    RUN_TEST(test_every_asset_the_gate_page_loads_is_reachable);
 
     return UNITY_END();
 }
