@@ -190,6 +190,19 @@ public:
         AuthLockout::init(_table);
     }
 
+    // For handlers that run BEFORE the middleware chain. Upload and body callbacks fire during
+    // body parsing, so this middleware has not gated the request yet - which means an upload
+    // handler that does its own auth (as the OTA and restore routes must, since middleware auth
+    // arrives after the image is already written) would run a full password check on every
+    // attempt regardless of lock state, and a correct guess would reach Update.begin() before
+    // the masking 429. Those handlers call this first to apply the same throttle at the point
+    // where they authenticate. True when the source is locked; retryAfterSeconds is then set.
+    bool isSourceLocked(AsyncWebServerRequest *request, uint32_t &retryAfterSeconds) {
+        AsyncClient *client = request->client();
+        if (client == nullptr) { retryAfterSeconds = 0; return false; }
+        return AuthLockout::isLocked(_table, (uint32_t)client->remoteIP(), _clock ? _clock() : 0, retryAfterSeconds);
+    }
+
 private:
     // Touched only from the AsyncTCP task - every middleware and handler runs there - so it is
     // not shared state and takes no mutex. Do not read it from another task without adding one.

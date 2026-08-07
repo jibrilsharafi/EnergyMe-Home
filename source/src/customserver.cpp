@@ -1351,6 +1351,22 @@ namespace CustomServer
     // _handleOtaUploadComplete/_handleFileUploadData bail on request->getResponse().
     static bool _rejectUploadIfNotPermitted(AsyncWebServerRequest *request)
     {
+        // Throttle before authenticating. This runs during body parsing, ahead of the lockout
+        // middleware, so without this an attacker could move password guessing to the upload
+        // routes and never be slowed: every attempt would run a full digest check here, and a
+        // correct guess would reach Update.begin() before the middleware's 429 could mask it.
+        // The middleware still records the failure afterwards from the 401 this leaves set.
+        uint32_t retryAfterSeconds = 0;
+        if (authLockout.isSourceLocked(request, retryAfterSeconds))
+        {
+            LOG_WARNING("Refused an upload from a locked-out source before authenticating");
+            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_TOO_MANY_REQUESTS, "application/json",
+                "{\"success\":false,\"error\":\"Too many failed login attempts. Try again later.\"}");
+            response->addHeader("Retry-After", String(retryAfterSeconds));
+            request->send(response);
+            return true;
+        }
+
         char storedPassword[WEB_PASSWORD_BUFFER_SIZE];
         bool passwordReadable = _getWebPasswordFromPreferences(storedPassword, sizeof(storedPassword));
 

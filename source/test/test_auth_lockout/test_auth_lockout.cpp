@@ -225,6 +225,21 @@ void test_an_unknown_source_success_is_harmless(void) {
     TEST_ASSERT_FALSE(isLocked(table, kBob, 0, retryAfter));
 }
 
+// isLocked is a pure query with no side effect - the upload handlers call it before doing
+// their own auth, and calling it must not itself advance or reset any counter. A defense
+// that changed state just by being *checked* would be a footgun.
+void test_isLocked_is_a_pure_query(void) {
+    for (int i = 0; i < AUTH_LOCKOUT_MAX_FAILURES - 1; i++) recordFailure(table, kAlice, 0);
+
+    uint32_t retryAfter = 0;
+    for (int i = 0; i < 50; i++) {
+        TEST_ASSERT_FALSE(isLocked(table, kAlice, 0, retryAfter));  // still one short
+    }
+    // The pending failures are intact: one more locks, checking did not consume them.
+    recordFailure(table, kAlice, 0);
+    TEST_ASSERT_TRUE(isLocked(table, kAlice, 0, retryAfter));
+}
+
 // --- Large clock values -----------------------------------------------------------------
 //
 // millis64() does not wrap in any practical uptime, but the arithmetic should not assume a
@@ -265,6 +280,7 @@ int main(int, char **) {
     RUN_TEST(test_more_sources_than_slots_stays_within_the_table);
     RUN_TEST(test_eviction_takes_the_least_recently_active);
     RUN_TEST(test_an_unknown_source_success_is_harmless);
+    RUN_TEST(test_isLocked_is_a_pure_query);
 
     RUN_TEST(test_large_clock_values_behave);
 
