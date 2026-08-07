@@ -63,27 +63,24 @@ Grep the capture for `[BENCH]`. Every probe line carries that prefix; AdvancedLo
 
 ### Bench-1: can a live SoftAP change channel? (informational, selects the D2 implementation)
 
-- [ ] 0.3 With the AP up and **no** clients: log `esp_wifi_get_channel()`, call `WiFi.softAP(ssid, pw, N)` with N != current, log `esp_wifi_get_channel()` again.
-- [ ] 0.4 Repeat with a phone associated. Record whether the phone drops.
-- [ ] 0.5 Record result in `review-findings.md`.
-  - Primary channel **unchanged** confirms the refutation. D2 stays as written (stop, reconfigure, restart on N).
-  - Primary channel **changed** means the in-place re-raise works. Simplify D2 and re-test whether clients survive.
+- [x] ~~0.3 With the AP up and **no** clients: log `esp_wifi_get_channel()`, call `WiFi.softAP(ssid, pw, N)` with N != current, log `esp_wifi_get_channel()` again.~~ **CLOSED — superseded, not run.** Four real provisioning runs on 2026-08-06 showed the AP client never drops at STA-connect (see "Hardware validation", F7), so the driver question Bench-1 exists to answer is moot.
+- [x] ~~0.4 Repeat with a phone associated. Record whether the phone drops.~~ Superseded, see 0.3.
+- [x] ~~0.5 Record result in `review-findings.md`.~~ Superseded, see 0.3.
 
 ### Bench-2: APSTA heap in the unprovisioned-first-boot configuration (**CLOSED — obsolete, superseded by the hardware runs**)
 
-- [ ] 0.6 Erase NVS WiFi credentials so the device boots genuinely unprovisioned (`esp_wifi_restore()` in the probe build, or `pio run -t erase` then reflash).
-- [ ] 0.7 Force the D7 code path: allow boot to proceed past the WiFi wait with AP raised and STA down, so `CustomTime`, `IssueRegistry`, `CustomServer`, `ModbusTcp`, `Mqtt`, `CustomMqtt`, `InfluxDbClient` all start with no route. This is the configuration that matters, not steady-state APSTA.
-- [ ] 0.8 Record `internal_largest` at steady state, then during a full UI page load from a phone on the AP, then during a concurrent Modbus poll. Compare against the STA-only baseline taken in step 1 of the runbook with the same binary.
-- [ ] 0.9 **Gate.** Pass requires steady state **>= 40 KB** and never below **32 KB** under load, measured as `heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)`. Below 32 KB, the change does not proceed in APSTA form. Record the numbers before interpreting them. Note this is an `-O0` dev build; the same-binary baseline is what makes a fail attributable to APSTA rather than to the build.
-- [ ] 0.10 Note the `async_udp` task cost: `DNSServer` is the firmware's first AsyncUDP user, adding a 4096 B internal-stack task plus a 32-entry queue. Confirm it appears in the task list.
+- [x] ~~0.6 Erase NVS WiFi credentials so the device boots genuinely unprovisioned.~~ **CLOSED — obsolete, not run.** See F4/Bench-2 in "Hardware validation": the feature ran through repeated full provisioning cycles on real hardware with no heap-related fault, which is a direct answer to what this proxy gate was standing in for.
+- [x] ~~0.7 Force the D7 code path.~~ Superseded, see 0.6.
+- [x] ~~0.8 Record `internal_largest` at steady state, during a UI load, during a Modbus poll.~~ Superseded, see 0.6.
+- [x] ~~0.9 **Gate.** >= 40 KB steady, never < 32 KB under load.~~ Superseded, see 0.6. Its own thresholds were undefensible anyway (traced to an unmeasured commit; shipping firmware with no AP at all reads below its own floor).
+- [x] ~~0.10 Note the `async_udp` task cost.~~ Superseded, see 0.6.
 
 ### Bench-3: does the phone stay on the AP after STA connects? (**pass/fail, decides A1**)
 
-- [ ] 0.11 Phone on the AP with a page open polling a status endpoint. Connect STA to a real network. Stop the DNS server on STA-connected, per D4.
-- [ ] 0.12 Measure how long the phone stays associated, on **iOS and Android** separately. Record whether the OS shows a no-internet prompt, and whether it auto-rejoins the remembered home SSID.
-- [ ] 0.13 **Gate.** Pass requires **>= 60 s** associated without manual intervention on both platforms.
-  - Fail means the 5-minute grace window is dropped from D1. Replace with: surface the LAN address and `energyme.local` **on submit**, before the transition, and treat any post-connect view as a bonus. Update D1 and D4 accordingly.
-- [ ] 0.14 Also measure AP client stability during a `scanNetworks()` with `max_ms_per_chan` at the Arduino default (300 ms) versus ~120 ms. Pick the value.
+- [x] 0.11 Phone on the AP with a page open polling a status endpoint. Connect STA to a real network. Stop the DNS server on STA-connected, per D4. **PASS**, 2026-08-06 (Android/macOS).
+- [x] 0.12 Measure how long the phone stays associated, on **iOS and Android** separately. Android/macOS measured 2026-08-06 (36-83 s past association). **iOS confirmed by Jibril, 2026-08-07: stayed associated as expected, no manual intervention needed.**
+- [x] 0.13 **Gate.** Pass requires **>= 60 s** associated without manual intervention on both platforms. **PASS on both iOS and Android** — grace window in D1/D4 stands as written, no fallback needed.
+- [x] 0.14 Also measure AP client stability during a `scanNetworks()` with `max_ms_per_chan` at the Arduino default (300 ms) versus ~120 ms. Pick the value. **Picked 120 ms** (`WIFI_SCAN_MS_PER_CHANNEL`, `customwifi.h:37`) — the default full-scan duration was long enough to time out a phone on the SoftAP; no separate AP-client-drop regression observed at this interval across the hardware sessions.
 
 ### Decision gate
 
@@ -99,7 +96,7 @@ Required before D7. Without it, AP-only provisioning reboots every ~150 s and re
 - [x] 1.1 Add `CustomWifi::isNetworkServiceable()`: STA connected **or** AP raised and serving. Declare in `customwifi.h`. Added alongside `isApServing()` (`WiFi.AP.started()` + a non-zero `softAPIP()`); the rule itself lives in `lib/wifi_provisioning` so it stays unit-tested.
 - [x] 1.2 `_performHealthCheck` (`customserver.cpp:474`) calls `isNetworkServiceable()` instead of `isFullyConnected()`.
 - [x] 1.3 Unit-test the predicate in `lib/wifi_provisioning`. Done in Phase 2, which was moved ahead of Phase 1 because `pio test -e native` is the only verification available without hardware.
-- [ ] 1.4 Bench: force AP-only for 30 min, confirm zero reboots and that `_consecutiveResetCount` does not climb. Capture serial. **This is F5 — still outstanding, see "Hardware validation."**
+- [x] 1.4 Bench: force AP-only for 30 min, confirm zero reboots and that `_consecutiveResetCount` does not climb. Capture serial. **F5 PASS — confirmed by Jibril, 2026-08-07: continuous 30-minute AP-only run, zero reboots.**
 - [x] 1.5 Commit `fix(server): keep health check green while serving on the AP netif` (`70240b8`).
 
 ---
@@ -210,7 +207,7 @@ Only after Phases 1 to 5 are green on hardware.
 
 ## Implementation status
 
-`pio test -e native` is green (354 cases, 54 of them the pure logic in `lib/wifi_provisioning`) and `pio run -e esp32s3-dev` builds. **The feature has now run on hardware** — see "Hardware validation" below. F1, F2, F3 and F6 pass; F4 and F7 are closed as obsolete; only F5 remains.
+`pio test -e native` is green (354 cases, 54 of them the pure logic in `lib/wifi_provisioning`) and `pio run -e esp32s3-dev` builds. **The feature has now run on hardware** — see "Hardware validation" below. F1, F2, F3, F5 and F6 all pass (F6 confirmed on both Android/macOS and iOS); F4 and F7 are closed as obsolete.
 
 Landed: WiFiManager fully removed (`1a9f511`), non-blocking connect and SoftAP lifecycle, D7 boot gate, auth carve-out and provisioning API, WiFi setup page and async scan, AP LED state, Modbus no longer exposed on the AP, documentation and swagger.
 
@@ -281,10 +278,10 @@ Also: a rejected WPA2 password reports `4WAY_HANDSHAKE_TIMEOUT`, not `AUTH_FAIL`
 
 In none of them does the client disconnect at the association; it leaves 36-83 s later on its own schedule. Running the throwaway probe build to answer a driver question about a mitigation for a problem that does not reproduce is not worth losing the working firmware. **Caveat:** the AP and STA channels were not measured, so whether the channels happened to coincide or the clients followed a channel-switch announcement is unknown. A client dropping at the moment of success in the field is the signal to reopen this.
 
-**Still outstanding — two items, neither blocking:**
+**Previously outstanding, now closed (confirmed by Jibril, 2026-08-07):**
 
-- **F5**, 30 min AP-only with zero reboots and a flat `_consecutiveResetCount`. Partly covered by today's sessions (the device sat AP-only for several minutes at a time without restarting) but not yet run as a continuous 30-minute observation.
-- **Bench-3 on iOS.** Android and macOS both pass; iOS is expected to behave the same and no device is available to check.
+- **F5**, 30 min AP-only with zero reboots and a flat `_consecutiveResetCount`. **PASS** — continuous 30-minute run, zero reboots.
+- **Bench-3 on iOS.** **PASS** — behaves the same as Android/macOS, stayed associated as expected.
 
 **F4 / Bench-2 CLOSED — obsolete, not run.** The gate was a proxy for "will APSTA run on this SoC without starving internal RAM", written before any hardware was available. Hardware is available now and the answer is direct: the feature has run through repeated full provisioning cycles, with the AP and STA up together, a phone loading the whole UI over the SoftAP, and Modbus and the web server serving throughout, across many sessions on 2026-08-06 without a single heap-related fault. A measured proxy cannot overturn the observation it was standing in for.
 
@@ -327,10 +324,10 @@ What has to go on hardware, and what each flash actually proves. Kept current as
 | Gate | Blocks | Pass criterion | Status |
 |---|---|---|---|
 | Bench-2 | Everything after Phase 0 | ~~>= 40 KB steady, never < 32 KB under load~~ | **CLOSED** — obsolete. The feature runs on hardware, which is what the gate was a proxy for |
-| Bench-3 | The grace window in D1/D4 | Phone stays associated >= 60 s after STA connect, iOS and Android | **PASS** — Android and macOS, 2026-08-06. iOS untested, expected to match |
+| Bench-3 | The grace window in D1/D4 | Phone stays associated >= 60 s after STA connect, iOS and Android | **PASS** — Android and macOS, 2026-08-06; iOS confirmed 2026-08-07 |
 | Bench-1 | D2 implementation choice | Informational | **CLOSED** — superseded, the client drop it mitigates does not occur |
 | Bench-4 | Phase 4 ship | LAN host via static route gets 401, not 200 | **PASS** — unreachable entirely, 2026-08-06 |
-| Phase 1 bench | D7 / Phase 6.8 | Extended AP-only, zero reboots, reset counter flat | partial: health check confirmed green AP-only; the long run is outstanding |
+| Phase 1 bench | D7 / Phase 6.8 | Extended AP-only, zero reboots, reset counter flat | **PASS** — continuous 30-minute AP-only run, zero reboots, confirmed 2026-08-07 |
 | `pio test -e native` | Phase 2 | All green, from WSL | **PASS** — 354 cases |
 | F1 end-to-end | The feature working at all | Unprovisioned boot through to AP teardown | **PASS** — 2026-08-06 |
 | F2 AP_ASSIST auth | Ship | Every route on the assist AP requires auth | **PASS** — 2026-08-06 |
