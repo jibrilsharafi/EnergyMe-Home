@@ -28,21 +28,28 @@ namespace CrashMonitor
     #define GZIP_HEADER_SIZE 10
     #define GZIP_TRAILER_SIZE 8
 
-    // A record on disk, as found by a directory scan. The timestamp is parsed
-    // from the name purely to order the archive; identity is the crash id.
+    // A record on disk, as found by a directory scan. recordBytes covers both
+    // files, since CRASH_ARCHIVE_MAX_BYTES is a ceiling on the directory.
     struct ArchivedCrashEntry {
         char baseName[CRASH_ARCHIVE_NAME_BUFFER_SIZE];
         uint64_t timestamp;
         size_t dumpBytes;
+        size_t recordBytes;
     };
 
     // Private function declarations
     static void _handleCounters();
     static void _crashResetTask(void *parameter);
     static void _safeModeTask(void *parameter);
-    static void _checkAndPrintCoreDump();
     static void _logCompleteCrashData();
     static esp_reset_reason_t _getCrashResetReason();
+    static bool _hasCoreDump();
+    static size_t _getCoreDumpSize();
+    static bool _getCoreDumpInfo(size_t* size, size_t* address);
+    static bool _getCoreDumpChunk(uint8_t* buffer, size_t offset, size_t chunkSize, size_t* bytesRead);
+    static bool _getFullCoreDump(uint8_t* buffer, size_t bufferSize, size_t* actualSize);
+    static void _clearCoreDump();
+    static void _getCoreDumpInfoJson(JsonObject doc);
     static size_t _gzipCompress(const uint8_t* source, size_t sourceSize, uint8_t* destination, size_t destinationSize);
     static void _buildArchivePath(const char* baseName, const char* suffix, char* path, size_t pathSize);
     static uint32_t _scanArchive(ArchivedCrashEntry* entries, uint32_t maxEntries);
@@ -72,11 +79,8 @@ namespace CrashMonitor
 
     // Reset reason of the boot that crashed, frozen while a dump is pending.
     // esp_reset_reason() describes the CURRENT boot, so reading it when the dump
-    // is finally archived or published reports whatever caused that later boot -
-    // in production this surfaced as panics logged with "resetReason":"Software".
-    // Archiving normally freezes the reason into the record the same boot, so
-    // this only has to survive the case where the archive write itself fails and
-    // the dump waits on the partition for another boot.
+    // is finally archived reports whatever caused that later boot - in production
+    // this surfaced as panics logged with "resetReason":"Software".
     RTC_NOINIT_ATTR uint32_t _crashResetReason = 0;
     RTC_NOINIT_ATTR bool _crashResetReasonValid = false;
 
@@ -211,6 +215,9 @@ namespace CrashMonitor
 
         esp_core_dump_init();
 
+        // Checked once: every check re-reads and re-hashes the whole partition
+        bool coreDumpPending = _hasCoreDump();
+
         // If it was a crash, increment counter
         if (isLastResetDueToCrash()) {
             _crashCount++;
@@ -219,7 +226,7 @@ namespace CrashMonitor
             // some later boot, so freeze it before anything can defer the read
             _crashResetReason = (uint32_t)esp_reset_reason();
             _crashResetReasonValid = true;
-            _checkAndPrintCoreDump();
+            if (coreDumpPending) _logCompleteCrashData();
         }
 
         // Increment reset count (always)
@@ -259,13 +266,18 @@ namespace CrashMonitor
         // the recovery down with it on every boot.
         _handleCounters();
 
-        // Move any dump off the partition and onto the filesystem. Runs on every
-        // boot, not just the crashing one, so a dump left behind by a failed
-        // archive is retried rather than lost to the next crash overwriting it.
-        if (hasCoreDump()) _archivePendingCoreDump();
+        // Runs on every boot, not just the crashing one, so a dump left behind by
+        // a failed archive is retried rather than lost to the next crash
+        if (coreDumpPending) {
+            _archivePendingCoreDump();
+        } else {
+            // The budget belongs to the dump on the partition. Cleared here
+            // because the archive-task timeout path returns with an attempt
+            // already spent and no way to observe the task's later success -
+            // without this, those spent attempts follow the NEXT dump.
+            _archiveAttemptCount = 0;
+        }
 
-        // Publish whatever is archived, including records from earlier boots
-        // that never reached the cloud
         if (!globalCommunityMode && hasArchivedCrash()) Mqtt::requestCrashPublish();
 
         // Create task to handle the crash reset
@@ -409,35 +421,16 @@ namespace CrashMonitor
         }
     }
 
-    static void _checkAndPrintCoreDump() {
-        LOG_DEBUG("Checking for core dump from previous crash...");
-
-        // Check if a core dump image exists
-        esp_err_t image_check = esp_core_dump_image_check();
-        if (image_check != ESP_OK) {
-            LOG_DEBUG("No core dump found (esp_err: %s)", esp_err_to_name(image_check));
-            return;
-        }
-
-        LOG_INFO("Core dump found from previous crash, retrieving summary...");
-
-        // Log only essential crash data for analysis
-        _logCompleteCrashData();
-    }
-
-    // Reset reason of the boot that produced the pending dump. Falls back to the
-    // live reason only when nothing has been frozen yet, which means no crash has
-    // been seen since the RTC state was last cleared.
     static esp_reset_reason_t _getCrashResetReason() {
         if (_crashResetReasonValid) return (esp_reset_reason_t)_crashResetReason;
         return esp_reset_reason();
     }
 
-    bool hasCoreDump() {
+    static bool _hasCoreDump() {
         return esp_core_dump_image_check() == ESP_OK;
     }
 
-    size_t getCoreDumpSize() {
+    static size_t _getCoreDumpSize() {
         size_t size = 0;
         size_t address = 0;
         if (esp_core_dump_image_get(&address, &size) == ESP_OK) {
@@ -448,11 +441,11 @@ namespace CrashMonitor
         return 0;
     }
 
-    bool getCoreDumpInfo(size_t* size, size_t* address) {
+    static bool _getCoreDumpInfo(size_t* size, size_t* address) {
         return esp_core_dump_image_get(address, size) == ESP_OK;
     }
 
-    bool getCoreDumpChunk(uint8_t* buffer, size_t offset, size_t chunkSize, size_t* bytesRead) {
+    static bool _getCoreDumpChunk(uint8_t* buffer, size_t offset, size_t chunkSize, size_t* bytesRead) {
         if (!buffer || !bytesRead) {
             return false;
         }
@@ -464,7 +457,7 @@ namespace CrashMonitor
         }
 
         // Get total core dump size to validate offset
-        size_t totalSize = getCoreDumpSize();
+        size_t totalSize = _getCoreDumpSize();
         if (totalSize == 0) {
             *bytesRead = 0;
             return false;
@@ -530,12 +523,12 @@ namespace CrashMonitor
         }
     }
 
-    bool getFullCoreDump(uint8_t* buffer, size_t bufferSize, size_t* actualSize) {
+    static bool _getFullCoreDump(uint8_t* buffer, size_t bufferSize, size_t* actualSize) {
         if (!buffer || !actualSize) {
             return false;
         }
 
-        size_t totalSize = getCoreDumpSize();
+        size_t totalSize = _getCoreDumpSize();
         if (totalSize == 0) {
             *actualSize = 0;
             return false;
@@ -548,12 +541,12 @@ namespace CrashMonitor
         }
 
         size_t bytesRead = 0;
-        bool success = getCoreDumpChunk(buffer, 0, totalSize, &bytesRead);
+        bool success = _getCoreDumpChunk(buffer, 0, totalSize, &bytesRead);
         *actualSize = bytesRead;
         return success;
     }
 
-    void clearCoreDump() {
+    static void _clearCoreDump() {
         esp_core_dump_image_erase();
         LOG_DEBUG("Core dump cleared from flash");
     }
@@ -581,10 +574,7 @@ namespace CrashMonitor
                 LOG_WARNING("Backtrace depth: %d | Corrupted: %s", 
                             summary->exc_bt_info.depth, summary->exc_bt_info.corrupted ? "yes" : "no");
                 
-                // The key data for debugging - backtrace addresses, on one line
-                // for easy copy-paste. Just the addresses: pairing them with an
-                // addr2line command naming a build-path ELF only ever produced
-                // a line that was wrong everywhere except one machine.
+                // On one line for easy copy-paste into addr2line
                 if (summary->exc_bt_info.depth > 0) {
                     char btAddresses[512] = "";
                     for (uint32_t i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
@@ -611,10 +601,10 @@ namespace CrashMonitor
         LOG_WARNING("=== End Crash Analysis ===");
     }
 
-    bool getCoreDumpInfoJson(JsonDocument &doc) {
-        // Basic crash information. The reason is the frozen one: this document is
-        // built when the dump is archived, which can be a later boot than the
-        // crash if an earlier archive attempt failed.
+    // The reset reason is the frozen one: this is built when the dump is
+    // archived, which can be a later boot than the crash if an earlier archive
+    // attempt failed.
+    static void _getCoreDumpInfoJson(JsonObject doc) {
         esp_reset_reason_t resetReason = _getCrashResetReason();
         doc["resetReason"] = getResetReasonString(resetReason);
         doc["resetReasonCode"] = (int32_t)resetReason;
@@ -622,58 +612,44 @@ namespace CrashMonitor
         doc["consecutiveCrashCount"] = _consecutiveCrashCount;
         doc["resetCount"] = _resetCount;
         doc["consecutiveResetCount"] = _consecutiveResetCount;
-        
-        bool hasDump = hasCoreDump();
+
+        size_t dumpSize = 0;
+        size_t dumpAddress = 0;
+        bool hasDump = _getCoreDumpInfo(&dumpSize, &dumpAddress);
         doc["hasCoreDump"] = hasDump;
+        if (!hasDump) return;
 
-        if (hasDump) {
-            // Core dump size and address info
-            size_t dumpSize = 0;
-            size_t dumpAddress = 0;
-            if (getCoreDumpInfo(&dumpSize, &dumpAddress)) {
-                doc["coreDumpSize"] = dumpSize;
-                doc["coreDumpAddress"] = dumpAddress;
-            }
+        doc["coreDumpSize"] = dumpSize;
+        doc["coreDumpAddress"] = dumpAddress;
 
-            // Get detailed crash summary if available
-            esp_core_dump_summary_t *summary = (esp_core_dump_summary_t*)ps_malloc(sizeof(esp_core_dump_summary_t));
-            if (summary) {
-                esp_err_t err = esp_core_dump_get_summary(summary);
-                if (err == ESP_OK) {
-                    doc["taskName"] = summary->exc_task;
-                    doc["programCounter"] = (uint32_t)summary->exc_pc;
-                    doc["taskControlBlock"] = (uint32_t)summary->exc_tcb;
-                    doc["appElfSha256"] = summary->app_elf_sha256;
-                    
-                    // Backtrace information
-                    JsonObject backtrace = doc["backtrace"].to<JsonObject>();
-                    backtrace["depth"] = summary->exc_bt_info.depth;
-                    backtrace["corrupted"] = summary->exc_bt_info.corrupted;
-                    
-                    // Backtrace addresses array. Only the addresses: the
-                    // addr2line invocation that used to ride along named an ELF
-                    // by its build path, which is meaningless off the machine
-                    // that produced it - and this record is built to be read
-                    // elsewhere. Whoever holds the right ELF can form the
-                    // command from these addresses.
-                    if (summary->exc_bt_info.depth > 0) {
-                        JsonArray addresses = backtrace["addresses"].to<JsonArray>();
-                        for (uint32_t i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
-                            addresses.add((uint32_t)summary->exc_bt_info.bt[i]);
-                        }
-                    }
-                } else {
-                    doc["summaryError"] = err;
+        esp_core_dump_summary_t *summary = (esp_core_dump_summary_t*)ps_malloc(sizeof(esp_core_dump_summary_t));
+        if (!summary) return;
+
+        esp_err_t err = esp_core_dump_get_summary(summary);
+        if (err == ESP_OK) {
+            doc["taskName"] = summary->exc_task;
+            doc["programCounter"] = (uint32_t)summary->exc_pc;
+            doc["taskControlBlock"] = (uint32_t)summary->exc_tcb;
+            doc["appElfSha256"] = summary->app_elf_sha256;
+
+            JsonObject backtrace = doc["backtrace"].to<JsonObject>();
+            backtrace["depth"] = summary->exc_bt_info.depth;
+            backtrace["corrupted"] = summary->exc_bt_info.corrupted;
+
+            if (summary->exc_bt_info.depth > 0) {
+                JsonArray addresses = backtrace["addresses"].to<JsonArray>();
+                for (uint32_t i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
+                    addresses.add((uint32_t)summary->exc_bt_info.bt[i]);
                 }
-                free(summary);
             }
+        } else {
+            doc["summaryError"] = err;
         }
 
-        return true;
+        free(summary);
     }
 
     // On-flash crash archive
-    // ======================
 
     static void _buildArchivePath(const char* baseName, const char* suffix, char* path, size_t pathSize) {
         snprintf(path, pathSize, "%s/%s%s", CRASH_ARCHIVE_DIR, baseName, suffix);
@@ -683,10 +659,9 @@ namespace CrashMonitor
         _buildArchivePath(baseName, CRASH_ARCHIVE_DUMP_SUFFIX, path, pathSize);
     }
 
-    // Fills `entries` with the records on disk, oldest first. Records are found
-    // by their dump file; the metadata sidecar is derived from the base name
-    // rather than scanned for separately, so a stray .json cannot be mistaken
-    // for a record.
+    // Records are found by their dump file; the metadata sidecar is derived from
+    // the base name rather than scanned for separately, so a stray .json cannot
+    // be mistaken for a record.
     static uint32_t _scanArchive(ArchivedCrashEntry* entries, uint32_t maxEntries) {
         if (entries == nullptr || maxEntries == 0) return 0;
         if (!LittleFS.exists(CRASH_ARCHIVE_DIR)) return 0;
@@ -703,7 +678,7 @@ namespace CrashMonitor
         uint32_t examined = 0;
 
         File entry = dir.openNextFile();
-        while (entry && examined < CRASH_ARCHIVE_SCAN_MAX && found < maxEntries) {
+        while (entry && examined < CRASH_ARCHIVE_SCAN_FILES_MAX && found < maxEntries) {
             examined++;
 
             const char* name = entry.name(); // Leaf name, not the full path
@@ -728,11 +703,24 @@ namespace CrashMonitor
         if (entry) entry.close();
         dir.close();
 
-        // Insertion sort by timestamp. Bounded by CRASH_ARCHIVE_SCAN_MAX
-        // entries, so the simple algorithm is the right one here. Records
-        // written before the clock was set share a near-identical timestamp and
-        // so have no meaningful order between them - they still all get
-        // published, just not necessarily in the order they happened.
+        // The sidecar is stat-ed separately rather than picked up in the walk
+        // above, which cannot rely on it being visited after its own dump file
+        for (uint32_t i = 0; i < found; i++) {
+            char metaPath[CRASH_ARCHIVE_PATH_BUFFER_SIZE];
+            _buildArchivePath(entries[i].baseName, CRASH_ARCHIVE_META_SUFFIX, metaPath, sizeof(metaPath));
+
+            size_t metaBytes = 0;
+            File metaFile = LittleFS.open(metaPath, FILE_READ);
+            if (metaFile) {
+                metaBytes = metaFile.size();
+                metaFile.close();
+            }
+            entries[i].recordBytes = entries[i].dumpBytes + metaBytes;
+        }
+
+        // Records written before the clock was set share a near-identical
+        // timestamp and so have no meaningful order between them - they still all
+        // get published, just not necessarily in the order they happened.
         for (uint32_t i = 1; i < found; i++) {
             ArchivedCrashEntry key = entries[i];
             uint32_t j = i;
@@ -780,56 +768,24 @@ namespace CrashMonitor
         return removed;
     }
 
-    uint32_t getArchivedCrashCount() {
-        ArchivedCrashEntry entries[CRASH_ARCHIVE_SCAN_MAX];
-        return _scanArchive(entries, CRASH_ARCHIVE_SCAN_MAX);
-    }
-
-    // Deliberately does not go through _scanArchive: this is called from the MQTT
-    // task after every crash publish and from AsyncTCP request handlers, and a
-    // scan would put a ~900 byte entry array on those stacks just to answer a
-    // yes/no question. Stops at the first dump file it sees.
+    // Single-entry scan: _scanArchive stops as soon as maxEntries is reached, so
+    // this costs one ArchivedCrashEntry of stack rather than the full array. It
+    // is called from the MQTT task and from AsyncTCP request handlers.
     bool hasArchivedCrash() {
-        if (!LittleFS.exists(CRASH_ARCHIVE_DIR)) return false;
-
-        File dir = LittleFS.open(CRASH_ARCHIVE_DIR);
-        if (!dir) return false;
-        if (!dir.isDirectory()) {
-            dir.close();
-            return false;
-        }
-
-        bool found = false;
-        uint32_t examined = 0;
-
-        File entry = dir.openNextFile();
-        while (entry && !found && examined < CRASH_ARCHIVE_SCAN_MAX) {
-            examined++;
-            found = endsWith(entry.name(), CRASH_ARCHIVE_DUMP_SUFFIX);
-            entry.close();
-            if (!found) entry = dir.openNextFile();
-        }
-
-        if (entry) entry.close();
-        dir.close();
-
-        return found;
+        ArchivedCrashEntry entry;
+        return _scanArchive(&entry, 1) > 0;
     }
 
-    bool getOldestArchivedCrash(char* baseName, size_t baseNameSize) {
+    bool getArchivedCrashAt(uint32_t index, char* baseName, size_t baseNameSize) {
         if (baseName == nullptr || baseNameSize == 0) return false;
 
         ArchivedCrashEntry entries[CRASH_ARCHIVE_SCAN_MAX];
-        if (_scanArchive(entries, CRASH_ARCHIVE_SCAN_MAX) == 0) return false;
+        if (_scanArchive(entries, CRASH_ARCHIVE_SCAN_MAX) <= index) return false;
 
-        snprintf(baseName, baseNameSize, "%s", entries[0].baseName);
+        snprintf(baseName, baseNameSize, "%s", entries[index].baseName);
         return true;
     }
 
-    // The crash id is the part of the name after the ordering timestamp, so a
-    // lookup compares that rather than the whole name: a caller holding a
-    // published payload knows the id and has no reason to know the timestamp it
-    // happens to be filed under.
     bool findArchivedCrashById(const char* crashId, char* baseName, size_t baseNameSize) {
         if (crashId == nullptr || crashId[0] == '\0') return false;
         if (baseName == nullptr || baseNameSize == 0) return false;
@@ -931,10 +887,8 @@ namespace CrashMonitor
             if (getArchivedCrashMetadata(entries[i].baseName, metadata)) {
                 crashes.add(metadata);
             } else {
-                // A dump with unreadable metadata is still worth surfacing, since
-                // the dump itself can be fetched and analysed offline. Both
-                // fields come from the name, which is all that is trustworthy
-                // here - the record is otherwise exactly the one that failed.
+                // A dump with unreadable metadata is still worth surfacing: the
+                // dump itself can be fetched and analysed offline
                 JsonObject partial = crashes.add<JsonObject>();
                 const char* separator = strchr(entries[i].baseName, '_');
                 if (separator != nullptr) partial["crashId"] = separator + 1;
@@ -948,15 +902,12 @@ namespace CrashMonitor
         return true;
     }
 
-    // Compresses `source` into a gzip container (RFC 1952) in `destination`,
-    // returning the total gzip length or 0 on failure.
-    //
     // miniz's low-level API never allocates - the ~164 kB tdefl_compressor is
     // caller-owned - so the state goes in PSRAM instead of the internal heap
     // that tdefl_compress_mem_to_mem() would have used. Flags are built by hand
     // because tdefl_create_comp_flags_from_zip_params() is not among the ROM
     // exports; omitting TDEFL_WRITE_ZLIB_HEADER yields the raw deflate stream a
-    // gzip container wants.
+    // gzip container wants. Returns the total gzip length, or 0 on failure.
     static size_t _gzipCompress(const uint8_t* source, size_t sourceSize, uint8_t* destination, size_t destinationSize) {
         if (source == nullptr || destination == nullptr) return 0;
         if (destinationSize <= GZIP_HEADER_SIZE + GZIP_TRAILER_SIZE) return 0;
@@ -989,17 +940,10 @@ namespace CrashMonitor
         free(compressor);
         if (deflateSize == 0) return 0;
 
-        // Header: magic, deflate, no flags, no mtime, no extra flags, unknown OS
-        destination[0] = 0x1f;
-        destination[1] = 0x8b;
-        destination[2] = 0x08;
-        destination[3] = 0x00;
-        destination[4] = 0x00;
-        destination[5] = 0x00;
-        destination[6] = 0x00;
-        destination[7] = 0x00;
-        destination[8] = 0x00;
-        destination[9] = 0xff;
+        // Magic, deflate, no flags, no mtime, no extra flags, unknown OS
+        static const uint8_t GZIP_HEADER[GZIP_HEADER_SIZE] = {
+            0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff};
+        memcpy(destination, GZIP_HEADER, sizeof(GZIP_HEADER));
 
         // gzip wants CRC-32 with init 0xFFFFFFFF and xorout 0xFFFFFFFF. Following
         // the ~-convention documented in esp_rom_crc.h, that is
@@ -1015,8 +959,6 @@ namespace CrashMonitor
         return GZIP_HEADER_SIZE + deflateSize + GZIP_TRAILER_SIZE;
     }
 
-    // Drops the oldest records until `incomingBytes` fits under both caps.
-    // Returns false only when the incoming record could never fit.
     static bool _enforceArchiveRetention(size_t incomingBytes) {
         if (!CrashArchivePolicy::canStore(incomingBytes, CRASH_ARCHIVE_MAX_BYTES)) {
             LOG_ERROR("Crash record of %zu bytes exceeds the %d byte archive budget, refusing to store it",
@@ -1028,7 +970,7 @@ namespace CrashMonitor
         uint32_t count = _scanArchive(entries, CRASH_ARCHIVE_SCAN_MAX);
 
         size_t sizes[CRASH_ARCHIVE_SCAN_MAX];
-        for (uint32_t i = 0; i < count; i++) sizes[i] = entries[i].dumpBytes;
+        for (uint32_t i = 0; i < count; i++) sizes[i] = entries[i].recordBytes;
 
         uint32_t toEvict = (uint32_t)CrashArchivePolicy::evictionCount(
             sizes, count, incomingBytes, CRASH_ARCHIVE_MAX_RECORDS, CRASH_ARCHIVE_MAX_BYTES);
@@ -1042,12 +984,10 @@ namespace CrashMonitor
         return true;
     }
 
-    // Copies the pending dump off the coredump partition and onto LittleFS as a
-    // metadata/dump pair, then erases the partition. The partition is only
-    // erased once both files are written and closed, so a failure anywhere here
-    // leaves the dump where the next boot will retry it rather than losing it.
+    // The partition is only erased once both files are written and closed, so a
+    // failure anywhere here leaves the dump where the next boot will retry it.
     static bool _archiveCoreDump() {
-        size_t rawSize = getCoreDumpSize();
+        size_t rawSize = _getCoreDumpSize();
         if (rawSize == 0) {
             LOG_WARNING("Core dump image present but reports zero size, skipping archive");
             return false;
@@ -1061,10 +1001,6 @@ namespace CrashMonitor
         SpiRamAllocator allocator;
         JsonDocument metadata(&allocator);
 
-        SpiRamAllocator infoAllocator;
-        JsonDocument crashInfo(&infoAllocator);
-        getCoreDumpInfoJson(crashInfo);
-
         uint8_t* raw = (uint8_t*)ps_malloc(rawSize);
         if (raw == nullptr) {
             LOG_ERROR("Failed to allocate %zu bytes in PSRAM for the core dump", rawSize);
@@ -1072,15 +1008,14 @@ namespace CrashMonitor
         }
 
         size_t elfSize = 0;
-        if (!getFullCoreDump(raw, rawSize, &elfSize) || elfSize == 0) {
+        if (!_getFullCoreDump(raw, rawSize, &elfSize) || elfSize == 0) {
             LOG_ERROR("Failed to read the core dump off the partition");
             free(raw);
             return false;
         }
 
-        // Identity comes from the dump, not from the clock: see
-        // CRASH_ARCHIVE_ID_HEX_CHARS. Taken over the raw dump rather than the
-        // gzip so the id describes the crash and not the compressor.
+        // Taken over the raw dump rather than the gzip so the id describes the
+        // crash and not the compressor
         uint8_t digest[32];
         char crashId[CRASH_ARCHIVE_ID_BUFFER_SIZE];
         if (mbedtls_sha256(raw, elfSize, digest, 0) != 0) {
@@ -1092,14 +1027,13 @@ namespace CrashMonitor
             snprintf(crashId + (i * 2), 3, "%02x", digest[i]);
         }
 
-        // The timestamp only orders the archive, so an unsynced clock costs
-        // ordering rather than identity
         uint64_t timestamp = CustomTime::getUnixTimeMilliseconds();
 
         char baseName[CRASH_ARCHIVE_NAME_BUFFER_SIZE];
         snprintf(baseName, sizeof(baseName), "%llu_%s", timestamp, crashId);
 
-        // Worst case for incompressible input, per miniz's own bound
+        // Worst case for incompressible input, with room to spare over the
+        // 5 bytes per 16 kB block that stored-mode deflate adds
         size_t compressedCapacity = elfSize + (elfSize / 8) + GZIP_HEADER_SIZE + GZIP_TRAILER_SIZE + 64;
         uint8_t* compressed = (uint8_t*)ps_malloc(compressedCapacity);
         if (compressed == nullptr) {
@@ -1120,22 +1054,22 @@ namespace CrashMonitor
         LOG_INFO("Core dump compressed: %zu bytes -> %zu bytes (%.1f%% of original)",
                  elfSize, compressedSize, (float)compressedSize * 100.0f / (float)elfSize);
 
-        if (!_enforceArchiveRetention(compressedSize)) {
-            free(compressed);
-            return false;
-        }
-
         metadata["crashId"] = crashId;
-        // Unix ms at the moment the record was written. Separate from the id
-        // because the clock is not yet set on a cold boot, so this can be near
-        // epoch - honest, and useless as an identity, which is the point.
         metadata["timestamp"] = timestamp;
         // The build that crashed, which is what the cloud needs to fetch the
         // right ELF - not necessarily the build running when this is published
         metadata["firmwareVersion"] = FIRMWARE_BUILD_VERSION;
         metadata["coreDumpRawSize"] = elfSize;
         metadata["coreDumpCompressedSize"] = compressedSize;
-        metadata["crashInfo"] = crashInfo;
+        _getCoreDumpInfoJson(metadata["crashInfo"].to<JsonObject>());
+
+        // Both files count against the budget, so retention is decided once the
+        // sidecar's size is known
+        size_t metaExpected = measureJson(metadata);
+        if (!_enforceArchiveRetention(compressedSize + metaExpected)) {
+            free(compressed);
+            return false;
+        }
 
         char path[CRASH_ARCHIVE_PATH_BUFFER_SIZE];
 
@@ -1152,8 +1086,12 @@ namespace CrashMonitor
         size_t metaWritten = serializeJson(metadata, metaFile);
         metaFile.close();
 
-        if (metaWritten == 0) {
-            LOG_ERROR("Failed to write crash metadata to %s", path);
+        // Compared against the measured length, not against zero: a nearly-full
+        // filesystem accepts a partial document and reports the bytes it took,
+        // which would otherwise pass as success and leave truncated JSON behind
+        // once the partition has already been erased
+        if (metaWritten != metaExpected) {
+            LOG_ERROR("Short write on %s: expected %zu bytes, wrote %zu", path, metaExpected, metaWritten);
             removeArchivedCrash(baseName);
             free(compressed);
             return false;
@@ -1178,8 +1116,7 @@ namespace CrashMonitor
             return false;
         }
 
-        // Both files are down. Only now is it safe to give up the partition copy.
-        clearCoreDump();
+        _clearCoreDump();
 
         // The reason is durable in the record, so the RTC copy has done its job
         _crashResetReasonValid = false;
@@ -1202,15 +1139,13 @@ namespace CrashMonitor
         vTaskDelete(NULL);
     }
 
-    // Moves the pending dump off the partition, on a stack that fits deflate and
-    // under an attempt budget that guarantees the device still boots if it
-    // cannot. Runs before WiFi, so anything that can panic or block here is a
-    // brick risk: every failure path leaves the device able to continue.
+    // Runs before WiFi, so anything that can panic or block here is a brick risk:
+    // every failure path leaves the device able to continue.
     static void _archivePendingCoreDump() {
         if (_archiveAttemptCount >= MAX_CRASH_ARCHIVE_ATTEMPTS) {
             LOG_ERROR("Core dump could not be archived in %lu attempts, discarding it to break the loop",
                       _archiveAttemptCount);
-            clearCoreDump();
+            _clearCoreDump();
             _archiveAttemptCount = 0;
             _crashResetReasonValid = false;
             _crashResetReason = 0;
@@ -1218,8 +1153,7 @@ namespace CrashMonitor
         }
 
         // Spent before the work starts: a panic inside the archive must still
-        // cost an attempt, otherwise the budget never runs down and the loop
-        // this bounds is exactly the one that cannot be recovered from.
+        // cost an attempt, otherwise the budget never runs down
         _archiveAttemptCount++;
 
         if (_archiveTaskDone == NULL) _archiveTaskDone = xSemaphoreCreateBinary();

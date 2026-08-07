@@ -2018,14 +2018,11 @@ namespace CustomServer
     }
 #pragma GCC diagnostic pop
 
-    // Dev-only: crash the device on purpose to exercise the crash archive and
-    // single-message publish pipeline on real hardware (coredump capture,
-    // gzip, LittleFS archive, MQTT publish, frozen resetReason). Each route
-    // faults through a different mechanism so the panic handler and backtrace
-    // unwinder are exercised more than one way. Never compiled into the
-    // production firmware. No response is ever sent - the device resets
-    // before the handler can return, so a client just sees the connection
-    // drop, which is the expected result.
+    // Dev-only: crash the device on purpose to exercise the archive and publish
+    // pipeline on real hardware. Each route faults through a different mechanism
+    // so the panic handler and backtrace unwinder are exercised more than one
+    // way. No response is ever sent - the device resets before the handler can
+    // return, so a client just sees the connection drop.
     static void _serveCrashTestEndpoints() {
         server.on("/api/v1/debug/crash/null-deref", HTTP_POST, [](AsyncWebServerRequest *request)
                   {
@@ -2766,12 +2763,10 @@ namespace CustomServer
     }
 
     // === CRASH MONITOR ENDPOINTS ===
-    // Core dumps are copied off the coredump partition to /crashes/ on the boot
-    // they are detected, so these endpoints read the archive rather than the
-    // partition. Each record is a frozen metadata sidecar plus the gzipped dump.
+    // These read the on-flash archive, not the coredump partition: dumps are
+    // copied off the partition on the boot they are detected.
     static void _serveCrashEndpoints()
     {
-        // List archived crashes with their frozen metadata
         server.on("/api/v1/crash/info", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
             SpiRamAllocator allocator;
@@ -2784,8 +2779,7 @@ namespace CustomServer
             }
         });
 
-        // Download one archived core dump. Serves the stored gzip bytes in a
-        // single response: no JSON wrapper, no chunk reassembly by the client.
+        // Serves the stored gzip bytes directly, with no JSON wrapper
         server.on("/api/v1/crash/dump", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
             char baseName[CRASH_ARCHIVE_NAME_BUFFER_SIZE];
@@ -2795,8 +2789,7 @@ namespace CustomServer
                 found = CrashMonitor::findArchivedCrashById(
                     request->getParam("id")->value().c_str(), baseName, sizeof(baseName));
             } else {
-                // No id given: hand back the oldest, which is also the next to publish
-                found = CrashMonitor::getOldestArchivedCrash(baseName, sizeof(baseName));
+                found = CrashMonitor::getArchivedCrashAt(0, baseName, sizeof(baseName));
             }
 
             if (!found) {
@@ -2813,9 +2806,8 @@ namespace CustomServer
                 return;
             }
 
-            // Declaring the encoding lets HTTP clients inflate transparently, so
-            // the device never has to spend a decompress pass reproducing bytes
-            // the client can trivially produce itself
+            // Lets HTTP clients inflate transparently, so the device never has to
+            // spend a decompress pass of its own
             response->addHeader("Content-Encoding", "gzip");
 
             char disposition[CRASH_ARCHIVE_NAME_BUFFER_SIZE + 40];
@@ -2825,7 +2817,6 @@ namespace CustomServer
             request->send(response);
         });
 
-        // Delete every archived crash record
         server.on("/api/v1/crash/clear", HTTP_POST, [](AsyncWebServerRequest *request)
                   {
             if (!_validateRequest(request, "POST")) return;

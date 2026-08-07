@@ -3,7 +3,7 @@
 
 #include "mqtt.h"
 #include "issueregistry.h"
-#include "crashmonitor.h" // After mqtt.h: crashmonitor.h includes it, and both are pragma-once
+#include "crashmonitor.h"
 #include "shadow.h"
 #include "shadow_logic.h"
 #include "taskprofiler.h"
@@ -11,6 +11,7 @@
 #include "mqtt_grid_schedule.h"
 #include "mqtt_energy_publish_gate.h"
 #include "crash_archive_policy.h"
+#include "mbedtls/base64.h"
 #include <algorithm>
 
 namespace Mqtt
@@ -51,6 +52,7 @@ namespace Mqtt
     static uint64_t _lastMillisMeterPublished = 0;
     static uint64_t _lastMillisSystemDynamicPublished = 0;
     static uint64_t _lastMillisStatisticsPublished = 0;
+    static uint64_t _lastMillisCrashPublished = 0;
 
     // Next grid publish deadline (unix seconds, wall-clock aligned); 0 = not yet scheduled
     static uint64_t _nextGridPublishUnixSecond = 0;
@@ -187,6 +189,19 @@ namespace Mqtt
     static void _checkIfPublishEnergyNeeded();
     static void _checkIfPublishSystemDynamicNeeded();
     static void _checkIfPublishStatisticsNeeded();
+    static void _checkIfPublishCrashNeeded();
+
+    // Outcome of publishing one archived crash record. The two failure modes are
+    // kept apart deliberately: Retry leaves the record at the head of the queue,
+    // Skip steps over one that can never be sent so it cannot stall the rest.
+    enum class CrashPublishOutcome {
+        Published,
+        Empty,   // Nothing archived at this index
+        Retry,   // Transient failure, try the same record again later
+        Skip,    // Permanently unpublishable, but kept on flash
+        Dropped, // Corrupt record removed; the remaining ones shifted down
+    };
+    static CrashPublishOutcome _publishCrashJson(uint32_t index);
 
     // MQTT operations
     static bool _setCertificatesFromPreferences();
@@ -198,7 +213,6 @@ namespace Mqtt
     static void _processLogQueue();
     static bool _publishMeterStreaming();
     static bool _publishMeterJson();
-    static bool _publishCrashJson();
     static bool _publishOtaJobsRequestJson();
     
     // Certificate management
@@ -1846,18 +1860,44 @@ namespace Mqtt
         }
     }
 
+    // One record per cycle. A backlog of archived crashes is a few hundred kB of
+    // back-to-back publishes, so draining across cycles lets meter and log
+    // traffic still get a turn. The flag is only ever cleared here; re-arming is
+    // _checkIfPublishCrashNeeded()'s job, so a failure costs one interval rather
+    // than every crash publish until the next reboot.
     static void _publishCrash() {
-        if (!_publishCrashJson()) {
-            LOG_ERROR("Failed to publish crash data");
-            _publishMqtt.crash = false; // Need this to avoid infinite loop (fail - retry)
-            return;
+        uint32_t index = 0;
+
+        for (uint32_t attempt = 0; attempt < CRASH_PUBLISH_MAX_ATTEMPTS_PER_CYCLE; attempt++) {
+            switch (_publishCrashJson(index)) {
+                case CrashPublishOutcome::Published:
+                    _lastMillisCrashPublished = millis64();
+                    _publishMqtt.crash = false;
+                    return;
+
+                case CrashPublishOutcome::Empty:
+                    _publishMqtt.crash = false;
+                    return;
+
+                case CrashPublishOutcome::Retry:
+                    LOG_ERROR("Failed to publish crash data, retrying on a later cycle");
+                    _lastMillisCrashPublished = millis64();
+                    _publishMqtt.crash = false;
+                    return;
+
+                case CrashPublishOutcome::Skip:
+                    index++; // Record left in place, so step past it
+                    break;
+
+                case CrashPublishOutcome::Dropped:
+                    break; // Removed, so the same index now holds the next record
+            }
         }
 
-        // One record per cycle. A backlog of archived crashes is a few hundred kB
-        // of back-to-back publishes, so re-arming lets it drain across cycles
-        // while meter and log traffic still gets a turn.
-        _publishMqtt.crash = CrashMonitor::hasArchivedCrash();
-        if (_publishMqtt.crash) LOG_DEBUG("More archived crashes pending, publishing the next one on the following cycle");
+        LOG_WARNING("Gave up on this crash publish cycle after %d records that could not be sent",
+                    CRASH_PUBLISH_MAX_ATTEMPTS_PER_CYCLE);
+        _lastMillisCrashPublished = millis64();
+        _publishMqtt.crash = false;
     }
 
     static void _publishOtaJobsRequest() {
@@ -2010,6 +2050,21 @@ namespace Mqtt
         if ((millis64() - _lastMillisStatisticsPublished) > MQTT_MAX_INTERVAL_STATISTICS_PUBLISH) {
             _publishMqtt.statistics = true;
             LOG_DEBUG("Set flag to publish statistics");
+        }
+    }
+
+    // The interval is checked before the archive, since hasArchivedCrash() walks
+    // a LittleFS directory and this runs on every MQTT loop tick.
+    static void _checkIfPublishCrashNeeded() {
+        if ((millis64() - _lastMillisCrashPublished) <= MQTT_MAX_INTERVAL_CRASH_PUBLISH) return;
+
+        if (CrashMonitor::hasArchivedCrash()) {
+            _publishMqtt.crash = true;
+            LOG_DEBUG("Set flag to publish crash");
+        } else {
+            // Nothing pending: reset the clock so an idle device is not walking
+            // the directory on every single tick
+            _lastMillisCrashPublished = millis64();
         }
     }
 
@@ -2267,21 +2322,16 @@ namespace Mqtt
         }
     }
 
-    // Publishes the oldest archived crash as a single message. The previous
-    // chunked sequence (crashInfo + N crashChunk + crashComplete) had no resume
-    // or retry granularity, so a failure part-way left a record that was
-    // permanently incomplete and undetectable downstream - 10% of production
-    // crash events never produced their crashComplete. One message either lands
-    // whole or does not land at all.
-    static bool _publishCrashJson() {
+    // Publishes one archived crash as a single message: it either lands whole or
+    // does not land at all. The chunked sequence this replaced left permanently
+    // incomplete records behind whenever it failed part-way.
+    static CrashPublishOutcome _publishCrashJson(uint32_t index) {
         char baseName[CRASH_ARCHIVE_NAME_BUFFER_SIZE];
-        if (!CrashMonitor::getOldestArchivedCrash(baseName, sizeof(baseName))) {
-            LOG_DEBUG("No archived crash pending publication");
-            return true; // Nothing to do is not a failure
+        if (!CrashMonitor::getArchivedCrashAt(index, baseName, sizeof(baseName))) {
+            LOG_DEBUG("No archived crash pending publication at index %lu", index);
+            return CrashPublishOutcome::Empty;
         }
 
-        // Metadata was frozen when the dump was archived, so it describes the
-        // boot that actually crashed however long ago that was
         SpiRamAllocator allocator;
         JsonDocument doc(&allocator);
         if (!CrashMonitor::getArchivedCrashMetadata(baseName, doc)) {
@@ -2289,23 +2339,21 @@ namespace Mqtt
             // in place would block every later record behind it
             LOG_ERROR("Dropping archived crash %s: its metadata could not be read", baseName);
             CrashMonitor::removeArchivedCrash(baseName);
-            return false;
+            return CrashPublishOutcome::Dropped;
         }
 
         size_t compressedSize = CrashMonitor::getArchivedCrashDumpSize(baseName);
         if (compressedSize == 0) {
             LOG_ERROR("Dropping archived crash %s: its core dump is missing or empty", baseName);
             CrashMonitor::removeArchivedCrash(baseName);
-            return false;
+            return CrashPublishOutcome::Dropped;
         }
 
         doc["unixTime"] = CustomTime::getUnixTimeMilliseconds();
         doc["coreDumpEncoding"] = "gzip+base64";
 
-        // Check the size before spending PSRAM encoding it. The ceiling is
-        // PubSubClient's 16-bit MQTT remaining-length field, which is narrower
-        // than AWS IoT Core's 128 kB publish limit: overshooting it truncates the
-        // header and desynchronises the broker rather than failing cleanly.
+        // Checked before spending PSRAM on the encode. See fitsPublishLimit() for
+        // where the ceiling comes from and why overshooting it is not benign.
         size_t topicLength = strlen(_mqttTopicCrash);
         size_t metadataBytes = measureJson(doc) + CRASH_PUBLISH_COREDUMP_FIELD_OVERHEAD;
         if (!CrashArchivePolicy::fitsPublishLimit(compressedSize, metadataBytes, topicLength)) {
@@ -2313,45 +2361,41 @@ namespace Mqtt
                 "Archived crash %s does not fit one publish: %zu compressed bytes plus %zu bytes of metadata exceed the %zu byte payload limit. Record kept on flash for retrieval over the local API.",
                 baseName, compressedSize, metadataBytes, CrashArchivePolicy::maxPublishPayloadBytes(topicLength)
             );
-            return false;
+            // Never publishable, but still worth keeping on flash. Stepped over
+            // rather than retried, otherwise it stays the oldest record forever
+            // and no later crash ever reaches the cloud.
+            return CrashPublishOutcome::Skip;
         }
 
         uint8_t* compressed = (uint8_t*)ps_malloc(compressedSize);
         if (compressed == nullptr) {
             LOG_ERROR("Failed to allocate %zu bytes in PSRAM for the archived core dump", compressedSize);
-            return false;
+            return CrashPublishOutcome::Retry;
         }
 
         size_t readSize = 0;
         if (!CrashMonitor::readArchivedCrashDump(baseName, compressed, compressedSize, &readSize) || readSize == 0) {
             LOG_ERROR("Failed to read the archived core dump for %s", baseName);
             free(compressed);
-            return false;
+            return CrashPublishOutcome::Retry;
         }
 
-        size_t base64Length = 0;
-        int32_t ret = mbedtls_base64_encode(NULL, 0, &base64Length, compressed, readSize);
-        if (ret != MBEDTLS_ERR_BASE64_BUFFER_TOO_SMALL) {
-            LOG_ERROR("Failed to size the base64 buffer for crash %s (mbedtls: %d)", baseName, ret);
-            free(compressed);
-            return false;
-        }
-
-        uint8_t* encoded = (uint8_t*)ps_malloc(base64Length + 1); // +1 for the null terminator
+        size_t encodedBufferSize = CrashArchivePolicy::base64EncodedSize(readSize) + 1; // Null terminator
+        uint8_t* encoded = (uint8_t*)ps_malloc(encodedBufferSize);
         if (encoded == nullptr) {
-            LOG_ERROR("Failed to allocate %zu bytes in PSRAM for the base64 core dump", base64Length + 1);
+            LOG_ERROR("Failed to allocate %zu bytes in PSRAM for the base64 core dump", encodedBufferSize);
             free(compressed);
-            return false;
+            return CrashPublishOutcome::Retry;
         }
 
         size_t encodedLength = 0;
-        ret = mbedtls_base64_encode(encoded, base64Length, &encodedLength, compressed, readSize);
+        int32_t ret = mbedtls_base64_encode(encoded, encodedBufferSize, &encodedLength, compressed, readSize);
         free(compressed);
 
         if (ret != 0) {
             LOG_ERROR("Base64 encoding failed for crash %s (mbedtls: %d)", baseName, ret);
             free(encoded);
-            return false;
+            return CrashPublishOutcome::Retry;
         }
         encoded[encodedLength] = '\0';
 
@@ -2364,14 +2408,14 @@ namespace Mqtt
 
         if (!published) {
             LOG_ERROR("Failed to publish archived crash %s, keeping it on flash to retry", baseName);
-            return false;
+            return CrashPublishOutcome::Retry;
         }
 
         LOG_INFO("Published crash %s in a single message (%zu bytes of gzipped dump, %zu bytes encoded)",
                  baseName, readSize, encodedLength);
 
         CrashMonitor::removeArchivedCrash(baseName);
-        return true;
+        return CrashPublishOutcome::Published;
     }
 
     static bool _publishOtaJobsRequestJson() {
@@ -2478,6 +2522,7 @@ namespace Mqtt
         _checkIfPublishEnergyNeeded();
         _checkIfPublishSystemDynamicNeeded();
         _checkIfPublishStatisticsNeeded();
+        _checkIfPublishCrashNeeded();
         _checkPublishMqtt();
         Shadow::checkPublish(); // drain shadow deltas/local-edits/reports (MQTT task body)
         _drainPendingCommand(); // process queued IoT Command (broker RX or dev inject) off the callback

@@ -15,7 +15,6 @@
 #include <Update.h>
 #include "esp_ota_ops.h"
 #include "esp_task_wdt.h"
-#include "mbedtls/base64.h"
 
 #include "constants.h"
 #include "crashmonitor.h"

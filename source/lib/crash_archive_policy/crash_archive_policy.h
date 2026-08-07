@@ -18,16 +18,13 @@
 //     so this - not the AWS limit - is what the guard is written against.
 //
 //  2. The coredump partition is 64 KB (partitions_esp32s3_n16r2.csv), so a raw
-//     dump can never exceed that, and dumps are gzipped before they reach the
-//     archive (typically 3-5x on task stacks and register frames). A published
-//     payload normally lands around 20 KB. The guard exists to fail loudly if
-//     some future dump ever compresses badly, not because it is expected to
-//     be hit.
+//     dump can never exceed that and is gzipped before it reaches the archive.
+//     The guard exists to fail loudly if some future dump ever compresses
+//     badly, not because it is expected to be hit.
 
 namespace CrashArchivePolicy {
 
-// Bytes produced by base64-encoding `rawSize` bytes, excluding the null
-// terminator: standard padded base64, 4 characters per 3 input bytes.
+// Standard padded base64, excluding the null terminator.
 size_t base64EncodedSize(size_t rawSize);
 
 // Largest JSON payload publishable on a topic of `topicLength` characters
@@ -41,10 +38,8 @@ size_t maxPublishPayloadBytes(size_t topicLength);
 // topic of `topicLength` characters.
 bool fitsPublishLimit(size_t compressedSize, size_t metadataBytes, size_t topicLength);
 
-// True when a record of `incomingBytes` could ever be stored under a
-// `maxBytes` archive budget. Callers must check this before acting on
-// evictionCount(), which cannot distinguish "evict everything, then store"
-// from "this can never fit".
+// Callers must check this before acting on evictionCount(), which cannot
+// distinguish "evict everything, then store" from "this can never fit".
 bool canStore(size_t incomingBytes, size_t maxBytes);
 
 // How many of the oldest records must be dropped for the archive to satisfy

@@ -60,10 +60,10 @@
 #define MQTT_BUFFER_SIZE (9 * 1024)
 #define MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE (32 * 1024) // PSRAM buffer for MQTT subscribe messages (reduced for efficiency)
 #define CERTIFICATE_BUFFER_SIZE (16 * 1024)   // PSRAM buffer for certificate storage (was 4KB)
-// Bytes that the "coreDump" key, its quotes and the separating comma add on top
-// of the already-measured metadata, when sizing a crash message against the
+// Bytes the "coreDump" key, its quotes and the separating comma add on top of
+// the already-measured metadata, when sizing a crash message against the
 // publish limit
-#define CRASH_PUBLISH_COREDUMP_FIELD_OVERHEAD 16
+#define CRASH_PUBLISH_COREDUMP_FIELD_OVERHEAD sizeof(",\"coreDump\":\"\"")
 
 #define DEFAULT_CLOUD_SERVICES_ENABLED false // Always off by default, and enabled only explicitly by the user
 #define DEFAULT_SEND_POWER_DATA_ENABLED true // Send all the data by default
@@ -87,6 +87,14 @@
 #define MQTT_MAX_INTERVAL_SYSTEM_DYNAMIC_PUBLISH (60 * 60 * 1000)  // 1 hour since the data does not change frequently (and sent on reboot/reconnection anyway)
 #define MQTT_MAX_INTERVAL_STATISTICS_PUBLISH (6 * 60 * 60 * 1000)  // 6 hours since they are cumulative counters (and sent on reboot/reconnection anyway)
 #endif
+
+// Pace for draining the crash archive, one record per cycle. Also the retry
+// pace: a transient publish failure costs one interval, not every crash publish
+// until the next reboot.
+#define MQTT_MAX_INTERVAL_CRASH_PUBLISH (60 * 1000)
+// Records a single cycle will step over before giving up. Bounds the loop when
+// every record at the head of the archive is unpublishable.
+#define CRASH_PUBLISH_MAX_ATTEMPTS_PER_CYCLE 4
 
 #define MQTT_OVERRIDE_KEEPALIVE 30 // 30 is the minimum value supported by AWS IoT Core (in seconds)
 
