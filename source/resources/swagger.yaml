@@ -1183,12 +1183,19 @@ paths:
         setup page before any authenticated endpoint is reachable.
 
         Reachable without authentication when the request arrives on the SoftAP of a device
-        that has no stored credentials.
+        that is `UNPROVISIONED`, or that is in `GRACE` - the window right after a successful
+        connect where the AP is deliberately held up so the client can see where the device
+        went.
 
-        **Not usable to poll for the outcome of a credentials submission.** Accepting
-        credentials moves the device out of `UNPROVISIONED`, which closes the carve-out, so
-        the very next request from an unauthenticated SoftAP client is answered with 401.
-        Clients must tell the user where the device will appear at submit time instead.
+        **Polling this to learn the outcome of a credentials submission works, but only
+        because of that GRACE carve-out, and the sequence matters.** The moment credentials
+        are accepted the device leaves `UNPROVISIONED` for `STA_CONNECTING`, which is not
+        carved out, so every poll during the attempt itself gets 401 - that is expected, not
+        an error, and simply means "still trying". The attempt resolves into one of two
+        states that both reopen the carve-out: success reaches `GRACE` (`connected: true`),
+        failure falls back to `UNPROVISIONED` (`state: 0`, `connected: false`). A client MUST
+        treat a 401 during this window as "no verdict yet", not as failure, and MUST NOT
+        assume success merely because polling resumes returning 200 - check `connected`.
       tags:
         - Network
       responses:
