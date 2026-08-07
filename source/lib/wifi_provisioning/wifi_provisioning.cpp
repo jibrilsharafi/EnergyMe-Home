@@ -136,6 +136,19 @@ State onEvent(Context &context, Event event, uint64_t nowMs) {
             context.staRetryAttempts = 0;
             context.apRaiseTriggers = 0;
             context.state = State::STA_CONNECTING;
+
+            // Deliberately NOT setting hasCredentials here. It means "these credentials
+            // have been proven to work at least once" (see the comment on STA_CONNECTED),
+            // and a submission is only a claim, not proof. The first attempt after a
+            // submission is always driven directly by the caller regardless of this flag
+            // (customwifi.cpp calls _startStaAttempt() right after feeding this event), so
+            // nothing is lost there. What this flag controls is what happens on failure: a
+            // device that has never connected falls straight back to UNPROVISIONED with the
+            // carve-out open (test_failed_credentials_keep_unprovisioned_device_open), so a
+            // typo'd password is one unauthenticated retry away. Setting this here would
+            // instead route a first-attempt failure into the apRaiseTriggers/STA_CONNECTING
+            // path meant for a device with previously-working credentials, silently closing
+            // the carve-out on a device that has never proven anything.
             break;
 
         case Event::CREDENTIALS_CLEARED:
