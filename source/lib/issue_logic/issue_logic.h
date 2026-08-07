@@ -39,6 +39,7 @@ enum class Code : uint8_t {
     VoltageOutOfRange,        // sustained deviation from nominal mains voltage
     GridFrequencyOutOfRange,  // sustained deviation from nominal grid frequency
     Ade7953ReadFailures,      // sustained meter reading failures
+    AuthBruteForce,           // event: a source was locked out for repeated failed web logins
     Count
 };
 

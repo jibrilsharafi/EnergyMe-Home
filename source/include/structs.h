@@ -38,6 +38,7 @@ struct Statistics { // This will be global and we accept the very small race con
 
   uint64_t webServerRequests;
   uint64_t webServerRequestsError;
+  uint64_t webServerAuthLockouts; // A source crossed the failed-login threshold and was locked out
 
   uint64_t logVerbose;
   uint64_t logDebug;

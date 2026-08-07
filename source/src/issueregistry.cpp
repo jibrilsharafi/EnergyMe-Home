@@ -60,6 +60,7 @@ namespace IssueRegistry
     static uint16_t _frequencyStreak = 0;
     static uint16_t _readFailureStreak = 0;
     static uint64_t _prevAde7953Failures = 0;
+    static uint64_t _prevAuthLockouts = 0;
     static bool _littleFsCondition = false;
     static bool _firstTick = true;
 
@@ -472,6 +473,27 @@ namespace IssueRegistry
                      failureDelta);
         }
         _updateInstance(IssueLogic::Code::Ade7953ReadFailures, ISSUE_GLOBAL_SCOPE, readsFailing, message);
+
+        // --- auth_brute_force
+        // A lockout is a discrete security event, so it pulses (raised for the window it
+        // happened in, then lingering in ClearedUnacked until the owner acks it) rather than
+        // tracking a sustained condition. That way an attack that has since stopped is still
+        // visible after the fact, in the REST issues list and the cloud shadow. The firmware
+        // log carries the per-source detail; the issue is the "someone tried" headline.
+        // Snapshot once: the AsyncTCP task may increment between reads, and using two separate
+        // reads for the delta and the _prev update would drop that lockout from this window's
+        // delta and, via the advanced _prev, from every future window too.
+        uint64_t authLockoutsNow = statistics.webServerAuthLockouts;
+        uint64_t lockoutDelta = IssueLogic::counterDelta(_prevAuthLockouts, authLockoutsNow);
+        _prevAuthLockouts = authLockoutsNow;
+        bool lockoutPulse = (lockoutDelta > 0);
+        message[0] = '\0';
+        if (lockoutPulse) {
+            snprintf(message, sizeof(message),
+                     "Repeated failed web logins were locked out (%llu lockout%s in the last window, %llu total)",
+                     lockoutDelta, lockoutDelta == 1 ? "" : "s", (unsigned long long)authLockoutsNow);
+        }
+        _updateInstance(IssueLogic::Code::AuthBruteForce, ISSUE_GLOBAL_SCOPE, lockoutPulse, message);
     }
 
     // Instance table management
