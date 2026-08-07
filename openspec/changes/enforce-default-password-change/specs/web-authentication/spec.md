@@ -118,26 +118,43 @@ The endpoint the device uses to verify its own web server SHALL remain reachable
 - **WHEN** a device sits in the locked-down state for longer than its self-check failure threshold would take to trigger a restart
 - **THEN** it neither restarts nor rolls back, because its self-check continues to succeed
 
-### Requirement: Provisioning takes precedence over the lockdown
+### Requirement: The lockdown never prevents the device from being put back on a network
 
-A device that has never been given network credentials is necessarily still on the default password. The routes that are reachable without the web password during provisioning SHALL remain reachable, so that the lockdown cannot strand a factory-fresh device before it has a network.
+A device that has never been given network credentials is necessarily still on the default password, and a device that has lost its network may be too. In neither case SHALL the lockdown prevent network setup: whenever the device offers its own access point, the WiFi setup page and the endpoints that scan for and accept credentials SHALL remain reachable to a client on that access point, in every provisioning state.
 
-Firmware update SHALL remain refused throughout, in every provisioning state, both for want of authentication and for want of a changed password.
+That widening SHALL apply only to requests arriving on the device's own access point. On any other interface the lockdown SHALL refuse those same endpoints.
+
+Firmware update SHALL remain refused throughout, on the access point as everywhere else, both for want of authentication and for want of a changed password.
 
 #### Scenario: First boot with no credentials
 
 - **WHEN** a user connects to a factory-fresh device's access point and completes network setup
 - **THEN** every step of that flow works, and the lockdown does not intervene
 
+#### Scenario: In-service device that lost its network
+
+- **WHEN** a device still on the default password loses its network, raises its access point, and a user submits new credentials from it
+- **THEN** the credentials are accepted, because a device that cannot be put back on a network cannot be rescued at all - the physical reset control only restores the default password, which deepens the lockdown rather than lifting it
+
+#### Scenario: Provisioning endpoints from the LAN
+
+- **WHEN** a client on the ordinary network requests the WiFi setup page or the credential endpoints while the device is locked down
+- **THEN** they are refused, because the widening exists for the access point and must not extend past it
+
 #### Scenario: Password change immediately after provisioning
 
 - **WHEN** the device joins a network and the user opens it on the LAN for the first time
 - **THEN** the password-change page is served, because the lockdown applies as soon as the provisioning carve-out no longer does
 
-#### Scenario: Firmware upload during provisioning
+#### Scenario: Firmware upload from the access point
 
-- **WHEN** a client on the access point of an unprovisioned device attempts a firmware upload
+- **WHEN** a client on the access point attempts a firmware upload, in any provisioning state
 - **THEN** it is refused
+
+#### Scenario: Reaching the gate over the access point
+
+- **WHEN** a user who came in over the access point to fix the network is served the password-change page
+- **THEN** that page offers a way to reach WiFi setup, so they are not left on a form that does not address their problem
 
 ### Requirement: The device's password state is readable without cost on the request path
 

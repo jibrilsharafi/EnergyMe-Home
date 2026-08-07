@@ -119,11 +119,27 @@ Length is validated on set, never on authenticate, so a device already holding a
 
 It is the one route whose only effect from inside the locked state is to preserve it. Leaving it allowlisted would be an API that exists solely to be a no-op; leaving it deniable by the generic rule is enough, so it simply is not on the allowlist. From a *non*-default state it keeps working unchanged and now drops the device straight into lockdown, which is the honest outcome.
 
-### D9. Provisioning wins, structurally
+### D9. Provisioning wins - structurally in `UNPROVISIONED`, explicitly everywhere else
 
-The provisioning twins call `skipServerMiddlewares()`, so the guard never runs on them. No code expresses this precedence; it falls out of `WebRequest.cpp:877-891`. That is the correct behaviour - a factory-fresh device is by definition on the default password, and a lockdown that blocked WiFi setup would strand it before it ever had a network - but because it is emergent rather than written down, it needs a test that would fail if someone later "tidied" the health endpoint or a provisioning twin back onto the server chain.
+**Corrected after hardware review; the first version of this decision was wrong and shipped a regression.**
 
-The same mechanism means enforcement is absent from the 22 carved-out twins whenever their filter passes: `/`, `/wifi-setup.html`, all CSS/JS, `/favicon.svg`, the 7 captive probes, and the four `/api/v1/network/wifi/*` routes. All are either static assets, unauthenticated-by-design provisioning routes, or already allowlisted. OTA is not among them and stays refused in every state.
+The original claim was that the provisioning twins call `skipServerMiddlewares()`, so the guard never runs on them, and precedence therefore falls out of `WebRequest.cpp:877-891` for free. That holds only in `UNPROVISIONED`. `_isProvisioningOrigin` returns false in every other state, so in `GRACE` and `AP_ASSIST` the provisioning routes fall through to their *authenticated* twins, which run the full server chain - and the guard saw them:
+
+| State | `/` on the AP | `/api/v1/network/wifi/credentials` |
+|---|---|---|
+| `UNPROVISIONED` | wifi-setup, chain skipped | allowed, chain skipped |
+| `GRACE` | wifi-setup, chain skipped | **403** |
+| `AP_ASSIST` | **the password gate** | **403** |
+
+The consequence is a stranded device: a meter on the default password whose router changed raises its assist AP, serves the setup page, and then refuses the one endpoint that AP exists to offer. The physical button cannot recover it - `resetWebPassword()` sets the password *to* the default, deepening the lockdown rather than lifting it.
+
+So precedence is now stated rather than assumed. `evaluate()` takes an `isApOrigin` flag, supplied by `_isApOrigin()` - the same volatile-load-plus-address-compare as the provisioning filters, but with no state condition, because the widening authorises nothing on its own. When set, the allowlist widens to `/wifi-setup.html` and the four `/api/v1/network/wifi/*` routes.
+
+The exposure that buys is bounded: an AP-origin request already implies physical proximity and the AP's own PSK, which is a strictly higher bar than the published web password this lockdown exists because of. OTA is deliberately *not* widened, so `wifi-provisioning`'s "Firmware update always requires authentication" continues to hold on the SoftAP in every state.
+
+`/` still serves the gate in `AP_ASSIST` - the twin ordering is unchanged - so the gate page carries a link to `/wifi-setup.html`. Without it, a user who came in over the AP to fix their network lands on a password form that does not address their problem.
+
+The structural exemption remains real and load-bearing for `/api/v1/health` and for the `UNPROVISIONED` twins, and still needs a test that would fail if someone later "tidied" either back onto the server chain.
 
 ### D10. Client changes are recovery, not enforcement
 
