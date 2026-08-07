@@ -616,7 +616,6 @@ static void _restartTask(void* parameter) {
     LOG_DEBUG("Restart task started%s", factoryReset ? " (factory reset)" : "");
 
     // 1. Visual indicator
-    Led::setBrightness(max(Led::getBrightness(), (uint8_t)1));
     Led::setOrange(Led::PRIO_CRITICAL);
 
     // 2. Stop all services (best effort, don't wait forever for each)
@@ -924,8 +923,7 @@ void statisticsToJson(Statistics& statistics, JsonDocument &jsonDocument) {
 static void _factoryReset() { // No logger here it is likely destroyed already
     Serial.println("[WARNING] Factory reset requested");
 
-    Led::setBrightness(max(Led::getBrightness(), (uint8_t)1)); // Show a faint light even if it is off
-    Led::blinkRedFast(Led::PRIO_CRITICAL);
+    Led::blinkRedFast(Led::PRIO_CRITICAL); // The critical layer carries its own brightness floor
 
     clearAllPreferences();
 

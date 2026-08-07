@@ -325,17 +325,36 @@ void test_pulse_peak_equals_solid_at_the_same_brightness(void) {
     }
 }
 
-void test_critical_layer_floors_brightness(void) {
+void test_attention_layers_floor_brightness(void) {
     TEST_ASSERT_EQUAL_UINT8(LED_STATE_CRITICAL_MIN_BRIGHTNESS_PERCENT,
                             effectiveBrightness(Layer::CRITICAL, 0));
+    TEST_ASSERT_EQUAL_UINT8(LED_STATE_ALERT_MIN_BRIGHTNESS_PERCENT,
+                            effectiveBrightness(Layer::ALERT, 0));
+
+    // The floor only lifts, never dims.
     TEST_ASSERT_EQUAL_UINT8(75, effectiveBrightness(Layer::CRITICAL, 75));
+    TEST_ASSERT_EQUAL_UINT8(75, effectiveBrightness(Layer::ALERT, 75));
+    TEST_ASSERT_EQUAL_UINT8(5, effectiveBrightness(Layer::ALERT, 5));
 }
 
-void test_non_critical_layers_honour_zero_brightness(void) {
+void test_ambient_layers_honour_zero_brightness(void) {
     TEST_ASSERT_EQUAL_UINT8(0, effectiveBrightness(Layer::USER, 0));
     TEST_ASSERT_EQUAL_UINT8(0, effectiveBrightness(Layer::STATUS, 0));
     TEST_ASSERT_EQUAL_UINT8(0, effectiveBrightness(Layer::NETWORK, 0));
-    TEST_ASSERT_EQUAL_UINT8(0, effectiveBrightness(Layer::ALERT, 0));
+}
+
+// The button ladder runs on ALERT, and its confirmation colours are what tell the
+// user which threshold - factory reset included - they are about to trigger. The
+// call site used to buy that visibility with setBrightness(max(get(), 1)), which
+// persisted.
+void test_button_feedback_is_visible_at_zero_brightness(void) {
+    Table table;
+    set(table, Layer::ALERT, Pattern::SOLID, Rgb{255, 255, 255}, 0, 0);
+
+    TEST_ASSERT_TRUE(isLit(renderAt(table, 0, 0)));
+
+    release(table, Layer::ALERT);
+    assertColor(DARK, renderAt(table, 0, 0));
 }
 
 void test_critical_stays_visible_at_zero_brightness(void) {
@@ -450,9 +469,10 @@ int main(int, char **) {
     RUN_TEST(test_brightness_scales_output);
     RUN_TEST(test_brightness_above_max_is_clamped);
     RUN_TEST(test_pulse_peak_equals_solid_at_the_same_brightness);
-    RUN_TEST(test_critical_layer_floors_brightness);
-    RUN_TEST(test_non_critical_layers_honour_zero_brightness);
+    RUN_TEST(test_attention_layers_floor_brightness);
+    RUN_TEST(test_ambient_layers_honour_zero_brightness);
     RUN_TEST(test_critical_stays_visible_at_zero_brightness);
+    RUN_TEST(test_button_feedback_is_visible_at_zero_brightness);
 
     RUN_TEST(test_pattern_names_round_trip);
     RUN_TEST(test_unknown_pattern_name_is_rejected);

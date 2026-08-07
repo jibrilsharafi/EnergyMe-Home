@@ -58,12 +58,17 @@ enum class Pattern : uint8_t {
 #define LED_STATE_DOUBLE_BLINK_SEGMENT_MS 100ULL
 #define LED_STATE_DOUBLE_BLINK_CYCLE_MS 1200ULL
 
-// Floor applied to the CRITICAL layer only, so a safe-mode or factory-reset
-// indication stays visible on a device whose owner set brightness to 0. It is a
-// render-time floor and is never persisted: the three call sites that used to do
-// `setBrightness(max(getBrightness(), 1))` were silently overwriting the stored
-// value, which is the user's setting, not ours to change.
+// Render-time brightness floors, so an indication the user has to see is not
+// silenced by a configured brightness of 0. CRITICAL (safe mode, factory reset)
+// gets a properly visible floor; ALERT (button feedback, updates) gets the barely
+// visible 1% that the call sites were already asking for.
+//
+// These are never persisted. The three sites that used to do
+// `setBrightness(max(getBrightness(), 1))` were writing the floor into NVS, so a
+// single button press permanently replaced a user's stored 0 with 1 - and left the
+// whole device at 1% afterwards, not just the indication that needed it.
 #define LED_STATE_CRITICAL_MIN_BRIGHTNESS_PERCENT 10
+#define LED_STATE_ALERT_MIN_BRIGHTNESS_PERCENT 1
 
 #define LED_STATE_MAX_BRIGHTNESS_PERCENT 100
 

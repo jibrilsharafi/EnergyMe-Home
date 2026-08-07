@@ -144,10 +144,11 @@ uint8_t effectiveBrightness(Layer layer, uint8_t configuredPercent) {
     if (configuredPercent > LED_STATE_MAX_BRIGHTNESS_PERCENT) {
         configuredPercent = LED_STATE_MAX_BRIGHTNESS_PERCENT;
     }
-    if (layer == Layer::CRITICAL && configuredPercent < LED_STATE_CRITICAL_MIN_BRIGHTNESS_PERCENT) {
-        return LED_STATE_CRITICAL_MIN_BRIGHTNESS_PERCENT;
-    }
-    return configuredPercent;
+    uint8_t floorPercent = 0;
+    if (layer == Layer::CRITICAL) { floorPercent = LED_STATE_CRITICAL_MIN_BRIGHTNESS_PERCENT; }
+    else if (layer == Layer::ALERT) { floorPercent = LED_STATE_ALERT_MIN_BRIGHTNESS_PERCENT; }
+
+    return configuredPercent < floorPercent ? floorPercent : configuredPercent;
 }
 
 const char *patternName(Pattern pattern) {
