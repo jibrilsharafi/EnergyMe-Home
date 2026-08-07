@@ -209,8 +209,14 @@ public:
             return;
         }
 
-        // Anything else means authentication succeeded, including the 403 from the
-        // default-password guard, which only ever fires on an authenticated caller.
+        // A throttle is not an authentication outcome. A credential-less flood can trip the
+        // unauthenticated rate limiter, and that 429 comes back here - reading it as a success
+        // would let a source clear its own accumulated failures without ever authenticating.
+        // Record nothing; the auth verdict is simply unknown for a throttled request.
+        if (response->code() == HTTP_CODE_TOO_MANY_REQUESTS) return;
+
+        // Everything else got past digestAuth, so authentication succeeded - including the 403
+        // from the default-password guard, which only ever fires on an authenticated caller.
         AuthLockout::recordSuccess(_table, address, nowMs);
     }
 
