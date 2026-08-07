@@ -24,6 +24,7 @@ namespace CustomServer
     static AsyncRateLimitMiddleware rateLimit;
     static CustomMiddleware customMiddleware;
     static DefaultPasswordGuardMiddleware defaultPasswordGuard;
+    static AuthLockoutMiddleware authLockout;
 
     // Whether the stored web password is still the shipped default. Read on the AsyncTCP
     // task for every request to every path, so it must never become an NVS read: it is
@@ -281,18 +282,31 @@ namespace CustomServer
         digestAuth.setAuthType(AsyncAuthType::AUTH_DIGEST);
         digestAuth.generateHash(); // precompute hash for better performance
 
-        server.addMiddleware(&digestAuth);
+        // ---- Auth Lockout Setup ----
+        // Ahead of everything else that can refuse a request, so a source already locked out
+        // for guessing costs a table scan rather than a digest MD5.
+        authLockout.begin([]() { return millis64(); });
+        server.addMiddleware(&authLockout);
 
-        LOG_DEBUG("Digest authentication configured");
+        LOG_DEBUG("Auth lockout configured: %d consecutive failures -> %d s, doubling to %d s",
+                  AUTH_LOCKOUT_MAX_FAILURES, AUTH_LOCKOUT_BASE_SECONDS, AUTH_LOCKOUT_MAX_SECONDS);
 
         // ---- Rate Limiting Middleware Setup ----
-        // Set rate limiting to prevent abuse
+        // BEFORE digestAuth, deliberately. AsyncAuthenticationMiddleware::run short-circuits
+        // with requestAuthentication() instead of calling next() (Middleware.cpp:143), so
+        // anything registered after it never runs on a 401 - which meant the limiter was not
+        // merely mistuned on the failed-login path, it was unreachable. Measured before this
+        // change: 400 consecutive failed logins, zero 429 (issue #197).
         rateLimit.setMaxRequests(WEBSERVER_MAX_REQUESTS);
         rateLimit.setWindowSize(WEBSERVER_WINDOW_SIZE_SECONDS);
 
         server.addMiddleware(&rateLimit);
 
         LOG_DEBUG("Rate limiting configured: max requests = %d, window size = %d seconds", WEBSERVER_MAX_REQUESTS, WEBSERVER_WINDOW_SIZE_SECONDS);
+
+        server.addMiddleware(&digestAuth);
+
+        LOG_DEBUG("Digest authentication configured");
 
         // ---- Default Password Lockdown Setup ----
         // Registered last, and that position is load-bearing in both directions.

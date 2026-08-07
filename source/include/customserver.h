@@ -29,6 +29,7 @@
 #include "utils.h"
 #include "led.h"
 #include "web_auth_gate.h"
+#include "auth_lockout.h"
 
 // Rate limiting
 #define WEBSERVER_MAX_REQUESTS 6000
@@ -132,6 +133,68 @@ public:
                         response->code());
         }
     }
+};
+
+// Throttles repeated failed logins per source address.
+//
+// Both halves of the job in one middleware: it refuses a locked-out source before the chain
+// continues, and it reads the outcome afterwards to decide whether that was a failed login.
+// Registered ahead of digestAuth, so a locked-out source never costs a digest MD5.
+//
+// The thresholds and durations are NOT here - they live in lib/auth_lockout and are unit
+// tested on the host. This class supplies the clock and the address and acts on the answer.
+class AuthLockoutMiddleware : public AsyncMiddleware {
+public:
+    void run(AsyncWebServerRequest *request, ArMiddlewareNext next) override {
+        AsyncClient *client = request->client();
+        if (client == nullptr) { next(); return; }
+
+        uint32_t address = (uint32_t)client->remoteIP();
+        uint64_t nowMs = _clock ? _clock() : 0;
+
+        uint32_t retryAfterSeconds = 0;
+        if (AuthLockout::isLocked(_table, address, nowMs, retryAfterSeconds)) {
+            AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_TOO_MANY_REQUESTS, "application/json",
+                "{\"success\":false,\"error\":\"Too many failed login attempts. Try again later.\"}");
+            response->addHeader("Retry-After", String(retryAfterSeconds));
+            request->send(response);
+            return;
+        }
+
+        next();
+
+        AsyncWebServerResponse *response = request->getResponse();
+        if (response == nullptr) return;  // no outcome observed - record nothing
+
+        if (response->code() == HTTP_CODE_UNAUTHORIZED) {
+            // THE decision this whole feature turns on. Every digest handshake opens with a
+            // credential-less request that is answered 401; a browser does this on every fresh
+            // session. Counting those would lock out the legitimate owner within a few page
+            // loads. Only a rejection of credentials that were actually supplied is a failed
+            // login - and an attacker must supply credentials to test a password, so nothing
+            // defensive is given up. Credential-less flooding is the rate limiter's job.
+            if (request->hasHeader("Authorization")) AuthLockout::recordFailure(_table, address, nowMs);
+            return;
+        }
+
+        // Anything else means authentication succeeded, including the 403 from the
+        // default-password guard, which only ever fires on an authenticated caller.
+        AuthLockout::recordSuccess(_table, address, nowMs);
+    }
+
+    // The clock is injected rather than called directly: this header is pulled in by
+    // translation units where utils.h has not been seen yet, and a monotonic millisecond
+    // clock is exactly the sort of thing worth being able to substitute anyway.
+    void begin(std::function<uint64_t()> clock) {
+        _clock = clock;
+        AuthLockout::init(_table);
+    }
+
+private:
+    // Touched only from the AsyncTCP task - every middleware and handler runs there - so it is
+    // not shared state and takes no mutex. Do not read it from another task without adding one.
+    AuthLockout::Table _table;
+    std::function<uint64_t()> _clock = nullptr;
 };
 
 // Refuses to serve a device that is still holding the shipped default web password.
