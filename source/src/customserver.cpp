@@ -283,6 +283,14 @@ namespace CustomServer
         digestAuth.setAuthType(AsyncAuthType::AUTH_DIGEST);
         digestAuth.generateHash(); // precompute hash for better performance
 
+        // Known limitation (accepted risk, issue #222): ESPAsyncWebServer issues a fresh
+        // nonce/opaque per 401 but AsyncWebServerRequest::authenticate() passes them as NULL
+        // into checkDigestAuthentication(), which skips validating any field it receives as
+        // NULL (WebRequest.cpp / WebAuthentication.cpp in the library). So a captured
+        // Authorization header for a given request is replayable indefinitely. No easy fix
+        // without the firmware tracking issued nonces itself; the LAN link is the trust
+        // boundary for this device. No action taken here.
+
         // ---- Auth Lockout Setup ----
         // Ahead of everything else that can refuse a request, so a source already locked out
         // for guessing costs a table scan rather than a digest MD5.
