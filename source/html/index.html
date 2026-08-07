@@ -1075,16 +1075,10 @@
         }
     }
 
-    async function checkDefaultPassword() {
-        try {
-            const authStatus = await energyApi.getAuthStatus();
-            if (authStatus.usingDefaultPassword) {
-                alert('⚠️ Security Warning: You are still using the default password!\n\nPlease change your password immediately in the Configuration page to secure your device.');
-            }
-        } catch (error) {
-            console.error('Error checking auth status:', error);
-        }
-    }
+    // checkDefaultPassword() lived here and raised a dismissible alert(). It is gone because
+    // the dashboard is no longer served in the state it warned about: "/" serves the password
+    // gate while the default password is active, and the API refuses everything but the way
+    // out. A warning that could be clicked away was never the enforcement anyway.
 
     // ============================================================================
     // PAGE STARTUP
@@ -1094,8 +1088,7 @@
         
         await initializePage();
         await fetchFirmwareUpdateInfo();
-        await checkDefaultPassword();
-        
+
         PowerFlowHelpers.setupSparklineHovers(PowerFlowState.flowHistory, PowerFlowState.loadHistory, PowerFlowConfig.NODE_COLORS);
         
         // Real-time meter data updates
