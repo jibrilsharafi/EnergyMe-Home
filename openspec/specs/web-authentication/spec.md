@@ -9,6 +9,8 @@ While the stored web password equals the shipped default, the device SHALL refus
 
 The allowlist SHALL be limited to what a user needs in order to leave the state: the health endpoint, reading the authentication status, changing the password, the gate page itself, and the static assets that gate page needs to render.
 
+A caller that is being throttled for repeated failed logins SHALL be refused for that reason before its credentials are examined, and therefore before this requirement is evaluated. Throttling takes precedence over the lockdown, and neither refusal SHALL disclose the device's password state to a caller that has not authenticated.
+
 #### Scenario: API request with correct default credentials
 
 - **WHEN** a client authenticates with the default password and requests any API route outside the allowlist
@@ -28,6 +30,11 @@ The allowlist SHALL be limited to what a user needs in order to leave the state:
 
 - **WHEN** a client supplies neither the default nor any other correct password
 - **THEN** the device responds with the normal authentication challenge, not the lockdown refusal, so the lockdown does not disclose the device's password state to an unauthenticated caller
+
+#### Scenario: Guessing the default password repeatedly
+
+- **WHEN** a client guesses passwords against a device that is on the shipped default, and crosses the failed-login threshold
+- **THEN** it is throttled rather than challenged, and the throttling response says nothing about whether the device is on its default password
 
 #### Scenario: Password has been changed
 
