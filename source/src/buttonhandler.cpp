@@ -146,11 +146,13 @@ namespace ButtonHandler
                     DurationFormat::humanizeDuration(pressDuration, pressDurationHuman, sizeof(pressDurationHuman));
                     LOG_DEBUG("Button released after %s", pressDurationHuman);
 
+                    // Drop the hold feedback before acting, not after: _processButtonPress()
+                    // sets the outcome indication on the same layer, and clearing afterwards
+                    // released it again before it was ever rendered.
+                    Led::clearPattern(Led::PRIO_URGENT);
+
                     _processButtonPress(pressDuration);
                     _buttonPressStartTime = ZERO_START_TIME;
-
-                    // Clear visual feedback
-                    Led::clearPattern(Led::PRIO_URGENT);
                 }
                 else if (_buttonPressed)
                 {
