@@ -1097,10 +1097,13 @@ namespace CrashMonitor
             return false;
         }
 
-        _buildArchivePath(baseName, CRASH_ARCHIVE_DUMP_SUFFIX, path, sizeof(path));
-        File dumpFile = LittleFS.open(path, FILE_WRITE);
+        // Written under a name no scan matches, then renamed in. A record is
+        // discovered by its dump file, so opening the final name here would make
+        // an empty record visible to the MQTT task the instant the file is
+        // created - see CRASH_ARCHIVE_TEMP_DUMP_PATH.
+        File dumpFile = LittleFS.open(CRASH_ARCHIVE_TEMP_DUMP_PATH, FILE_WRITE);
         if (!dumpFile) {
-            LOG_ERROR("Failed to open %s for writing", path);
+            LOG_ERROR("Failed to open %s for writing", CRASH_ARCHIVE_TEMP_DUMP_PATH);
             removeArchivedCrash(baseName);
             free(compressed);
             return false;
@@ -1111,7 +1114,21 @@ namespace CrashMonitor
         free(compressed);
 
         if (dumpWritten != compressedSize) {
-            LOG_ERROR("Short write on %s: expected %zu bytes, wrote %zu", path, compressedSize, dumpWritten);
+            LOG_ERROR("Short write on %s: expected %zu bytes, wrote %zu",
+                      CRASH_ARCHIVE_TEMP_DUMP_PATH, compressedSize, dumpWritten);
+            LittleFS.remove(CRASH_ARCHIVE_TEMP_DUMP_PATH);
+            removeArchivedCrash(baseName);
+            return false;
+        }
+
+        _buildArchivePath(baseName, CRASH_ARCHIVE_DUMP_SUFFIX, path, sizeof(path));
+        // A retry of the same crash lands on the same name, and rename over an
+        // existing file is not portable across FS implementations
+        if (LittleFS.exists(path)) LittleFS.remove(path);
+
+        if (!LittleFS.rename(CRASH_ARCHIVE_TEMP_DUMP_PATH, path)) {
+            LOG_ERROR("Failed to rename %s to %s", CRASH_ARCHIVE_TEMP_DUMP_PATH, path);
+            LittleFS.remove(CRASH_ARCHIVE_TEMP_DUMP_PATH);
             removeArchivedCrash(baseName);
             return false;
         }

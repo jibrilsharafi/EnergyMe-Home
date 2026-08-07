@@ -48,6 +48,14 @@
 #define CRASH_ARCHIVE_DIR "/crashes"
 #define CRASH_ARCHIVE_META_SUFFIX ".json"
 #define CRASH_ARCHIVE_DUMP_SUFFIX ".bin.gz"
+// The dump is written here and only renamed into place once it is complete, so
+// a scan never sees the 0-byte file that opening the final name would create.
+// That matters because the archive task is left running past its timeout while
+// boot continues into WiFi and MQTT: a publish cycle that caught a half-written
+// dump would treat it as corrupt and delete the record out from under the task.
+// A single fixed name rather than one per record, so an interrupted write leaves
+// at most one stray file and the next attempt truncates it.
+#define CRASH_ARCHIVE_TEMP_DUMP_PATH CRASH_ARCHIVE_DIR "/pending.part"
 #define CRASH_ARCHIVE_MAX_RECORDS 10 // Oldest evicted first once reached
 #define CRASH_ARCHIVE_MAX_BYTES (500 * 1024) // Ceiling on the whole directory
 // Records held per scan. Derived from the record cap, with slack for leftovers
