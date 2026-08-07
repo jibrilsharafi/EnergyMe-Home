@@ -24,17 +24,30 @@ namespace CustomWifi
   static IPAddress _lastMdnsIp; // Last IP for which mDNS was initialized; used to skip rebuild when IP unchanged
   static bool _mdnsInitialized = false;
 
-  // WiFi event notification values for task communication
-  static const uint32_t WIFI_EVENT_CONNECTED = 1;
-  static const uint32_t WIFI_EVENT_GOT_IP = 2;
-  static const uint32_t WIFI_EVENT_DISCONNECTED = 3;
-  static const uint32_t WIFI_EVENT_SHUTDOWN = 4;
-  static const uint32_t WIFI_EVENT_FORCE_RECONNECT = 5;
-  static const uint32_t WIFI_EVENT_NEW_CREDENTIALS = 6;
-  static const uint32_t WIFI_EVENT_AP_START = 7;
-  static const uint32_t WIFI_EVENT_AP_STACONNECTED = 8;
-  static const uint32_t WIFI_EVENT_AP_STADISCONNECTED = 9;
-  static const uint32_t WIFI_EVENT_CREDENTIALS_CLEARED = 10;
+  // WiFi event notification BITS for task communication. This target's FreeRTOS build sets
+  // CONFIG_FREERTOS_TASK_NOTIFICATION_ARRAY_ENTRIES to 1, so there is exactly one 32-bit
+  // notification word per task - no second index to hand any event class its own channel.
+  // Bits are combined with eSetBits, which OR-accumulates concurrent notifications into
+  // that one word, and are all drained together on the next wait. The previous scheme used
+  // small sequential values with eSetValueWithOverwrite, where a later event silently
+  // replaced an earlier one still waiting to be read: an AP_STADISCONNECTED landing before
+  // the task drained a pending GOT_IP could discard it outright, stranding the device in
+  // STA_CONNECTING with a working IP address that nothing ever acted on.
+  static const uint32_t WIFI_EVENT_SHUTDOWN = (1UL << 0);
+  static const uint32_t WIFI_EVENT_CONNECTED = (1UL << 1);
+  static const uint32_t WIFI_EVENT_GOT_IP = (1UL << 2);
+  static const uint32_t WIFI_EVENT_DISCONNECTED = (1UL << 3);
+  static const uint32_t WIFI_EVENT_FORCE_RECONNECT = (1UL << 4);
+  static const uint32_t WIFI_EVENT_NEW_CREDENTIALS = (1UL << 5);
+  static const uint32_t WIFI_EVENT_AP_START = (1UL << 6);
+  static const uint32_t WIFI_EVENT_AP_STACONNECTED = (1UL << 7);
+  static const uint32_t WIFI_EVENT_AP_STADISCONNECTED = (1UL << 8);
+  static const uint32_t WIFI_EVENT_CREDENTIALS_CLEARED = (1UL << 9);
+  // Debug-only: an ARDUINO_EVENT_* this task does not otherwise act on. Best-effort by
+  // design, same as the value it replaces - _lastUnknownWifiEvent is a plain overwrite, so a
+  // second unknown event before the bit is drained just replaces which one gets logged.
+  static const uint32_t WIFI_EVENT_UNKNOWN = (1UL << 10);
+  static volatile int32_t _lastUnknownWifiEvent = -1;
 
   // Task state management
   static bool _taskShouldRun = false;
@@ -53,7 +66,13 @@ namespace CustomWifi
   // Lock-free single-word read, same discipline as _publishedState.
   static volatile bool _lastCredentialWriteFailed = false;
 
-  // Diagnostic info for fallback portal
+  // Diagnostic info for fallback portal. _lastAttemptedSSID is written by the WiFi task;
+  // _lastDisconnectReason/SSID/BSSID/RSSI are written from the arduino_events task inside
+  // _onWiFiEventWithInfo, which forbids logging or anything else that might block - so a
+  // spinlock, not a semaphore, guards the char buffers here. Both are read from whichever
+  // task serves the diagnostics endpoint. Unguarded, a reader landing mid-snprintf on
+  // either buffer could see a torn mix of the old and new string.
+  static portMUX_TYPE _disconnectDiagMux = portMUX_INITIALIZER_UNLOCKED;
   static char _lastAttemptedSSID[WIFI_SSID_BUFFER_SIZE] = {0};
   static uint8_t _lastDisconnectReason = 0;
   static char _lastDisconnectSSID[WIFI_SSID_BUFFER_SIZE] = {0};
@@ -207,8 +226,8 @@ namespace CustomWifi
     //
     // Registration is not the same as delivery: _onWiFiEvent gates on _eventsEnabled,
     // which stays false until the initial connection completes. Enabling it here too
-    // would let eSetValueWithOverwrite leave a stale notification for the first
-    // xTaskNotifyWait to consume.
+    // would let a bit land in the notification word before anything is ready to act on
+    // it, for the first xTaskNotifyWait to consume as stale.
     WiFi.onEvent(_onWiFiEventWithInfo);
     WiFi.onEvent(_onWiFiEvent);
 
@@ -386,12 +405,29 @@ namespace CustomWifi
 
   void getDisconnectDiagnosticsAsJson(JsonDocument &jsonDocument)
   {
-    jsonDocument["lastAttemptedSsid"] = _lastAttemptedSSID;
-    jsonDocument["reasonCode"] = _lastDisconnectReason;
-    jsonDocument["reason"] = _getDisconnectReasonString(_lastDisconnectReason);
-    jsonDocument["disconnectSsid"] = _lastDisconnectSSID;
-    jsonDocument["disconnectBssid"] = _lastDisconnectBSSID;
-    jsonDocument["disconnectRssi"] = _lastDisconnectRSSI;
+    // Snapshot under the spinlock into local, fixed-size buffers - fast and bounded, so
+    // holding a critical section for it is safe. Building the JsonDocument itself can
+    // allocate, which must not happen while the section is held.
+    char attemptedSsid[WIFI_SSID_BUFFER_SIZE];
+    uint8_t reason;
+    char disconnectSsid[WIFI_SSID_BUFFER_SIZE];
+    char disconnectBssid[MAC_ADDRESS_BUFFER_SIZE];
+    int8_t rssi;
+
+    taskENTER_CRITICAL(&_disconnectDiagMux);
+    memcpy(attemptedSsid, _lastAttemptedSSID, sizeof(attemptedSsid));
+    reason = _lastDisconnectReason;
+    memcpy(disconnectSsid, _lastDisconnectSSID, sizeof(disconnectSsid));
+    memcpy(disconnectBssid, _lastDisconnectBSSID, sizeof(disconnectBssid));
+    rssi = _lastDisconnectRSSI;
+    taskEXIT_CRITICAL(&_disconnectDiagMux);
+
+    jsonDocument["lastAttemptedSsid"] = attemptedSsid;
+    jsonDocument["reasonCode"] = reason;
+    jsonDocument["reason"] = _getDisconnectReasonString(reason);
+    jsonDocument["disconnectSsid"] = disconnectSsid;
+    jsonDocument["disconnectBssid"] = disconnectBssid;
+    jsonDocument["disconnectRssi"] = rssi;
     jsonDocument["retryAttempts"] = _reconnectAttempts;
   }
 
@@ -404,7 +440,7 @@ namespace CustomWifi
   {
     if (_wifiTaskHandle != NULL) {
       LOG_WARNING("Forcing WiFi reconnection...");
-      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_FORCE_RECONNECT, eSetValueWithOverwrite);
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_FORCE_RECONNECT, eSetBits);
     } else {
       LOG_WARNING("Cannot force reconnect - WiFi task not running");
     }
@@ -432,17 +468,17 @@ namespace CustomWifi
 
     case ARDUINO_EVENT_WIFI_STA_CONNECTED:
       // Defer logging to task
-      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_CONNECTED, eSetValueWithOverwrite);
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_CONNECTED, eSetBits);
       break;
 
     case ARDUINO_EVENT_WIFI_STA_GOT_IP:
       // Defer all operations to task - avoid any function calls that might log
-      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_GOT_IP, eSetValueWithOverwrite);
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_GOT_IP, eSetBits);
       break;
 
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
       // Notify task to handle fallback if needed
-      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_DISCONNECTED, eSetValueWithOverwrite);
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_DISCONNECTED, eSetBits);
       break;
 
     case ARDUINO_EVENT_WIFI_STA_AUTHMODE_CHANGE:
@@ -453,20 +489,22 @@ namespace CustomWifi
     // ARDUINO_EVENT_WIFI_AP_PROBEREQRECVED is deliberately left masked - it fires per
     // probe request and would flood the notification path.
     case ARDUINO_EVENT_WIFI_AP_START:
-      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_AP_START, eSetValueWithOverwrite);
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_AP_START, eSetBits);
       break;
 
     case ARDUINO_EVENT_WIFI_AP_STACONNECTED:
-      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_AP_STACONNECTED, eSetValueWithOverwrite);
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_AP_STACONNECTED, eSetBits);
       break;
 
     case ARDUINO_EVENT_WIFI_AP_STADISCONNECTED:
-      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_AP_STADISCONNECTED, eSetValueWithOverwrite);
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_AP_STADISCONNECTED, eSetBits);
       break;
 
     default:
-      // Forward unknown events to task for logging/debugging
-      xTaskNotify(_wifiTaskHandle, (uint32_t)event, eSetValueWithOverwrite);
+      // Forward unknown events to task for logging/debugging. Best-effort: a plain
+      // overwrite of _lastUnknownWifiEvent, same fidelity as before this was a bit.
+      _lastUnknownWifiEvent = (int32_t)event;
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_UNKNOWN, eSetBits);
       break;
     }
   }
@@ -477,6 +515,10 @@ namespace CustomWifi
   {
     // DO NOT USE ANY LOGGING HERE to avoid weird crashes (this is a callback.. I don't know why but it seems unsafe)
     if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
+      // A spinlock, not a semaphore: taskENTER_CRITICAL never blocks or logs, so it is safe
+      // in this context, and the section below is a handful of fixed-size snprintf calls -
+      // bounded and fast, nothing that allocates or waits.
+      taskENTER_CRITICAL(&_disconnectDiagMux);
       _lastDisconnectReason = info.wifi_sta_disconnected.reason;
       _lastDisconnectRSSI = info.wifi_sta_disconnected.rssi;
       snprintf(_lastDisconnectSSID, sizeof(_lastDisconnectSSID), "%s", info.wifi_sta_disconnected.ssid);
@@ -484,6 +526,7 @@ namespace CustomWifi
                info.wifi_sta_disconnected.bssid[0], info.wifi_sta_disconnected.bssid[1],
                info.wifi_sta_disconnected.bssid[2], info.wifi_sta_disconnected.bssid[3],
                info.wifi_sta_disconnected.bssid[4], info.wifi_sta_disconnected.bssid[5]);
+      taskEXIT_CRITICAL(&_disconnectDiagMux);
     }
   }
 
@@ -617,24 +660,29 @@ namespace CustomWifi
         waitMs = WIFI_AP_LIFECYCLE_TICK_MS;
       }
 
-      // Wait for notification from event handler or timeout
+      // Wait for notification from event handler or timeout. ULONG_MAX as the clear-on-exit
+      // mask means every bit set since the last wait comes back at once.
       if (xTaskNotifyWait(0, ULONG_MAX, &notificationValue, pdMS_TO_TICKS(waitMs)))
       {
-        // Check if this is a stop notification (we use a special value for shutdown)
-        if (notificationValue == WIFI_EVENT_SHUTDOWN)
+        // Shutdown wins over anything else pending in the same wakeup: the task is tearing
+        // down and must not act on stale bits that happened to arrive alongside it.
+        if (notificationValue & WIFI_EVENT_SHUTDOWN)
         {
           _taskShouldRun = false;
           break;
         }
 
-        // Handle deferred operations from WiFi events (safe context)
-        switch (notificationValue)
-        {
-        case WIFI_EVENT_CONNECTED:
-          LOG_DEBUG("WiFi connected to: %s", WiFi.SSID().c_str());
-          continue; // No further action needed
+        // Every bit set gets handled here, not just one - see the WIFI_EVENT_* comment for
+        // why eSetBits replaced eSetValueWithOverwrite. Order below is not significant
+        // across different event classes; within a class there is only ever one bit.
 
-        case WIFI_EVENT_GOT_IP:
+        if (notificationValue & WIFI_EVENT_CONNECTED)
+        {
+          LOG_DEBUG("WiFi connected to: %s", WiFi.SSID().c_str());
+        }
+
+        if (notificationValue & WIFI_EVENT_GOT_IP)
+        {
           LOG_DEBUG("WiFi got IP: %s", WiFi.localIP().toString().c_str());
           // Both deadlines must be disarmed here. isFullyConnected() deliberately returns
           // false for WIFI_LWIP_STABILIZATION_DELAY after this point, so an association
@@ -648,13 +696,15 @@ namespace CustomWifi
           _lastWifiConnectedMillis = millis64(); // Track connection time for lwIP stabilization
           // Handle successful connection operations safely in task context
           _handleSuccessfulConnection();
-          continue; // No further action needed
+        }
 
-        case WIFI_EVENT_FORCE_RECONNECT:
+        if (notificationValue & WIFI_EVENT_FORCE_RECONNECT)
+        {
           _forceReconnectInternal();
-          continue; // No further action needed
+        }
 
-        case WIFI_EVENT_CREDENTIALS_CLEARED:
+        if (notificationValue & WIFI_EVENT_CREDENTIALS_CLEARED)
+        {
           // resetWifi() erased the driver's stored credentials from another task. Bring the
           // context back in line here, where it is owned: UNPROVISIONED with the AP raised,
           // no deadlines armed and nothing left to associate to.
@@ -664,13 +714,14 @@ namespace CustomWifi
           _reconnectAttempts = 0;
           WiFi.disconnect(false);
           _feedProvisioning(WifiProvisioning::Event::CREDENTIALS_CLEARED);
-          continue; // No further action needed
+        }
 
-        case WIFI_EVENT_NEW_CREDENTIALS:
+        if (notificationValue & WIFI_EVENT_NEW_CREDENTIALS)
+        {
           if (_hasPendingCredentials)
           {
             LOG_INFO("Processing new WiFi credentials for SSID: %s", _pendingSSID);
-            
+
             // Save new credentials to NVS using esp_wifi_set_config() directly
             // This stores credentials WITHOUT triggering a connection attempt,
             // which avoids heap corruption when restarting immediately after
@@ -706,37 +757,39 @@ namespace CustomWifi
               // is the only way the user learns the password was not stored.
               _lastCredentialWriteFailed = true;
               _startStaAttempt(); // Resume trying with whatever credentials we still have
-              continue;
             }
+            else
+            {
+              _lastCredentialWriteFailed = false;
 
-            _lastCredentialWriteFailed = false;
+              // Clear pending credentials from memory
+              memset(_pendingSSID, 0, sizeof(_pendingSSID));
+              memset(_pendingPassword, 0, sizeof(_pendingPassword));
+              _hasPendingCredentials = false;
 
-            // Clear pending credentials from memory
-            memset(_pendingSSID, 0, sizeof(_pendingSSID));
-            memset(_pendingPassword, 0, sizeof(_pendingPassword));
-            _hasPendingCredentials = false;
+              // Apply without restarting. The restart existed because WiFiManager owned the
+              // connect path and could not be re-driven; this loop can. Restarting mid-
+              // provisioning would also drop the very AP the user submitted the form on.
+              LOG_INFO("New credentials saved, associating without restart");
+              _feedProvisioning(WifiProvisioning::Event::CREDENTIALS_SUBMITTED);
+              _reconnectAttempts = 0;
+              _disconnectDeadlineMs = 0;
 
-            // Apply without restarting. The restart existed because WiFiManager owned the
-            // connect path and could not be re-driven; this loop can. Restarting mid-
-            // provisioning would also drop the very AP the user submitted the form on.
-            LOG_INFO("New credentials saved, associating without restart");
-            _feedProvisioning(WifiProvisioning::Event::CREDENTIALS_SUBMITTED);
-            _reconnectAttempts = 0;
-            _disconnectDeadlineMs = 0;
+              // Never give a user-submitted attempt the post-power-cut timeout. That window
+              // exists for a router still booting after a mains cut, and a mains-wired meter
+              // reports POWERON on every boot - so a first provisioning attempt inherited it
+              // and a wrong password took five minutes to resolve instead of ten seconds.
+              // Somebody is standing in front of the device typing: their router is up.
+              _powerResetGraceUsed = true;
 
-            // Never give a user-submitted attempt the post-power-cut timeout. That window
-            // exists for a router still booting after a mains cut, and a mains-wired meter
-            // reports POWERON on every boot - so a first provisioning attempt inherited it
-            // and a wrong password took five minutes to resolve instead of ten seconds.
-            // Somebody is standing in front of the device typing: their router is up.
-            _powerResetGraceUsed = true;
-
-            WiFi.disconnect(false);
-            _startStaAttempt();
+              WiFi.disconnect(false);
+              _startStaAttempt();
+            }
           }
-          continue; // No further action needed
+        }
 
-        case WIFI_EVENT_DISCONNECTED:
+        if (notificationValue & WIFI_EVENT_DISCONNECTED)
+        {
           statistics.wifiConnectionError++;
           // Not while the SoftAP is up. _ledTask accepts on priority >= current, so this
           // pulse and the AP's fast blink are last-write-wins at PRIO_MEDIUM, and a link
@@ -764,17 +817,20 @@ namespace CustomWifi
           {
             _disconnectDeadlineMs = millis64() + WIFI_DISCONNECT_DELAY;
           }
-          break;
+        }
 
-        case WIFI_EVENT_AP_START:
+        if (notificationValue & WIFI_EVENT_AP_START)
+        {
           LOG_DEBUG("SoftAP started on %s", WiFi.softAPIP().toString().c_str());
-          continue;
+        }
 
-        case WIFI_EVENT_AP_STACONNECTED:
+        if (notificationValue & WIFI_EVENT_AP_STACONNECTED)
+        {
           LOG_DEBUG("SoftAP client connected (%d now associated)", WiFi.softAPgetStationNum());
-          continue;
+        }
 
-        case WIFI_EVENT_AP_STADISCONNECTED:
+        if (notificationValue & WIFI_EVENT_AP_STADISCONNECTED)
+        {
           LOG_DEBUG("SoftAP client disconnected (%d still associated)", WiFi.softAPgetStationNum());
           // Nothing is watching any more, so the grace window has already delivered whatever
           // it was going to deliver. Only meaningful while the AP is up: the driver also
@@ -783,18 +839,14 @@ namespace CustomWifi
           if (_apRaised && WiFi.softAPgetStationNum() == 0) {
             _feedProvisioning(WifiProvisioning::Event::AP_LAST_CLIENT_LEFT);
           }
-          continue;
-
-        default:
-          // Handle unknown WiFi events for debugging
-          if (notificationValue >= 100) { // WiFi events are >= 100
-            LOG_DEBUG("Unknown WiFi event received: %lu", notificationValue);
-          } else {
-            // Legacy notification or timeout - treat as disconnection check
-            LOG_DEBUG("WiFi periodic check or timeout");
-          }
-          break;
         }
+
+        if (notificationValue & WIFI_EVENT_UNKNOWN)
+        {
+          LOG_DEBUG("Unknown WiFi event received: %d", (int)_lastUnknownWifiEvent);
+        }
+
+        continue; // At least one bit was handled this wakeup; the timeout branch below is not it
       }
       else
       {
@@ -894,7 +946,7 @@ namespace CustomWifi
     // the SoftAP comes back either way, instead of leaving the device retrying an
     // association it can no longer make with no way in.
     if (_wifiTaskHandle != NULL) {
-      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_CREDENTIALS_CLEARED, eSetValueWithOverwrite);
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_CREDENTIALS_CLEARED, eSetBits);
     }
 
     setRestartSystem("Restart after WiFi reset");
@@ -941,7 +993,7 @@ namespace CustomWifi
     _hasPendingCredentials = true;
     
     // Notify WiFi task to process new credentials
-    xTaskNotify(_wifiTaskHandle, WIFI_EVENT_NEW_CREDENTIALS, eSetValueWithOverwrite);
+    xTaskNotify(_wifiTaskHandle, WIFI_EVENT_NEW_CREDENTIALS, eSetBits);
     
     // Return immediately - actual connection happens asynchronously in WiFi task
     // This prevents blocking the web server and avoids conflicts with event handlers
@@ -1182,7 +1234,11 @@ namespace CustomWifi
                (unsigned long)(_connectTimeoutMs / 1000UL));
     }
 
+    // Guarded so a concurrent diagnostics read can never see a torn buffer; see the
+    // declaration comment on _disconnectDiagMux.
+    taskENTER_CRITICAL(&_disconnectDiagMux);
     _readStoredSsid(_lastAttemptedSSID, sizeof(_lastAttemptedSSID));
+    taskEXIT_CRITICAL(&_disconnectDiagMux);
     LOG_INFO("Starting WiFi association attempt to '%s'", _lastAttemptedSSID);
 
     // WiFi.begin() calls esp_wifi_set_config() internally, which ESP-IDF refuses while a
@@ -1580,7 +1636,7 @@ namespace CustomWifi
     LOG_DEBUG("Stopping WiFi task");
 
     // Send shutdown notification using the special shutdown event (cannot use standard stopTaskGracefully)
-    xTaskNotify(_wifiTaskHandle, WIFI_EVENT_SHUTDOWN, eSetValueWithOverwrite);
+    xTaskNotify(_wifiTaskHandle, WIFI_EVENT_SHUTDOWN, eSetBits);
 
     // Wait with timeout for clean shutdown using standard pattern
     uint64_t startTime = millis64();
