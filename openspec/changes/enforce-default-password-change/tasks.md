@@ -72,4 +72,4 @@ One mid-test outage was investigated and cleared: the device restarted at 13:20 
 ## 10. Land it
 
 - [x] 10.1 Committed in five chunks: the pure lib + tests; the enforcement (flag, middleware, gate page, route); the client-side recovery; the docs; the AP-origin fix. The enforcement chunk spans `customserver.{h,cpp}` + the embedded page because the route registration cannot compile without the page - splitting it further would have left a non-building tree.
-- [ ] 10.2 Open the PR against `development` with `Closes #214`, a label, and no milestone. Record which e2e steps were run on hardware and which were not.
+- [x] 10.2 PR #221 against `development`, labelled `enhancement` + `robustness`, no milestone, `Closes #214`. Records what was verified on hardware and what was not (browser pass, real AP path).
