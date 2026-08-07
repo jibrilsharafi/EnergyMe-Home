@@ -81,6 +81,13 @@
 #define HTTP_MAX_CONTENT_LENGTH_PASSWORD 256
 #define HTTP_MAX_CONTENT_LENGTH_NETWORK 256
 #define HTTP_MAX_CONTENT_LENGTH_ISSUES_ACK 128
+#define HTTP_MAX_CONTENT_LENGTH_NVS_ENTRY 8192 // Large enough for a cert/key PEM value
+
+// Dev-only NVS browser/editor (see _serveNvsDebugEndpoints)
+#define NVS_DEBUG_MAX_ENTRIES 512   // 64 KB nvs partition / ~32 B min entry size, generous upper bound
+#define NVS_DEBUG_MAX_NAMESPACES 32
+#define NVS_NAME_BUFFER_SIZE 16     // NVS namespace/key names are capped at 15 chars + null
+#define NVS_DEBUG_STRING_VALUE_BUFFER_SIZE 512 // Non-sensitive string values only; cert/key are redacted
 
 class CustomMiddleware : public AsyncMiddleware {
 public:

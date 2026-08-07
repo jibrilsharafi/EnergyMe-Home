@@ -5,6 +5,10 @@
 #include "taskprofiler.h"
 #include "duration_format.h"
 #include "shadow.h"
+#include "factory_keys.h"
+#include <Preferences.h>
+#include "nvs.h"
+#include "nvs_flash.h"
 
 namespace CustomServer
 {
@@ -88,6 +92,7 @@ namespace CustomServer
     static void _serveShadowDevEndpoints();
     static void _serveCrashTestEndpoints();
     static void __attribute__((noinline)) _crashTestStackOverflow(uint32_t depth);
+    static void _serveNvsDebugEndpoints();
 #endif
     
     // Authentication endpoints
@@ -626,6 +631,7 @@ namespace CustomServer
 #ifdef ENV_DEV
         _serveShadowDevEndpoints();
         _serveCrashTestEndpoints();
+        _serveNvsDebugEndpoints();
 #endif
         _serveCustomMqttEndpoints();
         _serveInfluxDbEndpoints();
@@ -2004,11 +2010,241 @@ namespace CustomServer
         LOG_DEBUG("Registered dev-only shadow delta + command injection endpoints");
     }
 
-    // Recursive helper for the stack-overflow crash trigger below. noinline so
-    // -O2 release-style builds can't flatten the recursion into a loop; not
-    // that this ever compiles into a prod build, but keep it honest.
-    // Deliberately unbounded - the MAX_LOOP_ITERATIONS convention doesn't
-    // apply here since running out of stack IS the point.
+    static const char* _nvsTypeToString(nvs_type_t type) {
+        switch (type) {
+            case NVS_TYPE_U8:   return "u8";
+            case NVS_TYPE_I8:   return "i8";
+            case NVS_TYPE_U16:  return "u16";
+            case NVS_TYPE_I16:  return "i16";
+            case NVS_TYPE_U32:  return "u32";
+            case NVS_TYPE_I32:  return "i32";
+            case NVS_TYPE_U64:  return "u64";
+            case NVS_TYPE_I64:  return "i64";
+            case NVS_TYPE_STR:  return "str";
+            case NVS_TYPE_BLOB: return "blob";
+            default:            return "unknown";
+        }
+    }
+
+    // Keys never returned by value (only presence/type) - private key material and certs.
+    static bool _isNvsValueSensitive(const char* key) {
+        return strcmp(key, FACTORY_KEY_CERT_PEM) == 0 || strcmp(key, FACTORY_KEY_KEY_PEM) == 0;
+    }
+
+    // Dev-only: generic NVS namespace/key browser and editor, for inspecting and
+    // recovering bench devices without a full manufacturing reflash.
+    // GET    /api/v1/debug/nvs/namespaces                 -> [{"namespace":"factory_ns","entryCount":3}, ...]
+    // GET    /api/v1/debug/nvs/entries?namespace=X         -> [{"key":"pcb_revision","type":"str","value":"v5.0"}, ...]
+    // POST   /api/v1/debug/nvs/entry {"namespace":"factory_ns","key":"pcb_revision","type":"string","value":"v5.0"}
+    //        type: string (default) | i32 | u32 | i64 | u64 | float | bool
+    // DELETE /api/v1/debug/nvs/entry?namespace=X&key=Y
+    // DELETE /api/v1/debug/nvs/namespace?namespace=X       -> clears every key in the namespace
+    static void _serveNvsDebugEndpoints() {
+        server.on("/api/v1/debug/nvs/namespaces", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            char names[NVS_DEBUG_MAX_NAMESPACES][NVS_NAME_BUFFER_SIZE];
+            uint32_t counts[NVS_DEBUG_MAX_NAMESPACES];
+            size_t namespaceCount = 0;
+
+            nvs_iterator_t it = nullptr;
+            esp_err_t err = nvs_entry_find(NVS_DEFAULT_PART_NAME, NULL, NVS_TYPE_ANY, &it);
+            size_t iterations = 0;
+            while (err == ESP_OK && it != nullptr && iterations < NVS_DEBUG_MAX_ENTRIES) {
+                nvs_entry_info_t info;
+                nvs_entry_info(it, &info);
+
+                bool found = false;
+                for (size_t i = 0; i < namespaceCount; i++) {
+                    if (strcmp(names[i], info.namespace_name) == 0) {
+                        counts[i]++;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found && namespaceCount < NVS_DEBUG_MAX_NAMESPACES) {
+                    snprintf(names[namespaceCount], NVS_NAME_BUFFER_SIZE, "%s", info.namespace_name);
+                    counts[namespaceCount] = 1;
+                    namespaceCount++;
+                }
+
+                err = nvs_entry_next(&it);
+                iterations++;
+            }
+            nvs_release_iterator(it);
+
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            JsonArray arr = doc.to<JsonArray>();
+            for (size_t i = 0; i < namespaceCount; i++) {
+                JsonObject obj = arr.add<JsonObject>();
+                obj["namespace"] = names[i];
+                obj["entryCount"] = counts[i];
+            }
+            _sendJsonResponse(request, doc); });
+
+        server.on("/api/v1/debug/nvs/entries", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            if (!request->hasParam("namespace")) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing 'namespace' query parameter");
+                return;
+            }
+            char targetNamespace[NVS_NAME_BUFFER_SIZE];
+            snprintf(targetNamespace, sizeof(targetNamespace), "%s", request->getParam("namespace")->value().c_str());
+
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            JsonArray arr = doc.to<JsonArray>();
+
+            nvs_iterator_t it = nullptr;
+            esp_err_t err = nvs_entry_find(NVS_DEFAULT_PART_NAME, targetNamespace, NVS_TYPE_ANY, &it);
+            size_t iterations = 0;
+            while (err == ESP_OK && it != nullptr && iterations < NVS_DEBUG_MAX_ENTRIES) {
+                nvs_entry_info_t info;
+                nvs_entry_info(it, &info);
+
+                JsonObject obj = arr.add<JsonObject>();
+                obj["key"] = info.key;
+                obj["type"] = _nvsTypeToString(info.type);
+
+                if (_isNvsValueSensitive(info.key)) {
+                    obj["value"] = "<redacted>";
+                } else if (info.type == NVS_TYPE_STR) {
+                    Preferences prefs;
+                    if (prefs.begin(targetNamespace, true)) {
+                        char value[NVS_DEBUG_STRING_VALUE_BUFFER_SIZE];
+                        prefs.getString(info.key, value, sizeof(value));
+                        obj["value"] = value;
+                        prefs.end();
+                    }
+                } else if (info.type == NVS_TYPE_I32) {
+                    Preferences prefs;
+                    if (prefs.begin(targetNamespace, true)) { obj["value"] = prefs.getInt(info.key); prefs.end(); }
+                } else if (info.type == NVS_TYPE_U32) {
+                    Preferences prefs;
+                    if (prefs.begin(targetNamespace, true)) { obj["value"] = prefs.getUInt(info.key); prefs.end(); }
+                } else if (info.type == NVS_TYPE_I64) {
+                    Preferences prefs;
+                    if (prefs.begin(targetNamespace, true)) { obj["value"] = prefs.getLong64(info.key); prefs.end(); }
+                } else if (info.type == NVS_TYPE_U64) {
+                    Preferences prefs;
+                    if (prefs.begin(targetNamespace, true)) { obj["value"] = prefs.getULong64(info.key); prefs.end(); }
+                }
+                // Narrower int types and blobs: key/type only, value decode not worth the branches here.
+
+                err = nvs_entry_next(&it);
+                iterations++;
+            }
+            nvs_release_iterator(it);
+
+            _sendJsonResponse(request, doc); });
+
+        static AsyncCallbackJsonWebHandler *writeEntryHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/debug/nvs/entry",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (!_validateRequest(request, "POST", HTTP_MAX_CONTENT_LENGTH_NVS_ENTRY)) return;
+
+                const char *ns = json["namespace"].as<const char *>();
+                const char *key = json["key"].as<const char *>();
+                if (!ns || !key || json["value"].isNull()) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Body requires 'namespace', 'key', 'value'");
+                    return;
+                }
+                const char *type = json["type"].is<const char *>() ? json["type"].as<const char *>() : "string";
+
+                Preferences prefs;
+                if (!prefs.begin(ns, false)) {
+                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to open namespace");
+                    return;
+                }
+
+                bool ok = true;
+                if (strcmp(type, "string") == 0) {
+                    ok = prefs.putString(key, json["value"].as<const char *>()) > 0;
+                } else if (strcmp(type, "i32") == 0) {
+                    ok = prefs.putInt(key, json["value"].as<int32_t>()) > 0;
+                } else if (strcmp(type, "u32") == 0) {
+                    ok = prefs.putUInt(key, json["value"].as<uint32_t>()) > 0;
+                } else if (strcmp(type, "i64") == 0) {
+                    ok = prefs.putLong64(key, json["value"].as<int64_t>()) > 0;
+                } else if (strcmp(type, "u64") == 0) {
+                    ok = prefs.putULong64(key, json["value"].as<uint64_t>()) > 0;
+                } else if (strcmp(type, "float") == 0) {
+                    ok = prefs.putFloat(key, json["value"].as<float>()) > 0;
+                } else if (strcmp(type, "bool") == 0) {
+                    ok = prefs.putBool(key, json["value"].as<bool>()) > 0;
+                } else {
+                    ok = false;
+                }
+                prefs.end();
+
+                if (ok) {
+                    LOG_WARNING("Dev endpoint: wrote NVS %s::%s (type=%s)", ns, key, type);
+                    _sendSuccessResponse(request, "NVS entry written");
+                } else {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Unknown type, or write failed");
+                }
+            });
+        server.addHandler(writeEntryHandler);
+
+        server.on("/api/v1/debug/nvs/entry", HTTP_DELETE, [](AsyncWebServerRequest *request)
+                  {
+            if (!_validateRequest(request, "DELETE")) return;
+            if (!request->hasParam("namespace") || !request->hasParam("key")) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing 'namespace' or 'key' query parameter");
+                return;
+            }
+            char ns[NVS_NAME_BUFFER_SIZE];
+            char key[NVS_NAME_BUFFER_SIZE];
+            snprintf(ns, sizeof(ns), "%s", request->getParam("namespace")->value().c_str());
+            snprintf(key, sizeof(key), "%s", request->getParam("key")->value().c_str());
+
+            Preferences prefs;
+            if (!prefs.begin(ns, false)) {
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to open namespace");
+                return;
+            }
+            bool ok = prefs.remove(key);
+            prefs.end();
+
+            if (ok) {
+                LOG_WARNING("Dev endpoint: removed NVS %s::%s", ns, key);
+                _sendSuccessResponse(request, "NVS entry removed");
+            } else {
+                _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "Key not found");
+            } });
+
+        server.on("/api/v1/debug/nvs/namespace", HTTP_DELETE, [](AsyncWebServerRequest *request)
+                  {
+            if (!_validateRequest(request, "DELETE")) return;
+            if (!request->hasParam("namespace")) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing 'namespace' query parameter");
+                return;
+            }
+            char ns[NVS_NAME_BUFFER_SIZE];
+            snprintf(ns, sizeof(ns), "%s", request->getParam("namespace")->value().c_str());
+
+            Preferences prefs;
+            if (!prefs.begin(ns, false)) {
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to open namespace");
+                return;
+            }
+            bool ok = prefs.clear();
+            prefs.end();
+
+            if (ok) {
+                LOG_WARNING("Dev endpoint: cleared NVS namespace %s", ns);
+                _sendSuccessResponse(request, "NVS namespace cleared");
+            } else {
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to clear namespace");
+            } });
+
+        LOG_DEBUG("Registered dev-only NVS management endpoints");
+    }
+
+    // noinline so an optimising build can't flatten the recursion into a loop.
+    // Deliberately unbounded - the MAX_LOOP_ITERATIONS convention doesn't apply
+    // here since running out of stack IS the point.
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Winfinite-recursion"
     static void __attribute__((noinline)) _crashTestStackOverflow(uint32_t depth) {
