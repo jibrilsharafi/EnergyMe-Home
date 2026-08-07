@@ -17,7 +17,7 @@ Usage:
 
 Example:
     python crash_dump_analyzer.py -H 192.168.1.100
-    python crash_dump_analyzer.py -H 192.168.1.100 --crash-id 1754467200123
+    python crash_dump_analyzer.py -H 192.168.1.100 --crash-id 3f8a1c02d94b7e15
     python crash_dump_analyzer.py -H 192.168.1.100 -u admin -p secret123 --clear
 """
 
@@ -33,6 +33,10 @@ import hashlib
 
 from _device_auth import add_device_args, resolve_credentials
 
+# Unix ms for 2001-09-09. Records archived before NTP carry a few thousand ms
+# instead, which is not a date worth formatting.
+UNSET_CLOCK_THRESHOLD_MS = 1_000_000_000_000
+
 
 class CrashDumpAnalyzer:
     def __init__(self, device_ip: str, username: Optional[str] = None, password: Optional[str] = None,
@@ -43,6 +47,11 @@ class CrashDumpAnalyzer:
         # Explicit ELF wins over both the releases lookup and the default build
         # path, which is what makes non-default environments usable here
         self.elf_path = elf_path
+        # Resolved on first use: the releases scan opens and parses every
+        # metadata.json, and both the backtrace decode and the esp-idf analysis
+        # ask for the same ELF
+        self._resolved_elf: Optional[str] = None
+        self._resolved_elf_cached = False
 
         # Set up authentication if provided
         if username and password:
@@ -141,7 +150,7 @@ class CrashDumpAnalyzer:
             print(f"❌ Error running debug command: {e}")
             return None
 
-    def get_crash_info(self, crash_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    def get_crash_info(self, crash_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Fetch one archived crash record from the device.
 
         The device stores each crash as frozen metadata plus a gzipped dump, so
@@ -195,12 +204,15 @@ class CrashDumpAnalyzer:
         if crash_info.get('crashId'):
             print(f"Crash ID: {crash_info['crashId']}")
         # Written before NTP on a cold boot, so a near-epoch value is expected
-        # rather than wrong - show it raw in that case instead of pretending
+        # rather than wrong - show it raw in that case. Tested on the raw value
+        # because fromtimestamp() itself raises OSError on a near-epoch input in
+        # any timezone west of UTC, which would abort the run before the dump is
+        # even downloaded.
         timestamp = crash_info.get('timestamp')
         if timestamp:
-            archived_at = datetime.fromtimestamp(timestamp / 1000)
-            when = archived_at.strftime('%Y-%m-%d %H:%M:%S') if archived_at.year > 2000 \
-                else f"{timestamp} ms - clock was not set when this was archived"
+            when = f"{timestamp} ms - clock was not set when this was archived"
+            if timestamp > UNSET_CLOCK_THRESHOLD_MS:
+                when = datetime.fromtimestamp(timestamp / 1000).strftime('%Y-%m-%d %H:%M:%S')
             print(f"Archived at: {when}")
         print(f"Firmware Version: {crash_info.get('firmwareVersion', 'Unknown')}")
         print(f"Reset Reason: {crash_info.get('resetReason', 'Unknown')}")
@@ -230,9 +242,6 @@ class CrashDumpAnalyzer:
                 if addresses:
                     print(f"Addresses: {' '.join([f'0x{addr:08x}' for addr in addresses])}")
                 
-                # Built here rather than taken from the device: the ELF is the
-                # one resolved locally (--elf, or the releases lookup), which is
-                # the only path that means anything on this machine
                 debug_cmd = self._build_addr2line_command(addresses, crash_info)
                 if debug_cmd:
                     print(f"\n🔧 DEBUG COMMAND:")
@@ -259,7 +268,7 @@ class CrashDumpAnalyzer:
         joined = ' '.join(f'0x{addr:08x}' for addr in addresses)
         return f'xtensa-esp32-elf-addr2line -pfC -e "{elf}" {joined}'
 
-    def download_core_dump(self, crash_id: Optional[int] = None) -> Optional[bytes]:
+    def download_core_dump(self, crash_id: Optional[str] = None) -> Optional[bytes]:
         """Download one archived core dump and return the raw ELF bytes.
 
         The endpoint serves the stored gzip file in a single response and marks
@@ -411,12 +420,19 @@ class CrashDumpAnalyzer:
 
     def find_matching_elf_in_releases(self, device_sha256: str,
                                       firmware_version: Optional[str] = None) -> Optional[str]:
-        """Find the matching ELF file in the releases folder.
+        """Find the matching ELF file in the releases folder, caching the result.
 
         Crash payloads carry the firmware version explicitly, so a direct version
         match is tried first. The SHA256 prefix scan remains the fallback, both
         for records from firmware predating that field and as a cross-check.
         """
+        if not self._resolved_elf_cached:
+            self._resolved_elf = self._scan_releases_for_elf(device_sha256, firmware_version)
+            self._resolved_elf_cached = True
+        return self._resolved_elf
+
+    def _scan_releases_for_elf(self, device_sha256: str,
+                               firmware_version: Optional[str] = None) -> Optional[str]:
         releases_dir = "releases"
 
         if not os.path.exists(releases_dir):
@@ -744,7 +760,7 @@ class CrashDumpAnalyzer:
             print(f"❌ Error clearing archived crashes: {e}")
             return False
 
-    def analyze(self, crash_id: Optional[int] = None) -> Optional[str]:
+    def analyze(self, crash_id: Optional[str] = None) -> Optional[str]:
         """Main analysis function. Always saves to temp and runs analysis automatically."""
         print(f"🚀 Starting crash dump analysis for {self.device_ip}")
 
@@ -789,7 +805,7 @@ def main():
         description="Fetch and analyze a crash/core dump from an EnergyMe-Home device",
     )
     add_device_args(parser)
-    parser.add_argument('--crash-id', type=int, default=None,
+    parser.add_argument('--crash-id', default=None,
                        help='crashId of the archived record to analyze (default: the oldest)')
     parser.add_argument('--clear', action='store_true',
                        help='Delete every archived crash from the device after analysis')
