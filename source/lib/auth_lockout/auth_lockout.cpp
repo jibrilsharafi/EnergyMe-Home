@@ -88,8 +88,8 @@ bool isLocked(const Table &table, uint32_t address, uint64_t nowMs, uint32_t &re
     return true;
 }
 
-void recordFailure(Table &table, uint32_t address, uint64_t nowMs) {
-    if (address == AUTH_LOCKOUT_LOOPBACK_IP) return;
+bool recordFailure(Table &table, uint32_t address, uint64_t nowMs) {
+    if (address == AUTH_LOCKOUT_LOOPBACK_IP) return false;
 
     Entry *entry = findEntry(table, address);
     if (entry == nullptr) entry = &claimSlot(table, address, nowMs);
@@ -105,7 +105,7 @@ void recordFailure(Table &table, uint32_t address, uint64_t nowMs) {
 
     // Already locked: nothing to escalate until this one expires, and not counting keeps a
     // flood of requests during a lockout from inflating the next one.
-    if (entry->lockedUntilMs != 0) return;
+    if (entry->lockedUntilMs != 0) return false;
 
     if (entry->consecutiveFailures < 0xFF) entry->consecutiveFailures++;
 
@@ -113,7 +113,10 @@ void recordFailure(Table &table, uint32_t address, uint64_t nowMs) {
         if (entry->lockCount < 0xFFFF) entry->lockCount++;
         entry->lockedUntilMs = nowMs + (uint64_t)lockoutSecondsFor(entry->lockCount) * 1000ULL;
         entry->consecutiveFailures = 0;
+        return true;  // just crossed into locked - the caller logs/counts this once
     }
+
+    return false;
 }
 
 void recordSuccess(Table &table, uint32_t address, uint64_t nowMs) {

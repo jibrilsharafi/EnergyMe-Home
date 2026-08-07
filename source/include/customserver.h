@@ -135,6 +135,32 @@ public:
     }
 };
 
+// Applies the generic request ceiling to UNAUTHENTICATED requests only.
+//
+// A local-first meter's authenticated caller is its owner; throttling their dashboard, Home
+// Assistant, Modbus poller and automation against a shared global budget is a misfeature, and
+// the global limiter would let one busy legitimate client 429 another. So authenticated
+// traffic (anything carrying an Authorization header) is never rate-limited here. What remains
+// is the actual DoS surface - credential-less request floods that could wedge the AsyncTCP
+// task - which is exactly what the ceiling should bound.
+//
+// This is not the brute-force defence: a wrong-password guess carries an Authorization header,
+// so it skips this and is handled by the per-source lockout instead. This only sees the
+// credential-less first legs of handshakes and unauthenticated probes/floods, which is why a
+// generous global ceiling is harmless here.
+class UnauthenticatedRateLimitMiddleware : public AsyncMiddleware {
+public:
+    void setInner(AsyncRateLimitMiddleware *inner) { _inner = inner; }
+
+    void run(AsyncWebServerRequest *request, ArMiddlewareNext next) override {
+        if (request->hasHeader("Authorization") || _inner == nullptr) { next(); return; }
+        _inner->run(request, next);
+    }
+
+private:
+    AsyncRateLimitMiddleware *_inner = nullptr;
+};
+
 // Throttles repeated failed logins per source address.
 //
 // Both halves of the job in one middleware: it refuses a locked-out source before the chain
@@ -173,7 +199,13 @@ public:
             // loads. Only a rejection of credentials that were actually supplied is a failed
             // login - and an attacker must supply credentials to test a password, so nothing
             // defensive is given up. Credential-less flooding is the rate limiter's job.
-            if (request->hasHeader("Authorization")) AuthLockout::recordFailure(_table, address, nowMs);
+            if (request->hasHeader("Authorization") && AuthLockout::recordFailure(_table, address, nowMs)) {
+                // Log and count once, on the failure that crosses the threshold - so a
+                // sustained attack is visible in the log and, via the counter, surfaces as a
+                // device issue the owner (and the cloud shadow) can see.
+                statistics.webServerAuthLockouts++;
+                LOG_WARNING("Locked out %s after repeated failed logins", request->client()->remoteIP().toString().c_str());
+            }
             return;
         }
 

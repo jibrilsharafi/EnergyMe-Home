@@ -54,6 +54,39 @@ void test_the_threshold_locks(void) {
     TEST_ASSERT_EQUAL_UINT32(AUTH_LOCKOUT_BASE_SECONDS, retryAfter);
 }
 
+// recordFailure returns true only on the failure that crosses the threshold, so the caller
+// can log and count a lockout exactly once - not on every failure, not on every request while
+// already locked.
+void test_recordFailure_signals_the_lockout_edge_exactly_once(void) {
+    for (int i = 0; i < AUTH_LOCKOUT_MAX_FAILURES - 1; i++) {
+        TEST_ASSERT_FALSE(recordFailure(table, kAlice, 0));  // below threshold
+    }
+    TEST_ASSERT_TRUE(recordFailure(table, kAlice, 0));       // the crossing failure
+
+    // Hammering while locked must not re-signal.
+    for (int i = 0; i < 20; i++) {
+        TEST_ASSERT_FALSE(recordFailure(table, kAlice, 100));
+    }
+}
+
+// A fresh lockout after an expired one signals again - it is a new event worth logging.
+void test_recordFailure_signals_again_on_a_later_lockout(void) {
+    uint32_t first = failUntilLocked(kAlice, 0);
+    uint64_t afterExpiry = (uint64_t)first * 1000ULL + 1000ULL;
+
+    for (int i = 0; i < AUTH_LOCKOUT_MAX_FAILURES - 1; i++) {
+        TEST_ASSERT_FALSE(recordFailure(table, kAlice, afterExpiry));
+    }
+    TEST_ASSERT_TRUE(recordFailure(table, kAlice, afterExpiry));
+}
+
+// Loopback never locks, so it never signals.
+void test_loopback_recordFailure_never_signals(void) {
+    for (int i = 0; i < AUTH_LOCKOUT_MAX_FAILURES * 5; i++) {
+        TEST_ASSERT_FALSE(recordFailure(table, AUTH_LOCKOUT_LOOPBACK_IP, (uint64_t)i));
+    }
+}
+
 // --- Success clears ------------------------------------------------------------------
 
 void test_success_clears_the_count_at_every_point_below_the_threshold(void) {
@@ -260,6 +293,9 @@ int main(int, char **) {
     RUN_TEST(test_a_fresh_source_is_not_locked);
     RUN_TEST(test_one_short_of_the_threshold_does_not_lock);
     RUN_TEST(test_the_threshold_locks);
+    RUN_TEST(test_recordFailure_signals_the_lockout_edge_exactly_once);
+    RUN_TEST(test_recordFailure_signals_again_on_a_later_lockout);
+    RUN_TEST(test_loopback_recordFailure_never_signals);
 
     RUN_TEST(test_success_clears_the_count_at_every_point_below_the_threshold);
     RUN_TEST(test_success_also_clears_the_escalation_history);

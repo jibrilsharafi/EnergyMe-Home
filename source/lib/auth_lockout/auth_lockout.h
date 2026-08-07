@@ -68,13 +68,15 @@ void init(Table &table);
 // Loopback is never locked out (AUTH_LOCKOUT_LOOPBACK_IP).
 bool isLocked(const Table &table, uint32_t address, uint64_t nowMs, uint32_t &retryAfterSeconds);
 
-// Records one genuine credential failure.
+// Records one genuine credential failure. Returns true only on the transition into a locked
+// state - the single failure that crosses the threshold - so the caller can log and count a
+// lockout exactly once, not on every failure and not on every subsequent request while locked.
 //
 // "Genuine" is the caller's job and it is the crux of the whole feature: a 401 answering a
 // request that carried no credentials is the ordinary opening leg of a digest handshake, and
 // counting those would lock out every normal user within a few page loads. Only pass a
 // rejection of credentials that were actually supplied.
-void recordFailure(Table &table, uint32_t address, uint64_t nowMs);
+bool recordFailure(Table &table, uint32_t address, uint64_t nowMs);
 
 // Records a successful authentication, clearing the source outright - a user who mistypes and
 // then succeeds carries no penalty forward.
