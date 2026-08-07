@@ -10,8 +10,8 @@
 #include <esp_wifi.h>
 #include <ESPmDNS.h>
 #include <mbedtls/sha256.h>
+#include <DNSServer.h>
 #include <WiFi.h>
-#include <WiFiManager.h>
 #include <WiFiClientSecure.h>
 
 #include "awsconfig.h"
@@ -20,25 +20,28 @@
 #include "globals.h"
 #include "led.h"
 #include "utils.h"
+#include "wifi_provisioning.h" // Pure provisioning decision logic (Arduino-free, host-testable)
 
 #define WIFI_TASK_NAME "wifi_task"
-#define WIFI_TASK_STACK_SIZE (8 * 1024) // Week-long high-water mark hit 5580 bytes (only 564 bytes free at 6 KB) - bumped to 8 KB for ~30% safety margin on portal/credential paths
+#define WIFI_TASK_STACK_SIZE (8 * 1024) // Week-long high-water mark hit 5580 bytes (only 564 bytes free at 6 KB) on the pre-rework task, so 8 KB for margin. Those were the WiFiManager portal paths and they are gone; the AP lifecycle, DNS and scan paths that replaced them have not been measured on hardware
 #define WIFI_TASK_PRIORITY 5
 
 #define WIFI_CONFIG_PORTAL_SSID "EnergyMe"
 #define WIFI_HOSTNAME_PREFIX "energyme-home"
 
 #define WIFI_CONNECT_TIMEOUT_SECONDS 10
-#define WIFI_CONNECT_TIMEOUT_POWER_RESET_SECONDS (5 * 60)  // Extended timeout after power reset (router likely rebooting)
-#define WIFI_PORTAL_TIMEOUT_SECONDS (5 * 60)        // Leave enough time to avoid the user being locked out while providing the credentials, but not too high to ensure we retry the connection to the saved WiFi
-#define WIFI_INITIAL_MAX_RECONNECT_ATTEMPTS 3       // How many times to try connecting (with timeout) before giving up
-#define WIFI_MAX_CONSECUTIVE_RECONNECT_ATTEMPTS 5   // Maximum WiFi reconnection attempts before restart
+#define WIFI_CONNECT_TIMEOUT_POWER_RESET_SECONDS (5 * 60)  // Extended timeout for the FIRST attempt after a power reset only (router likely rebooting)
+#define WIFI_CREDENTIAL_WRITE_RETRY_DELAY_MS 250    // Settle time between a disconnect and retrying esp_wifi_set_config(), which is refused while the STA is connecting
 #define WIFI_DISCONNECT_DELAY (15 * 1000)           // Delay after WiFi disconnected to allow automatic reconnection
+#define WIFI_AP_LIFECYCLE_TICK_MS (10 * 1000)       // How often the AP lifetime/grace predicates are evaluated while the SoftAP is up
+#define WIFI_SCAN_MS_PER_CHANNEL 120                // Per-channel dwell. The default (~300 ms) makes a full scan long enough that a phone on the SoftAP times out waiting
+#define WIFI_SCAN_MAX_RESULTS 30                    // Cap the JSON response; a dense apartment block can see far more than a user will scroll
+#define WIFI_SCAN_RESULTS_TTL_MS (2 * 60 * 1000)    // How long a completed result set is served before it is freed and re-scanned. The driver holds the full set in internal RAM, so it must not be kept for the rest of the uptime
 #define WIFI_STABLE_CONNECTION_DURATION (5 * 60 * 1000)    // Duration of uninterrupted WiFi connection to reset the reconnection counter
 #define WIFI_PERIODIC_CHECK_INTERVAL (30 * 1000)    // Interval to check WiFi connection status (does not need to be too frequent since we have an event-based system)
 #define WIFI_FORCE_RECONNECT_DELAY (2 * 1000)      // Delay after forcing reconnection
 #define WIFI_LWIP_STABILIZATION_DELAY (1 * 1000)    // Delay after WiFi connection to allow lwIP network stack to stabilize (prevents DNS/UDP crashes)
-#define MAX_LOG_SIZE_DIAGNOSTIC_FALLBACK_PAGE (8 * 1024) // Maximum log size to include in diagnostic fallback page
+#define SETUP_NETWORK_WAIT_TIMEOUT_MS (60 * 1000)   // How long setup() waits for either interface before starting the rest of the system anyway. Bounds the case where no STA link is possible and no SoftAP subnet is available, which would otherwise block the web server from ever starting
 
 // Connectivity test parameters - lightweight TCP connect to public DNS (no DNS lookup needed, rarely blocked)
 #define CONNECTIVITY_TEST_TIMEOUT_MS (3 * 1000)           // Timeout for connectivity tests
@@ -120,6 +123,49 @@ namespace CustomWifi
     void stop();
     
     bool isFullyConnected(bool requireInternet = false);
+
+    // True when the SoftAP is up and has an address, so the web server is reachable
+    // on it regardless of the STA link.
+    bool isApServing();
+
+    // Lock-free check against the SoftAP's own address, published by the WiFi task when the AP
+    // is raised and cleared when it comes down. Safe from any task, including the AsyncTCP task
+    // inside a request filter: a plain volatile load and a compare, with no esp_netif call,
+    // unlike WiFi.softAPIP(). Always false while no AP is up.
+    bool isApAddress(const IPAddress &address);
+
+    // STA connected OR serving on the SoftAP. This, not isFullyConnected(), is what
+    // callers should gate on when the question is "can anyone reach this device":
+    // a device serving on the AP with no upstream network is working as intended,
+    // and treating it as unhealthy restarts it every ~150 s.
+    bool isNetworkServiceable();
+
+    // Lock-free snapshot of the provisioning state. Safe to call from any task, including
+    // the AsyncTCP task inside a request filter: it is a plain load of a uint8_t-backed
+    // enum, no mutex and no NVS. The Phase 4 auth carve-out gates on this.
+    WifiProvisioning::State getProvisioningState();
+
+    // SSID the driver has stored, i.e. what WiFi.begin() would try. Empty when unprovisioned.
+    void getStoredSsid(char *out, size_t outSize);
+
+    // True when the last credential submission could not be written to the driver.
+    // setCredentials() answers as soon as the request is queued, so the HTTP 200 is sent
+    // before the write is attempted; without surfacing this, a rejected write looks like
+    // success to the user and the password is silently discarded.
+    bool lastCredentialWriteFailed();
+
+    // Async network scan for the provisioning UI. startScan() returns false when a scan
+    // cannot be started right now (an association attempt is in flight); the results call
+    // reports status "running" / "complete" / "unavailable" so the client can poll.
+    // `forceRescan` is the explicit "Scan again" press: it retires a cached set that would
+    // otherwise be re-served unchanged. Polling must leave it false, or a client would keep
+    // restarting the scan it is waiting on.
+    bool startScan();
+    void getScanResultsAsJson(JsonDocument &jsonDocument, bool forceRescan = false);
+
+    // Last association failure: reason code and string, SSID, BSSID, RSSI. These were only
+    // ever visible through the removed WiFiManager /diagnostic page (D11).
+    void getDisconnectDiagnosticsAsJson(JsonDocument &jsonDocument);
     bool testConnectivity(); // Test actual network connectivity (check gateway and DNS)
     void forceReconnect();   // Force immediate WiFi reconnection
 

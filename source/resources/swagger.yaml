@@ -1125,16 +1125,166 @@ paths:
         '200':
           $ref: '#/components/responses/Success'
 
+  /api/v1/network/wifi/scan:
+    get:
+      summary: Scan for WiFi networks
+      description: |
+        Results of an asynchronous scan. The scan is never run inline, so this returns
+        immediately with a `status` of `running`, `complete` or `unavailable`; poll until
+        `complete`.
+
+        `unavailable` means a scan could not be started right now, which happens while an
+        association attempt is in flight.
+
+        Reachable without authentication when the request arrives on the SoftAP of a device
+        that has no stored credentials.
+      tags:
+        - Network
+      parameters:
+        - name: refresh
+          in: query
+          required: false
+          description: |
+            Present on an explicit rescan, absent while polling. A completed result set is
+            otherwise served from cache until it goes stale, so without this a "scan again"
+            action never touches the radio. Ignored when a scan is already running, and when
+            the radio is busy associating the cached set is served rather than discarded.
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Scan state and, when complete, the networks found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [running, complete, unavailable]
+                  ageMs:
+                    type: integer
+                    description: Milliseconds since the scan that produced these results started
+                  networks:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        ssid: { type: string }
+                        rssi: { type: integer }
+                        channel: { type: integer }
+                        secure: { type: boolean }
+
+  /api/v1/network/wifi/status:
+    get:
+      summary: Provisioning and connection status
+      description: |
+        What the device is doing, where to reach it, and which device it is. Read by the
+        setup page before any authenticated endpoint is reachable.
+
+        Reachable without authentication when the request arrives on the SoftAP of a device
+        that is `UNPROVISIONED`, or that is in `GRACE` - the window right after a successful
+        connect where the AP is deliberately held up so the client can see where the device
+        went.
+
+        **Polling this to learn the outcome of a credentials submission works, but only
+        because of that GRACE carve-out, and the sequence matters.** The moment credentials
+        are accepted the device leaves `UNPROVISIONED` for `STA_CONNECTING`, which is not
+        carved out, so every poll during the attempt itself gets 401 - that is expected, not
+        an error, and simply means "still trying". The attempt resolves into one of two
+        states that both reopen the carve-out: success reaches `GRACE` (`connected: true`),
+        failure falls back to `UNPROVISIONED` (`state: 0`, `connected: false`). A client MUST
+        treat a 401 during this window as "no verdict yet", not as failure, and MUST NOT
+        assume success merely because polling resumes returning 200 - check `connected`.
+      tags:
+        - Network
+      responses:
+        '200':
+          description: Current state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  state:
+                    type: integer
+                    description: 0 UNPROVISIONED, 1 STA_CONNECTING, 2 AP_ASSIST, 3 GRACE, 4 STA_ONLY
+                  connected: { type: boolean }
+                  apServing: { type: boolean }
+                  ssid: { type: string }
+                  ip: { type: string }
+                  apIp: { type: string }
+                  hostname: { type: string }
+                  rssi: { type: integer }
+                  deviceId:
+                    type: string
+                    description: Also the SoftAP SSID suffix, so this exposes nothing new
+                  firmwareVersion: { type: string }
+                  uptime:
+                    type: integer
+                    format: int64
+                    description: Milliseconds since boot
+                  credentialWriteFailed:
+                    type: boolean
+                    description: >
+                      True when the last credentials submission could not be written to the
+                      WiFi driver. The submission endpoint answers as soon as the request is
+                      queued, so its 200 does not mean the credentials were stored; this is
+                      where that outcome is reported.
+
+  /api/v1/network/wifi/diagnostics:
+    get:
+      summary: Last association failure
+      description: |
+        Reason code and text, SSID, BSSID and RSSI for the most recent disconnect. Replaces
+        the diagnostic page that the removed WiFi configuration portal used to serve.
+
+        Reachable without authentication when the request arrives on the SoftAP of a device
+        that has no stored credentials.
+      tags:
+        - Network
+      responses:
+        '200':
+          description: Diagnostics for the last failure
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lastAttemptedSsid: { type: string }
+                  reasonCode: { type: integer }
+                  reason: { type: string }
+                  disconnectSsid: { type: string }
+                  disconnectBssid: { type: string }
+                  disconnectRssi: { type: integer }
+                  retryAttempts: { type: integer }
+
   /api/v1/network/wifi/credentials:
     post:
       summary: Set WiFi credentials
       description: |
-        Save new WiFi credentials and immediately restart the device.
-        After receiving new credentials, the device will save them and perform a restart.
-        Upon reboot, the device will attempt to connect to the specified WiFi network using the new credentials.
-        
-        **Note:** The API returns as soon as the credentials are saved and the restart is triggered. The device will temporarily be unavailable during the restart process.
-        Monitor the device status or LED indicators to verify successful connection after reboot.
+        Save new WiFi credentials and associate to that network. **The device does not
+        restart**; the WiFi task applies them directly.
+
+        The API returns as soon as the request is **queued**, before the credentials have
+        been written to the WiFi driver and long before the association is attempted. A 200
+        therefore means "accepted", not "stored" and not "connected". Check
+        `credentialWriteFailed` on `/api/v1/network/wifi/status` for the write outcome and
+        `/api/v1/network/wifi/diagnostics` for an association failure reason.
+
+        **An unauthenticated SoftAP client cannot poll for any of that.** Accepting the
+        credentials moves the device out of `UNPROVISIONED`, which closes the auth carve-out,
+        so the next request is answered with 401. Such clients must show the user where the
+        device will appear (`hostname` from the status endpoint, read *before* submitting)
+        rather than waiting for a result that cannot arrive.
+
+        **Note:** when submitted over the SoftAP, the access point may move to the target
+        network's radio channel before associating, so the client can lose its connection
+        for several seconds.
+
+        Reachable without authentication when the request arrives on the SoftAP of a device
+        that has no stored credentials; this is the one action an unprovisioned user must be
+        able to perform.
       tags:
         - Network
       requestBody:

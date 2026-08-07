@@ -13,6 +13,24 @@ static bool _maintenanceTaskShouldRun = false;
 
 static esp_timer_handle_t _failsafeTimer = NULL;
 
+// A restart request refused by the uptime gate is held here and retried from the
+// maintenance loop. Dropping it - which is what returning false alone did - loses the
+// request entirely: a WiFi reset issued in the first 30 s of uptime erased the
+// credentials, logged "restart delayed" and then never restarted, leaving the device
+// running on state that no longer matched what was stored. Deferring keeps the
+// anti-restart-loop protection intact; it only stops the request from evaporating.
+//
+// setRestartSystem() is called from whichever task hits a restart-worthy condition -
+// the WiFi task, the HTTP server task, the button task, this module's own maintenance
+// task - so these three fields are genuinely shared state and are guarded by a spinlock
+// the same way the WiFi module guards its own diagnostic buffers: the section is a
+// couple of word writes plus a bounded snprintf, never allocates, never blocks, so a
+// portMUX critical section is cheaper and simpler here than a semaphore.
+static portMUX_TYPE _pendingRestartMux = portMUX_INITIALIZER_UNLOCKED;
+static bool _pendingRestart = false;
+static bool _pendingRestartFactoryReset = false;
+static char _pendingRestartReason[STATUS_BUFFER_SIZE] = {0};
+
 static TaskHeartbeat _maintenanceHeartbeat;
 
 // Static function declarations
@@ -423,6 +441,25 @@ static void _maintenanceTask(void* parameter) {
     while (_maintenanceTaskShouldRun) {
         TASK_HEARTBEAT(_maintenanceHeartbeat);
 
+        // Retry a restart the uptime gate refused earlier, now that it may be allowed.
+        // Snapshot under the lock, then act outside it - setRestartSystem() logs and can
+        // create a task, neither of which belongs inside a critical section.
+        bool retryPending = false;
+        char reason[STATUS_BUFFER_SIZE];
+        bool factoryReset = false;
+        taskENTER_CRITICAL(&_pendingRestartMux);
+        if (_pendingRestart && CrashMonitor::canRestartNow()) {
+            retryPending = true;
+            snprintf(reason, sizeof(reason), "%s", _pendingRestartReason);
+            factoryReset = _pendingRestartFactoryReset;
+            _pendingRestart = false;
+        }
+        taskEXIT_CRITICAL(&_pendingRestartMux);
+        if (retryPending) {
+            LOG_INFO("Retrying restart that was delayed by the uptime gate");
+            setRestartSystem(reason, factoryReset);
+        }
+
         // Update and print statistics
         printStatistics();
         printDeviceStatusDynamic();
@@ -622,11 +659,30 @@ bool setRestartSystem(const char* reason, bool factoryReset) {
         } else {
             LOG_WARNING(
                 "Restart delayed: minimum uptime not reached (%lu s remaining to "
-                "prevent rapid restart loops)", 
+                "prevent rapid restart loops)",
                 remainingSec
             );
         }
-        
+
+        // Hold the request rather than discarding it. The gate exists to space restarts
+        // out, not to cancel them, and a caller that has already changed persistent state
+        // (resetWifi() erases the credentials before asking) cannot undo its half of the
+        // operation when this returns false. First request wins: a later one would only
+        // overwrite the reason for the same restart. setRestartSystem() can be called
+        // concurrently from several tasks, so this is guarded the same way as the read.
+        taskENTER_CRITICAL(&_pendingRestartMux);
+        if (!_pendingRestart) {
+            _pendingRestart = true;
+            _pendingRestartFactoryReset = factoryReset;
+            snprintf(_pendingRestartReason, sizeof(_pendingRestartReason), "%s", reason);
+        } else if (factoryReset && !_pendingRestartFactoryReset) {
+            // A factory reset is the stronger request and must not be masked by a plain
+            // restart that happened to be asked for first.
+            _pendingRestartFactoryReset = true;
+            snprintf(_pendingRestartReason, sizeof(_pendingRestartReason), "%s", reason);
+        }
+        taskEXIT_CRITICAL(&_pendingRestartMux);
+
         return false;
     }
 

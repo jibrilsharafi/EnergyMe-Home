@@ -14,17 +14,40 @@ namespace CustomWifi
   // Counters
   static uint64_t _lastReconnectAttempt = 0;
   static int32_t _reconnectAttempts = 0; // Increased every disconnection, reset on stable (few minutes) connection
+  // Deadline replacing the old blocking delay() after a disconnect: the task must stay
+  // responsive during the grace window. 0 means disarmed.
+  static uint64_t _disconnectDeadlineMs = 0;
+  // The notify wait is shortened while a deadline is armed, so "wait timed out" no longer
+  // implies "a full periodic interval elapsed". Gate the periodic check on its own clock.
+  static uint64_t _lastPeriodicCheckMs = 0;
   static uint64_t _lastWifiConnectedMillis = 0; // Timestamp when WiFi was last fully connected (for lwIP stabilization)
   static IPAddress _lastMdnsIp; // Last IP for which mDNS was initialized; used to skip rebuild when IP unchanged
   static bool _mdnsInitialized = false;
 
-  // WiFi event notification values for task communication
-  static const uint32_t WIFI_EVENT_CONNECTED = 1;
-  static const uint32_t WIFI_EVENT_GOT_IP = 2;
-  static const uint32_t WIFI_EVENT_DISCONNECTED = 3;
-  static const uint32_t WIFI_EVENT_SHUTDOWN = 4;
-  static const uint32_t WIFI_EVENT_FORCE_RECONNECT = 5;
-  static const uint32_t WIFI_EVENT_NEW_CREDENTIALS = 6;
+  // WiFi event notification BITS for task communication. This target's FreeRTOS build sets
+  // CONFIG_FREERTOS_TASK_NOTIFICATION_ARRAY_ENTRIES to 1, so there is exactly one 32-bit
+  // notification word per task - no second index to hand any event class its own channel.
+  // Bits are combined with eSetBits, which OR-accumulates concurrent notifications into
+  // that one word, and are all drained together on the next wait. The previous scheme used
+  // small sequential values with eSetValueWithOverwrite, where a later event silently
+  // replaced an earlier one still waiting to be read: an AP_STADISCONNECTED landing before
+  // the task drained a pending GOT_IP could discard it outright, stranding the device in
+  // STA_CONNECTING with a working IP address that nothing ever acted on.
+  static const uint32_t WIFI_EVENT_SHUTDOWN = (1UL << 0);
+  static const uint32_t WIFI_EVENT_CONNECTED = (1UL << 1);
+  static const uint32_t WIFI_EVENT_GOT_IP = (1UL << 2);
+  static const uint32_t WIFI_EVENT_DISCONNECTED = (1UL << 3);
+  static const uint32_t WIFI_EVENT_FORCE_RECONNECT = (1UL << 4);
+  static const uint32_t WIFI_EVENT_NEW_CREDENTIALS = (1UL << 5);
+  static const uint32_t WIFI_EVENT_AP_START = (1UL << 6);
+  static const uint32_t WIFI_EVENT_AP_STACONNECTED = (1UL << 7);
+  static const uint32_t WIFI_EVENT_AP_STADISCONNECTED = (1UL << 8);
+  static const uint32_t WIFI_EVENT_CREDENTIALS_CLEARED = (1UL << 9);
+  // Debug-only: an ARDUINO_EVENT_* this task does not otherwise act on. Best-effort by
+  // design, same as the value it replaces - _lastUnknownWifiEvent is a plain overwrite, so a
+  // second unknown event before the bit is drained just replaces which one gets logged.
+  static const uint32_t WIFI_EVENT_UNKNOWN = (1UL << 10);
+  static volatile int32_t _lastUnknownWifiEvent = -1;
 
   // Task state management
   static bool _taskShouldRun = false;
@@ -37,7 +60,19 @@ namespace CustomWifi
   static char _pendingPassword[WIFI_PASSWORD_BUFFER_SIZE] = {0};
   static bool _hasPendingCredentials = false;
 
-  // Diagnostic info for fallback portal
+  // Outcome of the last credential write. setCredentials() returns the moment the request
+  // is queued, so the HTTP response is sent before the write is even attempted; the status
+  // endpoint reports this so a failed store is visible instead of silently discarded.
+  // Lock-free single-word read, same discipline as _publishedState.
+  static volatile bool _lastCredentialWriteFailed = false;
+
+  // Diagnostic info for fallback portal. _lastAttemptedSSID is written by the WiFi task;
+  // _lastDisconnectReason/SSID/BSSID/RSSI are written from the arduino_events task inside
+  // _onWiFiEventWithInfo, which forbids logging or anything else that might block - so a
+  // spinlock, not a semaphore, guards the char buffers here. Both are read from whichever
+  // task serves the diagnostics endpoint. Unguarded, a reader landing mid-snprintf on
+  // either buffer could see a torn mix of the old and new string.
+  static portMUX_TYPE _disconnectDiagMux = portMUX_INITIALIZER_UNLOCKED;
   static char _lastAttemptedSSID[WIFI_SSID_BUFFER_SIZE] = {0};
   static uint8_t _lastDisconnectReason = 0;
   static char _lastDisconnectSSID[WIFI_SSID_BUFFER_SIZE] = {0};
@@ -48,13 +83,49 @@ namespace CustomWifi
   static WifiConfiguration _configuration;
   static SemaphoreHandle_t _configMutex = nullptr;
 
+  // Provisioning state machine (pure logic in lib/wifi_provisioning, unit-tested there).
+  // Owned by the WiFi task: only the task mutates _provisioning.
+  static WifiProvisioning::Context _provisioning;
+  // Lock-free snapshot of _provisioning.state for readers on other tasks. The Phase 4
+  // auth filter runs on the AsyncTCP task for every request and must not take a mutex,
+  // so the task publishes the state here after every transition. A uint8_t-backed enum
+  // is written atomically on this target; readers only ever compare it for equality.
+  static volatile WifiProvisioning::State _publishedState = WifiProvisioning::State::STA_CONNECTING;
+
+  // STA connect attempt in flight. 0 means no attempt is being timed. The timeout is
+  // extended after a power reset so a household blip, which also reboots the router,
+  // does not count failures and raise a SoftAP while the router is still booting (D11).
+  static uint64_t _connectDeadlineMs = 0;
+  static uint32_t _connectTimeoutMs = 0;
+
+  // SoftAP + captive DNS state. Only the WiFi task touches these.
+  static DNSServer _dnsServer;
+  static bool _dnsRunning = false;
+  static bool _apRaised = false;
+  // Written from the AsyncTCP task by startScan(), read there too. The WiFi task never touches
+  // it, so the only writer is the request path and no synchronisation is needed for it alone.
+  static uint64_t _lastScanStartedMs = 0;
+
+  // Host-order snapshot of the SoftAP address, 0 when no AP is up. Published here so the
+  // auth carve-out filter can compare against it without calling WiFi.softAPIP(), which is an
+  // esp_netif_get_ip_info() call and runs on the AsyncTCP task for every request to every path.
+  // Host order rather than the raw IPAddress dword for the reason _toHostOrder() documents.
+  // A uint32_t is written atomically on this target and readers only compare it for equality.
+  static volatile uint32_t _apAddressHostOrder = 0;
+
   // Private helper functions
   static void _onWiFiEvent(WiFiEvent_t event);
   static void _onWiFiEventWithInfo(WiFiEvent_t event, WiFiEventInfo_t info);
   static const char* _getDisconnectReasonString(uint8_t reason);
   static void _wifiConnectionTask(void *parameter);
-  static void _setupWiFiManager(WiFiManager &wifiManager);
-  static void _setupDiagnosticEndpoint(WiFiManager &wifiManager);
+  static void _startStaAttempt();
+  static void _serviceConnectDeadline();
+  static void _serviceApLifecycle();
+  static void _reconcileApWithState();
+  static bool _raiseAp();
+  static void _tearDownAp();
+  static void _serviceDns();
+  static void _readStoredSsid(char *out, size_t outSize);
   static void _handleSuccessfulConnection();
   static bool _setupMdns();
   static void _cleanup();
@@ -62,10 +133,16 @@ namespace CustomWifi
   static void _stopWifiTask();
   static bool _testConnectivity();
   static void _forceReconnectInternal();
+  static void _serviceDisconnectDeadline();
+  static bool _hasStoredCredentials();
+  static void _feedProvisioning(WifiProvisioning::Event event);
   static bool _isPowerReset();
   static void _sendOpenSourceTelemetry();
   static void _resolveApPassword(char* out, size_t outSize);
+  static uint32_t _toHostOrder(const IPAddress &address);
+  static IPAddress _fromHostOrder(uint32_t value);
   static bool _telemetrySent = false; // Ensures telemetry is sent only once per boot
+  static bool _powerResetGraceUsed = false; // The extended post-power-cut timeout is for the first attempt only
 
   // Network configuration helpers
   static void _loadConfiguration();
@@ -100,12 +177,38 @@ namespace CustomWifi
     snprintf(hostname, sizeof(hostname), "%s-%s", WIFI_HOSTNAME_PREFIX, DEVICE_ID);
     WiFi.setHostname(hostname); // Allow for easier identification in the router/network client list
 
-    // Configure WiFi for better authentication reliability
-    WiFi.setAutoReconnect(true);
+    // This loop owns the connect path, so Arduino must not also drive one. With
+    // auto-reconnect on, STAClass re-calls esp_wifi_connect() the instant a disconnect
+    // arrives, and ESP-IDF then refuses esp_wifi_set_config() with "sta is connecting,
+    // cannot set config". On hardware that meant a device which could not associate could
+    // not be given new credentials either: 12 consecutive submissions were accepted by the
+    // API and discarded by the driver. It also made every _startStaAttempt() a no-op whose
+    // 10 s deadline expired into a failure that never actually ran.
+    WiFi.setAutoReconnect(false);
     WiFi.persistent(true);
     
-    // Set WiFi mode explicitly and disable power saving to prevent handshake issues
-    WiFi.mode(WIFI_STA);
+    // APSTA from boot rather than switching modes later: adding or removing the AP bit
+    // leaves the STA interface untouched (WiFiGenericClass::mode only enables/disables an
+    // interface whose bit actually changed), but creating the AP netif once here keeps the
+    // raise path to a single softAP() call.
+    WiFi.mode(WIFI_AP_STA);
+
+    // Mode alone DOES broadcast. persistent(true) above leaves ESP-IDF's storage on FLASH,
+    // so esp_wifi_set_mode(APSTA) restores whatever SoftAP config was last written to NVS
+    // and starts beaconing it immediately - on the default 192.168.4.1, because the netif
+    // addressing is not part of that config. Observed on hardware: a device sitting in
+    // STA_ONLY on the LAN reported apServing true with apIp 192.168.4.1 and served its web
+    // interface there, with _raiseAp() never having run.
+    //
+    // That is not cosmetic. _apAddressHostOrder stays 0 for an AP nobody raised, so
+    // isApAddress() is false for requests arriving on it: the Modbus TCP block and the
+    // authentication carve-out both key off that test and both read the rogue AP as if it
+    // were the LAN. It also pins apServing true forever, which makes isNetworkServiceable()
+    // unconditionally true and stops the health check from ever restarting a dead device.
+    //
+    // Clear it before anything can associate. This also erases the stale NVS copy, so a
+    // device that has been running the old behaviour stops resurrecting it every boot.
+    WiFi.softAPdisconnect(true);
     WiFi.setSleep(false); // Disable WiFi sleep to prevent handshake timeouts
 
     // Load persisted network configuration, applying defaults and writing them back to
@@ -113,6 +216,20 @@ namespace CustomWifi
     // attempt so it takes effect for the initial join.
     _loadConfiguration();
     _applyNetworkConfiguration();
+
+    // Register every WiFi event handler once, here, before any event can be posted.
+    // NetworkEvents never defines NETWORK_EVENTS_MUTEX, so _cbEventList is a plain
+    // std::vector mutated without a lock while the arduino_events task iterates it.
+    // Registering later (mid-connection) can reallocate the vector under that
+    // iteration, which is a use-after-free and the most plausible cause of the
+    // crash previously worked around by delaying registration.
+    //
+    // Registration is not the same as delivery: _onWiFiEvent gates on _eventsEnabled,
+    // which stays false until the initial connection completes. Enabling it here too
+    // would let a bit land in the notification word before anything is ready to act on
+    // it, for the first xTaskNotifyWait to consume as stale.
+    WiFi.onEvent(_onWiFiEventWithInfo);
+    WiFi.onEvent(_onWiFiEvent);
 
     // Start WiFi connection task
     _startWifiTask();
@@ -147,6 +264,173 @@ namespace CustomWifi
     return true;
   }
 
+  bool isApServing()
+  {
+    return WiFi.AP.started() && WiFi.softAPIP() != IPAddress(0, 0, 0, 0);
+  }
+
+  bool isApAddress(const IPAddress &address)
+  {
+    uint32_t apAddress = _apAddressHostOrder;
+    if (apAddress == 0) return false; // No AP up: nothing can match
+    return _toHostOrder(address) == apAddress;
+  }
+
+  bool isNetworkServiceable()
+  {
+    return WifiProvisioning::isNetworkServiceable(isFullyConnected(), isApServing());
+  }
+
+  WifiProvisioning::State getProvisioningState()
+  {
+    return _publishedState;
+  }
+
+  // Network scan for the provisioning UI.
+  //
+  // Async on purpose: WiFi.scanNetworks() blocking would stall the WiFi task for seconds,
+  // which is what this whole rework exists to avoid. Results are cached so a polling UI
+  // does not restart a scan on every request - and, more importantly, so a scan is never
+  // started while one is already running.
+  //
+  // Every start, read and free of the scan result buffer happens on the AsyncTCP task, which
+  // is single threaded. That is what makes the buffer safe to touch without a mutex, and it
+  // is why the buffer is NOT freed from the WiFi task on AP teardown: that would race a
+  // getScanResultsAsJson() mid-iteration over results the driver had just freed.
+  bool startScan()
+  {
+    if (WiFi.scanComplete() == WIFI_SCAN_RUNNING) return true; // Already in flight
+
+    // Never scan while an association attempt is in flight: esp_wifi_scan_start returns
+    // ESP_ERR_WIFI_STATE during connect, and on some paths it aborts the attempt.
+    // _connectDeadlineMs belongs to the WiFi task and is read here, on the AsyncTCP task,
+    // without synchronisation. A uint64_t is two stores on this 32-bit core, so the read can
+    // tear, but only the zero/nonzero distinction is used and both tearing outcomes are
+    // already handled: a spurious nonzero refuses one scan, and a spurious zero lets a scan
+    // through that the driver then rejects with ESP_ERR_WIFI_STATE.
+    if (_connectDeadlineMs != 0) {
+      LOG_DEBUG("Scan requested during an association attempt - deferring");
+      return false;
+    }
+
+    int16_t result = WiFi.scanNetworks(true /* async */, true /* show hidden */,
+                                       false /* passive */, WIFI_SCAN_MS_PER_CHANNEL);
+    if (result == WIFI_SCAN_FAILED) {
+      LOG_WARNING("Failed to start WiFi scan");
+      return false;
+    }
+
+    _lastScanStartedMs = millis64();
+    return true;
+  }
+
+  void getScanResultsAsJson(JsonDocument &jsonDocument, bool forceRescan)
+  {
+    int16_t count = WiFi.scanComplete();
+
+    if (count == WIFI_SCAN_RUNNING) {
+      jsonDocument["status"] = "running";
+      jsonDocument["networks"].to<JsonArray>();
+      return;
+    }
+
+    if (count == WIFI_SCAN_FAILED) {
+      // No scan has ever completed, or the last one failed. Kick one off so the next poll
+      // has something, and tell the client to come back.
+      jsonDocument["status"] = startScan() ? "running" : "unavailable";
+      jsonDocument["networks"].to<JsonArray>();
+      return;
+    }
+
+    // A completed set is served from cache, which is what stops a polling client restarting a
+    // scan on every request. Two things override that.
+    //
+    // `forceRescan` is the user pressing "Scan again". Without it that button re-renders the
+    // same cached list and never touches the radio, which is exactly the moment a user is
+    // pressing it because the network they want is missing.
+    //
+    // The TTL is about heap, not freshness: a completed set is a calloc() of _scanCount
+    // wifi_ap_record_t (WiFiScan.cpp:126), so it lands in internal RAM and a dense apartment
+    // block makes it several kilobytes, and nothing frees it until another scan starts, which
+    // on a device that provisioned successfully is never.
+    bool stale = (millis64() - _lastScanStartedMs) > WIFI_SCAN_RESULTS_TTL_MS;
+
+    if (forceRescan || stale) {
+      // scanNetworks() calls scanDelete() itself before it starts (WiFiScan.cpp:77), so
+      // starting the scan is what retires the old buffer. Deliberately NOT freeing first: a
+      // rescan that cannot start right now would otherwise throw away a list the user is
+      // still looking at.
+      if (startScan()) {
+        jsonDocument["status"] = "running";
+        jsonDocument["networks"].to<JsonArray>();
+        return;
+      }
+
+      if (stale) {
+        // Nothing is going to refresh this set and the driver holds it in internal RAM, so
+        // give the heap back even though it costs the client one empty poll. Freeing here, on
+        // the AsyncTCP task, is what keeps the buffer single threaded (see startScan).
+        WiFi.scanDelete();
+        jsonDocument["status"] = "unavailable";
+        jsonDocument["networks"].to<JsonArray>();
+        return;
+      }
+
+      // Forced but the radio is busy associating: serve the cached set rather than nothing.
+    }
+
+    jsonDocument["status"] = "complete";
+    jsonDocument["ageMs"] = millis64() - _lastScanStartedMs;
+
+    JsonArray networks = jsonDocument["networks"].to<JsonArray>();
+    for (int16_t i = 0; i < count && i < WIFI_SCAN_MAX_RESULTS; i++) {
+      JsonObject network = networks.add<JsonObject>();
+      network["ssid"] = WiFi.SSID(i);
+      network["rssi"] = WiFi.RSSI(i);
+      network["channel"] = WiFi.channel(i);
+      network["secure"] = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
+    }
+  }
+
+  void getStoredSsid(char* out, size_t outSize)
+  {
+    if (out == nullptr || outSize == 0) return;
+    _readStoredSsid(out, outSize);
+  }
+
+  bool lastCredentialWriteFailed()
+  {
+    return _lastCredentialWriteFailed;
+  }
+
+  void getDisconnectDiagnosticsAsJson(JsonDocument &jsonDocument)
+  {
+    // Snapshot under the spinlock into local, fixed-size buffers - fast and bounded, so
+    // holding a critical section for it is safe. Building the JsonDocument itself can
+    // allocate, which must not happen while the section is held.
+    char attemptedSsid[WIFI_SSID_BUFFER_SIZE];
+    uint8_t reason;
+    char disconnectSsid[WIFI_SSID_BUFFER_SIZE];
+    char disconnectBssid[MAC_ADDRESS_BUFFER_SIZE];
+    int8_t rssi;
+
+    taskENTER_CRITICAL(&_disconnectDiagMux);
+    memcpy(attemptedSsid, _lastAttemptedSSID, sizeof(attemptedSsid));
+    reason = _lastDisconnectReason;
+    memcpy(disconnectSsid, _lastDisconnectSSID, sizeof(disconnectSsid));
+    memcpy(disconnectBssid, _lastDisconnectBSSID, sizeof(disconnectBssid));
+    rssi = _lastDisconnectRSSI;
+    taskEXIT_CRITICAL(&_disconnectDiagMux);
+
+    jsonDocument["lastAttemptedSsid"] = attemptedSsid;
+    jsonDocument["reasonCode"] = reason;
+    jsonDocument["reason"] = _getDisconnectReasonString(reason);
+    jsonDocument["disconnectSsid"] = disconnectSsid;
+    jsonDocument["disconnectBssid"] = disconnectBssid;
+    jsonDocument["disconnectRssi"] = rssi;
+    jsonDocument["retryAttempts"] = _reconnectAttempts;
+  }
+
   bool testConnectivity()
   {
     return _testConnectivity();
@@ -156,247 +440,10 @@ namespace CustomWifi
   {
     if (_wifiTaskHandle != NULL) {
       LOG_WARNING("Forcing WiFi reconnection...");
-      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_FORCE_RECONNECT, eSetValueWithOverwrite);
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_FORCE_RECONNECT, eSetBits);
     } else {
       LOG_WARNING("Cannot force reconnect - WiFi task not running");
     }
-  }
-
-  static void _setupWiFiManager(WiFiManager& wifiManager)
-  {
-    LOG_DEBUG("Setting up the WiFiManager...");
-
-    // Check if this is a power reset - router likely rebooting
-    bool isPowerReset = _isPowerReset();
-    uint32_t connectTimeout = isPowerReset ? WIFI_CONNECT_TIMEOUT_POWER_RESET_SECONDS : WIFI_CONNECT_TIMEOUT_SECONDS;
-    
-    if (isPowerReset) {
-      LOG_INFO("Power reset detected - using extended WiFi timeout (%d seconds) to allow router to reboot", connectTimeout);
-    }
-
-    wifiManager.setConnectTimeout(connectTimeout);
-    wifiManager.setConfigPortalTimeout(WIFI_PORTAL_TIMEOUT_SECONDS);
-    wifiManager.setConnectRetries(WIFI_INITIAL_MAX_RECONNECT_ATTEMPTS); // Let WiFiManager handle initial retries
-    
-    // Additional WiFi settings to improve handshake reliability
-    wifiManager.setCleanConnect(true);    // Clean previous connection attempts
-    wifiManager.setBreakAfterConfig(true); // Exit after successful config
-    wifiManager.setRemoveDuplicateAPs(true); // Remove duplicate AP entries
-
-        // Callback when portal starts
-    wifiManager.setAPCallback([](WiFiManager *wm) {
-                                LOG_INFO("WiFi configuration portal started: %s", wm->getConfigPortalSSID().c_str());
-                                Led::blinkBlueFast(Led::PRIO_MEDIUM);
-                              });
-
-    // Callback when config is saved
-    wifiManager.setSaveConfigCallback([]() {
-            LOG_INFO("WiFi credentials saved via portal - restarting...");
-            Led::setPattern(
-              LedPattern::BLINK_FAST,
-              Led::Colors::CYAN,
-              Led::PRIO_CRITICAL,
-              3000ULL
-            );
-            // Maybe with some smart management we could avoid the restart..
-            // But we know that a reboot always solves any issues, so we leave it here
-            // to ensure we start fresh
-            setRestartSystem("Restart after WiFi config save");
-          });
-
-    // Setup diagnostic endpoint for troubleshooting during fallback
-    _setupDiagnosticEndpoint(wifiManager);
-
-    LOG_DEBUG("WiFiManager set up");
-  }
-
-  // Helper function to safely append to diagnostic page buffer
-  static size_t _appendToPageBuffer(char* buffer, size_t bufferSize, size_t currentPos, const char* format, ...)
-  {
-    if (currentPos >= bufferSize) return currentPos; // Buffer full
-    
-    va_list args;
-    va_start(args, format);
-    int written = vsnprintf(buffer + currentPos, bufferSize - currentPos, format, args);
-    va_end(args);
-    
-    if (written < 0) return currentPos; // Error
-    return currentPos + written;
-  }
-
-  static void _setupDiagnosticEndpoint(WiFiManager& wifiManager)
-  {
-    // Add diagnostic endpoint accessible during config portal fallback
-    // This uses WiFiManager's synchronous WebServer (not AsyncWebServer)
-    // While we could add some other endpoints for meter data and what not,
-    // it is better to keep this simple and light, and only for debugging.
-    wifiManager.setWebServerCallback([&wifiManager]() {
-      wifiManager.server->on("/diagnostic", HTTP_GET, [&wifiManager]() {
-        // Allocate static buffer for diagnostic page (16KB should be sufficient)
-        const size_t PAGE_BUFFER_SIZE = 16384;
-        static char pageBuffer[PAGE_BUFFER_SIZE] = {0};
-        size_t pos = 0;
-        
-        // Helper macro for cleaner append calls
-        #define APPEND_PAGE(fmt, ...) pos = _appendToPageBuffer(pageBuffer, PAGE_BUFFER_SIZE, pos, fmt, ##__VA_ARGS__)
-        #define APPEND_PAGE_LITERAL(str) pos = _appendToPageBuffer(pageBuffer, PAGE_BUFFER_SIZE, pos, "%s", str)
-        
-        // HTML head and styles
-        APPEND_PAGE_LITERAL("<!DOCTYPE html><html><head>");
-        APPEND_PAGE_LITERAL("<meta name='viewport' content='width=device-width,initial-scale=1'>");
-        APPEND_PAGE_LITERAL("<title>EnergyMe Diagnostic</title>");
-        APPEND_PAGE_LITERAL("<style>");
-        APPEND_PAGE_LITERAL("body{font-family:Verdana,sans-serif;margin:0;padding:20px;background:#f5f5f5;color:#333}");
-        APPEND_PAGE_LITERAL("h1{color:#1fa3ec;border-bottom:2px solid #1fa3ec;padding-bottom:10px;margin-top:0}");
-        APPEND_PAGE_LITERAL("h2{color:#1fa3ec;margin:10px 0}");
-        APPEND_PAGE_LITERAL(".section{background:#fff;padding:15px;margin:15px 0;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,0.1)}");
-        APPEND_PAGE_LITERAL("pre{background:#1a1a2e;color:#eee;padding:10px;overflow-x:auto;font-size:11px;max-height:300px;overflow-y:auto;border-radius:4px;white-space:pre-wrap;word-wrap:break-word}");
-        APPEND_PAGE_LITERAL(".info{display:grid;grid-template-columns:1fr 1fr;gap:8px}");
-        APPEND_PAGE_LITERAL(".info-item{background:#f9f9f9;padding:8px;border-radius:4px;border:1px solid #eee}");
-        APPEND_PAGE_LITERAL(".label{color:#888;font-size:11px;text-transform:uppercase}.value{font-weight:bold;color:#1fa3ec;word-break:break-all}");
-        APPEND_PAGE_LITERAL("button{background:#1fa3ec;color:#fff;border:none;padding:10px 20px;border-radius:4px;cursor:pointer;font-size:14px}");
-        APPEND_PAGE_LITERAL("button:hover{background:#0e7ac4}");
-        APPEND_PAGE_LITERAL(".warn{color:#d9534f}");
-        APPEND_PAGE_LITERAL("</style>");
-        APPEND_PAGE_LITERAL("<script>");
-        APPEND_PAGE_LITERAL("function downloadLogs(){");
-        APPEND_PAGE_LITERAL("const logs=document.getElementById('logs-content').innerText;");
-        APPEND_PAGE_LITERAL("const blob=new Blob([logs],{type:'text/plain'});");
-        APPEND_PAGE_LITERAL("const url=URL.createObjectURL(blob);");
-        APPEND_PAGE_LITERAL("const a=document.createElement('a');");
-        APPEND_PAGE_LITERAL("a.href=url;");
-        APPEND_PAGE_LITERAL("a.download='energyme_diagnostic_'+new Date().toISOString().slice(0,10)+'.log';");
-        APPEND_PAGE_LITERAL("document.body.appendChild(a);");
-        APPEND_PAGE_LITERAL("a.click();");
-        APPEND_PAGE_LITERAL("document.body.removeChild(a);");
-        APPEND_PAGE_LITERAL("URL.revokeObjectURL(url);");
-        APPEND_PAGE_LITERAL("}");
-        APPEND_PAGE_LITERAL("</script>");
-        APPEND_PAGE_LITERAL("</head><body>");
-        
-        APPEND_PAGE_LITERAL("<h1>&#128295; EnergyMe Diagnostic</h1>");
-        
-        // System Information Section
-        APPEND_PAGE_LITERAL("<div class='section'><h2>System Information</h2><div class='info'>");
-        
-        APPEND_PAGE("<div class='info-item'><div class='label'>Firmware</div><div class='value'>%s</div></div>", FIRMWARE_BUILD_VERSION);
-        APPEND_PAGE("<div class='info-item'><div class='label'>Sketch MD5</div><div class='value'>%s</div></div>", ESP.getSketchMD5().c_str());
-        APPEND_PAGE("<div class='info-item'><div class='label'>Build Time</div><div class='value'>%s %s</div></div>", FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME);
-        APPEND_PAGE("<div class='info-item'><div class='label'>Device ID</div><div class='value'>%s</div></div>", DEVICE_ID);
-        APPEND_PAGE("<div class='info-item'><div class='label'>Free Heap</div><div class='value'>%lu bytes</div></div>", ESP.getFreeHeap());
-        APPEND_PAGE("<div class='info-item'><div class='label'>Free PSRAM</div><div class='value'>%lu bytes</div></div>", ESP.getFreePsram());
-        
-        // Calculate uptime
-        uint64_t uptimeMs = millis64();
-        uint64_t uptimeSec = uptimeMs / 1000;
-        uint32_t hours = (uint32_t)(uptimeSec / 3600);
-        uint32_t minutes = (uint32_t)((uptimeSec % 3600) / 60);
-        uint32_t seconds = (uint32_t)(uptimeSec % 60);
-        APPEND_PAGE("<div class='info-item'><div class='label'>Uptime</div><div class='value'>%02lu:%02lu:%02lu</div></div>", hours, minutes, seconds);
-        APPEND_PAGE("<div class='info-item'><div class='label'>Last Reset Reason</div><div class='value'>%s</div></div>", getResetReasonString(esp_reset_reason()));
-        
-        APPEND_PAGE_LITERAL("</div></div>");
-        
-        // WiFi Information Section
-        APPEND_PAGE_LITERAL("<div class='section'><h2>WiFi Status</h2><div class='info'>");
-        APPEND_PAGE("<div class='info-item'><div class='label'>Connection Status</div><div class='value'>%s</div></div>", wifiManager.getWLStatusString());
-        APPEND_PAGE("<div class='info-item'><div class='label'>Saved SSID</div><div class='value'>%s</div></div>", wifiManager.getWiFiSSID(true).c_str());
-        APPEND_PAGE("<div class='info-item'><div class='label'>Last Attempted SSID</div><div class='value'>%s</div></div>", 
-                    (strlen(_lastAttemptedSSID) > 0) ? _lastAttemptedSSID : "(none)");
-        
-        // Disconnect reason with warning styling
-        if (_lastDisconnectReason != 0) {
-          APPEND_PAGE("<div class='info-item'><div class='label'>Disconnect Reason</div><div class='value'><span class='warn'>%d (%s)</span></div></div>",
-                      _lastDisconnectReason, _getDisconnectReasonString(_lastDisconnectReason));
-        } else {
-          APPEND_PAGE_LITERAL("<div class='info-item'><div class='label'>Disconnect Reason</div><div class='value'>(no disconnect recorded)</div></div>");
-        }
-        
-        APPEND_PAGE("<div class='info-item'><div class='label'>Disconnect SSID</div><div class='value'>%s</div></div>",
-                    (strlen(_lastDisconnectSSID) > 0) ? _lastDisconnectSSID : "(none)");
-        APPEND_PAGE("<div class='info-item'><div class='label'>Disconnect BSSID</div><div class='value'>%s</div></div>",
-                    (strlen(_lastDisconnectBSSID) > 0) ? _lastDisconnectBSSID : "(none)");
-        
-        if (_lastDisconnectReason != 0) {
-          APPEND_PAGE("<div class='info-item'><div class='label'>Disconnect RSSI</div><div class='value'>%d dBm</div></div>", _lastDisconnectRSSI);
-        } else {
-          APPEND_PAGE_LITERAL("<div class='info-item'><div class='label'>Disconnect RSSI</div><div class='value'>(none)</div></div>");
-        }
-        
-        // Device MAC address
-        uint8_t mac[6];
-        esp_read_mac(mac, ESP_MAC_WIFI_STA);
-        APPEND_PAGE("<div class='info-item'><div class='label'>Device MAC</div><div class='value'>%02X:%02X:%02X:%02X:%02X:%02X</div></div>",
-                    mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-        
-        APPEND_PAGE_LITERAL("</div></div>");
-        
-        // Recent Logs Section
-        APPEND_PAGE_LITERAL("<div class='section'><h2>Recent Logs</h2>");
-        APPEND_PAGE_LITERAL("<div style='margin-bottom:10px'><button onclick='downloadLogs()'>Download Logs</button></div>");
-        APPEND_PAGE_LITERAL("<pre id='logs-content'>");
-        
-        if (LittleFS.exists(LOG_PATH)) {
-          File logFile = LittleFS.open(LOG_PATH, "r");
-          if (logFile) {
-            size_t fileSize = logFile.size();
-            // Read last 4KB of logs to avoid memory issues
-            const size_t maxLogSize = MAX_LOG_SIZE_DIAGNOSTIC_FALLBACK_PAGE;
-            if (fileSize > maxLogSize) {
-              logFile.seek(fileSize - maxLogSize);
-              // Skip to next newline to avoid partial line
-              uint32_t loops = 0;
-              while (logFile.available() && loops < MAX_LOOP_ITERATIONS * 10) { // Increase the limit since logs may be long
-                loops++;
-                if (logFile.read() == '\n') break;
-              }
-            }
-            while (logFile.available() && pos < PAGE_BUFFER_SIZE - 10) { // Leave margin for closing tags
-              int c = logFile.read();
-              if (c < 0) break; // EOF or error
-              // Escape HTML special characters
-              if (c == '<') {
-                pos = _appendToPageBuffer(pageBuffer, PAGE_BUFFER_SIZE, pos, "%s", "&lt;");
-              } else if (c == '>') {
-                pos = _appendToPageBuffer(pageBuffer, PAGE_BUFFER_SIZE, pos, "%s", "&gt;");
-              } else if (c == '&') {
-                pos = _appendToPageBuffer(pageBuffer, PAGE_BUFFER_SIZE, pos, "%s", "&amp;");
-              } else if (c == '"') {
-                pos = _appendToPageBuffer(pageBuffer, PAGE_BUFFER_SIZE, pos, "%s", "&quot;");
-              } else if (c == '\'') {
-                pos = _appendToPageBuffer(pageBuffer, PAGE_BUFFER_SIZE, pos, "%s", "&#39;");
-              } else {
-                pageBuffer[pos++] = static_cast<char>(c);
-              }
-            }
-            logFile.close();
-          } else {
-            APPEND_PAGE_LITERAL("(Could not open log file)");
-          }
-        } else {
-          APPEND_PAGE_LITERAL("(No log file found)");
-        }
-        
-        APPEND_PAGE_LITERAL("</pre></div>");
-        
-        // Navigation
-        APPEND_PAGE_LITERAL("<div style='text-align:center;margin-top:20px'>");
-        APPEND_PAGE_LITERAL("<a href='/'><button>&#8592; Back to WiFi Setup</button></a>");
-        APPEND_PAGE_LITERAL("</div>");
-        
-        APPEND_PAGE_LITERAL("</body></html>");
-        
-        #undef APPEND_PAGE
-        #undef APPEND_PAGE_LITERAL
-        
-        wifiManager.server->send(200, "text/html", pageBuffer);
-      });
-    });
-
-    // Add diagnostic button to the WiFiManager menu
-    const char* menu[] = {"wifi", "info", "custom", "sep", "update", "exit"};
-    wifiManager.setMenu(menu, 6);
-    wifiManager.setCustomMenuHTML("<form action='/diagnostic' method='get'><button type='submit'>&#128295; Diagnostic</button></form>");
   }
 
   static void _onWiFiEvent(WiFiEvent_t event)
@@ -421,36 +468,57 @@ namespace CustomWifi
 
     case ARDUINO_EVENT_WIFI_STA_CONNECTED:
       // Defer logging to task
-      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_CONNECTED, eSetValueWithOverwrite);
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_CONNECTED, eSetBits);
       break;
 
     case ARDUINO_EVENT_WIFI_STA_GOT_IP:
       // Defer all operations to task - avoid any function calls that might log
-      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_GOT_IP, eSetValueWithOverwrite);
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_GOT_IP, eSetBits);
       break;
 
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
       // Notify task to handle fallback if needed
-      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_DISCONNECTED, eSetValueWithOverwrite);
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_DISCONNECTED, eSetBits);
       break;
 
     case ARDUINO_EVENT_WIFI_STA_AUTHMODE_CHANGE:
       // Auth mode changed - no immediate action needed
       break;
 
+    // SoftAP events. Notify-only like the rest; the task decides what they mean.
+    // ARDUINO_EVENT_WIFI_AP_PROBEREQRECVED is deliberately left masked - it fires per
+    // probe request and would flood the notification path.
+    case ARDUINO_EVENT_WIFI_AP_START:
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_AP_START, eSetBits);
+      break;
+
+    case ARDUINO_EVENT_WIFI_AP_STACONNECTED:
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_AP_STACONNECTED, eSetBits);
+      break;
+
+    case ARDUINO_EVENT_WIFI_AP_STADISCONNECTED:
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_AP_STADISCONNECTED, eSetBits);
+      break;
+
     default:
-      // Forward unknown events to task for logging/debugging
-      xTaskNotify(_wifiTaskHandle, (uint32_t)event, eSetValueWithOverwrite);
+      // Forward unknown events to task for logging/debugging. Best-effort: a plain
+      // overwrite of _lastUnknownWifiEvent, same fidelity as before this was a bit.
+      _lastUnknownWifiEvent = (int32_t)event;
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_UNKNOWN, eSetBits);
       break;
     }
   }
 
-  // Early event handler to capture disconnect reason during initial connection
-  // This runs BEFORE autoConnect so we can capture why connection failed
+  // Captures the disconnect reason so the UI can explain a failed association. Registered
+  // in begin(), before the first connect attempt, so an initial failure is captured too.
   static void _onWiFiEventWithInfo(WiFiEvent_t event, WiFiEventInfo_t info)
   {
     // DO NOT USE ANY LOGGING HERE to avoid weird crashes (this is a callback.. I don't know why but it seems unsafe)
     if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
+      // A spinlock, not a semaphore: taskENTER_CRITICAL never blocks or logs, so it is safe
+      // in this context, and the section below is a handful of fixed-size snprintf calls -
+      // bounded and fast, nothing that allocates or waits.
+      taskENTER_CRITICAL(&_disconnectDiagMux);
       _lastDisconnectReason = info.wifi_sta_disconnected.reason;
       _lastDisconnectRSSI = info.wifi_sta_disconnected.rssi;
       snprintf(_lastDisconnectSSID, sizeof(_lastDisconnectSSID), "%s", info.wifi_sta_disconnected.ssid);
@@ -458,9 +526,12 @@ namespace CustomWifi
                info.wifi_sta_disconnected.bssid[0], info.wifi_sta_disconnected.bssid[1],
                info.wifi_sta_disconnected.bssid[2], info.wifi_sta_disconnected.bssid[3],
                info.wifi_sta_disconnected.bssid[4], info.wifi_sta_disconnected.bssid[5]);
+      taskEXIT_CRITICAL(&_disconnectDiagMux);
     }
   }
 
+  // Consumed by getDisconnectDiagnosticsAsJson(), which is what replaced the reason-code
+  // display on the removed WiFiManager /diagnostic page (D11).
   static const char* _getDisconnectReasonString(uint8_t reason)
   {
     switch (reason) {
@@ -527,198 +598,265 @@ namespace CustomWifi
   {
     LOG_DEBUG("WiFi task started");
     uint32_t notificationValue;
+
+    // Seed the provisioning state machine from what the driver actually has stored.
+    // Owned by this task from here on.
+    bool hasCredentials = _hasStoredCredentials();
+    WifiProvisioning::init(_provisioning, hasCredentials, millis64());
+    _publishedState = _provisioning.state;
+    LOG_INFO("Provisioning init: %s credentials, state %d",
+             hasCredentials ? "found" : "no", (int)_provisioning.state);
     _taskShouldRun = true;
 
-    // Create WiFiManager on heap to save stack space
-    WiFiManager* wifiManager = new WiFiManager();
-    if (!wifiManager) {
-      LOG_ERROR("Failed to allocate WiFiManager");
-      _taskShouldRun = false;
-      _cleanup();
-      _wifiTaskHandle = NULL;
-      vTaskDelete(NULL);
-      return;
-    }
-    _setupWiFiManager(*wifiManager);
-
-    // Initial connection attempt
     Led::pulseBlue(Led::PRIO_MEDIUM);
-    char hostname[WIFI_SSID_BUFFER_SIZE];
-    snprintf(hostname, sizeof(hostname), "%s-%s", WIFI_CONFIG_PORTAL_SSID, DEVICE_ID);
 
-    // Store the saved SSID for diagnostic purposes before attempting connection
-    String savedSSID = wifiManager->getWiFiSSID(true);
-    if (savedSSID.length() > 0) {
-      snprintf(_lastAttemptedSSID, sizeof(_lastAttemptedSSID), "%s", savedSSID.c_str());
-    }
-
-    // Register early event handler to capture disconnect reason during initial connection
-    // This must be BEFORE autoConnect so we can capture why connection fails
-    WiFi.onEvent(_onWiFiEventWithInfo);
-
-    // Try initial connection with retries for handshake timeouts
-    LOG_DEBUG("Attempt WiFi connection");
-
-    // If we don't manage to connect with WiFi Manager and the credentials are not provided, we might as well just restart.
-    // In the future, we could allow for full-offline functionality, but for now, we keep it simple.
-    // TODO: implement a full custom WiFi manager for better UX
-    char apPassword[WIFI_PASSWORD_BUFFER_SIZE];
-    _resolveApPassword(apPassword, sizeof(apPassword));
-    if (!wifiManager->autoConnect(hostname, apPassword)) {
-      LOG_WARNING("WiFi connection failed, exiting wifi task");
-      Led::blinkRedFast(Led::PRIO_URGENT);
-      _taskShouldRun = false;
-      setRestartSystem("Restart after WiFi connection failure");
-      _cleanup();
-      delete wifiManager; // Clean up before exit
-      _wifiTaskHandle = NULL;
-      vTaskDelete(NULL);
-      return;
-    }
-
-    // Clean up WiFiManager after successful connection - no longer needed
-    delete wifiManager;
-    wifiManager = nullptr;
-
-    Led::clearPattern(Led::PRIO_MEDIUM);
-    
-    // If we reach here, we are connected
-    _handleSuccessfulConnection();
-
-    // Setup WiFi event handling - Only after full connection as during setup would crash sometimes probably due to the notifications
+    // Handlers are registered in begin(). Delivery opens here, before the first
+    // WiFi.begin(), because the connect attempt is now driven by this loop: its events are
+    // exactly what the loop needs, not stale noise from a blocking library call.
     _eventsEnabled = true;
-    WiFi.onEvent(_onWiFiEvent);
+
+    if (hasCredentials) {
+      _startStaAttempt();
+    } else {
+      // Nothing to try. Record the decision, then let the same reconciliation path every
+      // other raise goes through bring the radio up; the loop below keeps it bounded.
+      LOG_INFO("No stored credentials - raising the SoftAP for provisioning");
+      WifiProvisioning::raiseAp(_provisioning, millis64());
+      _publishedState = _provisioning.state;
+      _reconcileApWithState();
+    }
 
     // Main task loop - handles fallback scenarios and deferred logging
+    _lastPeriodicCheckMs = millis64();
     while (_taskShouldRun)
     {
       TASK_HEARTBEAT(_heartbeat);
 
-      // Wait for notification from event handler or timeout
-      if (xTaskNotifyWait(0, ULONG_MAX, &notificationValue, pdMS_TO_TICKS(WIFI_PERIODIC_CHECK_INTERVAL)))
+      // Serviced at the top of the loop so it also runs on iterations reached by the
+      // `continue`s in the switch below, which skip the periodic branch entirely.
+      _serviceDisconnectDeadline();
+      _serviceConnectDeadline();
+      _serviceApLifecycle();
+
+      // Never wait past an armed deadline, or a 15 s grace window would go unchecked
+      // for up to a full 30 s periodic interval. Same for the association timeout, and
+      // for the AP lifetime/grace timers while the AP is up.
+      uint64_t nowMs = millis64();
+      uint32_t waitMs = WIFI_PERIODIC_CHECK_INTERVAL;
+      if (_disconnectDeadlineMs != 0)
       {
-        // Check if this is a stop notification (we use a special value for shutdown)
-        if (notificationValue == WIFI_EVENT_SHUTDOWN)
+        uint64_t remainingMs = (_disconnectDeadlineMs > nowMs) ? (_disconnectDeadlineMs - nowMs) : 0;
+        if (remainingMs < waitMs) waitMs = (uint32_t)remainingMs;
+      }
+      if (_connectDeadlineMs != 0)
+      {
+        uint64_t remainingMs = (_connectDeadlineMs > nowMs) ? (_connectDeadlineMs - nowMs) : 0;
+        if (remainingMs < waitMs) waitMs = (uint32_t)remainingMs;
+      }
+      if (_apRaised && waitMs > WIFI_AP_LIFECYCLE_TICK_MS)
+      {
+        // The AP lifetime and grace windows are minutes long, so a coarse tick is enough
+        // to bound them without waking the task needlessly.
+        waitMs = WIFI_AP_LIFECYCLE_TICK_MS;
+      }
+
+      // Wait for notification from event handler or timeout. ULONG_MAX as the clear-on-exit
+      // mask means every bit set since the last wait comes back at once.
+      if (xTaskNotifyWait(0, ULONG_MAX, &notificationValue, pdMS_TO_TICKS(waitMs)))
+      {
+        // Shutdown wins over anything else pending in the same wakeup: the task is tearing
+        // down and must not act on stale bits that happened to arrive alongside it.
+        if (notificationValue & WIFI_EVENT_SHUTDOWN)
         {
           _taskShouldRun = false;
           break;
         }
 
-        // Handle deferred operations from WiFi events (safe context)
-        switch (notificationValue)
-        {
-        case WIFI_EVENT_CONNECTED:
-          LOG_DEBUG("WiFi connected to: %s", WiFi.SSID().c_str());
-          continue; // No further action needed
+        // Every bit set gets handled here, not just one - see the WIFI_EVENT_* comment for
+        // why eSetBits replaced eSetValueWithOverwrite. Order below is not significant
+        // across different event classes; within a class there is only ever one bit.
 
-        case WIFI_EVENT_GOT_IP:
+        if (notificationValue & WIFI_EVENT_CONNECTED)
+        {
+          LOG_DEBUG("WiFi connected to: %s", WiFi.SSID().c_str());
+        }
+
+        if (notificationValue & WIFI_EVENT_GOT_IP)
+        {
           LOG_DEBUG("WiFi got IP: %s", WiFi.localIP().toString().c_str());
+          // Both deadlines must be disarmed here. isFullyConnected() deliberately returns
+          // false for WIFI_LWIP_STABILIZATION_DELAY after this point, so an association
+          // that completes in the last second of its window would otherwise let
+          // _serviceConnectDeadline() fire against a link that is actually up: it would
+          // log a false timeout, feed a spurious STA_ATTEMPT_FAILED, and re-associate.
+          _disconnectDeadlineMs = 0;
+          _connectDeadlineMs = 0;
+          _feedProvisioning(WifiProvisioning::Event::STA_CONNECTED);
           statistics.wifiConnection++; // It is here we know the wifi connection went through (and the one which is called on reconnections)
           _lastWifiConnectedMillis = millis64(); // Track connection time for lwIP stabilization
           // Handle successful connection operations safely in task context
           _handleSuccessfulConnection();
-          continue; // No further action needed
+        }
 
-        case WIFI_EVENT_FORCE_RECONNECT:
+        if (notificationValue & WIFI_EVENT_FORCE_RECONNECT)
+        {
           _forceReconnectInternal();
-          continue; // No further action needed
+        }
 
-        case WIFI_EVENT_NEW_CREDENTIALS:
+        if (notificationValue & WIFI_EVENT_CREDENTIALS_CLEARED)
+        {
+          // resetWifi() erased the driver's stored credentials from another task. Bring the
+          // context back in line here, where it is owned: UNPROVISIONED with the AP raised,
+          // no deadlines armed and nothing left to associate to.
+          LOG_INFO("Stored credentials cleared - returning to provisioning");
+          _connectDeadlineMs = 0;
+          _disconnectDeadlineMs = 0;
+          _reconnectAttempts = 0;
+          WiFi.disconnect(false);
+          _feedProvisioning(WifiProvisioning::Event::CREDENTIALS_CLEARED);
+        }
+
+        if (notificationValue & WIFI_EVENT_NEW_CREDENTIALS)
+        {
           if (_hasPendingCredentials)
           {
             LOG_INFO("Processing new WiFi credentials for SSID: %s", _pendingSSID);
-            
+
             // Save new credentials to NVS using esp_wifi_set_config() directly
             // This stores credentials WITHOUT triggering a connection attempt,
             // which avoids heap corruption when restarting immediately after
             wifi_config_t wifi_config = {};
             snprintf((char*)wifi_config.sta.ssid, sizeof(wifi_config.sta.ssid), "%s", _pendingSSID);
             snprintf((char*)wifi_config.sta.password, sizeof(wifi_config.sta.password), "%s", _pendingPassword);
-            
+
+            // Stop any association in flight FIRST. ESP-IDF rejects esp_wifi_set_config()
+            // while the STA is connecting, and a device that cannot associate is retrying
+            // almost continuously - so without this the write fails exactly when the user
+            // is trying to correct the credentials, which is the whole point of AP_ASSIST.
+            // Observed on hardware as 12/12 submissions refused with ESP_ERR_WIFI_CONN.
+            _connectDeadlineMs = 0; // The attempt we are cancelling must not report a timeout
+            esp_wifi_disconnect();
+
             esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+            if (err != ESP_OK) {
+              // One retry after a short settle: disconnect is asynchronous, so the driver
+              // may still have been leaving the connecting state on the first try.
+              LOG_WARNING("Credential write refused (%s), retrying after disconnect settles",
+                          esp_err_to_name(err));
+              vTaskDelay(pdMS_TO_TICKS(WIFI_CREDENTIAL_WRITE_RETRY_DELAY_MS));
+              err = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+            }
+
             if (err != ESP_OK) {
               LOG_ERROR("Failed to save WiFi credentials: %s", esp_err_to_name(err));
               memset(_pendingSSID, 0, sizeof(_pendingSSID));
               memset(_pendingPassword, 0, sizeof(_pendingPassword));
               _hasPendingCredentials = false;
-              continue;
+              // Record it so the caller can find out. setCredentials() returns as soon as
+              // the request is queued, so the HTTP 200 has already gone out by now and this
+              // is the only way the user learns the password was not stored.
+              _lastCredentialWriteFailed = true;
+              _startStaAttempt(); // Resume trying with whatever credentials we still have
             }
-            
-            // Clear pending credentials from memory
-            memset(_pendingSSID, 0, sizeof(_pendingSSID));
-            memset(_pendingPassword, 0, sizeof(_pendingPassword));
-            _hasPendingCredentials = false;
-            
-            // Request system restart to apply new WiFi credentials
-            LOG_INFO("New credentials saved to NVS, restarting system");
-            setRestartSystem("Restart to apply new WiFi credentials");
-          }
-          continue; // No further action needed
+            else
+            {
+              _lastCredentialWriteFailed = false;
 
-        case WIFI_EVENT_DISCONNECTED:
+              // Clear pending credentials from memory
+              memset(_pendingSSID, 0, sizeof(_pendingSSID));
+              memset(_pendingPassword, 0, sizeof(_pendingPassword));
+              _hasPendingCredentials = false;
+
+              // Apply without restarting. The restart existed because WiFiManager owned the
+              // connect path and could not be re-driven; this loop can. Restarting mid-
+              // provisioning would also drop the very AP the user submitted the form on.
+              LOG_INFO("New credentials saved, associating without restart");
+              _feedProvisioning(WifiProvisioning::Event::CREDENTIALS_SUBMITTED);
+              _reconnectAttempts = 0;
+              _disconnectDeadlineMs = 0;
+
+              // Never give a user-submitted attempt the post-power-cut timeout. That window
+              // exists for a router still booting after a mains cut, and a mains-wired meter
+              // reports POWERON on every boot - so a first provisioning attempt inherited it
+              // and a wrong password took five minutes to resolve instead of ten seconds.
+              // Somebody is standing in front of the device typing: their router is up.
+              _powerResetGraceUsed = true;
+
+              WiFi.disconnect(false);
+              _startStaAttempt();
+            }
+          }
+        }
+
+        if (notificationValue & WIFI_EVENT_DISCONNECTED)
+        {
           statistics.wifiConnectionError++;
-          Led::pulseBlue(Led::PRIO_MEDIUM);
+          // Not while the SoftAP is up. _ledTask accepts on priority >= current, so this
+          // pulse and the AP's fast blink are last-write-wins at PRIO_MEDIUM, and a link
+          // that keeps failing fires this event exactly while the AP is broadcasting - the
+          // one time the AP indication has something to say. The AP owns the LED until it
+          // comes down, and _tearDownAp() hands it back.
+          if (!_apRaised) Led::pulseBlue(Led::PRIO_MEDIUM);
           LOG_WARNING("WiFi disconnected - auto-reconnect will handle");
           _lastWifiConnectedMillis = 0; // Reset stabilization timer on disconnect
+          _feedProvisioning(WifiProvisioning::Event::STA_LOST);
 
-          // Wait a bit for auto-reconnect (enabled by default) to work
-          delay(WIFI_DISCONNECT_DELAY);
-
-          // Check if still disconnected
-          if (!isFullyConnected())
+          // Give auto-reconnect (enabled by default) a grace window, then evaluate.
+          // Arm only when not already armed: re-arming on every disconnect would let a
+          // link flapping faster than the window push the deadline out indefinitely, so
+          // the evaluation below - and with it the portal fallback - would never run.
+          // The old blocking delay() always completed and always evaluated exactly once
+          // per window; this preserves that while keeping the task responsive.
+          // Not while a connect attempt is in flight: that attempt already has its own
+          // deadline, and the driver reports a failed FIRST association through this same
+          // DISCONNECTED event (NO_AP_FOUND, AUTH_FAIL, HANDSHAKE_TIMEOUT). Arming both
+          // would feed STA_ATTEMPT_FAILED twice for one failure, so apRaiseTriggers would
+          // reach its threshold in roughly half the intended time and stop meaning
+          // "consecutive genuine association failures".
+          if (_disconnectDeadlineMs == 0 && _connectDeadlineMs == 0)
           {
-            _reconnectAttempts++;
-            _lastReconnectAttempt = millis64();
-
-            LOG_WARNING("Auto-reconnect failed, attempt %d", _reconnectAttempts);
-
-            // After several failures, try WiFiManager as fallback
-            if (_reconnectAttempts >= WIFI_MAX_CONSECUTIVE_RECONNECT_ATTEMPTS)
-            {
-              LOG_ERROR("Multiple reconnection failures - starting portal");
-
-              // Create WiFiManager on heap for portal operation
-              WiFiManager* portalManager = new WiFiManager();
-              if (!portalManager) {
-                LOG_ERROR("Failed to allocate WiFiManager for portal");
-                setRestartSystem("Restart after WiFiManager allocation failure");
-                break;
-              }
-              _setupWiFiManager(*portalManager);
-
-              // Try WiFiManager portal (WPA2-protected; password from factory NVS or MAC fallback)
-              char fallbackApPassword[WIFI_PASSWORD_BUFFER_SIZE];
-              _resolveApPassword(fallbackApPassword, sizeof(fallbackApPassword));
-              if (!portalManager->startConfigPortal(hostname, fallbackApPassword))
-              {
-                LOG_ERROR("Portal failed - restarting device");
-                Led::blinkRedFast(Led::PRIO_URGENT);
-                setRestartSystem("Restart after portal failure");
-              }
-
-              // Clean up WiFiManager after portal operation
-              delete portalManager;
-              // If portal succeeds, device will restart automatically
-            }
+            _disconnectDeadlineMs = millis64() + WIFI_DISCONNECT_DELAY;
           }
-          break;
-
-        default:
-          // Handle unknown WiFi events for debugging
-          if (notificationValue >= 100) { // WiFi events are >= 100
-            LOG_DEBUG("Unknown WiFi event received: %lu", notificationValue);
-          } else {
-            // Legacy notification or timeout - treat as disconnection check
-            LOG_DEBUG("WiFi periodic check or timeout");
-          }
-          break;
         }
+
+        if (notificationValue & WIFI_EVENT_AP_START)
+        {
+          LOG_DEBUG("SoftAP started on %s", WiFi.softAPIP().toString().c_str());
+        }
+
+        if (notificationValue & WIFI_EVENT_AP_STACONNECTED)
+        {
+          LOG_DEBUG("SoftAP client connected (%d now associated)", WiFi.softAPgetStationNum());
+        }
+
+        if (notificationValue & WIFI_EVENT_AP_STADISCONNECTED)
+        {
+          LOG_DEBUG("SoftAP client disconnected (%d still associated)", WiFi.softAPgetStationNum());
+          // Nothing is watching any more, so the grace window has already delivered whatever
+          // it was going to deliver. Only meaningful while the AP is up: the driver also
+          // posts this event as the AP itself comes down, and feeding it then would hand the
+          // state machine a teardown it has already performed.
+          if (_apRaised && WiFi.softAPgetStationNum() == 0) {
+            _feedProvisioning(WifiProvisioning::Event::AP_LAST_CLIENT_LEFT);
+          }
+        }
+
+        if (notificationValue & WIFI_EVENT_UNKNOWN)
+        {
+          LOG_DEBUG("Unknown WiFi event received: %d", (int)_lastUnknownWifiEvent);
+        }
+
+        continue; // At least one bit was handled this wakeup; the timeout branch below is not it
       }
       else
       {
-        // Timeout occurred - perform periodic health check
-        if (_taskShouldRun)
+        // Timeout occurred. The wait may have been shortened by an armed deadline, so a
+        // timeout no longer implies a full interval elapsed. Without this gate the branch
+        // below would call _forceReconnectInternal() every few seconds while disconnected,
+        // because that is exactly when the deadline is armed and isFullyConnected() false.
+        if (_taskShouldRun && (millis64() - _lastPeriodicCheckMs >= WIFI_PERIODIC_CHECK_INTERVAL))
         {
+          _lastPeriodicCheckMs = millis64();
           if (isFullyConnected())
           {
             // Test internet connectivity but don't force reconnection if it fails
@@ -739,11 +877,37 @@ namespace CustomWifi
               _reconnectAttempts = 0;
             }
           }
+          else if (_provisioning.state == WifiProvisioning::State::UNPROVISIONED)
+          {
+            // No stored credentials: there is nothing to reconnect to. Forcing a reconnect
+            // here would still increment _reconnectAttempts every 30 s (D8), poisoning the
+            // very counter the AP-raise predicate reads, so the predicate would never settle
+            // while the AP is up.
+            LOG_DEBUG("Periodic check: unprovisioned, not forcing a reconnect");
+          }
+          else if (_connectDeadlineMs != 0 || _disconnectDeadlineMs != 0)
+          {
+            // An attempt is already in flight and carries its own deadline, which is what
+            // reports the failure. Interfering here would restart the radio underneath it.
+            LOG_DEBUG("Periodic check: association attempt in flight, leaving it alone");
+          }
+          else if (_provisioning.hasCredentials)
+          {
+            // Re-enter the attempt machinery rather than calling WiFi.reconnect() directly.
+            // _forceReconnectInternal() arms no deadline, so nothing ever fed
+            // STA_ATTEMPT_FAILED for the failures it caused: a device retrying only from
+            // here accumulated zero apRaiseTriggers and never raised its SoftAP. On the
+            // bench that left a meter with a wrong password unreachable indefinitely -
+            // no LAN address, no AP, retrying every 30 s forever.
+            LOG_WARNING("Periodic check: WiFi not fully connected - starting a fresh attempt");
+            _reconnectAttempts++;
+            _lastReconnectAttempt = millis64();
+            statistics.wifiConnectionError++;
+            _startStaAttempt();
+          }
           else
           {
-            // WiFi not connected or no IP - force reconnection
-            LOG_WARNING("Periodic check: WiFi not fully connected - forcing reconnection");
-            _forceReconnectInternal();
+            LOG_DEBUG("Periodic check: no stored credentials, nothing to attempt");
           }
         }
       }
@@ -768,11 +932,21 @@ namespace CustomWifi
     // unreachable even after reconfiguring WiFi through the portal.
     resetConfiguration();
 
-    // Create WiFiManager on heap temporarily to reset settings
-    WiFiManager* wifiManager = new WiFiManager();
-    if (wifiManager) {
-      wifiManager->resetSettings();
-      delete wifiManager;
+    // Erase the credentials the driver stores. This is the same store _hasStoredCredentials()
+    // reads, so after this the device boots UNPROVISIONED and raises its SoftAP - the two
+    // must agree, or a reset device would still read as provisioned.
+    esp_err_t err = esp_wifi_restore();
+    if (err != ESP_OK) {
+      LOG_ERROR("Failed to erase stored WiFi credentials: %s", esp_err_to_name(err));
+    }
+
+    // The restart below is the intended path - it is what applies the static-IP reset - but
+    // it is not guaranteed: the minimum-uptime gate refuses it during the first 30 s, and
+    // safe mode refuses it for far longer. Tell the WiFi task the credentials are gone so
+    // the SoftAP comes back either way, instead of leaving the device retrying an
+    // association it can no longer make with no way in.
+    if (_wifiTaskHandle != NULL) {
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_CREDENTIALS_CLEARED, eSetBits);
     }
 
     setRestartSystem("Restart after WiFi reset");
@@ -819,7 +993,7 @@ namespace CustomWifi
     _hasPendingCredentials = true;
     
     // Notify WiFi task to process new credentials
-    xTaskNotify(_wifiTaskHandle, WIFI_EVENT_NEW_CREDENTIALS, eSetValueWithOverwrite);
+    xTaskNotify(_wifiTaskHandle, WIFI_EVENT_NEW_CREDENTIALS, eSetBits);
     
     // Return immediately - actual connection happens asynchronously in WiFi task
     // This prevents blocking the web server and avoids conflicts with event handlers
@@ -886,12 +1060,16 @@ namespace CustomWifi
   {
     LOG_DEBUG("Cleaning up WiFi resources...");
     
-    // Disable event handling first
+    // Disable event handling first. This is the whole shutdown barrier: _onWiFiEvent
+    // returns immediately once _eventsEnabled is false, so no notification can reach a
+    // task that is going away.
     _eventsEnabled = false;
-    
-    // Remove WiFi event handler to prevent crashes during shutdown
-    WiFi.removeEvent(_onWiFiEvent);
-    
+
+    // Deliberately NOT calling WiFi.removeEvent() here. Erasing from _cbEventList while
+    // the arduino_events task may be iterating it is the actual crash risk during
+    // shutdown, and the flag above already stops delivery. See D10.
+
+
     // Stop mDNS
     MDNS.end();
     _mdnsInitialized = false;
@@ -971,6 +1149,354 @@ namespace CustomWifi
     statistics.wifiConnectionError++;
     
     LOG_INFO("Forced reconnection initiated (attempt %d)", _reconnectAttempts);
+  }
+
+  // Reads the credentials the WiFi driver persists in its own NVS namespace. This is the
+  // same store WiFi.begin() with no arguments connects from, so "provisioned" here means
+  // exactly "WiFi.begin() has something to try".
+  static bool _hasStoredCredentials()
+  {
+    wifi_config_t conf = {};
+    esp_err_t err = esp_wifi_get_config(WIFI_IF_STA, &conf);
+    if (err != ESP_OK) {
+      LOG_WARNING("Could not read stored WiFi config: %s", esp_err_to_name(err));
+      return false;
+    }
+    return conf.sta.ssid[0] != '\0';
+  }
+
+  // Single funnel for provisioning transitions so the published snapshot can never drift
+  // from the owned context. Task context only.
+  static void _feedProvisioning(WifiProvisioning::Event event)
+  {
+    WifiProvisioning::State previous = _provisioning.state;
+    WifiProvisioning::State current = WifiProvisioning::onEvent(_provisioning, event, millis64());
+    _publishedState = current;
+
+    if (current != previous) {
+      LOG_INFO("Provisioning state %d -> %d", (int)previous, (int)current);
+    }
+
+    // Act on the decision immediately. onEvent() can decide an AP is needed (the move to
+    // AP_ASSIST does exactly that), and waiting for the next loop tick to notice would
+    // delay the one thing that makes an unreachable device reachable again.
+    _reconcileApWithState();
+  }
+
+  // IPAddress <-> host-order conversion, done via octets on purpose.
+  //
+  // IPAddress stores its bytes in a union with a uint32_t and its (uint32_t) cast returns
+  // that raw dword, so on this little-endian target the FIRST octet is the LOW byte. Using
+  // the cast for arithmetic silently byte-reverses the address: IPAddress(0xAC1F2A01) is
+  // 1.42.31.172, not 172.31.42.1, and a /24 mask comes out as 0.255.255.255. The candidate
+  // table and every helper in lib/wifi_provisioning use MSB-first, so the two conventions
+  // must be converted explicitly at this boundary rather than cast across it.
+  static uint32_t _toHostOrder(const IPAddress& address)
+  {
+    return ((uint32_t)address[0] << 24) | ((uint32_t)address[1] << 16) |
+           ((uint32_t)address[2] << 8)  | (uint32_t)address[3];
+  }
+
+  static IPAddress _fromHostOrder(uint32_t value)
+  {
+    return IPAddress((uint8_t)(value >> 24), (uint8_t)(value >> 16),
+                     (uint8_t)(value >> 8),  (uint8_t)value);
+  }
+
+  // Reads the SSID the driver has stored, for diagnostics and for the UI to show what the
+  // device is trying to join. Replaces WiFiManager::getWiFiSSID(true) (D11).
+  static void _readStoredSsid(char* out, size_t outSize)
+  {
+    out[0] = '\0';
+    wifi_config_t conf = {};
+    if (esp_wifi_get_config(WIFI_IF_STA, &conf) != ESP_OK) return;
+    snprintf(out, outSize, "%s", (const char*)conf.sta.ssid);
+  }
+
+  // Starts one non-blocking association attempt from the stored credentials. Replaces
+  // WiFiManager::autoConnect(), which blocked the task for the whole attempt and, on
+  // failure, restarted the device instead of letting it fall back to provisioning.
+  static void _startStaAttempt()
+  {
+    // The extended timeout is a one-shot for the first attempt after a power cut, to let
+    // a router that lost power at the same time finish booting. esp_reset_reason() is
+    // fixed for the whole boot, so testing it per attempt kept every later retry at 5
+    // minutes too - and since a mains-wired meter powers on from POWERON every time, that
+    // made WIFI_CONNECT_TIMEOUT_SECONDS unreachable in the field and pushed AP_ASSIST out
+    // to ~25 minutes instead of ~50 seconds.
+    bool powerReset = _isPowerReset() && !_powerResetGraceUsed;
+    _powerResetGraceUsed = true;
+
+    _connectTimeoutMs = (powerReset ? WIFI_CONNECT_TIMEOUT_POWER_RESET_SECONDS
+                                    : WIFI_CONNECT_TIMEOUT_SECONDS) * 1000UL;
+    if (powerReset) {
+      LOG_INFO("Power reset detected - extended WiFi timeout (%lu s) for the first attempt",
+               (unsigned long)(_connectTimeoutMs / 1000UL));
+    }
+
+    // Guarded so a concurrent diagnostics read can never see a torn buffer; see the
+    // declaration comment on _disconnectDiagMux.
+    taskENTER_CRITICAL(&_disconnectDiagMux);
+    _readStoredSsid(_lastAttemptedSSID, sizeof(_lastAttemptedSSID));
+    taskEXIT_CRITICAL(&_disconnectDiagMux);
+    LOG_INFO("Starting WiFi association attempt to '%s'", _lastAttemptedSSID);
+
+    // WiFi.begin() calls esp_wifi_set_config() internally, which ESP-IDF refuses while a
+    // previous association is still in flight. Clearing it first keeps every attempt real:
+    // without this the call silently no-ops and the deadline below times out an attempt
+    // that never started, which is what produced the phantom failures seen on hardware.
+    esp_wifi_disconnect();
+
+    if (!WiFi.begin()) { // No arguments: uses the credentials the driver has stored
+      // Do not arm a deadline for an attempt that did not start; report it now so the
+      // state machine counts a real failure rather than waiting out a fictional one.
+      LOG_WARNING("WiFi.begin() refused - treating as an immediate association failure");
+      _connectDeadlineMs = 0;
+      _feedProvisioning(WifiProvisioning::Event::STA_ATTEMPT_FAILED);
+      return;
+    }
+
+    _connectDeadlineMs = millis64() + _connectTimeoutMs;
+  }
+
+  // One association attempt gave up. Feed the state machine and either retry or let the
+  // AP-raise predicate decide. Never restarts the device: failing to associate is now a
+  // state (UNPROVISIONED / AP_ASSIST), not a fatal error.
+  static void _serviceConnectDeadline()
+  {
+    if (_connectDeadlineMs == 0) return;
+    if (millis64() < _connectDeadlineMs) return;
+
+    _connectDeadlineMs = 0;
+
+    if (isFullyConnected()) return; // Raced with a successful association
+
+    LOG_WARNING("Association attempt timed out after %lu s", (unsigned long)(_connectTimeoutMs / 1000UL));
+    _feedProvisioning(WifiProvisioning::Event::STA_ATTEMPT_FAILED);
+
+    // Keep trying for as long as there is something to try. Raising the AP is no longer a
+    // reason to stop: under APSTA both interfaces run at once, so the device can host the
+    // portal and still rejoin by itself the moment the router comes back. Without
+    // credentials there is nothing to attempt, and WiFi.begin() would just churn the radio.
+    if (_provisioning.hasCredentials) {
+      _startStaAttempt();
+    }
+  }
+
+  // Raise the SoftAP on a subnet that cannot collide with the STA subnet. lwIP's ip4_route
+  // returns the FIRST matching netif and netif_add prepends, so an AP raised after STA wins
+  // every ambiguous match - an overlapping AP subnet silently blackholes LAN traffic (D5).
+  static bool _raiseAp()
+  {
+    if (_apRaised) return true;
+
+    // Compare against both the live lease and the configured static IP: a restored backup
+    // can carry a static IP from a different LAN that is not currently in effect.
+    bool staValid = WiFi.isConnected() && WiFi.localIP() != IPAddress(0, 0, 0, 0);
+    uint32_t staAddr = staValid ? _toHostOrder(WiFi.localIP()) : 0;
+    uint8_t staCidr = 24;
+    if (staValid) {
+      // cidrFromNetmask rejects a non-contiguous mask by returning 0, which is not a usable
+      // prefix; fall back to /24 rather than comparing against a network that does not exist.
+      uint8_t derived = WifiProvisioning::cidrFromNetmask(_toHostOrder(WiFi.subnetMask()));
+      if (derived == 0) {
+        LOG_WARNING("STA netmask %s is not a valid prefix - assuming /24 for overlap checks",
+                    WiFi.subnetMask().toString().c_str());
+      } else {
+        staCidr = derived;
+      }
+    }
+
+    // Through getConfiguration(), never off _configuration directly: this runs on the WiFi
+    // task while the server task can be inside setConfiguration(), and the fields read below
+    // are char arrays, so an unlocked read can catch a half-written address. A failure to
+    // take the copy means the static IP cannot be considered at all, which is safe: the STA
+    // comparison still applies and the candidate list still fails closed.
+    WifiConfiguration config;
+    bool haveConfig = getConfiguration(config);
+    if (!haveConfig) {
+      LOG_WARNING("Could not read the network configuration - ignoring the static IP for overlap checks");
+    }
+
+    bool staticValid = false;
+    uint32_t staticAddr = 0;
+    uint8_t staticCidr = 24;
+    if (haveConfig && config.useStaticIp && config.ip[0] != '\0') {
+      IPAddress parsed;
+      if (parsed.fromString(config.ip)) {
+        staticValid = true;
+        staticAddr = _toHostOrder(parsed);
+        IPAddress parsedMask;
+        if (config.subnet[0] != '\0' && parsedMask.fromString(config.subnet)) {
+          uint8_t derived = WifiProvisioning::cidrFromNetmask(_toHostOrder(parsedMask));
+          if (derived != 0) staticCidr = derived;
+        }
+      }
+    }
+
+    WifiProvisioning::Subnet chosen;
+    if (!WifiProvisioning::selectApSubnet(staValid, staAddr, staCidr,
+                                          staticValid, staticAddr, staticCidr, chosen)) {
+      LOG_ERROR("No non-overlapping SoftAP subnet available - not raising the AP");
+      return false;
+    }
+
+    IPAddress apIp = _fromHostOrder(chosen.address);
+    IPAddress apMask = _fromHostOrder(WifiProvisioning::netmaskFromCidr(chosen.cidr));
+
+    char apSsid[WIFI_SSID_BUFFER_SIZE];
+    snprintf(apSsid, sizeof(apSsid), "%s-%s", WIFI_CONFIG_PORTAL_SSID, DEVICE_ID);
+    char apPassword[WIFI_PASSWORD_BUFFER_SIZE];
+    _resolveApPassword(apPassword, sizeof(apPassword));
+
+    // Documented order: config, then raise, then the DHCP captive-portal option (which
+    // requires the AP to be started before it can be set).
+    if (!WiFi.softAPConfig(apIp, apIp, apMask)) {
+      LOG_ERROR("softAPConfig failed for %s/%u", apIp.toString().c_str(), chosen.cidr);
+      return false;
+    }
+    if (!WiFi.softAP(apSsid, apPassword)) {
+      LOG_ERROR("softAP failed for SSID %s", apSsid);
+      return false;
+    }
+
+    WiFi.AP.enableDhcpCaptivePortal();
+
+    _apRaised = true;
+
+    // Publish the address the auth carve-out filter compares against. Set only after softAP()
+    // has succeeded, so isApAddress() is never true for an AP that does not exist, and taken
+    // from the address we configured rather than read back, which keeps it a plain store.
+    _apAddressHostOrder = chosen.address;
+
+    // Same signal the WiFiManager portal used to give (its setAPCallback), so the meaning
+    // of a fast blue blink does not change for anyone who has seen it before: "I am waiting
+    // for you to configure me". PRIO_MEDIUM per D14, so genuine faults still win.
+    Led::blinkBlueFast(Led::PRIO_MEDIUM);
+
+    LOG_INFO("SoftAP raised: %s on %s/%u", apSsid, apIp.toString().c_str(), chosen.cidr);
+    return true;
+  }
+
+  static void _tearDownAp()
+  {
+    if (!_apRaised) return;
+
+    // Stop DNS before the interface it answers for disappears. Done directly rather than
+    // through _serviceDns(), which cannot act here: _apRaised is still true at this point.
+    if (_dnsRunning) {
+      _dnsServer.stop();
+      _dnsRunning = false;
+    }
+
+    // Retire the published address before the interface goes, so the carve-out filter stops
+    // matching on it no later than the AP stops existing.
+    _apAddressHostOrder = 0;
+
+    WiFi.softAPdisconnect(true);
+    _apRaised = false;
+
+    // Drop the provisioning blink and hand the LED back to whatever the STA side is doing.
+    // clearPattern() alone is not enough: it also drops the disconnected pulse that
+    // WIFI_EVENT_DISCONNECTED suppresses while the AP is up, which would leave a device that
+    // is still searching for its network showing nothing at all.
+    Led::clearPattern(Led::PRIO_MEDIUM);
+    if (isFullyConnected()) Led::setGreen(Led::PRIO_NORMAL);
+    else Led::pulseBlue(Led::PRIO_MEDIUM);
+
+    LOG_INFO("SoftAP torn down");
+  }
+
+  // The catch-all DNS responder binds INADDR_ANY:53 and answers every name with a fixed
+  // address regardless of arrival interface, so leaving it up once STA is connected makes
+  // the device an open resolver on the customer's LAN. Bound to AP-up-and-STA-down (D4).
+  static void _serviceDns()
+  {
+    bool wanted = _apRaised && WifiProvisioning::isDnsAllowed(_provisioning, WiFi.isConnected());
+
+    if (wanted && !_dnsRunning) {
+      // Always the three-argument form: the no-arg start() only sets the resolved address
+      // when it is currently zero, so it would answer with a stale IP after the AP moves.
+      if (_dnsServer.start(53, "*", WiFi.softAPIP())) {
+        _dnsRunning = true;
+        LOG_DEBUG("Captive DNS started on %s", WiFi.softAPIP().toString().c_str());
+      } else {
+        LOG_WARNING("Captive DNS failed to start");
+      }
+    } else if (!wanted && _dnsRunning) {
+      _dnsServer.stop();
+      _dnsRunning = false;
+      LOG_DEBUG("Captive DNS stopped");
+    }
+  }
+
+  // Brings the radio in line with what the state machine decided.
+  //
+  // The split matters: the pure library owns WHETHER an AP should exist (_provisioning
+  // .apRaised), this file owns whether one actually does (_apRaised). Nothing else may
+  // set either, or the two drift.
+  //
+  // Reconciling like this rather than polling shouldRaiseAp() is what makes AP_ASSIST
+  // work at all. onEvent(STA_ATTEMPT_FAILED) sets Context.apRaised itself when it moves
+  // to AP_ASSIST, and shouldRaiseAp() is documented UNPROVISIONED-only and returns false
+  // once apRaised is set - so a predicate-polling caller would never raise the radio for
+  // a device that lost its network. It would sit silent and unreachable, with main.cpp
+  // blocked before CustomServer::begin(), recoverable only by physical access.
+  static void _reconcileApWithState()
+  {
+    if (_provisioning.apRaised && !_apRaised) {
+      // Retried on every tick if it fails: refusing to bring up the AP is exactly the
+      // state that leaves the device unreachable, so it must not be a one-shot attempt.
+      _raiseAp();
+    } else if (!_provisioning.apRaised && _apRaised) {
+      _tearDownAp();
+    }
+  }
+
+  // Runs the decision predicates each loop, then makes the radio match. The only timed
+  // window left is grace; the AP is otherwise up exactly while the device cannot be
+  // reached over its own network, so this mostly just re-asserts that.
+  static void _serviceApLifecycle()
+  {
+    uint64_t nowMs = millis64();
+
+    if (_provisioning.apRaised && WifiProvisioning::shouldTearDownAp(_provisioning, nowMs)) {
+      WifiProvisioning::tearDownAp(_provisioning, nowMs);
+      _publishedState = _provisioning.state;
+    } else if (WifiProvisioning::shouldRaiseAp(_provisioning, nowMs)) {
+      // Covers both the first raise and any later one: if the AP is somehow down while the
+      // device still cannot associate, this puts it back rather than leaving it dark.
+      WifiProvisioning::raiseAp(_provisioning, nowMs);
+      _publishedState = _provisioning.state;
+    }
+
+    _reconcileApWithState();
+    _serviceDns();
+  }
+
+  // Evaluates a disconnect grace window once it expires. This is the non-blocking
+  // replacement for the delay(WIFI_DISCONNECT_DELAY) that used to sit inline in the
+  // WIFI_EVENT_DISCONNECTED case and stall the task for 15 s per failed attempt,
+  // freezing AP client events, the DNS lifecycle and every timer along with it.
+  static void _serviceDisconnectDeadline()
+  {
+    if (_disconnectDeadlineMs == 0) return;
+    if (millis64() < _disconnectDeadlineMs) return;
+
+    _disconnectDeadlineMs = 0; // Disarm first: exactly one evaluation per armed window
+
+    // Auto-reconnect may have restored the link during the window
+    if (isFullyConnected()) return;
+
+    _reconnectAttempts++;
+    _lastReconnectAttempt = millis64();
+    _feedProvisioning(WifiProvisioning::Event::STA_ATTEMPT_FAILED);
+
+    LOG_WARNING("Auto-reconnect failed, attempt %d", _reconnectAttempts);
+
+    // No portal fallback any more. Repeated failures now feed the AP-raise predicate,
+    // and _serviceApLifecycle() raises the SoftAP so the device can be re-provisioned
+    // from its own web interface. It no longer restarts itself out of a bad network.
   }
 
   static bool _isPowerReset()
@@ -1110,7 +1636,7 @@ namespace CustomWifi
     LOG_DEBUG("Stopping WiFi task");
 
     // Send shutdown notification using the special shutdown event (cannot use standard stopTaskGracefully)
-    xTaskNotify(_wifiTaskHandle, WIFI_EVENT_SHUTDOWN, eSetValueWithOverwrite);
+    xTaskNotify(_wifiTaskHandle, WIFI_EVENT_SHUTDOWN, eSetBits);
 
     // Wait with timeout for clean shutdown using standard pattern
     uint64_t startTime = millis64();
@@ -1348,10 +1874,9 @@ namespace CustomWifi
     LOG_DEBUG("Network configuration saved to Preferences");
   }
 
-  // Apply the network configuration to the radio. Must run after WiFi.mode(WIFI_STA) and
-  // before the connection attempt. Static IP is set via WiFi.config(); WiFiManager only
-  // overrides this when it has its own static IP set (it does not), so the config survives
-  // autoConnect. When static IP is disabled we leave the netif on DHCP (its boot default).
+  // Apply the network configuration to the radio. Must run after WiFi.mode() and before the
+  // connection attempt. Static IP is set via WiFi.config(); when static IP is disabled we
+  // leave the netif on DHCP (its boot default).
   static void _applyNetworkConfiguration()
   {
     WifiConfiguration config;

@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "customserver.h"
+#include "modbustcp.h" // Local integrations are started/stopped to follow the STA link
 #include "taskprofiler.h"
 #include "duration_format.h"
 #include "shadow.h"
@@ -251,6 +252,92 @@ namespace CustomServer
         LOG_DEBUG("Logging middleware configured");
     }
 
+    // True only when the device has no stored credentials AND the request was addressed to
+    // the SoftAP's own address. This is the whole auth carve-out (D3/D9).
+    //
+    // Runs on the AsyncTCP task for every request to every path, so it must stay a state
+    // read plus an address compare: no mutex, no NVS, no logging, no allocation. Both reads
+    // are volatile loads of values the WiFi task publishes, which is why isApAddress() exists
+    // instead of WiFi.softAPIP() - the latter reads the netif through esp_netif_get_ip_info()
+    // on every request to every path.
+    //
+    // IMPORTANT, do not build on a guarantee this does not give: client()->localIP() reads
+    // _pcb->local_ip (AsyncTCP.cpp:1341-1352), the destination address lwIP recorded for the
+    // accepted connection. That is NOT proof of which physical netif the packet arrived on,
+    // and it is the same field ON_AP_FILTER reads. What makes this safe is the state check
+    // below, not the address compare. Bench-4 exists precisely because only hardware can
+    // show whether a LAN host static-routed to the AP subnet satisfies the compare.
+    //
+    // Still preferred over ON_AP_FILTER (`WiFi.localIP() != client()->localIP()`), which
+    // returns true for the device's own 127.0.0.1 health probe and true for EVERYTHING
+    // whenever WiFi.localIP() is 0.0.0.0 - exactly the unprovisioned case, so it would open
+    // the entire UI on the LAN the moment STA dropped. Comparing against the SoftAP address
+    // fixes both of those; it does not turn the check into an interface check.
+    static bool _isProvisioningOrigin(AsyncWebServerRequest *request)
+    {
+        // The state check carries the safety: outside UNPROVISIONED there is no bypass at
+        // all, whatever the address comparison says.
+        if (CustomWifi::getProvisioningState() != WifiProvisioning::State::UNPROVISIONED) return false;
+
+        AsyncClient *client = request->client();
+        if (client == nullptr) return false;
+
+        // False whenever no AP is up, so there is nothing to carve out until one exists.
+        return CustomWifi::isApAddress(client->localIP());
+    }
+
+    // Same origin test, but also true during GRACE: the window right after credentials are
+    // accepted, while the AP is deliberately held up so the user can see where the meter
+    // went. Without this the setup page 401s the moment it succeeds - reloading it gets a
+    // browser password prompt, and the grace window has nothing to show, which defeats its
+    // entire purpose.
+    //
+    // Used only for reading: the page, its assets, the captive probes and the status
+    // endpoint. Anything that changes the device (credentials, scan) stays on the strict
+    // UNPROVISIONED test above, and AP_ASSIST remains fully closed either way.
+    static bool _isProvisioningSession(AsyncWebServerRequest *request)
+    {
+        WifiProvisioning::State state = CustomWifi::getProvisioningState();
+        if (state != WifiProvisioning::State::UNPROVISIONED &&
+            state != WifiProvisioning::State::GRACE) return false;
+
+        AsyncClient *client = request->client();
+        if (client == nullptr) return false;
+
+        return CustomWifi::isApAddress(client->localIP());
+    }
+
+    // Registers a route twice: an open handler that only matches provisioning-origin
+    // requests, then the normal authenticated one.
+    //
+    // Insertion order is what makes this work - the first handler whose filter passes wins
+    // (WebServer.cpp:145-154). skipServerMiddlewares() drops the whole server chain, which
+    // includes rate limiting as well as auth, so the rate limiter is added back explicitly:
+    // an unauthenticated route still must not be floodable.
+    static void _onOpenDuringProvisioning(const char *uri, WebRequestMethodComposite method,
+                                          ArRequestHandlerFunction handler)
+    {
+        server.on(uri, method, handler)
+              .setFilter(_isProvisioningOrigin)
+              .skipServerMiddlewares()
+              .addMiddleware(&rateLimit);
+
+        server.on(uri, method, handler);
+    }
+
+    // As above, but open for the whole provisioning session including GRACE. Read-only
+    // routes only.
+    static void _onOpenDuringSession(const char *uri, WebRequestMethodComposite method,
+                                     ArRequestHandlerFunction handler)
+    {
+        server.on(uri, method, handler)
+              .setFilter(_isProvisioningSession)
+              .skipServerMiddlewares()
+              .addMiddleware(&rateLimit);
+
+        server.on(uri, method, handler);
+    }
+
     // Helper functions for common response patterns
     static void _sendJsonResponse(AsyncWebServerRequest *request, const JsonDocument &doc, int32_t statusCode)
     {
@@ -477,12 +564,24 @@ namespace CustomServer
 
     static bool _performHealthCheck()
     {
-        // Check if WiFi is connected
-        if (!CustomWifi::isFullyConnected())
+        // Serving on the SoftAP with no upstream network is a working device, not a
+        // sick one. Gating on isFullyConnected() here fails every 30 s during AP-only
+        // operation, and five failures request a restart: at ~150 s uptime that is
+        // above QUICK_RESTART_THRESHOLD so safe mode never arms, and below
+        // COUNTERS_RESET_TIMEOUT so the consecutive-reset counter never clears. About
+        // 25 minutes of that reaches MAX_RESET_COUNT, which rolls the firmware back
+        // and wipes the user's NVS.
+        if (!CustomWifi::isNetworkServiceable())
         {
-            LOG_DEBUG("Health check: WiFi not connected");
+            LOG_DEBUG("Health check: no serviceable network interface");
             return false;
         }
+
+        // Follow the station link with the unauthenticated local integrations. This runs on
+        // the periodic health-check task rather than from the WiFi task so customwifi keeps
+        // no knowledge of the services layered on top of it. Idempotent, so the worst case
+        // is Modbus appearing up to one check interval after STA comes up.
+        ModbusTcp::syncWithNetwork(CustomWifi::isFullyConnected(), CustomWifi::isApServing());
 
         // Perform a simple HTTP self-request to verify server responsiveness
         WiFiClient client;
@@ -768,56 +867,72 @@ namespace CustomServer
         const char* etag = _getSketchEtag();
 
         // CSS files
-        server.on("/css/button.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/css/button.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/css", EMBEDDED(button_css), etag);
         });
-        server.on("/css/forms.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/css/forms.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/css", EMBEDDED(forms_css), etag);
         });
-        server.on("/css/index.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/css/index.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/css", EMBEDDED(index_css), etag);
         });
-        server.on("/css/styles.css", HTTP_GET, [etag](AsyncWebServerRequest *request) { 
+        _onOpenDuringSession("/css/styles.css", HTTP_GET, [etag](AsyncWebServerRequest *request) { 
             _sendStaticWithEtag(request, "text/css", EMBEDDED(styles_css), etag);
         });
-        server.on("/css/section.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/css/section.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/css", EMBEDDED(section_css), etag);
         });
-        server.on("/css/tooltip.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/css/tooltip.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/css", EMBEDDED(tooltip_css), etag);
         });
-        server.on("/css/typography.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/css/typography.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/css", EMBEDDED(typography_css), etag);
         });
 
         // JavaScript files
-        server.on("/js/api-client.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/js/api-client.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "application/javascript", EMBEDDED(api_client_js), etag);
         });
-        server.on("/js/chart-helpers.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/js/chart-helpers.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "application/javascript", EMBEDDED(chart_helpers_js), etag);
         });
-        server.on("/js/data-helpers.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/js/data-helpers.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "application/javascript", EMBEDDED(data_helpers_js), etag);
         });
-        server.on("/js/issues.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/js/issues.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "application/javascript", EMBEDDED(issues_js), etag);
         });
-        server.on("/js/power-flow.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/js/power-flow.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "application/javascript", EMBEDDED(power_flow_js), etag);
         });
-        server.on("/js/tooltip.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/js/tooltip.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "application/javascript", EMBEDDED(tooltip_js), etag);
         });
 
         // Resources
-        server.on("/favicon.svg", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+        _onOpenDuringSession("/favicon.svg", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "image/svg+xml", EMBEDDED(favicon_svg), etag);
         });
 
         // Main dashboard
+        // "/" is the one route whose twins differ. An unprovisioned device reached over its
+        // own SoftAP lands on WiFi setup - which is what makes the captive-portal redirect
+        // useful, since the OS opens "/" and nothing else. Everywhere else "/" is the
+        // dashboard, unchanged.
+        server.on("/", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", EMBEDDED(wifi_setup_html), etag);
+        }).setFilter(_isProvisioningSession)
+          .skipServerMiddlewares()
+          .addMiddleware(&rateLimit);
+
         server.on("/", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/html", EMBEDDED(index_html), etag);
+        });
+
+        // Also reachable by name, so a provisioned device can be re-pointed at another
+        // network from the normal UI without erasing its credentials first.
+        _onOpenDuringSession("/wifi-setup.html", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", EMBEDDED(wifi_setup_html), etag);
         });
 
         // Configuration pages
@@ -1689,8 +1804,95 @@ namespace CustomServer
         server.addHandler(ackIssueHandler);
     }
 
+    // Captive-portal detection probes. Registered as explicit handlers rather than relying
+    // on onNotFound, which ignores filters (so it could not be limited to the AP netif) but
+    // still runs middleware (so it would demand auth on a probe that cannot authenticate).
+    //
+    // Answering with a redirect rather than the expected 204/success is what makes the OS
+    // show its "sign in to network" sheet.
+    static void _serveCaptivePortalProbes()
+    {
+        static const char *const kProbePaths[] = {
+            "/generate_204",            // Android
+            "/gen_204",                 // Android, older
+            "/hotspot-detect.html",     // iOS / macOS
+            "/library/test/success.html",
+            "/ncsi.txt",                // Windows
+            "/connecttest.txt",         // Windows 10+
+            "/redirect",                // Windows, follow-up
+        };
+
+        for (size_t i = 0; i < sizeof(kProbePaths) / sizeof(kProbePaths[0]); i++) {
+            _onOpenDuringSession(kProbePaths[i], HTTP_GET, [](AsyncWebServerRequest *request) {
+                char location[IP_ADDRESS_BUFFER_SIZE + 16];
+                snprintf(location, sizeof(location), "http://%s/", WiFi.softAPIP().toString().c_str());
+
+                AsyncWebServerResponse *response = request->beginResponse(302, "text/plain", "");
+                response->addHeader("Location", location);
+                request->send(response);
+            });
+        }
+    }
+
     static void _serveNetworkEndpoints()
     {
+        _serveCaptivePortalProbes();
+
+        // Provisioning status: what the device is doing, and where to reach it afterwards.
+        // Open on the AP while unprovisioned because the setup page polls this before any
+        // password could have been entered.
+        _onOpenDuringSession("/api/v1/network/wifi/status", HTTP_GET, [](AsyncWebServerRequest *request) {
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+
+            doc["state"] = (uint8_t)CustomWifi::getProvisioningState();
+            doc["connected"] = CustomWifi::isFullyConnected();
+            doc["apServing"] = CustomWifi::isApServing();
+
+            char ssid[WIFI_SSID_BUFFER_SIZE];
+            CustomWifi::getStoredSsid(ssid, sizeof(ssid));
+            doc["ssid"] = ssid;
+
+            doc["ip"] = WiFi.localIP().toString();
+            doc["apIp"] = WiFi.softAPIP().toString();
+            doc["hostname"] = MDNS_HOSTNAME ".local";
+            doc["rssi"] = WiFi.RSSI();
+
+            // Identity, so the setup page can show which meter you are talking to before
+            // any of the authenticated endpoints are reachable. Nothing sensitive: the
+            // device id is already the SoftAP's SSID suffix.
+            doc["deviceId"] = DEVICE_ID;
+            doc["firmwareVersion"] = FIRMWARE_BUILD_VERSION;
+            doc["uptime"] = millis64();
+
+            // The credentials POST answers as soon as the request is queued, so its 200 says
+            // nothing about whether the driver accepted the write. This is where the client
+            // finds that out, which is why the POST's message points here.
+            doc["credentialWriteFailed"] = CustomWifi::lastCredentialWriteFailed();
+
+            _sendJsonResponse(request, doc);
+        });
+
+        // Network scan. Async and cached in customwifi; this just relays state so the client
+        // can poll rather than hold a request open for the length of a scan.
+        _onOpenDuringProvisioning("/api/v1/network/wifi/scan", HTTP_GET, [](AsyncWebServerRequest *request) {
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            // ?refresh is the "Scan again" press, which must touch the radio rather than
+            // re-serve the cached set. The client's polling requests deliberately omit it.
+            CustomWifi::getScanResultsAsJson(doc, request->hasParam("refresh"));
+            _sendJsonResponse(request, doc);
+        });
+
+        // Why the last association failed. Replaces the WiFiManager /diagnostic page (D11);
+        // nothing else ever exposed these fields.
+        _onOpenDuringProvisioning("/api/v1/network/wifi/diagnostics", HTTP_GET, [](AsyncWebServerRequest *request) {
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            CustomWifi::getDisconnectDiagnosticsAsJson(doc);
+            _sendJsonResponse(request, doc);
+        });
+
         // WiFi reset
         server.on("/api/v1/network/wifi/reset", HTTP_POST, [](AsyncWebServerRequest *request)
                   {
@@ -1700,9 +1902,16 @@ namespace CustomServer
             CustomWifi::resetWifi(); 
         });
 
-        // Set WiFi credentials
-        AsyncCallbackJsonWebHandler *wifiCredentialsHandler = new AsyncCallbackJsonWebHandler(
-            "/api/v1/network/wifi/credentials",
+        // Set WiFi credentials.
+        //
+        // Registered twice like the routes above, and this one is load-bearing: submitting
+        // credentials is the ONE thing an unprovisioned user must be able to do, and they
+        // cannot authenticate to do it. A single authenticated handler here would 401 the
+        // whole provisioning flow at its last step.
+        //
+        // JSON body handlers are AsyncWebHandler subclasses, so they take the same filter
+        // and middleware treatment; they just cannot go through the server.on() helper.
+        ArJsonRequestHandlerFunction credentialsCallback =
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
                 if (!_validateRequest(request, "POST")) return;
@@ -1743,9 +1952,20 @@ namespace CustomServer
 
                 LOG_INFO("Received request to set WiFi credentials for SSID: %s", ssid);
 
-                if (CustomWifi::setCredentials(ssid, password)) _sendSuccessResponse(request, "WiFi credentials updated successfully. It will restart and attempt to connect to the new network.");
+                if (CustomWifi::setCredentials(ssid, password)) _sendSuccessResponse(request, "WiFi credentials saved. Connecting to the new network without restarting - poll /api/v1/network/wifi/status for the result.");
                 else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to save credentials for the specified network. Please verify them and try again.");
-            });
+            };
+
+        // Open twin first, so it wins by insertion order when the filter passes.
+        AsyncCallbackJsonWebHandler *openCredentialsHandler =
+            new AsyncCallbackJsonWebHandler("/api/v1/network/wifi/credentials", credentialsCallback);
+        openCredentialsHandler->setFilter(_isProvisioningOrigin);
+        openCredentialsHandler->skipServerMiddlewares();
+        openCredentialsHandler->addMiddleware(&rateLimit);
+        server.addHandler(openCredentialsHandler);
+
+        AsyncCallbackJsonWebHandler *wifiCredentialsHandler =
+            new AsyncCallbackJsonWebHandler("/api/v1/network/wifi/credentials", credentialsCallback);
         server.addHandler(wifiCredentialsHandler);
 
         // Get network configuration (static IP)

@@ -25,4 +25,10 @@ namespace ModbusTcp
 {
     void begin();
     void stop();
+
+    // Start or stop the server to follow the station link. Modbus TCP is unauthenticated and
+    // binds every interface, so it must not be listening while a SoftAP is broadcasting -
+    // that includes GRACE, where STA is already connected but the AP is deliberately held up
+    // for a few more minutes. Idempotent; safe to call repeatedly.
+    void syncWithNetwork(bool staConnected, bool apServing);
 }

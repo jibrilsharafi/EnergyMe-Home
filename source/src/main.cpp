@@ -15,7 +15,7 @@
 #include "ade7953.h"
 #include "buttonhandler.h"
 #include "crashmonitor.h"
-#include "customwifi.h" // Needs to be defined before customserver.h due to conflict between WiFiManager and ESPAsyncWebServer
+#include "customwifi.h"
 #include "customserver.h"
 #include "led.h"
 #include "modbustcp.h"
@@ -145,13 +145,32 @@ void setup()
   CustomWifi::begin();
   LOG_INFO("WiFi setup done");
 
-  // While we could make this non-blocking since almost everything is async, the next steps 
-  // depend on having a WiFi connection, so it makes little sense to proceed until we have that
-  // What matters (meter measurements) is already running, so no energy is lost
-  while (!CustomWifi::isFullyConnected())
+  // Wait until the device is reachable by SOMETHING: STA connected, or the SoftAP raised
+  // and serving. Waiting on isFullyConnected() here would spin forever on a device with no
+  // valid credentials, so CustomServer::begin() below would never run and provisioning
+  // would be unreachable - the AP would be up with nothing listening on it (D7).
+  // Safe only because the health check now gates on isNetworkServiceable() too; on
+  // isFullyConnected() it would fail every 30 s with the AP up and restart the device.
+  //
+  // Bounded, because "neither interface" is a reachable state, not a transient one: if every
+  // candidate subnet collides, _raiseAp() fails closed and there is no AP to wait for. An
+  // unbounded wait there is the worst possible outcome - no STA, no AP, and no web server on
+  // any interface, so nothing to diagnose or fix it with. Give up and carry on instead: every
+  // downstream service gates on isFullyConnected() by itself, and starting the server anyway
+  // means it is already listening the moment any interface appears.
+  uint64_t networkWaitStartMs = millis64();
+  while (!CustomWifi::isNetworkServiceable() &&
+         (millis64() - networkWaitStartMs) < SETUP_NETWORK_WAIT_TIMEOUT_MS)
   {
-    LOG_DEBUG("Waiting for full WiFi connection...");
+    LOG_DEBUG("Waiting for WiFi connection or SoftAP...");
     delay(1000);
+  }
+
+  if (!CustomWifi::isNetworkServiceable())
+  {
+    LOG_ERROR("No STA link and no SoftAP after %llu s - continuing boot anyway. The device is "
+              "unreachable until one of them comes up; the WiFi task keeps retrying both",
+              (uint64_t)(SETUP_NETWORK_WAIT_TIMEOUT_MS / 1000ULL));
   }
 
   // Add custom logging setup after WiFi
@@ -176,8 +195,11 @@ void setup()
   CustomServer::begin();
   LOG_INFO("Server setup done");
 
+  // Only once there is a station link. Modbus TCP is unauthenticated and binds every
+  // interface, so starting it on an AP-only boot would serve meter data to anyone in radio
+  // range of the provisioning SoftAP. The health-check task starts it when STA comes up.
   LOG_DEBUG("Setting up Modbus TCP...");
-  ModbusTcp::begin();
+  ModbusTcp::syncWithNetwork(CustomWifi::isFullyConnected(), CustomWifi::isApServing());
   LOG_INFO("Modbus TCP setup done");
 
   if (!globalCommunityMode) {
