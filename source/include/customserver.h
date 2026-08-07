@@ -209,15 +209,15 @@ public:
             return;
         }
 
-        // A throttle is not an authentication outcome. A credential-less flood can trip the
-        // unauthenticated rate limiter, and that 429 comes back here - reading it as a success
-        // would let a source clear its own accumulated failures without ever authenticating.
-        // Record nothing; the auth verdict is simply unknown for a throttled request.
-        if (response->code() == HTTP_CODE_TOO_MANY_REQUESTS) return;
-
-        // Everything else got past digestAuth, so authentication succeeded - including the 403
-        // from the default-password guard, which only ever fires on an authenticated caller.
-        AuthLockout::recordSuccess(_table, address, nowMs);
+        // Clearing a source requires a real authentication success: the request both carried
+        // credentials AND got past digestAuth (a non-401 outcome, including the 403 from the
+        // default-password guard, which only fires on an authenticated caller). A request with
+        // no Authorization header is never that - it is a handshake opening leg, an open-route
+        // hit, or a 429 from the unauthenticated rate limiter - so it records nothing. Without
+        // this guard, a credential-less request that trips the global limiter comes back 429,
+        // is read as "success", and clears a source's accumulated failures, letting an attacker
+        // interleave floods to stay below the lockout threshold forever.
+        if (request->hasHeader("Authorization")) AuthLockout::recordSuccess(_table, address, nowMs);
     }
 
     // The clock is injected rather than called directly: this header is pulled in by
