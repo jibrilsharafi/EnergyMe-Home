@@ -4,7 +4,16 @@
 openapi: 3.0.0
 info:
   title: EnergyMe - Home | API
-  description: API documentation for EnergyMe - Home
+  description: >
+    API documentation for EnergyMe - Home.
+
+
+    **Default password lockdown.** A device still holding the password it shipped with
+    answers `403` with `"reason": "default_password"` on every endpoint here except
+    `/api/v1/health`, `GET /api/v1/auth/status` and `POST /api/v1/auth/change-password`.
+    The shipped password is a published constant, so a device holding it is effectively
+    unauthenticated; set a new one at `/` and the rest of this API becomes available
+    immediately, without a restart.
   version: 1.1.0
 
 servers:
@@ -41,7 +50,11 @@ paths:
   /api/v1/auth/status:
     get:
       summary: Get authentication status
-      description: Check if the current session is authenticated
+      description: >
+        Reports whether the device is still using the password it shipped with. While
+        `usingDefaultPassword` is true the device refuses every other endpoint - see the
+        `403` response shared by the rest of this document. This endpoint and
+        `POST /api/v1/auth/change-password` stay reachable so there is always a way out.
       tags:
         - Authentication
       responses:
@@ -54,6 +67,7 @@ paths:
                 properties:
                   usingDefaultPassword:
                     type: boolean
+                    description: True while the stored password equals the shipped default
                   username:
                     type: string
 
@@ -78,7 +92,12 @@ paths:
                   description: Current password for verification
                 newPassword:
                   type: string
-                  description: New password to set
+                  description: >
+                    New password. Must be 8 to 64 characters and must not be the shipped
+                    default - "changing" the password to the default would leave the device
+                    exactly where it started.
+                  minLength: 8
+                  maxLength: 64
             example:
               currentPassword: "oldpassword123"
               newPassword: "newpassword456"
@@ -86,7 +105,24 @@ paths:
         '200':
           $ref: '#/components/responses/Success'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          description: >
+            The new password is shorter than 8 characters, longer than 64, or is the
+            shipped default.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                default_reused:
+                  summary: New password is the shipped default
+                  value:
+                    success: false
+                    error: "The new password cannot be the default password"
+                too_short:
+                  summary: New password fails the length rule
+                  value:
+                    success: false
+                    error: "New password must be between 8 and 64 characters"
         '401':
           $ref: '#/components/responses/Unauthorized'
         '500':
@@ -95,12 +131,18 @@ paths:
   /api/v1/auth/reset-password:
     post:
       summary: Reset password to default
-      description: Reset the authentication password to the default value
+      description: >
+        Reset the authentication password to the shipped default. This puts the device
+        straight into the locked-down state, so it is refused when the default password
+        is already active. Recovering a forgotten password is done with the physical
+        button, which is unaffected by the lockdown.
       tags:
         - Authentication
       responses:
         '200':
           $ref: '#/components/responses/Success'
+        '403':
+          $ref: '#/components/responses/DefaultPasswordLockdown'
         '500':
           $ref: '#/components/responses/InternalServerError'
 
@@ -3187,7 +3229,22 @@ components:
           example:
             success: false
             error: "Authentication required"
-    
+
+    DefaultPasswordLockdown:
+      description: >
+        The device is still using the password it shipped with, and refuses every endpoint
+        except `/api/v1/health`, `GET /api/v1/auth/status` and `POST /api/v1/auth/change-password`
+        until a new one is set. Applies to every endpoint in this document unless noted.
+        Browsers are redirected to `/`, which serves the password-change page.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error: "The default web password is still in use. Change it at / before using the API."
+            reason: "default_password"
+
     NotFound:
       description: Resource not found
       content:
@@ -3244,7 +3301,13 @@ components:
         error:
           type: string
           example: "Error message describing what went wrong"
-    
+        reason:
+          type: string
+          description: >
+            Machine-readable cause, present only where a client is expected to act on it
+            rather than just display the message. Currently only `default_password`.
+          enum: [default_password]
+
     LogLevel:
       type: string
       enum: [VERBOSE, DEBUG, INFO, WARNING, ERROR, FATAL]
@@ -3714,4 +3777,4 @@ components:
           type: number
           format: float
           description: Accumulated apparent energy in VAh
-          example: 12356.8 
+          example: 12356.8
