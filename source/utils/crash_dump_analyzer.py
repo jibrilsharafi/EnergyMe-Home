@@ -813,7 +813,7 @@ def main():
     parser.add_argument('--elf', default=None,
                        help='ELF to decode against, bypassing the releases lookup and the '
                             'default build path (needed for non-default environments, '
-                            'e.g. .pio/build/esp32s3-dev-v5-bench/firmware.elf)')
+                            'e.g. .pio/build/esp32s3-dev-v5/firmware.elf)')
     args = parser.parse_args()
 
     username, password = resolve_credentials(args)
