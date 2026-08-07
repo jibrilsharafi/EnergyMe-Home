@@ -14,42 +14,27 @@ namespace Led
     static uint8_t _bluePin = INVALID_PIN;
     static uint8_t _brightness = DEFAULT_LED_BRIGHTNESS_PERCENT;
 
-    // Task handles and queue
     static TaskHandle_t _ledTaskHandle = nullptr;
-    static QueueHandle_t _ledQueue = nullptr;
     static bool _ledTaskShouldRun = false;
 
-    // LED command structure for queue
-    struct LedCommand
-    {
-        LedPattern pattern;
-        Color color;
-        LedPriority priority;
-        uint64_t durationMs; // 0 = indefinite
-        uint64_t timestamp;  // When command was issued
-    };
+    // Written by any task, read by the render task. Created in begin() and never
+    // deleted: teardown paths (_restartTask, _factoryReset) still set indications
+    // while services are being stopped, and they must not fault.
+    static LedState::Table _table;
+    static SemaphoreHandle_t _tableMutex = nullptr;
 
-    // Current active state
-    struct LedState
-    {
-        LedPattern currentPattern = LedPattern::OFF;
-        Color currentColor = Colors::OFF;
-        LedPriority currentPriority = 1; // PRIO_NORMAL
-        uint64_t patternStartTime = 0;
-        uint64_t patternDuration = 0;
-        uint64_t cycleStartTime = 0;
-        bool isActive = false;
-    };
-
-    static LedState _state;
-
-    // Private helper functions
-    static void _setHardwareColor(const Color &color);
+    static void _setHardwareColor(const LedState::Rgb &color);
     static void _ledTask(void *parameter);
-    static void _processPattern();
-    static uint8_t _calculateBrightness(uint8_t value, float factor = 1.0f);
     static bool _loadConfiguration();
     static void _saveConfiguration();
+
+    static bool _lock()
+    {
+        if (_tableMutex == nullptr) { return false; }
+        return xSemaphoreTake(_tableMutex, pdMS_TO_TICKS(LED_MUTEX_TIMEOUT_MS)) == pdTRUE;
+    }
+
+    static void _unlock() { xSemaphoreGive(_tableMutex); }
 
     void begin(uint8_t redPin, uint8_t greenPin, uint8_t bluePin)
     {
@@ -59,7 +44,6 @@ namespace Led
         _greenPin = greenPin;
         _bluePin = bluePin;
 
-        // Initialize hardware
         pinMode(_redPin, OUTPUT);
         pinMode(_greenPin, OUTPUT);
         pinMode(_bluePin, OUTPUT);
@@ -70,13 +54,21 @@ namespace Led
 
         _loadConfiguration();
 
-        // Create queue for LED commands
-        _ledQueue = xQueueCreate(LED_QUEUE_SIZE, sizeof(LedCommand));
-        if (_ledQueue == nullptr) { return; } // Failed to create queue
+        if (_tableMutex == nullptr)
+        {
+            _tableMutex = xSemaphoreCreateMutex();
+            if (_tableMutex == nullptr)
+            {
+                LOG_ERROR("Failed to create LED mutex");
+                return;
+            }
+        }
 
-        // Create LED task
+        LedState::releaseAll(_table);
+        _setHardwareColor(LedState::Rgb{}); // Deterministic pins before the first render
+
         LOG_DEBUG("Starting LED task with %d bytes stack", LED_TASK_STACK_SIZE);
-        
+
         BaseType_t result = xTaskCreate(
             _ledTask,
             LED_TASK_NAME,
@@ -88,86 +80,50 @@ namespace Led
         if (result != pdPASS)
         {
             LOG_ERROR("Failed to create LED task");
-            vQueueDelete(_ledQueue);
-            _ledQueue = nullptr;
-            _ledTaskHandle = NULL;
-            return; // Failed to create task
+            _ledTaskHandle = nullptr;
         }
-
-        // Start with LED off
-        setOff();
     }
 
     void stop()
     {
         stopTaskGracefully(&_ledTaskHandle, "LED task");
 
-        if (_ledQueue != nullptr)
+        if (_lock())
         {
-            vQueueDelete(_ledQueue);
-            _ledQueue = nullptr;
+            LedState::releaseAll(_table);
+            _unlock();
         }
 
-        // Turn off LED
-        _setHardwareColor(Colors::OFF);
+        _setHardwareColor(LedState::Rgb{});
     }
 
-    static void _ledTask(void *parameter) // TODO: while the LED works now, maybe a state machine-like approach would be cleaner
+    static void _ledTask(void *parameter)
     {
-        LedCommand command;
-        uint64_t currentTime;
-
         _ledTaskShouldRun = true;
         while (_ledTaskShouldRun)
         {
             TASK_HEARTBEAT(_heartbeat);
 
-            // Check for new commands in queue with timeout
-            if (xQueueReceive(_ledQueue, &command, pdMS_TO_TICKS(LED_TASK_DELAY_MS)) == pdTRUE)
-            {
-                currentTime = millis64();
+            const uint64_t currentTime = millis64();
 
-                // Always process commands, but handle priority logic
-                if (command.priority >= _state.currentPriority || !_state.isActive)
-                {
-                    // Higher or equal priority: execute immediately
-                    _state.currentPattern = command.pattern;
-                    _state.currentColor = command.color;
-                    _state.currentPriority = command.priority;
-                    _state.patternStartTime = currentTime;
-                    _state.patternDuration = command.durationMs;
-                    _state.cycleStartTime = currentTime;
-                    _state.isActive = (command.pattern != LedPattern::OFF);
-                }
-                else
-                {
-                    // Lower priority: put back in queue for later
-                    if (_ledQueue) xQueueSendToBack(_ledQueue, &command, 0);
-                }
+            // Copy under the mutex, render outside it.
+            if (_lock())
+            {
+                LedState::expire(_table, currentTime);
+                const LedState::Table snapshot = _table;
+                _unlock();
+
+                const LedState::Active active = LedState::resolve(snapshot, currentTime);
+                _setHardwareColor(
+                    active.any
+                        ? LedState::render(active.pattern, active.color, active.elapsedMs,
+                                           LedState::effectiveBrightness(active.layer, _brightness))
+                        : LedState::Rgb{});
             }
 
-            // Check if current pattern has expired
-            currentTime = millis64();
-            if (_state.isActive && _state.patternDuration > 0 &&
-                (currentTime - _state.patternStartTime) >= _state.patternDuration)
-            {
-                _state.currentPattern = LedPattern::OFF;
-                _state.currentColor = Colors::OFF;
-                _state.currentPriority = PRIO_NORMAL;
-                _state.isActive = false;
-                
-                // Process any queued commands immediately after expiration
-                // This allows lower priority commands to execute
-            }
-
-            // Process current pattern
-            _processPattern();
-
-            // Wait for stop notification with timeout (blocking) - ensures proper yielding
             if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(LED_TASK_DELAY_MS)) > 0)
             {
                 _ledTaskShouldRun = false;
-                break;
             }
         }
 
@@ -194,8 +150,7 @@ namespace Led
         _brightness = preferences.getUChar(PREFERENCES_BRIGHTNESS_KEY, DEFAULT_LED_BRIGHTNESS_PERCENT);
         preferences.end();
 
-        // Validate loaded value is within acceptable range
-        _brightness = min(max(_brightness, (uint8_t)0), (uint8_t)LED_MAX_BRIGHTNESS_PERCENT);
+        _brightness = min(_brightness, (uint8_t)LED_MAX_BRIGHTNESS_PERCENT);
         return true;
     }
 
@@ -209,147 +164,86 @@ namespace Led
 
     void setBrightness(uint8_t brightness)
     {
-        _brightness = min(max(brightness, (uint8_t)0), (uint8_t)LED_MAX_BRIGHTNESS_PERCENT);
+        _brightness = min(brightness, (uint8_t)LED_MAX_BRIGHTNESS_PERCENT);
         _saveConfiguration();
     }
 
     uint8_t getBrightness() { return _brightness; }
 
+    LedState::Layer layerForPriority(LedPriority priority)
+    {
+        if (priority <= PRIO_USER) { return LedState::Layer::USER; }
+        if (priority <= PRIO_NORMAL) { return LedState::Layer::STATUS; }
+        if (priority <= PRIO_MEDIUM) { return LedState::Layer::NETWORK; }
+        if (priority <= PRIO_URGENT) { return LedState::Layer::ALERT; }
+        return LedState::Layer::CRITICAL;
+    }
+
+    void setPattern(LedState::Layer layer, LedPattern pattern, Color color, uint64_t durationMs)
+    {
+        if (!_lock()) { return; }
+        LedState::set(_table, layer, pattern, color, millis64(), durationMs);
+        _unlock();
+    }
+
     void setPattern(LedPattern pattern, Color color, LedPriority priority, uint64_t durationMs)
     {
-        if (_ledQueue == nullptr) { return; }
-
-        LedCommand command = {
-            pattern,
-            color,
-            priority,
-            durationMs,
-            millis64()};
-
-        // Try to send command to queue (non-blocking)
-        xQueueSend(_ledQueue, &command, 0);
+        setPattern(layerForPriority(priority), pattern, color, durationMs);
     }
 
-    void clearPattern(LedPriority priority)
+    void clearLayer(LedState::Layer layer)
     {
-        if (_ledQueue == nullptr) { return; }
-
-        // Send OFF command with specified priority
-        LedCommand command = {
-            LedPattern::OFF,
-            Colors::OFF,
-            priority,
-            0,
-            millis64()};
-
-        xQueueSend(_ledQueue, &command, 0);
+        if (!_lock()) { return; }
+        LedState::release(_table, layer);
+        _unlock();
     }
+
+    void clearPattern(LedPriority priority) { clearLayer(layerForPriority(priority)); }
 
     void clearAllPatterns()
     {
-        if (_ledQueue == nullptr) { return; }
-
-        // Clear the queue
-        xQueueReset(_ledQueue);
-
-        // Send OFF command with critical priority
-        setPattern(LedPattern::OFF, Colors::OFF, 15); // PRIO_CRITICAL
+        if (!_lock()) { return; }
+        LedState::releaseAll(_table);
+        _unlock();
     }
 
-    // Private implementation functions
-    static void _setHardwareColor(const Color &color)
+    Snapshot getState()
     {
-        // Validate pins are set before using them
+        Snapshot snapshot;
+        snapshot.brightness = _brightness;
+
+        if (!_lock()) { return snapshot; }
+        const uint64_t currentTime = millis64();
+        LedState::expire(_table, currentTime);
+        const LedState::Active active = LedState::resolve(_table, currentTime);
+        _unlock();
+
+        if (!active.any) { return snapshot; }
+
+        snapshot.any = true;
+        snapshot.layer = active.layer;
+        snapshot.pattern = active.pattern;
+        snapshot.color = active.color;
+        snapshot.remainingMs = active.remainingMs;
+        snapshot.indefinite = active.indefinite;
+
+        const LedState::Rgb rendered = LedState::render(
+            active.pattern, active.color, active.elapsedMs,
+            LedState::effectiveBrightness(active.layer, snapshot.brightness));
+        snapshot.isLit = rendered != LedState::Rgb{};
+
+        return snapshot;
+    }
+
+    // Writes the already-rendered colour. Brightness is applied by LedState::render()
+    // and must not be applied again here.
+    static void _setHardwareColor(const LedState::Rgb &color)
+    {
         if (_redPin == INVALID_PIN || _greenPin == INVALID_PIN || _bluePin == INVALID_PIN) { return; }
 
-        ledcWrite(_redPin, _calculateBrightness(color.red));
-        ledcWrite(_greenPin, _calculateBrightness(color.green));
-        ledcWrite(_bluePin, _calculateBrightness(color.blue));
-    }
-
-    static uint8_t _calculateBrightness(uint8_t value, float factor)
-    {
-        return (uint8_t)(value * (float)_brightness * factor / (float)LED_MAX_BRIGHTNESS_PERCENT);
-    }
-
-    static void _processPattern()
-    {
-        uint64_t currentTime = millis64();
-        uint64_t elapsed = currentTime - _state.cycleStartTime;
-        Color outputColor = _state.currentColor;
-        bool shouldOutput = true;
-
-        switch (_state.currentPattern)
-        {
-        case LedPattern::SOLID:
-            // Always on with current color
-            break;
-
-        case LedPattern::OFF:
-            outputColor = Colors::OFF;
-            break;
-
-        case LedPattern::BLINK_SLOW:
-            // 1 second on, 1 second off
-            shouldOutput = ((elapsed / 1000) % 2) == 0;
-            if (!shouldOutput)
-                outputColor = Colors::OFF;
-            break;
-
-        case LedPattern::BLINK_FAST:
-            // 250ms on, 250ms off
-            shouldOutput = ((elapsed / 250) % 2) == 0;
-            if (!shouldOutput)
-                outputColor = Colors::OFF;
-            break;
-
-        case LedPattern::PULSE:
-        {
-            // Smooth fade in/out over 2 seconds
-            uint64_t cycle = elapsed % 2000; // 2 second cycle
-            float factor;
-            if (cycle < 1000)
-            {
-                // Fade in
-                factor = (float)cycle / 1000.0f;
-            }
-            else
-            {
-                // Fade out
-                factor = 1.0f - ((float)(cycle - 1000) / 1000.0f);
-            }
-            outputColor.red = _calculateBrightness(outputColor.red, factor);
-            outputColor.green = _calculateBrightness(outputColor.green, factor);
-            outputColor.blue = _calculateBrightness(outputColor.blue, factor);
-            break;
-        }
-
-        case LedPattern::DOUBLE_BLINK:
-        {
-            // Two quick blinks (100ms on, 100ms off, 100ms on, 100ms off), then 800ms pause
-            uint64_t cycle = elapsed % 1200; // 1.2 second cycle
-            if (cycle < 100 || (cycle >= 200 && cycle < 300))
-            {
-                // On periods
-                shouldOutput = true;
-            }
-            else if (cycle < 400)
-            {
-                // Off periods between blinks
-                shouldOutput = false;
-                outputColor = Colors::OFF;
-            }
-            else
-            {
-                // Long pause period
-                shouldOutput = false;
-                outputColor = Colors::OFF;
-            }
-            break;
-        }
-        }
-
-        _setHardwareColor(outputColor);
+        ledcWrite(_redPin, color.red);
+        ledcWrite(_greenPin, color.green);
+        ledcWrite(_bluePin, color.blue);
     }
 
     TaskInfo getTaskInfo()
