@@ -8,10 +8,12 @@ This matters more now than it did last week. #221 made the device refuse to oper
 
 ## What Changes
 
-- Move `rateLimit` ahead of `digestAuth` so a failed login consumes the generic abuse budget like every other request. Chain becomes `customMiddleware` -> `rateLimit` -> `digestAuth` -> `defaultPasswordGuard`, which is also the conventional order: cheap global throttle first, then authentication, then authorization.
 - Add a per-source-IP lockout that counts **only genuine credential failures**. A 401 answering a request that carried no `Authorization` header is the ordinary first leg of every digest handshake - counting those would lock out the legitimate owner after a few page loads. Only a 401 for a request that *did* carry credentials is a failed login.
 - Lock an IP out for an escalating window after `AUTH_LOCKOUT_MAX_FAILURES` consecutive failures, answering `429` with `Retry-After` before the digest MD5 is computed. A successful login clears that IP immediately.
 - Put the lockout state machine in `source/lib/auth_lockout/` as pure logic with native tests, and have the firmware call it - the same discipline `web_auth_gate` follows, for the same reason.
+- Register `authLockout` first, then the generic ceiling, then `digestAuth`. This is also the root fix for #197's headline bug: `digestAuth` short-circuits on failure without calling `next()`, so the limiter that sat after it was structurally unreachable on a 401.
+- Scope the generic request ceiling to **unauthenticated requests only**. On a local-first meter the authenticated caller is the owner; a global budget shared across the dashboard, Home Assistant, Modbus poller and automation is a misfeature, and would let one busy legitimate client `429` another. Only credential-less traffic (probes and floods, the real DoS surface) counts toward it. Brute-force guessing carries credentials, so it skips the ceiling and is handled by the lockout - which is the correct division: throttle failed *authentication*, never authenticated *usage*.
+- **Make the defence observable.** A lockout is logged (WARNING with the source IP) and raises a device issue (`auth_brute_force`) through the existing registry (#145), so a sustained attack is visible in the REST API and the cloud shadow rather than silent. Logged and raised exactly once per lockout, not per failed request. This is the honest answer to "an attacker can still grind slowly": online guessing cannot be made impossible without a permanent lockout (itself a DoS on the owner), so the layered defence is slow it, force a non-default password (the prior change), and *surface* it so the owner can act.
 
 ## Capabilities
 
@@ -20,6 +22,7 @@ This matters more now than it did last week. #221 made the device refuse to oper
 
 ### Modified Capabilities
 - `web-authentication`: the middleware ordering it documents changes, and the authentication contract gains a new failure mode (`429` before the credential check). The existing requirement that an unauthenticated caller learns nothing about the device's password state must continue to hold - a lockout response must not become a new oracle.
+- `crash-reporting` / issue registry (#145): a new device issue code (`auth_brute_force`) is added. No existing issue behaviour changes; this is an additive catalog entry, so it does not need its own spec delta beyond being recorded here.
 
 ## Impact
 

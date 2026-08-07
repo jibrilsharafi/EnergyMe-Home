@@ -49,3 +49,10 @@ Run agents whose brief is to *break* this, not to confirm it works. Each gets th
 
 - [x] 7.1 Committed in chunks: the pure lib + tests; the ordering fix + middleware; the upload-route fix from adversarial testing.
 - [x] 7.2 PR #223 to `development`, `Closes #197`, labels bug + robustness, no milestone. Records the 400x401/zero-429 pre-fix measurement, the post-fix 429 behaviour, and what all three attacker agents did and did not manage.
+
+## 8. Refinements (from review discussion)
+
+- [x] 8.1 Scope the generic ceiling to unauthenticated requests only (`UnauthenticatedRateLimitMiddleware`), so authenticated owner traffic is never throttled (design D1a). Verified: 60 rapid authenticated GETs all 200, no 429.
+- [x] 8.2 Log a lockout (WARNING with source IP) and count it once via `recordFailure`'s new lockout-edge return (design D1b). Verified on hardware.
+- [x] 8.3 Raise `Code::AuthBruteForce` in the issue registry on any new lockout in the window; pulse-and-linger like PanicReboot (design D1b). Verified: issue appears as `auth_brute_force` / `cleared_unacked` with a human message after a lockout.
+- [x] 8.4 `pio test -e native` green (434 cases incl. the new lockout-edge and issue_logic coverage); `pio run -e esp32s3-dev` clean.

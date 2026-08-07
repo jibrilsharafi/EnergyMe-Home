@@ -25,13 +25,29 @@ See `proposal.md` - Why, and issue #197. Constraints that shape the approach:
 
 ## Decisions
 
-### D1. Reorder to `rateLimit` -> `digestAuth`
+### D1. Reorder so the throttles run before `digestAuth`
 
-The minimal fix for the reported bug. It is also the conventional order - a cheap global throttle before an expensive credential check - and it means every request, authenticated or not, is counted once.
+The reported bug is that `digestAuth` short-circuits with `requestAuthentication()` instead of calling `next()` (`Middleware.cpp:143`), so anything after it never runs on a 401. Moving the throttles ahead of it is the fix, and it is the conventional order anyway - cheap checks before the expensive credential check.
 
-Final chain: `customMiddleware` -> `authLockout` -> `rateLimit` -> `digestAuth` -> `defaultPasswordGuard`.
+Final chain: `customMiddleware` -> `authLockout` -> `unauthRateLimit` -> `digestAuth` -> `defaultPasswordGuard`.
 
 `defaultPasswordGuard` stays last so it still sees only authenticated callers (its own D2 from the previous change). `authLockout` goes first among the throttles because a locked-out source should cost the least possible work.
+
+### D1a. The generic ceiling throttles unauthenticated requests only
+
+The pre-existing `AsyncRateLimitMiddleware` is a *global* sliding-window counter (one `std::list` for the whole server, confirmed in `Middleware.cpp`), 6000 requests / 600 s. Applying that to authenticated traffic is wrong for a local-first meter: the authenticated caller is the owner, and a global budget shared across the dashboard, Home Assistant, the Modbus poller and automation would let one busy legitimate client `429` another. Rate-limiting *failed authentication* is the right thing; rate-limiting *authenticated usage of one's own device* is not.
+
+So a thin `UnauthenticatedRateLimitMiddleware` wraps the library limiter and delegates to it only when the request carries no `Authorization` header. That is exactly the DoS surface worth bounding - credential-less probes and floods - and it deliberately excludes brute-force guesses, which carry credentials and are the lockout's job. A generous global ceiling is then harmless: it only ever sees handshake first-legs and unauthenticated traffic, never the owner's real work.
+
+*Alternative considered:* keying the ceiling per-IP instead of scoping it by auth state. Rejected as more machinery for less benefit - the lockout already provides the per-IP guarantee where it matters (failed logins), and the remaining job of the global ceiling is purely volumetric DoS protection, which does not need per-IP accounting.
+
+### D1b. A lockout is logged and raised as a device issue
+
+A silent security control is backwards - the owner should be able to see that someone hammered `admin`. `recordFailure` returns true only on the failure that crosses the threshold, so the middleware logs (WARNING, with the source IP) and bumps `statistics.webServerAuthLockouts` exactly once per lockout, never per failed request.
+
+The device issue goes through the existing registry (#145), which is derive-from-facts: the lockout only increments a counter, and the registry tick pulses `Code::AuthBruteForce` on any new lockout in the window. Like `PanicReboot` it lingers in `ClearedUnacked` until acked, so an attack that has since stopped is still visible - in `GET /api/v1/system/issues` and, via the shadow, the cloud. This is deliberate architecture, not a shortcut: modules never call into the registry, so the lockout exposes a fact and the registry decides the issue.
+
+This also answers the honest limitation that the lockout only *slows* guessing (about 5 attempts per 15-minute ceiling per IP, so a determined attacker with days can still grind a weak password). Online guessing cannot be made impossible without a permanent lockout, which is itself a DoS on the owner. The layered answer is: slow it (this change), force a non-default password (the prior change), and make it visible so the owner can react (this decision).
 
 ### D2. One middleware, gating before and recording after
 
@@ -90,7 +106,7 @@ So `_rejectUploadIfNotPermitted` calls `authLockout.isSourceLocked()` first, bef
 ## Risks / Trade-offs
 
 - **Locking out the legitimate owner.** -> Only credentialed failures count, a success clears instantly, lockouts expire on their own, and the first one is short. The failure mode is a wait, never a lockout requiring physical recovery.
-- **NAT / reverse proxy: one address, many users.** -> Accepted for the local-first default, where each LAN client is a distinct IP. The lockout keys on `client->remoteIP()` - the socket peer as the device sees it - and deliberately ignores `X-Forwarded-For`/`X-Real-IP` (an attacker sets those freely; adversarial testing confirmed spoofing them collapses onto the one real socket IP and cannot forge table entries). The consequence is the mirror image: if the device is ever placed behind a reverse proxy or a CGNAT that collapses many clients to one source IP, they share a single lockout entry, and one client's failures can throttle another. Do not deploy this device behind shared-egress infrastructure; if a trusted proxy is ever introduced, the middleware would need to consult a forwarded-for header *only* from that trusted proxy, never from a raw client. This is a property of per-IP keying, not a defect, and the honest tradeoff against header spoofing.
+- **Shared source IP: one address, many users.** -> Does not arise for the threat this defends against. A brute-force attacker against a local-first meter is a host *on the LAN*, and every LAN host has its own distinct address - there is no NAT between it and the device. CGNAT and reverse proxies live on the internet-egress path, not on the local segment, so they do not collapse a local attacker's identity. The lockout keys on `client->remoteIP()` - the socket peer as the device sees it - and deliberately ignores `X-Forwarded-For`/`X-Real-IP` (an attacker sets those freely; adversarial testing confirmed spoofing them collapses onto the one real socket IP and cannot forge table entries). The only way distinct users end up sharing one lockout entry is a deliberately non-default deployment: the device placed *behind* a reverse proxy on the LAN, or exposed to the internet through one. In that case a trusted proxy would need to inject a forwarded-for header the device consults *only* from that proxy, never from a raw client. For the intended deployment this is a non-issue; it is noted only so the assumption is explicit.
 - **Table exhaustion under a distributed flood.** -> Documented in D5. `rateLimit` is the backstop; the table is not a flood defence.
 - **`getResponse()` returning null after `next()`.** -> Treated as "no outcome observed", recording neither failure nor success, so an unusual path cannot accidentally lock anyone out.
 - **Clock source.** -> `millis64()` as used elsewhere in this file; monotonic and unaffected by NTP steps, which matters because a wall-clock jump could otherwise extend or void a lockout.

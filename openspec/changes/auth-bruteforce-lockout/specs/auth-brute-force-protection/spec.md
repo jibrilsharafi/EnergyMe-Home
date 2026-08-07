@@ -93,6 +93,44 @@ Being locked out SHALL NOT prevent the device from operating, restarting cleanly
 - **WHEN** the owner is locked out and power-cycles the device
 - **THEN** it comes back ready to accept a correct password
 
+### Requirement: Throttling applies to failed authentication, not to authenticated use
+
+The device SHALL NOT rate-limit a caller that has authenticated. Any generic request ceiling SHALL apply only to unauthenticated requests. A request supplying valid credentials SHALL NOT be refused on account of request volume, however fast the authenticated caller sends them.
+
+#### Scenario: Owner's dashboard and automation
+
+- **WHEN** an authenticated client sends a rapid burst of requests - a dashboard refreshing, an automation polling
+- **THEN** none are refused for volume, because throttling authenticated use of one's own device is not the goal
+
+#### Scenario: Unauthenticated flood
+
+- **WHEN** a source sends a flood of requests without credentials
+- **THEN** the generic ceiling bounds them, protecting the device from being overwhelmed
+
+#### Scenario: Guessing does not consume the generic budget
+
+- **WHEN** an attacker sends credentialed password guesses
+- **THEN** they are governed by the failed-login lockout, not the generic ceiling, so the ceiling cannot be exhausted by guessing in a way that would refuse the legitimate owner
+
+### Requirement: A lockout is observable to the owner
+
+When the device locks a source out, it SHALL record the event so the owner can see that guessing occurred: a log entry identifying the source, and a device issue surfaced through the same channels as other device issues, including after the attack has stopped. The event SHALL be recorded once per lockout, not once per failed request.
+
+#### Scenario: Sustained attack while the owner is away
+
+- **WHEN** a source is locked out for repeated failed logins and the attack later stops
+- **THEN** a device issue remains visible until the owner acknowledges it, so an attack that happened while they were away is not lost
+
+#### Scenario: One record per lockout
+
+- **WHEN** a locked-out source keeps sending requests during its lockout
+- **THEN** the lockout is recorded once, not once per request, so the log and the issue reflect events rather than volume
+
+#### Scenario: Log identifies the source
+
+- **WHEN** a lockout is logged
+- **THEN** the entry names the source address, so the owner can tell where the guessing came from
+
 ### Requirement: A lockout discloses nothing about the password
 
 The response to a locked-out source SHALL NOT reveal whether any attempted password was closer to correct, whether the username exists, or what state the device's password is in.
