@@ -75,6 +75,14 @@ Eviction under a many-source flood means an attacker can push a real lockout out
 
 Addresses are compared as `uint32_t`, so the library needs no networking types.
 
+### D7a. Upload routes must gate on the lockout before authenticating
+
+Upload and body callbacks run *during* body parsing (`WebRequest.cpp:612/783`), before `_runMiddlewareChain` (`:233`). The OTA and restore routes therefore do their own authentication inside the handler (`_rejectUploadIfNotPermitted`) - they have to, because a middleware auth check arrives after `Update.begin()` has already erased the partition. But that in-handler check runs *ahead of* this lockout middleware.
+
+Adversarial testing found the consequence: without an explicit gate, an attacker moves password guessing to the upload routes, where every attempt runs a full digest check regardless of lock state, and a correct guess reaches `Update.begin()` before the middleware's `429` can mask it. The lockout would be masking the response code while doing nothing to actually throttle the guessing.
+
+So `_rejectUploadIfNotPermitted` calls `authLockout.isSourceLocked()` first, before reading the password or authenticating, and refuses a locked source with `429` there. The middleware still records the failure afterwards from the `401` the handler leaves set, so recording is not duplicated. `isSourceLocked` is a pure query with no side effect - unit-tested as such, because a defence that mutated state merely by being checked would be a footgun for exactly this kind of early call.
+
 ### D7. Loopback is never locked out
 
 `_performHealthCheck` probes `/api/v1/health` from `127.0.0.1`. That route skips the whole chain, so the lockout cannot reach it - but the exemption is stated in the pure logic anyway, because the consequence of getting it wrong is the restart-loop-into-rollback failure documented in the previous change, and one structural guarantee is not enough for that.
@@ -82,7 +90,7 @@ Addresses are compared as `uint32_t`, so the library needs no networking types.
 ## Risks / Trade-offs
 
 - **Locking out the legitimate owner.** -> Only credentialed failures count, a success clears instantly, lockouts expire on their own, and the first one is short. The failure mode is a wait, never a lockout requiring physical recovery.
-- **NAT: one address, many users.** -> Accepted. One user's mistakes can throttle a colleague behind the same address. The alternative is no per-source limit at all, and the residential deployment this targets is one household per address.
+- **NAT / reverse proxy: one address, many users.** -> Accepted for the local-first default, where each LAN client is a distinct IP. The lockout keys on `client->remoteIP()` - the socket peer as the device sees it - and deliberately ignores `X-Forwarded-For`/`X-Real-IP` (an attacker sets those freely; adversarial testing confirmed spoofing them collapses onto the one real socket IP and cannot forge table entries). The consequence is the mirror image: if the device is ever placed behind a reverse proxy or a CGNAT that collapses many clients to one source IP, they share a single lockout entry, and one client's failures can throttle another. Do not deploy this device behind shared-egress infrastructure; if a trusted proxy is ever introduced, the middleware would need to consult a forwarded-for header *only* from that trusted proxy, never from a raw client. This is a property of per-IP keying, not a defect, and the honest tradeoff against header spoofing.
 - **Table exhaustion under a distributed flood.** -> Documented in D5. `rateLimit` is the backstop; the table is not a flood defence.
 - **`getResponse()` returning null after `next()`.** -> Treated as "no outcome observed", recording neither failure nor success, so an unusual path cannot accidentally lock anyone out.
 - **Clock source.** -> `millis64()` as used elsewhere in this file; monotonic and unaffected by NTP steps, which matters because a wall-clock jump could otherwise extend or void a lockout.
