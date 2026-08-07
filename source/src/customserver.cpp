@@ -2026,9 +2026,28 @@ namespace CustomServer
         }
     }
 
-    // Keys never returned by value (only presence/type) - private key material and certs.
+    // Keys never returned by value (only presence/type) - private key material,
+    // certs and anything whose name marks it as a credential. Matched on the key
+    // name rather than an explicit allowlist so a newly added password key is
+    // redacted by default instead of leaking until someone remembers it: the
+    // endpoint is gated by the very admin password it would otherwise hand out.
     static bool _isNvsValueSensitive(const char* key) {
-        return strcmp(key, FACTORY_KEY_CERT_PEM) == 0 || strcmp(key, FACTORY_KEY_KEY_PEM) == 0;
+        static const char* const SENSITIVE_FRAGMENTS[] = {
+            "pass", "pwd", "token", "secret", "key", "cert", "cred"
+        };
+
+        char lowered[NVS_NAME_BUFFER_SIZE];
+        size_t i = 0;
+        for (; key[i] != '\0' && i < sizeof(lowered) - 1; i++) {
+            char c = key[i];
+            lowered[i] = (c >= 'A' && c <= 'Z') ? (char)(c + ('a' - 'A')) : c;
+        }
+        lowered[i] = '\0';
+
+        for (size_t f = 0; f < sizeof(SENSITIVE_FRAGMENTS) / sizeof(SENSITIVE_FRAGMENTS[0]); f++) {
+            if (strstr(lowered, SENSITIVE_FRAGMENTS[f]) != nullptr) return true;
+        }
+        return false;
     }
 
     // Dev-only: generic NVS namespace/key browser and editor, for inspecting and
