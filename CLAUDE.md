@@ -62,6 +62,14 @@ Cloud certs and device serials live in `factory_ns` NVS partition, written at ma
 - Conventional Commits: `type(scope): description` - lowercase, imperative, no trailing period.
 - One concern per commit. No mega-commits. Test before committing.
 
+## PR review before merge to `development`
+
+Every PR gets a round of **code-review agents** and a **simplification agent** before it is merged to `development`. Not optional, not only for large changes.
+
+- **Code review**: spawn one or more agents to review the branch diff for correctness, security, and edge cases. For anything touching auth, networking, OTA, or the request path, at least one agent's brief is adversarial (try to break it), and findings are reproduced before being accepted or dismissed - never merge on an agent's say-so alone.
+- **Simplification**: spawn an agent to strip comments that restate self-evident code and apply safe structural cleanups, keeping the comments that explain non-obvious *why*. (See the `simplify` skill.)
+- Triage every finding, fix or explicitly document with the reason, then re-run the applicable tests. Only then merge.
+
 ## Agent behaviour
 
 - **Don't compile without being asked.** `pio run` is slow and CPU-intensive; stop after code edits unless Jibril explicitly requests a build or OTA.
