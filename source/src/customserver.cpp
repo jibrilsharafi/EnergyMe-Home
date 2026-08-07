@@ -23,6 +23,22 @@ namespace CustomServer
     static AsyncAuthenticationMiddleware digestAuth;
     static AsyncRateLimitMiddleware rateLimit;
     static CustomMiddleware customMiddleware;
+    static DefaultPasswordGuardMiddleware defaultPasswordGuard;
+
+    // Whether the stored web password is still the shipped default. Read on the AsyncTCP
+    // task for every request to every path, so it must never become an NVS read: it is
+    // refreshed only when the password can actually have changed (boot, and
+    // updateAuthPasswordWithOneFromPreferences(), which is already the single funnel
+    // through which a change reaches the live digestAuth object).
+    //
+    // volatile rather than a mutex, matching how CustomWifi publishes getProvisioningState()
+    // and isApAddress() across tasks: one aligned byte, written by the API or button task,
+    // read by AsyncTCP. A one-request-stale read is harmless in either direction because the
+    // guard re-evaluates on the next request.
+    //
+    // Starts true and stays true if NVS cannot be read - a device that cannot prove its
+    // password was changed is treated as not having changed it.
+    static volatile bool _usingDefaultPassword = true;
 
     // Health check task variables
     static TaskHandle_t _healthCheckTaskHandle = NULL;
@@ -46,6 +62,7 @@ namespace CustomServer
 
     // Handlers and middlewares
     static void _setupMiddleware();
+    static void _refreshDefaultPasswordFlag();
     static void _serveStaticContent();
     static void _serveApi();
 
@@ -191,6 +208,33 @@ namespace CustomServer
         {
             LOG_ERROR("Failed to load new password for authentication");
         }
+
+        // Every path that changes the password comes through here - the change-password
+        // handler, the reset-password handler, and the physical button - so this is the
+        // one place the lockdown flag needs refreshing. Deliberately outside the branch
+        // above: a failed read must still be reflected, and it fails closed.
+        _refreshDefaultPasswordFlag();
+    }
+
+    // Recomputes the cached lockdown flag. The only NVS read behind it, and it happens
+    // once per password change rather than once per request.
+    static void _refreshDefaultPasswordFlag()
+    {
+        char storedPassword[PASSWORD_BUFFER_SIZE];
+        if (!_getWebPasswordFromPreferences(storedPassword, sizeof(storedPassword)))
+        {
+            // Fail closed. _setupMiddleware() already writes the default back when the read
+            // fails, so the next boot reads cleanly and this becomes truthful rather than
+            // merely conservative.
+            _usingDefaultPassword = true;
+            LOG_WARNING("Could not read the stored password - assuming the default is still in use");
+            return;
+        }
+
+        _usingDefaultPassword = (strcmp(storedPassword, WEBSERVER_DEFAULT_PASSWORD) == 0);
+
+        if (_usingDefaultPassword) LOG_WARNING("Default web password is in use - the device will refuse to serve anything but the password change");
+        else LOG_DEBUG("Web password is not the default");
     }
 
     bool resetWebPassword()
@@ -248,6 +292,30 @@ namespace CustomServer
         server.addMiddleware(&rateLimit);
 
         LOG_DEBUG("Rate limiting configured: max requests = %d, window size = %d seconds", WEBSERVER_MAX_REQUESTS, WEBSERVER_WINDOW_SIZE_SECONDS);
+
+        // ---- Default Password Lockdown Setup ----
+        // Registered last, and that position is load-bearing in both directions.
+        //
+        // After digestAuth: a caller who does not authenticate must get the ordinary 401 and
+        // learn nothing. Only a caller who HAS authenticated with the published default is
+        // told, via 403, why the device will not serve them. Putting this first would
+        // advertise the device's password state to any unauthenticated scanner on the LAN.
+        //
+        // After rateLimit: refused requests still count against the limiter, so the lockdown
+        // cannot be used as a cheap way around it.
+        //
+        // Note this covers only routes that run the server chain. The provisioning twins and
+        // /api/v1/health call skipServerMiddlewares(), which replaces the whole server chain
+        // (WebRequest.cpp:877-891), so the guard never runs on them. That is correct - a
+        // factory-fresh device is by definition on the default password, and a lockdown that
+        // blocked WiFi setup would strand it before it ever had a network - but it is
+        // emergent rather than written down anywhere, so do not "tidy" those registrations
+        // back onto the server chain.
+        _refreshDefaultPasswordFlag();
+        defaultPasswordGuard.setStateReader([]() { return _usingDefaultPassword; });
+        server.addMiddleware(&defaultPasswordGuard);
+
+        LOG_DEBUG("Default password guard configured");
 
         LOG_DEBUG("Logging middleware configured");
     }
@@ -925,6 +993,17 @@ namespace CustomServer
           .skipServerMiddlewares()
           .addMiddleware(&rateLimit);
 
+        // Then, on a device that has a network but is still holding the shipped default
+        // password, the gate. Ordered between the two: provisioning comes first because an
+        // unprovisioned device is necessarily also on the default password, and stranding it
+        // here - before it has a network at all - would leave no way forward.
+        //
+        // Deliberately no skipServerMiddlewares(): the user must still authenticate to see the
+        // gate, and the guard allows "/" anyway.
+        server.on("/", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", EMBEDDED(password_setup_html), etag);
+        }).setFilter([](AsyncWebServerRequest *request) { (void)request; return _usingDefaultPassword; });
+
         server.on("/", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/html", EMBEDDED(index_html), etag);
         });
@@ -1005,14 +1084,10 @@ namespace CustomServer
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
 
-            // Check if using default password
-            char currentPassword[PASSWORD_BUFFER_SIZE];
-            bool isDefault = true;
-            if (_getWebPasswordFromPreferences(currentPassword, sizeof(currentPassword))) {
-                isDefault = (strcmp(currentPassword, WEBSERVER_DEFAULT_PASSWORD) == 0);
-            }
-            
-            doc["usingDefaultPassword"] = isDefault;
+            // The same cached flag the lockdown enforces on, not a second NVS read and
+            // strcmp. Two independent computations of "is this the default password" could
+            // disagree, and the one the user can see would be the one that is wrong.
+            doc["usingDefaultPassword"] = _usingDefaultPassword;
             doc["username"] = WEBSERVER_DEFAULT_USERNAME;
             
             _sendJsonResponse(request, doc);
@@ -1054,10 +1129,21 @@ namespace CustomServer
                     return;
                 }
 
+                // Nothing else stops a user from "changing" the password to the published
+                // default and staying exactly where they started. Checked here rather than in
+                // _validatePasswordStrength() because resetWebPassword() sets the default on
+                // purpose and must keep working - it backs the physical button, which is the
+                // only recovery path for a forgotten password.
+                if (strcmp(newPassword, WEBSERVER_DEFAULT_PASSWORD) == 0)
+                {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "The new password cannot be the default password");
+                    return;
+                }
+
                 // Validate and save new password
                 if (!_setWebPassword(newPassword))
                 {
-                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "New password does not meet requirements or failed to save");
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "New password must be between 8 and 64 characters");
                     return;
                 }
 
