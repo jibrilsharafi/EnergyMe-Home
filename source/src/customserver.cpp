@@ -3069,10 +3069,12 @@ namespace CustomServer
                 return;
             }
 
-            // Lets HTTP clients inflate transparently, so the device never has to
-            // spend a decompress pass of its own
-            response->addHeader("Content-Encoding", "gzip");
-
+            // Deliberately no Content-Encoding: gzip here. The body IS a gzip
+            // file, not a gzip-encoded representation of something else, and the
+            // header would be sent regardless of Accept-Encoding - browsers would
+            // inflate it and save the raw dump under a .gz name, while a client
+            // that never asked for gzip (plain curl) would get a body it does not
+            // decode. application/gzip + a .gz filename says exactly that.
             char disposition[CRASH_ARCHIVE_NAME_BUFFER_SIZE + 40];
             snprintf(disposition, sizeof(disposition), "attachment; filename=\"%s%s\"", baseName, CRASH_ARCHIVE_DUMP_SUFFIX);
             response->addHeader("Content-Disposition", disposition);

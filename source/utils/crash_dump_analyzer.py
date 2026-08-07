@@ -271,9 +271,10 @@ class CrashDumpAnalyzer:
     def download_core_dump(self, crash_id: Optional[str] = None) -> Optional[bytes]:
         """Download one archived core dump and return the raw ELF bytes.
 
-        The endpoint serves the stored gzip file in a single response and marks
-        it Content-Encoding: gzip, so requests normally inflates it for us. The
-        magic-number check covers the case where it does not.
+        The endpoint serves the stored gzip file as application/gzip with no
+        Content-Encoding, so the bytes arrive compressed and are inflated here.
+        The magic-number check keeps older firmware, which did set
+        Content-Encoding and so had requests inflate in transit, working too.
         """
         try:
             print(f"\n📥 Downloading core dump...")
