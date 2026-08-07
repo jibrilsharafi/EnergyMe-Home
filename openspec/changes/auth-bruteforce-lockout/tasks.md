@@ -48,4 +48,4 @@ Run agents whose brief is to *break* this, not to confirm it works. Each gets th
 ## 7. Land it
 
 - [x] 7.1 Committed in chunks: the pure lib + tests; the ordering fix + middleware; the upload-route fix from adversarial testing.
-- [ ] 7.2 PR to `development` with `Closes #197`, labels `bug` + `robustness`, no milestone. Record the pre-fix and post-fix measurements, and what the attacker agents did and did not manage.
+- [x] 7.2 PR #223 to `development`, `Closes #197`, labels bug + robustness, no milestone. Records the 400x401/zero-429 pre-fix measurement, the post-fix 429 behaviour, and what all three attacker agents did and did not manage.
