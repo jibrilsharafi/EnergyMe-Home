@@ -25,6 +25,7 @@ namespace CustomServer
     static CustomMiddleware customMiddleware;
     static DefaultPasswordGuardMiddleware defaultPasswordGuard;
     static AuthLockoutMiddleware authLockout;
+    static UnauthenticatedRateLimitMiddleware unauthRateLimit;
 
     // Whether the stored web password is still the shipped default. Read on the AsyncTCP
     // task for every request to every path, so it must never become an NVS read: it is
@@ -300,9 +301,12 @@ namespace CustomServer
         rateLimit.setMaxRequests(WEBSERVER_MAX_REQUESTS);
         rateLimit.setWindowSize(WEBSERVER_WINDOW_SIZE_SECONDS);
 
-        server.addMiddleware(&rateLimit);
+        // Only unauthenticated requests count toward the ceiling - the owner's authenticated
+        // traffic is never throttled. See UnauthenticatedRateLimitMiddleware.
+        unauthRateLimit.setInner(&rateLimit);
+        server.addMiddleware(&unauthRateLimit);
 
-        LOG_DEBUG("Rate limiting configured: max requests = %d, window size = %d seconds", WEBSERVER_MAX_REQUESTS, WEBSERVER_WINDOW_SIZE_SECONDS);
+        LOG_DEBUG("Rate limiting (unauthenticated only) configured: max requests = %d, window size = %d seconds", WEBSERVER_MAX_REQUESTS, WEBSERVER_WINDOW_SIZE_SECONDS);
 
         server.addMiddleware(&digestAuth);
 
