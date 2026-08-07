@@ -5,21 +5,25 @@
 """
 EnergyMe-Home Crash Dump Analyzer
 
-This script fetches crash information and core dump data from the EnergyMe-Home device,
-then decodes and analyzes the crash dump for debugging purposes. It automatically
-searches for the correct ELF file in the releases/ folder based on SHA256 matching.
+This script fetches an archived crash record and its core dump from an EnergyMe-Home
+device, then decodes and analyzes the dump for debugging purposes. It locates the
+matching ELF in the releases/ folder by firmware version, falling back to SHA256.
+
+Devices archive each crash to flash on the boot it is detected, so several records may
+be waiting. The oldest is analyzed unless --crash-id says otherwise.
 
 Usage:
     python crash_dump_analyzer.py -H <device_ip> [options]
 
 Example:
     python crash_dump_analyzer.py -H 192.168.1.100
+    python crash_dump_analyzer.py -H 192.168.1.100 --crash-id 3f8a1c02d94b7e15
     python crash_dump_analyzer.py -H 192.168.1.100 -u admin -p secret123 --clear
 """
 
 import argparse
+import gzip
 import json
-import base64
 import requests
 from requests.auth import HTTPDigestAuth
 from datetime import datetime
@@ -29,14 +33,26 @@ import hashlib
 
 from _device_auth import add_device_args, resolve_credentials
 
+# Unix ms for 2001-09-09. Records archived before NTP carry a few thousand ms
+# instead, which is not a date worth formatting.
+UNSET_CLOCK_THRESHOLD_MS = 1_000_000_000_000
+
 
 class CrashDumpAnalyzer:
-    def __init__(self, device_ip: str, username: Optional[str] = None, password: Optional[str] = None, chunk_size: int = 2048):
+    def __init__(self, device_ip: str, username: Optional[str] = None, password: Optional[str] = None,
+                 elf_path: Optional[str] = None):
         self.device_ip = device_ip
         self.base_url = f"http://{device_ip}"
-        self.chunk_size = chunk_size
         self.session = requests.Session()
-        
+        # Explicit ELF wins over both the releases lookup and the default build
+        # path, which is what makes non-default environments usable here
+        self.elf_path = elf_path
+        # Resolved on first use: the releases scan opens and parses every
+        # metadata.json, and both the backtrace decode and the esp-idf analysis
+        # ask for the same ELF
+        self._resolved_elf: Optional[str] = None
+        self._resolved_elf_cached = False
+
         # Set up authentication if provided
         if username and password:
             self.session.auth = HTTPDigestAuth(username, password)
@@ -134,16 +150,47 @@ class CrashDumpAnalyzer:
             print(f"❌ Error running debug command: {e}")
             return None
 
-    def get_crash_info(self) -> Optional[Dict[str, Any]]:
-        """Fetch crash information from the device."""
+    def get_crash_info(self, crash_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Fetch one archived crash record from the device.
+
+        The device stores each crash as frozen metadata plus a gzipped dump, so
+        /api/v1/crash/info returns a list rather than a single live reading. The
+        record's nested crashInfo is flattened into the top level here, with the
+        archive fields (crashId, firmwareVersion, sizes) merged alongside it.
+        """
         try:
-            print(f"🔍 Fetching crash information from {self.device_ip}...")
+            print(f"🔍 Fetching archived crashes from {self.device_ip}...")
             response = self.session.get(f"{self.base_url}/api/v1/crash/info")
             response.raise_for_status()
-            return response.json()
+            payload = response.json()
         except requests.exceptions.RequestException as e:
             print(f"❌ Error fetching crash info: {e}")
             return None
+
+        crashes = payload.get('crashes', [])
+        if not crashes:
+            print("ℹ️  No archived crashes on device")
+            return None
+
+        if crash_id is not None:
+            record = next((c for c in crashes if str(c.get('crashId')) == str(crash_id)), None)
+            if record is None:
+                available = ', '.join(str(c.get('crashId')) for c in crashes)
+                print(f"❌ No archived crash with id {crash_id}. Available: {available}")
+                return None
+        else:
+            record = crashes[0]  # Oldest, which is also the next to be published
+            if len(crashes) > 1:
+                print(f"ℹ️  {len(crashes)} archived crashes, analyzing the oldest "
+                      f"(crashId {record.get('crashId')}). Use --crash-id to pick another.")
+
+        flattened = dict(record.get('crashInfo', {}))
+        for key in ('crashId', 'timestamp', 'firmwareVersion',
+                    'coreDumpRawSize', 'coreDumpCompressedSize'):
+            if key in record:
+                flattened[key] = record[key]
+
+        return flattened
 
     def print_crash_info(self, crash_info: Dict[str, Any]) -> Optional[str]:
         """Print crash information in a readable format and return debug output."""
@@ -154,6 +201,20 @@ class CrashDumpAnalyzer:
         print("="*80)
         
         # Basic crash information
+        if crash_info.get('crashId'):
+            print(f"Crash ID: {crash_info['crashId']}")
+        # Written before NTP on a cold boot, so a near-epoch value is expected
+        # rather than wrong - show it raw in that case. Tested on the raw value
+        # because fromtimestamp() itself raises OSError on a near-epoch input in
+        # any timezone west of UTC, which would abort the run before the dump is
+        # even downloaded.
+        timestamp = crash_info.get('timestamp')
+        if timestamp:
+            when = f"{timestamp} ms - clock was not set when this was archived"
+            if timestamp > UNSET_CLOCK_THRESHOLD_MS:
+                when = datetime.fromtimestamp(timestamp / 1000).strftime('%Y-%m-%d %H:%M:%S')
+            print(f"Archived at: {when}")
+        print(f"Firmware Version: {crash_info.get('firmwareVersion', 'Unknown')}")
         print(f"Reset Reason: {crash_info.get('resetReason', 'Unknown')}")
         print(f"Reset Code: {crash_info.get('resetReasonCode', 'Unknown')}")
         print(f"Crash Count: {crash_info.get('crashCount', 0)} (consecutive: {crash_info.get('consecutiveCrashCount', 0)})")
@@ -181,72 +242,67 @@ class CrashDumpAnalyzer:
                 if addresses:
                     print(f"Addresses: {' '.join([f'0x{addr:08x}' for addr in addresses])}")
                 
-                debug_cmd = backtrace.get('debugCommand')
+                debug_cmd = self._build_addr2line_command(addresses, crash_info)
                 if debug_cmd:
                     print(f"\n🔧 DEBUG COMMAND:")
                     print(f"{debug_cmd}")
-                    
-                    # Run the debug command
+
                     debug_output = self._run_debug_command(debug_cmd)
-        
+
         print("="*80)
         return debug_output
 
-    def get_core_dump_chunks(self) -> Optional[bytes]:
-        """Fetch all core dump data in chunks and return as bytes."""
+    def _build_addr2line_command(self, addresses, crash_info: Dict[str, Any]) -> Optional[str]:
+        """Compose an addr2line invocation for `addresses` against the local ELF."""
+        if not addresses:
+            return None
+
+        elf = self.elf_path or self.find_matching_elf_in_releases(
+            crash_info.get('appElfSha256', ''), crash_info.get('firmwareVersion')
+        )
+        if not elf:
+            print("ℹ️  No local ELF resolved yet, skipping backtrace decode "
+                  "(pass --elf to decode against a specific build)")
+            return None
+
+        joined = ' '.join(f'0x{addr:08x}' for addr in addresses)
+        return f'xtensa-esp32-elf-addr2line -pfC -e "{elf}" {joined}'
+
+    def download_core_dump(self, crash_id: Optional[str] = None) -> Optional[bytes]:
+        """Download one archived core dump and return the raw ELF bytes.
+
+        The endpoint serves the stored gzip file as application/gzip with no
+        Content-Encoding, so the bytes arrive compressed and are inflated here.
+        The magic-number check keeps older firmware, which did set
+        Content-Encoding and so had requests inflate in transit, working too.
+        """
         try:
-            print(f"\n📥 Fetching core dump data (chunk size: {self.chunk_size} bytes)...")
-            
-            all_data = bytearray()
-            offset = 0
-            chunk_count = 0
-            
-            while True:
-                print(f"  📦 Fetching chunk {chunk_count + 1} (offset: {offset:,})...", end="")
-                
-                response = self.session.get(
-                    f"{self.base_url}/api/v1/crash/dump",
-                    params={'offset': offset, 'size': self.chunk_size}
-                )
-                response.raise_for_status()
-                
-                chunk_data = response.json()
-                
-                if 'error' in chunk_data:
-                    print(f" ❌ Error: {chunk_data['error']}")
-                    return None
-                
-                # Decode base64 data
-                encoded_data = chunk_data.get('data', '')
-                if not encoded_data:
-                    print(" ❌ No data in chunk")
-                    break
-                
-                try:
-                    decoded_chunk = base64.b64decode(encoded_data)
-                    all_data.extend(decoded_chunk)
-                    
-                    actual_size = chunk_data.get('actualChunkSize', 0)
-                    total_size = chunk_data.get('totalSize', 0)
-                    has_more = chunk_data.get('hasMore', False)
-                    
-                    print(f" ✅ {actual_size} bytes (total: {len(all_data):,}/{total_size:,})")
-                    
-                    if not has_more:
-                        break
-                    
-                    offset += actual_size
-                    chunk_count += 1
-                    
-                except Exception as e:
-                    print(f" ❌ Failed to decode chunk: {e}")
-                    return None
-            
-            print(f"✅ Core dump download complete: {len(all_data):,} bytes")
-            return bytes(all_data)
-            
+            print(f"\n📥 Downloading core dump...")
+
+            params = {'id': crash_id} if crash_id is not None else {}
+            response = self.session.get(f"{self.base_url}/api/v1/crash/dump", params=params)
+            response.raise_for_status()
+
+            data = response.content
+            if not data:
+                print("❌ Empty core dump response")
+                return None
+
+            if data[:2] == b'\x1f\x8b':
+                compressed_size = len(data)
+                data = gzip.decompress(data)
+                print(f"✅ Core dump downloaded: {compressed_size:,} bytes gzipped, "
+                      f"{len(data):,} bytes inflated")
+            else:
+                print(f"✅ Core dump downloaded: {len(data):,} bytes (inflated in transit)")
+
+            return data
+
         except requests.exceptions.RequestException as e:
             print(f"❌ Error fetching core dump: {e}")
+            return None
+        except (OSError, EOFError) as e:
+            print(f"❌ Failed to decompress core dump: {e}")
             return None
 
     def save_crash_dump_text(self, crash_info: Dict[str, Any], debug_output: Optional[str] = None, core_dump_data: Optional[bytes] = None) -> str:
@@ -271,6 +327,9 @@ class CrashDumpAnalyzer:
                 # Basic crash information
                 f.write("CRASH INFORMATION:\n")
                 f.write("-"*40 + "\n")
+                if crash_info.get('crashId'):
+                    f.write(f"Crash ID: {crash_info['crashId']}\n")
+                f.write(f"Firmware Version: {crash_info.get('firmwareVersion', 'Unknown')}\n")
                 f.write(f"Reset Reason: {crash_info.get('resetReason', 'Unknown')}\n")
                 f.write(f"Reset Code: {crash_info.get('resetReasonCode', 'Unknown')}\n")
                 f.write(f"Crash Count: {crash_info.get('crashCount', 0)} (consecutive: {crash_info.get('consecutiveCrashCount', 0)})\n")
@@ -301,16 +360,11 @@ class CrashDumpAnalyzer:
                     if addresses:
                         f.write(f"Addresses: {' '.join([f'0x{addr:08x}' for addr in addresses])}\n")
                     
-                    debug_cmd = backtrace.get('debugCommand')
-                    if debug_cmd:
-                        f.write(f"\nDEBUG COMMAND:\n")
-                        f.write(f"{debug_cmd}\n")
-                        
-                        if debug_output:
-                            f.write(f"\nDEBUG OUTPUT:\n")
-                            f.write("-"*40 + "\n")
-                            f.write(debug_output)
-                            f.write("\n")
+                    if debug_output:
+                        f.write(f"\nDEBUG OUTPUT:\n")
+                        f.write("-"*40 + "\n")
+                        f.write(debug_output)
+                        f.write("\n")
                 
                 f.write("\n" + "="*80 + "\n")
                 
@@ -365,67 +419,103 @@ class CrashDumpAnalyzer:
             print(f"❌ Error calculating firmware SHA256: {e}")
             return None
 
-    def find_matching_elf_in_releases(self, device_sha256: str) -> Optional[str]:
-        """Find the matching ELF file in releases folder based on SHA256."""
+    def find_matching_elf_in_releases(self, device_sha256: str,
+                                      firmware_version: Optional[str] = None) -> Optional[str]:
+        """Find the matching ELF file in the releases folder, caching the result.
+
+        Crash payloads carry the firmware version explicitly, so a direct version
+        match is tried first. The SHA256 prefix scan remains the fallback, both
+        for records from firmware predating that field and as a cross-check.
+        """
+        if not self._resolved_elf_cached:
+            self._resolved_elf = self._scan_releases_for_elf(device_sha256, firmware_version)
+            self._resolved_elf_cached = True
+        return self._resolved_elf
+
+    def _scan_releases_for_elf(self, device_sha256: str,
+                               firmware_version: Optional[str] = None) -> Optional[str]:
         releases_dir = "releases"
-        
+
         if not os.path.exists(releases_dir):
             print(f"📁 Releases directory not found: {releases_dir}")
             return None
-        
-        print(f"🔍 Searching for ELF file matching SHA256: {device_sha256}...")
-        
-        # Get all release folders
+
         try:
-            release_folders = [f for f in os.listdir(releases_dir) 
+            release_folders = [f for f in os.listdir(releases_dir)
                              if os.path.isdir(os.path.join(releases_dir, f))]
             release_folders.sort(reverse=True)  # Most recent first
-            
+
             print(f"📁 Found {len(release_folders)} release folders")
-            
+
+            # Read every release's metadata once, then match against it
+            candidates = []
             for folder in release_folders:
-                folder_path = os.path.join(releases_dir, folder)
-                metadata_path = os.path.join(folder_path, "metadata.json")
-                
+                metadata_path = os.path.join(releases_dir, folder, "metadata.json")
                 if not os.path.exists(metadata_path):
                     continue
-                
+
                 try:
                     with open(metadata_path, 'r') as f:
                         metadata = json.load(f)
-                    
-                    # Get SHA256 from metadata
-                    debug_info = metadata.get('files', {}).get('debug', {})
-                    metadata_sha256 = debug_info.get('sha256', '')
-                    elf_filename = debug_info.get('filename', '')
-                    
-                    if not metadata_sha256 or not elf_filename:
-                        continue
-                    
-                    # Check if device SHA256 matches (partial match)
-                    if metadata_sha256.lower().startswith(device_sha256.lower()):
-                        elf_path = os.path.join(folder_path, elf_filename)
-                        
-                        if os.path.exists(elf_path):
-                            print(f"✅ Found matching ELF file!")
-                            print(f"   Release: {folder}")
-                            print(f"   Version: {metadata.get('version', 'unknown')}")
-                            print(f"   ELF file: {elf_filename}")
-                            print(f"   SHA256: {metadata_sha256}")
-                            print(f"   Path: {elf_path}")
-                            return elf_path
-                        else:
-                            print(f"⚠️  Metadata found but ELF file missing: {elf_path}")
-                    
                 except json.JSONDecodeError as e:
                     print(f"⚠️  Invalid JSON in {metadata_path}: {e}")
-                except Exception as e:
+                    continue
+                except OSError as e:
                     print(f"⚠️  Error reading {metadata_path}: {e}")
-            
-            print(f"❌ No matching ELF file found for SHA256: {device_sha256}")
+                    continue
+
+                debug_info = metadata.get('files', {}).get('debug', {})
+                elf_filename = debug_info.get('filename', '')
+                if not elf_filename:
+                    continue
+
+                candidates.append({
+                    'folder': folder,
+                    'version': metadata.get('version', ''),
+                    'sha256': debug_info.get('sha256', ''),
+                    'elf_path': os.path.join(releases_dir, folder, elf_filename),
+                    'elf_filename': elf_filename,
+                })
+
+            def _accept(match, how):
+                if not os.path.exists(match['elf_path']):
+                    print(f"⚠️  Metadata found but ELF file missing: {match['elf_path']}")
+                    return None
+                print(f"✅ Found matching ELF file ({how})!")
+                print(f"   Release: {match['folder']}")
+                print(f"   Version: {match['version'] or 'unknown'}")
+                print(f"   ELF file: {match['elf_filename']}")
+                print(f"   SHA256: {match['sha256'] or 'unknown'}")
+                print(f"   Path: {match['elf_path']}")
+                return match['elf_path']
+
+            if firmware_version:
+                print(f"🔍 Looking for the ELF of firmware version {firmware_version}...")
+                for match in candidates:
+                    if match['version'] == firmware_version:
+                        if device_sha256 and match['sha256'] and \
+                                not match['sha256'].lower().startswith(device_sha256.lower()):
+                            print(f"⚠️  Release {match['folder']} matches version {firmware_version} "
+                                  f"but its SHA256 ({match['sha256']}) does not start with the "
+                                  f"device's {device_sha256}; falling back to a SHA256 search")
+                            break
+                        found = _accept(match, f"version {firmware_version}")
+                        if found:
+                            return found
+
+            if device_sha256:
+                print(f"🔍 Searching for ELF file matching SHA256: {device_sha256}...")
+                for match in candidates:
+                    if match['sha256'] and match['sha256'].lower().startswith(device_sha256.lower()):
+                        found = _accept(match, f"SHA256 {device_sha256}")
+                        if found:
+                            return found
+
+            print(f"❌ No matching ELF file found (version: {firmware_version or 'unknown'}, "
+                  f"SHA256: {device_sha256 or 'unknown'})")
             return None
-            
-        except Exception as e:
+
+        except OSError as e:
             print(f"❌ Error scanning releases directory: {e}")
             return None
 
@@ -550,11 +640,18 @@ class CrashDumpAnalyzer:
             
             # First, try to find matching ELF in releases folder
             device_sha256 = crash_info.get('appElfSha256', '')
+            firmware_version = crash_info.get('firmwareVersion')
             firmware_path = None
-            
-            if device_sha256:
-                firmware_path = self.find_matching_elf_in_releases(device_sha256)
-            
+
+            if self.elf_path:
+                if not os.path.exists(self.elf_path):
+                    print(f"❌ ELF file not found: {self.elf_path}")
+                    return False
+                firmware_path = self.elf_path
+                print(f"📎 Using the ELF given on the command line: {firmware_path}")
+            elif device_sha256 or firmware_version:
+                firmware_path = self.find_matching_elf_in_releases(device_sha256, firmware_version)
+
             # Fallback to current build if no match found in releases
             if not firmware_path:
                 firmware_path = ".pio/build/esp32s3-dev/firmware.elf"
@@ -646,61 +743,61 @@ class CrashDumpAnalyzer:
             return False
 
     def clear_core_dump(self) -> bool:
-        """Clear the core dump from device flash."""
+        """Delete every archived crash record from device flash."""
         try:
-            print(f"\n🗑️  Clearing core dump from device...")
+            print(f"\n🗑️  Clearing archived crashes from device...")
             response = self.session.post(f"{self.base_url}/api/v1/crash/clear")
             response.raise_for_status()
-            
+
             result = response.json()
             if result.get('success'):
-                print(f"✅ {result.get('message', 'Core dump cleared')}")
+                print(f"✅ {result.get('message', 'Archived crashes cleared')}")
                 return True
             else:
-                print(f"❌ Failed to clear core dump")
+                print(f"❌ Failed to clear archived crashes")
                 return False
-                
+
         except requests.exceptions.RequestException as e:
-            print(f"❌ Error clearing core dump: {e}")
+            print(f"❌ Error clearing archived crashes: {e}")
             return False
 
-    def analyze(self) -> Optional[str]:
+    def analyze(self, crash_id: Optional[str] = None) -> Optional[str]:
         """Main analysis function. Always saves to temp and runs analysis automatically."""
         print(f"🚀 Starting crash dump analysis for {self.device_ip}")
-        
+
         # Step 1: Get crash information
-        crash_info = self.get_crash_info()
+        crash_info = self.get_crash_info(crash_id)
         if not crash_info:
             return None
-        
+
         debug_output = self.print_crash_info(crash_info)
-        
+
         # Step 2: Check if core dump is available
         if not crash_info.get('hasCoreDump'):
             print("\nℹ️  No core dump available on device")
             # Still save crash info to text file even without core dump
             self.save_crash_dump_text(crash_info, debug_output, None)
             return None
-        
+
         # Step 3: Download core dump
-        core_dump_data = self.get_core_dump_chunks()
+        core_dump_data = self.download_core_dump(crash_info.get('crashId'))
         if not core_dump_data:
             return None
-        
+
         # Step 4: Analyze core dump
         self.analyze_core_dump_header(core_dump_data)
-        
+
         # Step 5: Save core dump to temp file (binary)
         filename = self.save_core_dump_temp(core_dump_data)
         if not filename:
             return None
-        
+
         # Step 6: Save comprehensive crash dump to text file
         self.save_crash_dump_text(crash_info, debug_output, core_dump_data)
-        
+
         # Step 7: Automatically run ESP-IDF analysis with smart ELF detection
         self.analyze_with_esp_idf(filename, crash_info)
-        
+
         return filename
 
 
@@ -709,25 +806,26 @@ def main():
         description="Fetch and analyze a crash/core dump from an EnergyMe-Home device",
     )
     add_device_args(parser)
-    parser.add_argument('--chunk-size', type=int, default=2048,
-                       help='Core dump download chunk size in bytes, 512-8192 (default: 2048)')
+    parser.add_argument('--crash-id', default=None,
+                       help='crashId of the archived record to analyze (default: the oldest)')
     parser.add_argument('--clear', action='store_true',
-                       help='Clear the core dump from the device after analysis')
+                       help='Delete every archived crash from the device after analysis')
+    parser.add_argument('--elf', default=None,
+                       help='ELF to decode against, bypassing the releases lookup and the '
+                            'default build path (needed for non-default environments, '
+                            'e.g. .pio/build/esp32s3-dev-v5/firmware.elf)')
     args = parser.parse_args()
 
-    if not 512 <= args.chunk_size <= 8192:
-        parser.error("--chunk-size must be between 512 and 8192 bytes")
-
     username, password = resolve_credentials(args)
-    analyzer = CrashDumpAnalyzer(args.host, username, password, args.chunk_size)
+    analyzer = CrashDumpAnalyzer(args.host, username, password, elf_path=args.elf)
 
     try:
         # Run analysis automatically (no prompts)
-        filename = analyzer.analyze()
+        filename = analyzer.analyze(args.crash_id)
 
-        # Clear core dump if --clear flag was provided
+        # Clear archived crashes if --clear flag was provided
         if args.clear and filename:
-            print(f"\n🗑️  Clearing core dump from device (--clear flag provided)...")
+            print(f"\n🗑️  Clearing archived crashes from device (--clear flag provided)...")
             analyzer.clear_core_dump()
 
     except KeyboardInterrupt:

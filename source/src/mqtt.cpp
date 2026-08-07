@@ -3,12 +3,15 @@
 
 #include "mqtt.h"
 #include "issueregistry.h"
+#include "crashmonitor.h"
 #include "shadow.h"
 #include "shadow_logic.h"
 #include "taskprofiler.h"
 #include "duration_format.h"
 #include "mqtt_grid_schedule.h"
 #include "mqtt_energy_publish_gate.h"
+#include "crash_archive_policy.h"
+#include "mbedtls/base64.h"
 #include <algorithm>
 
 namespace Mqtt
@@ -49,6 +52,7 @@ namespace Mqtt
     static uint64_t _lastMillisMeterPublished = 0;
     static uint64_t _lastMillisSystemDynamicPublished = 0;
     static uint64_t _lastMillisStatisticsPublished = 0;
+    static uint64_t _lastMillisCrashPublished = 0;
 
     // Next grid publish deadline (unix seconds, wall-clock aligned); 0 = not yet scheduled
     static uint64_t _nextGridPublishUnixSecond = 0;
@@ -185,6 +189,19 @@ namespace Mqtt
     static void _checkIfPublishEnergyNeeded();
     static void _checkIfPublishSystemDynamicNeeded();
     static void _checkIfPublishStatisticsNeeded();
+    static void _checkIfPublishCrashNeeded();
+
+    // Outcome of publishing one archived crash record. The two failure modes are
+    // kept apart deliberately: Retry leaves the record at the head of the queue,
+    // Skip steps over one that can never be sent so it cannot stall the rest.
+    enum class CrashPublishOutcome {
+        Published,
+        Empty,   // Nothing archived at this index
+        Retry,   // Transient failure, try the same record again later
+        Skip,    // Permanently unpublishable, but kept on flash
+        Dropped, // Corrupt record removed; the remaining ones shifted down
+    };
+    static CrashPublishOutcome _publishCrashJson(uint32_t index);
 
     // MQTT operations
     static bool _setCertificatesFromPreferences();
@@ -196,7 +213,6 @@ namespace Mqtt
     static void _processLogQueue();
     static bool _publishMeterStreaming();
     static bool _publishMeterJson();
-    static bool _publishCrashJson();
     static bool _publishOtaJobsRequestJson();
     
     // Certificate management
@@ -1844,13 +1860,48 @@ namespace Mqtt
         }
     }
 
+    // One record per cycle. A backlog of archived crashes is a few hundred kB of
+    // back-to-back publishes, so draining across cycles lets meter and log
+    // traffic still get a turn. The flag is only ever cleared here; re-arming is
+    // _checkIfPublishCrashNeeded()'s job, so a failure costs one interval rather
+    // than every crash publish until the next reboot.
     static void _publishCrash() {
-        if (!_publishCrashJson()) {
-            LOG_ERROR("Failed to publish crash data");
-            _publishMqtt.crash = false; // Need this to avoid infinite loop (fail - retry)
-            return;
+        uint32_t index = 0;
+
+        for (uint32_t attempt = 0; attempt < CRASH_PUBLISH_MAX_ATTEMPTS_PER_CYCLE; attempt++) {
+            switch (_publishCrashJson(index)) {
+                case CrashPublishOutcome::Published:
+                    _lastMillisCrashPublished = millis64();
+                    _publishMqtt.crash = false;
+                    return;
+
+                case CrashPublishOutcome::Empty:
+                    // Clock advanced even though nothing was sent: an archive
+                    // holding only Skip records still reports hasArchivedCrash(),
+                    // so _checkIfPublishCrashNeeded() would re-arm on the next
+                    // 100 ms tick and rescan the whole archive forever.
+                    _lastMillisCrashPublished = millis64();
+                    _publishMqtt.crash = false;
+                    return;
+
+                case CrashPublishOutcome::Retry:
+                    LOG_ERROR("Failed to publish crash data, retrying on a later cycle");
+                    _lastMillisCrashPublished = millis64();
+                    _publishMqtt.crash = false;
+                    return;
+
+                case CrashPublishOutcome::Skip:
+                    index++; // Record left in place, so step past it
+                    break;
+
+                case CrashPublishOutcome::Dropped:
+                    break; // Removed, so the same index now holds the next record
+            }
         }
 
+        LOG_WARNING("Gave up on this crash publish cycle after %d records that could not be sent",
+                    CRASH_PUBLISH_MAX_ATTEMPTS_PER_CYCLE);
+        _lastMillisCrashPublished = millis64();
         _publishMqtt.crash = false;
     }
 
@@ -2004,6 +2055,21 @@ namespace Mqtt
         if ((millis64() - _lastMillisStatisticsPublished) > MQTT_MAX_INTERVAL_STATISTICS_PUBLISH) {
             _publishMqtt.statistics = true;
             LOG_DEBUG("Set flag to publish statistics");
+        }
+    }
+
+    // The interval is checked before the archive, since hasArchivedCrash() walks
+    // a LittleFS directory and this runs on every MQTT loop tick.
+    static void _checkIfPublishCrashNeeded() {
+        if ((millis64() - _lastMillisCrashPublished) <= MQTT_MAX_INTERVAL_CRASH_PUBLISH) return;
+
+        if (CrashMonitor::hasArchivedCrash()) {
+            _publishMqtt.crash = true;
+            LOG_DEBUG("Set flag to publish crash");
+        } else {
+            // Nothing pending: reset the clock so an idle device is not walking
+            // the directory on every single tick
+            _lastMillisCrashPublished = millis64();
         }
     }
 
@@ -2261,95 +2327,100 @@ namespace Mqtt
         }
     }
 
-    static bool _publishCrashJson() {
-        // Generate a unique crash ID for this crash event
-        uint64_t crashId = CustomTime::getUnixTimeMilliseconds();
-        
-        // First, publish crash info metadata
+    // Publishes one archived crash as a single message: it either lands whole or
+    // does not land at all. The chunked sequence this replaced left permanently
+    // incomplete records behind whenever it failed part-way.
+    static CrashPublishOutcome _publishCrashJson(uint32_t index) {
+        char baseName[CRASH_ARCHIVE_NAME_BUFFER_SIZE];
+        if (!CrashMonitor::getArchivedCrashAt(index, baseName, sizeof(baseName))) {
+            LOG_DEBUG("No archived crash pending publication at index %lu", index);
+            return CrashPublishOutcome::Empty;
+        }
+
         SpiRamAllocator allocator;
-        JsonDocument docInfo(&allocator);
-        docInfo["unixTime"] = crashId; // Use same timestamp as crash ID
-        docInfo["crashId"] = crashId;
-        docInfo["messageType"] = "crashInfo";
-        
-        SpiRamAllocator allocatorCrashInfo;
-        JsonDocument docCoreDump(&allocatorCrashInfo);
-        CrashMonitor::getCoreDumpInfoJson(docCoreDump);
-        docInfo["crashInfo"] = docCoreDump;
-
-        if (!_publishJsonStreaming(docInfo, _mqttTopicCrash)) {
-            LOG_ERROR("Failed to publish crash info metadata");
-            return false;
-        }
-        LOG_DEBUG("Crash info metadata published successfully with crash ID: %llu", crashId);
-
-        // Then, send each core dump chunk as a separate message
-        size_t coreDumpSize = CrashMonitor::getCoreDumpSize();
-        LOG_DEBUG("Core dump size to send via MQTT: %zu bytes", coreDumpSize);
-        size_t offset = 0;
-        uint32_t chunkIndex = 0;
-        uint32_t totalChunks = (coreDumpSize + CORE_DUMP_CHUNK_SIZE - 1) / CORE_DUMP_CHUNK_SIZE; // Calculate total chunks
-
-        uint32_t loops = 0;
-        while (offset < coreDumpSize && loops < MAX_LOOP_ITERATIONS) {
-            loops++;
-            size_t thisChunkSize = (coreDumpSize - offset) < CORE_DUMP_CHUNK_SIZE ? (coreDumpSize - offset) : CORE_DUMP_CHUNK_SIZE;
-
-            SpiRamAllocator allocatorChunk;
-            JsonDocument docChunk(&allocatorChunk);
-            docChunk["unixTime"] = CustomTime::getUnixTimeMilliseconds();
-            docChunk["crashId"] = crashId; // Same crash ID for all chunks
-            docChunk["messageType"] = "crashChunk";
-            docChunk["chunkIndex"] = chunkIndex;
-            docChunk["totalChunks"] = totalChunks;
-
-            SpiRamAllocator allocatorCoreDumpChunk;
-            JsonDocument docJsonCoreDumpChunk(&allocatorCoreDumpChunk);
-            if (!CrashMonitor::getCoreDumpChunkJson(docJsonCoreDumpChunk, offset, thisChunkSize)) {
-                LOG_ERROR("Failed to get core dump chunk at offset %zu", offset);
-                return false;
-            }
-            
-            // Copy chunk data directly into the message
-            docChunk["chunk"] = docJsonCoreDumpChunk;
-            
-            if (!_publishJsonStreaming(docChunk, _mqttTopicCrash)) {
-                LOG_ERROR("Failed to publish crash chunk %u/%u at offset %zu", chunkIndex + 1, totalChunks, offset);
-                return false;
-            }
-            
-            LOG_DEBUG("Published crash chunk %u/%u (crash ID: %llu, offset %zu, size %zu bytes)", chunkIndex + 1, totalChunks, crashId, offset, thisChunkSize);
-            
-            offset += thisChunkSize;
-            chunkIndex++;
+        JsonDocument doc(&allocator);
+        if (!CrashMonitor::getArchivedCrashMetadata(baseName, doc)) {
+            // Unparseable metadata will never become publishable, and leaving it
+            // in place would block every later record behind it
+            LOG_ERROR("Dropping archived crash %s: its metadata could not be read", baseName);
+            CrashMonitor::removeArchivedCrash(baseName);
+            return CrashPublishOutcome::Dropped;
         }
 
-        // Publish a final message to indicate completion
-        SpiRamAllocator allocatorFinal;
-        JsonDocument docFinal(&allocatorFinal);
-        docFinal["unixTime"] = CustomTime::getUnixTimeMilliseconds();
-        docFinal["crashId"] = crashId;
-        docFinal["messageType"] = "crashComplete";
-
-        if (!_publishJsonStreaming(docFinal, _mqttTopicCrash)) {
-            LOG_ERROR("Failed to publish crash completion message");
-            return false;
+        size_t compressedSize = CrashMonitor::getArchivedCrashDumpSize(baseName);
+        if (compressedSize == 0) {
+            LOG_ERROR("Dropping archived crash %s: its core dump is missing or empty", baseName);
+            CrashMonitor::removeArchivedCrash(baseName);
+            return CrashPublishOutcome::Dropped;
         }
 
-        _publishMqtt.crash = false;
-        
-        // Clear core dump after successful transmission
-        if (CrashMonitor::hasCoreDump()) {
-            #ifndef ENV_DEV // In dev environment we keep the core dump for testing purposes, and eventually delete via API
-            CrashMonitor::clearCoreDump();
-            LOG_INFO("Core dump cleared after successful MQTT transmission");
-            #else
-            LOG_DEBUG("Core dump will not be cleared in DEV environment for testing purposes");
-            #endif
+        doc["unixTime"] = CustomTime::getUnixTimeMilliseconds();
+        doc["coreDumpEncoding"] = "gzip+base64";
+
+        // Checked before spending PSRAM on the encode. See fitsPublishLimit() for
+        // where the ceiling comes from and why overshooting it is not benign.
+        size_t topicLength = strlen(_mqttTopicCrash);
+        size_t metadataBytes = measureJson(doc) + CRASH_PUBLISH_COREDUMP_FIELD_OVERHEAD;
+        if (!CrashArchivePolicy::fitsPublishLimit(compressedSize, metadataBytes, topicLength)) {
+            LOG_ERROR(
+                "Archived crash %s does not fit one publish: %zu compressed bytes plus %zu bytes of metadata exceed the %zu byte payload limit. Record kept on flash for retrieval over the local API.",
+                baseName, compressedSize, metadataBytes, CrashArchivePolicy::maxPublishPayloadBytes(topicLength)
+            );
+            // Never publishable, but still worth keeping on flash. Stepped over
+            // rather than retried, otherwise it stays the oldest record forever
+            // and no later crash ever reaches the cloud.
+            return CrashPublishOutcome::Skip;
         }
-        
-        LOG_DEBUG("All crash data published successfully: %u chunks sent for crash ID %llu", totalChunks, crashId);
-        return true;
+
+        uint8_t* compressed = (uint8_t*)ps_malloc(compressedSize);
+        if (compressed == nullptr) {
+            LOG_ERROR("Failed to allocate %zu bytes in PSRAM for the archived core dump", compressedSize);
+            return CrashPublishOutcome::Retry;
+        }
+
+        size_t readSize = 0;
+        if (!CrashMonitor::readArchivedCrashDump(baseName, compressed, compressedSize, &readSize) || readSize == 0) {
+            LOG_ERROR("Failed to read the archived core dump for %s", baseName);
+            free(compressed);
+            return CrashPublishOutcome::Retry;
+        }
+
+        size_t encodedBufferSize = CrashArchivePolicy::base64EncodedSize(readSize) + 1; // Null terminator
+        uint8_t* encoded = (uint8_t*)ps_malloc(encodedBufferSize);
+        if (encoded == nullptr) {
+            LOG_ERROR("Failed to allocate %zu bytes in PSRAM for the base64 core dump", encodedBufferSize);
+            free(compressed);
+            return CrashPublishOutcome::Retry;
+        }
+
+        size_t encodedLength = 0;
+        int32_t ret = mbedtls_base64_encode(encoded, encodedBufferSize, &encodedLength, compressed, readSize);
+        free(compressed);
+
+        if (ret != 0) {
+            LOG_ERROR("Base64 encoding failed for crash %s (mbedtls: %d)", baseName, ret);
+            free(encoded);
+            return CrashPublishOutcome::Retry;
+        }
+        encoded[encodedLength] = '\0';
+
+        // Linked, not copied: the document holds the pointer, so `encoded` has to
+        // outlive serialization and must not be freed before the publish returns
+        doc["coreDump"] = JsonString((const char*)encoded, encodedLength, true);
+
+        bool published = _publishJsonStreaming(doc, _mqttTopicCrash);
+        free(encoded);
+
+        if (!published) {
+            LOG_ERROR("Failed to publish archived crash %s, keeping it on flash to retry", baseName);
+            return CrashPublishOutcome::Retry;
+        }
+
+        LOG_INFO("Published crash %s in a single message (%zu bytes of gzipped dump, %zu bytes encoded)",
+                 baseName, readSize, encodedLength);
+
+        CrashMonitor::removeArchivedCrash(baseName);
+        return CrashPublishOutcome::Published;
     }
 
     static bool _publishOtaJobsRequestJson() {
@@ -2456,6 +2527,7 @@ namespace Mqtt
         _checkIfPublishEnergyNeeded();
         _checkIfPublishSystemDynamicNeeded();
         _checkIfPublishStatisticsNeeded();
+        _checkIfPublishCrashNeeded();
         _checkPublishMqtt();
         Shadow::checkPublish(); // drain shadow deltas/local-edits/reports (MQTT task body)
         _drainPendingCommand(); // process queued IoT Command (broker RX or dev inject) off the callback

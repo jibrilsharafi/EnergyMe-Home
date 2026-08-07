@@ -108,6 +108,51 @@ const HardwareProfile PCB_PROFILES[] = {
             8, 9, 10, 11, 12, 13, 14, 15,
         },
     },
+    {
+        .version = 50, // v5.0 (02-12-2024)
+
+        // Pin assignments are wholly different from v6.x - this is not a v6 board
+        // with a few pins moved. Values taken from include/pins.h on the
+        // legacy/pcb-v5 branch, which is the last firmware built for this PCB.
+
+        // RGB LED
+        .ledRedPin   = 39,
+        .ledGreenPin = 40,
+        .ledBluePin  = 38,
+
+        // Button
+        .buttonPin = 0,
+
+        // Analog multiplexer (74HC4067) select lines
+        .muxS0Pin = 10,
+        .muxS1Pin = 11,
+        .muxS2Pin = 3,
+        .muxS3Pin = 9,
+
+        // ADE7953 SPI
+        .ade7953SsPin        = 48,
+        .ade7953SckPin       = 36,
+        .ade7953MisoPin      = 35,
+        .ade7953MosiPin      = 45,
+        .ade7953ResetPin     = 21,
+        .ade7953InterruptPin = 37,
+
+        // Mains fed straight through a resistive divider, not via a 2mA transformer
+        // as on v6.x: 3x330 kOhm in series on the high side, 1 kOhm on the low side.
+        // The ratio differs from v6.x by ~3 orders of magnitude, so a v6 profile on
+        // a v5 board reads voltage wrong rather than merely imprecisely.
+        .voltageDividerR1 = 990000.0f,
+        .voltageDividerR2 = 1000.0f,
+
+        // All 16 mux channels populated (Y0-Y15 -> CT1-CT16), identity map.
+        .muxChipChannels   = 16,
+        .muxChannelCount   = 16,
+        .totalChannelCount = 17, // muxChannelCount + 1 (channel 0 = direct ADE7953 input)
+        .muxChannelMap = {
+            0, 1, 2, 3, 4, 5, 6, 7,
+            8, 9, 10, 11, 12, 13, 14, 15,
+        },
+    },
 };
 
 static const size_t PCB_PROFILES_COUNT = sizeof(PCB_PROFILES) / sizeof(PCB_PROFILES[0]);
