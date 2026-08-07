@@ -2198,6 +2198,105 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
   # LED Management endpoints
+  /api/v1/led:
+    get:
+      summary: Get current LED state
+      description: >
+        Report what the LED is showing right now. The LED is driven by priority
+        layers (`user` < `status` < `network` < `alert` < `critical`); the highest
+        occupied layer wins and `layer` names it. Both `layer` and `remaining_ms`
+        are null when no layer is occupied and when the indication is indefinite,
+        respectively.
+      tags:
+        - LED
+      responses:
+        '200':
+          description: Currently rendered indication
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pattern:
+                    type: string
+                    enum: ["off", solid, blink_slow, blink_fast, pulse, double_blink]
+                    example: pulse
+                  layer:
+                    type: string
+                    nullable: true
+                    enum: [user, status, network, alert, critical]
+                    description: Layer owning the indication, or null when the LED is idle
+                    example: network
+                  color:
+                    type: object
+                    description: The layer's colour, before brightness scaling
+                    properties:
+                      red: { type: integer, minimum: 0, maximum: 255, example: 0 }
+                      green: { type: integer, minimum: 0, maximum: 255, example: 0 }
+                      blue: { type: integer, minimum: 0, maximum: 255, example: 255 }
+                  remaining_ms:
+                    type: integer
+                    nullable: true
+                    description: Milliseconds until the indication expires, or null when indefinite
+                    example: null
+                  is_lit:
+                    type: boolean
+                    description: Whether the waveform is currently in an on phase
+                    example: true
+                  brightness:
+                    type: integer
+                    minimum: 0
+                    maximum: 100
+                    example: 75
+
+  /api/v1/led/color:
+    put:
+      summary: Set the user LED colour
+      description: >
+        Drive the LED from an automation. This writes the `user` layer, which is the
+        lowest priority, so any system indication overrides it while active and the
+        user colour reappears once that indication is released. The user layer is not
+        persisted and is empty after a reboot.
+      tags:
+        - LED
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [red, green, blue]
+              properties:
+                red: { type: integer, minimum: 0, maximum: 255, example: 255 }
+                green: { type: integer, minimum: 0, maximum: 255, example: 0 }
+                blue: { type: integer, minimum: 0, maximum: 255, example: 255 }
+                pattern:
+                  type: string
+                  enum: ["off", solid, blink_slow, blink_fast, pulse, double_blink]
+                  default: solid
+                duration_ms:
+                  type: integer
+                  minimum: 0
+                  description: Release the user layer after this long. 0 or absent means indefinite.
+                  example: 5000
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          description: Missing or out-of-range colour channel, unknown pattern, or negative duration_ms
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      summary: Clear the user LED colour
+      description: Release the `user` layer, revealing whatever system layer is occupied.
+      tags:
+        - LED
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+
   /api/v1/led/brightness:
     get:
       summary: Get LED brightness
