@@ -2312,17 +2312,20 @@ void performNvsRestore() {
         return;
     }
 
-    // LED indicator: orange = restoring. Every exit below must release it - boot
-    // continues after this function, so a critical layer left occupied would mask
-    // the rest of the boot walk and the steady-state colour for the whole uptime.
+    // LED indicator: orange = restoring. Boot continues after this function, so a
+    // critical layer left occupied would mask the rest of the boot walk and the
+    // steady-state colour for the whole uptime. The guard releases it on every exit
+    // path, including any added later.
     Led::setOrange(Led::PRIO_CRITICAL);
+    struct RestoreLedGuard {
+        ~RestoreLedGuard() { Led::clearPattern(Led::PRIO_CRITICAL); }
+    } restoreLedGuard;
 
     // Read and parse restore file
     File restoreFile = LittleFS.open("/restore/nvs_restore.json", FILE_READ);
     if (!restoreFile) {
         LOG_ERROR("Failed to open restore file");
         LittleFS.remove("/restore/nvs_restore.json");
-        Led::clearPattern(Led::PRIO_CRITICAL);
         return;
     }
 
@@ -2334,7 +2337,6 @@ void performNvsRestore() {
     if (error) {
         LOG_ERROR("Failed to parse restore JSON: %s", error.c_str());
         LittleFS.remove("/restore/nvs_restore.json");
-        Led::clearPattern(Led::PRIO_CRITICAL);
         return;
     }
 
@@ -2344,7 +2346,10 @@ void performNvsRestore() {
     // Clean up restore file
     LittleFS.remove("/restore/nvs_restore.json");
 
+    // Ahead of the guard, not left to it: the outcome colour below is shown during
+    // the feedback delay, which is still inside this scope.
     Led::clearPattern(Led::PRIO_CRITICAL);
+
     if (success) {
         LOG_INFO("Configuration restored successfully");
         Led::setGreen(Led::PRIO_NORMAL);

@@ -24,8 +24,9 @@
 #define INVALID_PIN 255 // Used for initialization of pins
 #define DEFAULT_LED_BRIGHTNESS_PERCENT 75 // Default brightness percentage
 #define LED_RESOLUTION 8 // Resolution for PWM, 8 bits (0-255)
-#define LED_MAX_BRIGHTNESS_PERCENT LED_STATE_MAX_BRIGHTNESS_PERCENT
 #define LED_FREQUENCY 5000 // Frequency for PWM, in Hz. Quite standard
+
+constexpr uint8_t LED_MAX_BRIGHTNESS_PERCENT = LedState::MAX_BRIGHTNESS_PERCENT;
 
 // LED Task configuration
 #define LED_TASK_NAME "led_task"
@@ -60,45 +61,23 @@ namespace Led {
     const LedPriority PRIO_CRITICAL = 15;   // Override everything
 
     using Color = LedState::Rgb;
-
-    // Predefined colors
-    namespace Colors {
-        const Color RED(255, 0, 0);
-        const Color GREEN(0, 255, 0);
-        const Color BLUE(0, 0, 255);
-        const Color YELLOW(255, 255, 0);
-        const Color PURPLE(255, 0, 255);
-        const Color CYAN(0, 255, 255);
-        const Color ORANGE(255, 128, 0);
-        const Color WHITE(255, 255, 255);
-        const Color OFF(0, 0, 0);
-    }
+    namespace Colors = LedState::Colors;
 
     // What the LED is showing right now.
     struct Snapshot {
-        // False when the layer table could not be read. Distinct from `any` on
+        // False when the layer table could not be read. Distinct from active.any on
         // purpose: "I could not look" must never be reported as "the LED is off".
         bool valid = false;
-        bool any = false;                           // false => no layer occupied, LED dark
-        LedState::Layer layer = LedState::Layer::USER;  // meaningless unless `any`
-        LedPattern pattern = LedPattern::OFF;
-        Color color;                                // the layer's colour, before brightness
-        uint64_t remainingMs = 0;
-        bool indefinite = true;
-        bool isLit = false;                         // true while the waveform is in an on phase
+        LedState::Active active;
+        bool isLit = false;
         uint8_t brightness = 0;
     };
 
     void begin(uint8_t redPin, uint8_t greenPin, uint8_t bluePin);
-    void stop();
-
-    void resetToDefaults();
 
     void setBrightness(uint8_t brightness);
     uint8_t getBrightness();
     inline bool isBrightnessValid(uint8_t brightness) { return brightness <= LED_MAX_BRIGHTNESS_PERCENT; }
-
-    LedState::Layer layerForPriority(LedPriority priority);
 
     // Writes one layer, replacing what it held. Never affects another layer.
     void setPattern(LedState::Layer layer, LedPattern pattern, Color color, uint64_t durationMs = 0);
@@ -107,7 +86,6 @@ namespace Led {
     // Frees a layer, revealing the highest-priority layer still occupied.
     void clearLayer(LedState::Layer layer);
     void clearPattern(LedPriority priority);
-    void clearAllPatterns();
 
     Snapshot getState();
 
@@ -120,18 +98,14 @@ namespace Led {
     inline void setCyan(LedPriority priority = 1) { setPattern(LedPattern::SOLID, Colors::CYAN, priority); }
     inline void setOrange(LedPriority priority = 1) { setPattern(LedPattern::SOLID, Colors::ORANGE, priority); }
     inline void setWhite(LedPriority priority = 1) { setPattern(LedPattern::SOLID, Colors::WHITE, priority); }
-    inline void setOff(LedPriority priority = 1) { setPattern(LedPattern::OFF, Colors::OFF, priority); }
 
     // Pattern convenience functions
     inline void blinkOrangeFast(LedPriority priority = 1, uint64_t durationMs = 0) { setPattern(LedPattern::BLINK_FAST, Colors::ORANGE, priority, durationMs); }
-    inline void blinkRedSlow(LedPriority priority = 1, uint64_t durationMs = 0) { setPattern(LedPattern::BLINK_SLOW, Colors::RED, priority, durationMs); }
     inline void blinkRedFast(LedPriority priority = 1, uint64_t durationMs = 0) { setPattern(LedPattern::BLINK_FAST, Colors::RED, priority, durationMs); }
-    inline void blinkBlueSlow(LedPriority priority = 1, uint64_t durationMs = 0) { setPattern(LedPattern::BLINK_SLOW, Colors::BLUE, priority, durationMs); }
     inline void blinkBlueFast(LedPriority priority = 1, uint64_t durationMs = 0) { setPattern(LedPattern::BLINK_FAST, Colors::BLUE, priority, durationMs); }
     inline void pulseBlue(LedPriority priority = 1, uint64_t durationMs = 0) { setPattern(LedPattern::PULSE, Colors::BLUE, priority, durationMs); }
     inline void blinkGreenSlow(LedPriority priority = 1, uint64_t durationMs = 0) { setPattern(LedPattern::BLINK_SLOW, Colors::GREEN, priority, durationMs); }
     inline void blinkGreenFast(LedPriority priority = 1, uint64_t durationMs = 0) { setPattern(LedPattern::BLINK_FAST, Colors::GREEN, priority, durationMs); }
-    inline void blinkPurpleSlow(LedPriority priority = 1, uint64_t durationMs = 0) { setPattern(LedPattern::BLINK_SLOW, Colors::PURPLE, priority, durationMs); }
     inline void blinkPurpleFast(LedPriority priority = 1, uint64_t durationMs = 0) { setPattern(LedPattern::BLINK_FAST, Colors::PURPLE, priority, durationMs); }
     inline void doubleBlinkYellow(LedPriority priority = 1, uint64_t durationMs = 0) { setPattern(LedPattern::DOUBLE_BLINK, Colors::YELLOW, priority, durationMs); }
 

@@ -3633,6 +3633,43 @@ namespace CustomServer
 
     static void _serveLedEndpoints()
     {
+        // Current LED state: what is actually being shown, not what the user asked
+        // for. An automation needs to see that a system indication has taken over.
+        //
+        // exact(), not the plain string: a matcher built from a string is
+        // BackwardCompatible, which matches the path *and everything under it*, and
+        // _attachHandler() takes the first match in registration order - so
+        // "/api/v1/led" would otherwise swallow GET /api/v1/led/brightness.
+        server.on(AsyncURIMatcher::exact("/api/v1/led"), HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            const Led::Snapshot state = Led::getState();
+            if (!state.valid) {
+                // Could not read the layer table. Reporting that as "off" would put a
+                // wrong answer on the wire, which is worse than no answer.
+                _sendErrorResponse(request, HTTP_CODE_SERVICE_UNAVAILABLE, "LED state temporarily unavailable");
+                return;
+            }
+
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+
+            doc["pattern"] = LedState::patternName(state.active.pattern);
+            doc["layer"] = state.active.any ? LedState::layerName(state.active.layer) : nullptr;
+
+            JsonObject color = doc["color"].to<JsonObject>();
+            color["red"] = state.active.color.red;
+            color["green"] = state.active.color.green;
+            color["blue"] = state.active.color.blue;
+
+            if (state.active.indefinite) { doc["remaining_ms"] = nullptr; }
+            else { doc["remaining_ms"] = state.active.remainingMs; }
+
+            doc["is_lit"] = state.isLit;
+            doc["brightness"] = state.brightness;
+
+            _sendJsonResponse(request, doc);
+        });
+
         // Set the user layer. It sits just above the ambient status layer, so it
         // replaces the healthy indication but is still overridden by anything
         // eventful, and it is deliberately not persisted: a device must not boot
@@ -3731,44 +3768,6 @@ namespace CustomServer
             });
         server.addHandler(setLedBrightnessHandler);
 
-        // Current LED state: what is actually being shown, not what the user asked
-        // for. An automation needs to see that a system indication has taken over.
-        //
-        // MUST be registered after every /api/v1/led/* route above. A matcher built
-        // from a plain string is BackwardCompatible, which matches the path itself
-        // *and* anything under it, and _attachHandler() takes the first match in
-        // registration order - registered earlier, this would swallow
-        // GET /api/v1/led/brightness. Add new LED routes above this one.
-        server.on("/api/v1/led", HTTP_GET, [](AsyncWebServerRequest *request)
-                  {
-            const Led::Snapshot state = Led::getState();
-            if (!state.valid) {
-                // Could not read the layer table. Reporting that as "off" would put a
-                // wrong answer on the wire, which is worse than no answer.
-                _sendErrorResponse(request, HTTP_CODE_SERVICE_UNAVAILABLE, "LED state temporarily unavailable");
-                return;
-            }
-
-            SpiRamAllocator allocator;
-            JsonDocument doc(&allocator);
-
-            doc["pattern"] = LedState::patternName(state.pattern);
-            if (state.any) { doc["layer"] = LedState::layerName(state.layer); }
-            else { doc["layer"] = nullptr; }
-
-            JsonObject color = doc["color"].to<JsonObject>();
-            color["red"] = state.color.red;
-            color["green"] = state.color.green;
-            color["blue"] = state.color.blue;
-
-            if (state.any && !state.indefinite) { doc["remaining_ms"] = state.remainingMs; }
-            else { doc["remaining_ms"] = nullptr; }
-
-            doc["is_lit"] = state.isLit;
-            doc["brightness"] = state.brightness;
-
-            _sendJsonResponse(request, doc);
-        });
     }
 
     // === BACKUP ENDPOINTS ===

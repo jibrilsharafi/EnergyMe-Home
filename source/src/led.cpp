@@ -8,10 +8,10 @@ namespace Led
 {
     static TaskHeartbeat _heartbeat;
 
-    // Hardware pins
     static uint8_t _redPin = INVALID_PIN;
     static uint8_t _greenPin = INVALID_PIN;
     static uint8_t _bluePin = INVALID_PIN;
+
     // Written by the web/shadow/button tasks, read every tick by the render task.
     // A byte cannot tear on Xtensa; volatile is here so the read is not hoisted out
     // of the render loop.
@@ -31,13 +31,13 @@ namespace Led
     static bool _loadConfiguration();
     static void _saveConfiguration();
 
-    static bool _lock()
+    static LedState::Layer _layerForPriority(LedPriority priority)
     {
-        if (_tableMutex == nullptr) { return false; }
-        return xSemaphoreTake(_tableMutex, pdMS_TO_TICKS(LED_MUTEX_TIMEOUT_MS)) == pdTRUE;
+        if (priority <= PRIO_NORMAL) { return LedState::Layer::STATUS; }
+        if (priority <= PRIO_MEDIUM) { return LedState::Layer::NETWORK; }
+        if (priority <= PRIO_URGENT) { return LedState::Layer::ALERT; }
+        return LedState::Layer::CRITICAL;
     }
-
-    static void _unlock() { xSemaphoreGive(_tableMutex); }
 
     void begin(uint8_t redPin, uint8_t greenPin, uint8_t bluePin)
     {
@@ -57,18 +57,10 @@ namespace Led
 
         _loadConfiguration();
 
-        if (_tableMutex == nullptr)
-        {
-            _tableMutex = xSemaphoreCreateMutex();
-            if (_tableMutex == nullptr)
-            {
-                LOG_ERROR("Failed to create LED mutex");
-                return;
-            }
-        }
+        if (!createMutexIfNeeded(&_tableMutex)) { return; }
 
         LedState::releaseAll(_table);
-        _setHardwareColor(LedState::Rgb{}); // Deterministic pins before the first render
+        _setHardwareColor(LedState::Colors::OFF); // Deterministic pins before the first render
 
         LOG_DEBUG("Starting LED task with %d bytes stack", LED_TASK_STACK_SIZE);
 
@@ -87,19 +79,6 @@ namespace Led
         }
     }
 
-    void stop()
-    {
-        stopTaskGracefully(&_ledTaskHandle, "LED task");
-
-        if (_lock())
-        {
-            LedState::releaseAll(_table);
-            _unlock();
-        }
-
-        _setHardwareColor(LedState::Rgb{});
-    }
-
     static void _ledTask(void *parameter)
     {
         _ledTaskShouldRun = true;
@@ -107,21 +86,13 @@ namespace Led
         {
             TASK_HEARTBEAT(_heartbeat);
 
-            const uint64_t currentTime = millis64();
-
-            // Copy under the mutex, render outside it.
-            if (_lock())
+            // Advance and copy under the mutex, drive the pins outside it.
+            if (acquireMutex(&_tableMutex, LED_MUTEX_TIMEOUT_MS))
             {
-                LedState::expire(_table, currentTime);
-                const LedState::Table snapshot = _table;
-                _unlock();
+                const LedState::Frame frame = LedState::step(_table, millis64(), _brightness);
+                releaseMutex(&_tableMutex);
 
-                const LedState::Active active = LedState::resolve(snapshot, currentTime);
-                _setHardwareColor(
-                    active.any
-                        ? LedState::render(active.pattern, active.color, active.elapsedMs,
-                                           LedState::effectiveBrightness(active.layer, _brightness))
-                        : LedState::Rgb{});
+                _setHardwareColor(frame.output);
             }
 
             if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(LED_TASK_DELAY_MS)) > 0)
@@ -132,12 +103,6 @@ namespace Led
 
         _ledTaskHandle = nullptr;
         vTaskDelete(NULL);
-    }
-
-    void resetToDefaults()
-    {
-        _brightness = DEFAULT_LED_BRIGHTNESS_PERCENT;
-        _saveConfiguration();
     }
 
     bool _loadConfiguration()
@@ -153,7 +118,7 @@ namespace Led
         const uint8_t stored = preferences.getUChar(PREFERENCES_BRIGHTNESS_KEY, DEFAULT_LED_BRIGHTNESS_PERCENT);
         preferences.end();
 
-        _brightness = min(stored, (uint8_t)LED_MAX_BRIGHTNESS_PERCENT);
+        _brightness = isBrightnessValid(stored) ? stored : LED_MAX_BRIGHTNESS_PERCENT;
         return true;
     }
 
@@ -167,73 +132,46 @@ namespace Led
 
     void setBrightness(uint8_t brightness)
     {
-        _brightness = min(brightness, (uint8_t)LED_MAX_BRIGHTNESS_PERCENT);
+        _brightness = isBrightnessValid(brightness) ? brightness : LED_MAX_BRIGHTNESS_PERCENT;
         _saveConfiguration();
     }
 
     uint8_t getBrightness() { return _brightness; }
 
-    LedState::Layer layerForPriority(LedPriority priority)
-    {
-        if (priority <= PRIO_NORMAL) { return LedState::Layer::STATUS; }
-        if (priority <= PRIO_MEDIUM) { return LedState::Layer::NETWORK; }
-        if (priority <= PRIO_URGENT) { return LedState::Layer::ALERT; }
-        return LedState::Layer::CRITICAL;
-    }
-
     void setPattern(LedState::Layer layer, LedPattern pattern, Color color, uint64_t durationMs)
     {
-        if (!_lock()) { return; }
+        if (!acquireMutex(&_tableMutex, LED_MUTEX_TIMEOUT_MS)) { return; }
         LedState::set(_table, layer, pattern, color, millis64(), durationMs);
-        _unlock();
+        releaseMutex(&_tableMutex);
     }
 
     void setPattern(LedPattern pattern, Color color, LedPriority priority, uint64_t durationMs)
     {
-        setPattern(layerForPriority(priority), pattern, color, durationMs);
+        setPattern(_layerForPriority(priority), pattern, color, durationMs);
     }
 
     void clearLayer(LedState::Layer layer)
     {
-        if (!_lock()) { return; }
+        if (!acquireMutex(&_tableMutex, LED_MUTEX_TIMEOUT_MS)) { return; }
         LedState::release(_table, layer);
-        _unlock();
+        releaseMutex(&_tableMutex);
     }
 
-    void clearPattern(LedPriority priority) { clearLayer(layerForPriority(priority)); }
-
-    void clearAllPatterns()
-    {
-        if (!_lock()) { return; }
-        LedState::releaseAll(_table);
-        _unlock();
-    }
+    void clearPattern(LedPriority priority) { clearLayer(_layerForPriority(priority)); }
 
     Snapshot getState()
     {
         Snapshot snapshot;
         snapshot.brightness = _brightness;
 
-        if (!_lock()) { return snapshot; } // valid stays false - the caller must not read this as "off"
-        const uint64_t currentTime = millis64();
-        LedState::expire(_table, currentTime);
-        const LedState::Active active = LedState::resolve(_table, currentTime);
-        _unlock();
+        // valid stays false - the caller must not read a failed read as "off"
+        if (!acquireMutex(&_tableMutex, LED_MUTEX_TIMEOUT_MS)) { return snapshot; }
+        const LedState::Frame frame = LedState::step(_table, millis64(), snapshot.brightness);
+        releaseMutex(&_tableMutex);
 
         snapshot.valid = true;
-        if (!active.any) { return snapshot; }
-
-        snapshot.any = true;
-        snapshot.layer = active.layer;
-        snapshot.pattern = active.pattern;
-        snapshot.color = active.color;
-        snapshot.remainingMs = active.remainingMs;
-        snapshot.indefinite = active.indefinite;
-
-        const LedState::Rgb rendered = LedState::render(
-            active.pattern, active.color, active.elapsedMs,
-            LedState::effectiveBrightness(active.layer, snapshot.brightness));
-        snapshot.isLit = rendered != LedState::Rgb{};
+        snapshot.active = frame.active;
+        snapshot.isLit = frame.isOn && frame.output != LedState::Colors::OFF;
 
         return snapshot;
     }

@@ -11,6 +11,16 @@ namespace {
 
 constexpr uint32_t FULL_PERMILLE = 1000;
 
+// Indexed by the enum value, so each name is stated once and both directions read
+// from it. Matches the table idiom in issue_logic and shadow_logic.
+const char *const PATTERN_NAMES[] = {"off", "solid", "blink_slow", "blink_fast", "pulse", "double_blink"};
+static_assert(sizeof(PATTERN_NAMES) / sizeof(PATTERN_NAMES[0]) == PATTERN_COUNT,
+              "Every pattern needs a wire name");
+
+const char *const LAYER_NAMES[] = {"status", "user", "network", "alert", "critical"};
+static_assert(sizeof(LAYER_NAMES) / sizeof(LAYER_NAMES[0]) == LAYER_COUNT,
+              "Every layer needs a wire name");
+
 uint64_t _elapsed(const Slot &slot, uint64_t nowMs) {
     return nowMs >= slot.setAtMs ? nowMs - slot.setAtMs : 0;
 }
@@ -20,17 +30,12 @@ uint64_t _elapsed(const Slot &slot, uint64_t nowMs) {
 // that brightness cannot be applied twice - which is what made PULSE peak at
 // brightness squared before this module existed.
 uint8_t _scale(uint8_t value, uint8_t brightnessPercent, uint32_t factorPermille) {
-    if (brightnessPercent > LED_STATE_MAX_BRIGHTNESS_PERCENT) {
-        brightnessPercent = LED_STATE_MAX_BRIGHTNESS_PERCENT;
-    }
-    if (factorPermille > FULL_PERMILLE) { factorPermille = FULL_PERMILLE; }
-
     const uint32_t scaled = (uint32_t)value * (uint32_t)brightnessPercent * factorPermille;
-    const uint8_t result = (uint8_t)(scaled / (LED_STATE_MAX_BRIGHTNESS_PERCENT * FULL_PERMILLE));
+    const uint8_t result = (uint8_t)(scaled / (MAX_BRIGHTNESS_PERCENT * FULL_PERMILLE));
 
-    // Truncation must not silence a channel that should be lit. At the 1% ALERT
-    // floor every channel below 100 divides to 0, so a dim colour would render
-    // completely dark exactly when the point of the floor is to be seen.
+    // Truncation must not silence a channel that should be lit. At a low brightness
+    // floor a dim channel divides to 0, which would render an indication completely
+    // dark exactly when the floor exists to make it visible.
     if (result == 0 && scaled > 0) { return 1; }
     return result;
 }
@@ -45,21 +50,13 @@ Rgb _scaleColor(Rgb color, uint8_t brightnessPercent, uint32_t factorPermille) {
 
 // Triangle wave over a 2 x half-period cycle, in permille of full.
 uint32_t _pulseFactorPermille(uint64_t elapsedMs) {
-    const uint64_t cycle = elapsedMs % (2 * LED_STATE_PULSE_HALF_MS);
-    const uint64_t rising = cycle < LED_STATE_PULSE_HALF_MS
-                                ? cycle
-                                : (2 * LED_STATE_PULSE_HALF_MS) - cycle;
-    return (uint32_t)((rising * FULL_PERMILLE) / LED_STATE_PULSE_HALF_MS);
+    const uint64_t cycle = elapsedMs % (2 * PULSE_HALF_MS);
+    const uint64_t rising = cycle < PULSE_HALF_MS ? cycle : (2 * PULSE_HALF_MS) - cycle;
+    return (uint32_t)((rising * FULL_PERMILLE) / PULSE_HALF_MS);
 }
 
 bool _blinkIsOn(uint64_t elapsedMs, uint64_t halfPeriodMs) {
     return ((elapsedMs / halfPeriodMs) % 2) == 0;
-}
-
-bool _doubleBlinkIsOn(uint64_t elapsedMs) {
-    const uint64_t cycle = elapsedMs % LED_STATE_DOUBLE_BLINK_CYCLE_MS;
-    const uint64_t seg = LED_STATE_DOUBLE_BLINK_SEGMENT_MS;
-    return cycle < seg || (cycle >= 2 * seg && cycle < 3 * seg);
 }
 
 }  // namespace
@@ -116,79 +113,77 @@ Active resolve(const Table &table, uint64_t nowMs) {
     return active;
 }
 
-Rgb render(Pattern pattern, Rgb color, uint64_t elapsedMs, uint8_t brightnessPercent) {
+Frame step(Table &table, uint64_t nowMs, uint8_t configuredBrightnessPercent) {
+    expire(table, nowMs);
+
+    Frame frame;
+    frame.active = resolve(table, nowMs);
+    if (!frame.active.any) { return frame; }
+
+    frame.isOn = isOn(frame.active.pattern, frame.active.elapsedMs);
+    frame.output = render(frame.active.pattern, frame.active.color, frame.active.elapsedMs,
+                          effectiveBrightness(frame.active.layer, configuredBrightnessPercent));
+    return frame;
+}
+
+bool isOn(Pattern pattern, uint64_t elapsedMs) {
     switch (pattern) {
     case Pattern::SOLID:
-        return _scaleColor(color, brightnessPercent, FULL_PERMILLE);
+        return true;
 
     case Pattern::BLINK_SLOW:
-        return _blinkIsOn(elapsedMs, LED_STATE_BLINK_SLOW_HALF_MS)
-                   ? _scaleColor(color, brightnessPercent, FULL_PERMILLE)
-                   : Rgb{};
+        return _blinkIsOn(elapsedMs, BLINK_SLOW_HALF_MS);
 
     case Pattern::BLINK_FAST:
-        return _blinkIsOn(elapsedMs, LED_STATE_BLINK_FAST_HALF_MS)
-                   ? _scaleColor(color, brightnessPercent, FULL_PERMILLE)
-                   : Rgb{};
+        return _blinkIsOn(elapsedMs, BLINK_FAST_HALF_MS);
 
     case Pattern::PULSE:
-        return _scaleColor(color, brightnessPercent, _pulseFactorPermille(elapsedMs));
+        return _pulseFactorPermille(elapsedMs) > 0;
 
-    case Pattern::DOUBLE_BLINK:
-        return _doubleBlinkIsOn(elapsedMs)
-                   ? _scaleColor(color, brightnessPercent, FULL_PERMILLE)
-                   : Rgb{};
-
-    case Pattern::OFF:
-        break;
+    case Pattern::DOUBLE_BLINK: {
+        const uint64_t cycle = elapsedMs % DOUBLE_BLINK_CYCLE_MS;
+        const uint64_t seg = DOUBLE_BLINK_SEGMENT_MS;
+        return cycle < seg || (cycle >= 2 * seg && cycle < 3 * seg);
     }
 
-    return Rgb{};
+    case Pattern::OFF:
+    case Pattern::Count:
+        break;
+    }
+    return false;
+}
+
+Rgb render(Pattern pattern, Rgb color, uint64_t elapsedMs, uint8_t brightnessPercent) {
+    if (brightnessPercent > MAX_BRIGHTNESS_PERCENT) { brightnessPercent = MAX_BRIGHTNESS_PERCENT; }
+    if (!isOn(pattern, elapsedMs)) { return Rgb{}; }
+
+    const uint32_t factor = pattern == Pattern::PULSE ? _pulseFactorPermille(elapsedMs) : FULL_PERMILLE;
+    return _scaleColor(color, brightnessPercent, factor);
 }
 
 uint8_t effectiveBrightness(Layer layer, uint8_t configuredPercent) {
-    if (configuredPercent > LED_STATE_MAX_BRIGHTNESS_PERCENT) {
-        configuredPercent = LED_STATE_MAX_BRIGHTNESS_PERCENT;
-    }
-    uint8_t floorPercent = 0;
-    if (layer == Layer::CRITICAL) { floorPercent = LED_STATE_CRITICAL_MIN_BRIGHTNESS_PERCENT; }
-    else if (layer == Layer::ALERT) { floorPercent = LED_STATE_ALERT_MIN_BRIGHTNESS_PERCENT; }
+    if (configuredPercent > MAX_BRIGHTNESS_PERCENT) { configuredPercent = MAX_BRIGHTNESS_PERCENT; }
 
+    const uint8_t floorPercent = LAYER_MIN_BRIGHTNESS_PERCENT[(uint8_t)layer];
     return configuredPercent < floorPercent ? floorPercent : configuredPercent;
 }
 
 const char *patternName(Pattern pattern) {
-    switch (pattern) {
-    case Pattern::SOLID: return "solid";
-    case Pattern::BLINK_SLOW: return "blink_slow";
-    case Pattern::BLINK_FAST: return "blink_fast";
-    case Pattern::PULSE: return "pulse";
-    case Pattern::DOUBLE_BLINK: return "double_blink";
-    case Pattern::OFF: break;
-    }
-    return "off";
+    if ((uint8_t)pattern >= PATTERN_COUNT) { return PATTERN_NAMES[(uint8_t)Pattern::OFF]; }
+    return PATTERN_NAMES[(uint8_t)pattern];
 }
 
 const char *layerName(Layer layer) {
-    switch (layer) {
-    case Layer::USER: return "user";
-    case Layer::NETWORK: return "network";
-    case Layer::ALERT: return "alert";
-    case Layer::CRITICAL: return "critical";
-    case Layer::STATUS: break;
-    }
-    return "status";
+    if ((uint8_t)layer >= LAYER_COUNT) { return LAYER_NAMES[(uint8_t)Layer::STATUS]; }
+    return LAYER_NAMES[(uint8_t)layer];
 }
 
 bool patternFromName(const char *name, Pattern &out) {
     if (name == nullptr) { return false; }
 
-    static const Pattern ALL[] = {Pattern::OFF,   Pattern::SOLID, Pattern::BLINK_SLOW,
-                                  Pattern::BLINK_FAST, Pattern::PULSE, Pattern::DOUBLE_BLINK};
-
-    for (size_t i = 0; i < sizeof(ALL) / sizeof(ALL[0]); i++) {
-        if (strcmp(name, patternName(ALL[i])) == 0) {
-            out = ALL[i];
+    for (uint8_t i = 0; i < PATTERN_COUNT; i++) {
+        if (strcmp(name, PATTERN_NAMES[i]) == 0) {
+            out = (Pattern)i;
             return true;
         }
     }

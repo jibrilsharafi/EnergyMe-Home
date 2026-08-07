@@ -15,11 +15,12 @@ void tearDown(void) {}
 
 namespace {
 
-const Rgb RED{255, 0, 0};
-const Rgb GREEN{0, 255, 0};
-const Rgb BLUE{0, 0, 255};
-const Rgb MAGENTA{255, 0, 255};
-const Rgb DARK{0, 0, 0};
+constexpr Rgb RED = Colors::RED;
+constexpr Rgb GREEN = Colors::GREEN;
+constexpr Rgb BLUE = Colors::BLUE;
+constexpr Rgb MAGENTA = Colors::PURPLE;
+constexpr Rgb WHITE = Colors::WHITE;
+constexpr Rgb DARK = Colors::OFF;
 
 constexpr uint8_t FULL = 100;
 
@@ -27,14 +28,18 @@ constexpr uint8_t FULL = 100;
 // pattern that only looks right at exact boundaries cannot pass.
 constexpr uint64_t TICK_MS = 25;
 
-// Mirrors exactly what led.cpp's render task does each tick: expire, then resolve,
-// then render. Tests go through this so the real call sequence is the tested one.
+// The state a real healthy device is in: the firmware occupies the ambient layer at
+// the end of setup() and never releases it.
+Table healthy() {
+    Table table;
+    set(table, Layer::STATUS, Pattern::SOLID, GREEN, 0, 0);
+    return table;
+}
+
+// step() is what led.cpp calls, so the tests exercise the real composition rather
+// than a re-implementation of it.
 Rgb renderAt(Table &table, uint64_t nowMs, uint8_t brightness = FULL) {
-    expire(table, nowMs);
-    const Active active = resolve(table, nowMs);
-    if (!active.any) { return Rgb{}; }
-    return render(active.pattern, active.color, active.elapsedMs,
-                  effectiveBrightness(active.layer, brightness));
+    return step(table, nowMs, brightness).output;
 }
 
 void assertColor(Rgb expected, Rgb actual) {
@@ -43,7 +48,7 @@ void assertColor(Rgb expected, Rgb actual) {
     TEST_ASSERT_EQUAL_UINT8(expected.blue, actual.blue);
 }
 
-bool isLit(Rgb c) { return c.red != 0 || c.green != 0 || c.blue != 0; }
+bool isLit(Rgb c) { return c != Colors::OFF; }
 
 }  // namespace
 
@@ -56,8 +61,7 @@ void test_empty_table_renders_dark(void) {
 }
 
 void test_highest_occupied_layer_wins(void) {
-    Table table;
-    set(table, Layer::STATUS, Pattern::SOLID, GREEN, 0, 0);
+    Table table = healthy();
     set(table, Layer::NETWORK, Pattern::PULSE, BLUE, 0, 0);
 
     const Active active = resolve(table, 0);
@@ -68,8 +72,7 @@ void test_highest_occupied_layer_wins(void) {
 }
 
 void test_layer_order_is_status_user_network_alert_critical(void) {
-    Table table;
-    set(table, Layer::STATUS, Pattern::SOLID, GREEN, 0, 0);
+    Table table = healthy();
     TEST_ASSERT_EQUAL(Layer::STATUS, resolve(table, 0).layer);
 
     // USER above STATUS, not below it. The firmware occupies STATUS at boot and
@@ -101,10 +104,9 @@ void test_writing_a_lower_layer_does_not_disturb_the_visible_one(void) {
     assertColor(GREEN, resolve(table, 0).color);
 }
 
-// This is the regression test for the reported bug. Under the old queue, an
-// indefinite critical indication meant every lower-priority command lost
-// arbitration, was re-queued, and spun until the ten-entry queue filled and started
-// dropping - so the LED stopped tracking device state. Here the writes always land.
+// Regression test for the reported bug: under the old queue an indefinite critical
+// indication starved every lower-priority command until they were dropped. See the
+// header block in led_state.h.
 void test_lower_layer_writes_are_never_dropped_under_an_indefinite_critical(void) {
     Table table;
     set(table, Layer::CRITICAL, Pattern::BLINK_FAST, RED, 0, 0);
@@ -146,8 +148,7 @@ void test_set_restarts_the_waveform_phase(void) {
 // --- Release and expiry -----------------------------------------------------------
 
 void test_release_reveals_the_layer_below(void) {
-    Table table;
-    set(table, Layer::STATUS, Pattern::SOLID, GREEN, 0, 0);
+    Table table = healthy();
     set(table, Layer::NETWORK, Pattern::PULSE, BLUE, 0, 0);
 
     release(table, Layer::NETWORK);
@@ -159,8 +160,7 @@ void test_release_reveals_the_layer_below(void) {
 }
 
 void test_releasing_a_free_layer_is_a_no_op(void) {
-    Table table;
-    set(table, Layer::STATUS, Pattern::SOLID, GREEN, 0, 0);
+    Table table = healthy();
 
     release(table, Layer::ALERT);
     release(table, Layer::CRITICAL);
@@ -182,8 +182,7 @@ void test_release_all_renders_dark(void) {
 }
 
 void test_duration_expiry_releases_the_layer(void) {
-    Table table;
-    set(table, Layer::STATUS, Pattern::SOLID, GREEN, 0, 0);
+    Table table = healthy();
     set(table, Layer::ALERT, Pattern::BLINK_FAST, GREEN, 0, 2000);
 
     TEST_ASSERT_FALSE(expire(table, 1999));
@@ -195,7 +194,7 @@ void test_duration_expiry_releases_the_layer(void) {
     TEST_ASSERT_EQUAL(Pattern::SOLID, active.pattern);
 }
 
-// The old queue restarted a re-queued command's duration whenever it was finally
+// The old queue restarted a re-queued command's duration when it was finally
 // accepted, so a 2 s indication could surface minutes later and run in full.
 void test_duration_is_measured_from_set_time_even_while_masked(void) {
     Table table;
@@ -260,8 +259,7 @@ void test_waveforms_hold_far_beyond_the_first_cycle(void) {
 }
 
 void test_indefinite_indications_never_expire(void) {
-    Table table;
-    set(table, Layer::STATUS, Pattern::SOLID, GREEN, 0, 0);
+    Table table = healthy();
 
     TEST_ASSERT_FALSE(expire(table, 0xFFFFFFFFULL));
     TEST_ASSERT_TRUE(resolve(table, 0xFFFFFFFFULL).any);
@@ -316,11 +314,11 @@ void test_blink_fast_half_period(void) {
 // ~100 ms effective period, a 100 ms double-blink segment could be stepped over
 // entirely and the second blink simply never appeared.
 void test_double_blink_segments_are_all_sampled(void) {
-    bool seen[LED_STATE_DOUBLE_BLINK_CYCLE_MS / LED_STATE_DOUBLE_BLINK_SEGMENT_MS] = {false};
+    bool seen[DOUBLE_BLINK_CYCLE_MS / DOUBLE_BLINK_SEGMENT_MS] = {false};
 
-    for (uint64_t t = 0; t < LED_STATE_DOUBLE_BLINK_CYCLE_MS; t += TICK_MS) {
+    for (uint64_t t = 0; t < DOUBLE_BLINK_CYCLE_MS; t += TICK_MS) {
         if (isLit(render(Pattern::DOUBLE_BLINK, RED, t, FULL))) {
-            seen[t / LED_STATE_DOUBLE_BLINK_SEGMENT_MS] = true;
+            seen[t / DOUBLE_BLINK_SEGMENT_MS] = true;
         }
     }
 
@@ -381,9 +379,9 @@ void test_pulse_peak_equals_solid_at_the_same_brightness(void) {
 }
 
 void test_attention_layers_floor_brightness(void) {
-    TEST_ASSERT_EQUAL_UINT8(LED_STATE_CRITICAL_MIN_BRIGHTNESS_PERCENT,
+    TEST_ASSERT_EQUAL_UINT8(LAYER_MIN_BRIGHTNESS_PERCENT[(uint8_t)Layer::CRITICAL],
                             effectiveBrightness(Layer::CRITICAL, 0));
-    TEST_ASSERT_EQUAL_UINT8(LED_STATE_ALERT_MIN_BRIGHTNESS_PERCENT,
+    TEST_ASSERT_EQUAL_UINT8(LAYER_MIN_BRIGHTNESS_PERCENT[(uint8_t)Layer::ALERT],
                             effectiveBrightness(Layer::ALERT, 0));
 
     // The floor only lifts, never dims.
@@ -423,7 +421,7 @@ void test_ambient_layers_honour_zero_brightness(void) {
 // persisted.
 void test_button_feedback_is_visible_at_zero_brightness(void) {
     Table table;
-    set(table, Layer::ALERT, Pattern::SOLID, Rgb{255, 255, 255}, 0, 0);
+    set(table, Layer::ALERT, Pattern::SOLID, WHITE, 0, 0);
 
     TEST_ASSERT_TRUE(isLit(renderAt(table, 0, 0)));
 
@@ -432,8 +430,7 @@ void test_button_feedback_is_visible_at_zero_brightness(void) {
 }
 
 void test_critical_stays_visible_at_zero_brightness(void) {
-    Table table;
-    set(table, Layer::STATUS, Pattern::SOLID, GREEN, 0, 0);
+    Table table = healthy();
     set(table, Layer::CRITICAL, Pattern::SOLID, RED, 0, 0);
 
     TEST_ASSERT_TRUE(isLit(renderAt(table, 0, 0)));
@@ -445,13 +442,12 @@ void test_critical_stays_visible_at_zero_brightness(void) {
 // --- Wire names -------------------------------------------------------------------
 
 void test_pattern_names_round_trip(void) {
-    const Pattern all[] = {Pattern::OFF,        Pattern::SOLID, Pattern::BLINK_SLOW,
-                           Pattern::BLINK_FAST, Pattern::PULSE, Pattern::DOUBLE_BLINK};
-
-    for (size_t i = 0; i < sizeof(all) / sizeof(all[0]); i++) {
-        Pattern parsed = Pattern::SOLID;
-        TEST_ASSERT_TRUE(patternFromName(patternName(all[i]), parsed));
-        TEST_ASSERT_EQUAL(all[i], parsed);
+    // Walks the enum rather than a hand-kept copy of it, so a new pattern with no
+    // wire name fails here instead of being silently untested.
+    for (uint8_t i = 0; i < PATTERN_COUNT; i++) {
+        Pattern parsed = Pattern::Count;
+        TEST_ASSERT_TRUE(patternFromName(patternName((Pattern)i), parsed));
+        TEST_ASSERT_EQUAL((Pattern)i, parsed);
     }
 }
 
@@ -477,8 +473,7 @@ void test_layer_names(void) {
 // The WiFi task used to re-assert green by hand on reconnect because clearing the
 // network layer meant "turn the LED off". See customwifi.cpp:587's "Hack:" comment.
 void test_wifi_reconnect_falls_back_to_status_without_re_asserting(void) {
-    Table table;
-    set(table, Layer::STATUS, Pattern::SOLID, GREEN, 0, 0);  // healthy, set once at boot
+    Table table = healthy();  // healthy, set once at boot
 
     set(table, Layer::NETWORK, Pattern::PULSE, BLUE, 1000, 0);  // link lost
     TEST_ASSERT_EQUAL(Layer::NETWORK, resolve(table, 1000).layer);
@@ -494,8 +489,7 @@ void test_wifi_reconnect_falls_back_to_status_without_re_asserting(void) {
 // and nothing ever releases it), so this is the sequence that decides whether the
 // API does anything at all.
 void test_user_colour_shows_on_a_healthy_device(void) {
-    Table table;
-    set(table, Layer::STATUS, Pattern::SOLID, GREEN, 0, 0);  // healthy, never released
+    Table table = healthy();  // healthy, never released
 
     set(table, Layer::USER, Pattern::SOLID, MAGENTA, 100, 0);
     const Active active = resolve(table, 100);
@@ -508,8 +502,7 @@ void test_user_colour_shows_on_a_healthy_device(void) {
 
 // A user colour must never hide a fault, and must come back once the fault clears.
 void test_user_colour_is_overridden_by_events_and_returns(void) {
-    Table table;
-    set(table, Layer::STATUS, Pattern::SOLID, GREEN, 0, 0);
+    Table table = healthy();
     set(table, Layer::USER, Pattern::SOLID, MAGENTA, 0, 0);
     assertColor(MAGENTA, resolve(table, 0).color);
 
@@ -527,8 +520,7 @@ void test_user_colour_is_overridden_by_events_and_returns(void) {
 // "Turn the LED off" from an automation must suppress the ambient green, which is
 // why Pattern::OFF occupies the user layer instead of releasing it.
 void test_user_off_suppresses_the_ambient_status(void) {
-    Table table;
-    set(table, Layer::STATUS, Pattern::SOLID, GREEN, 0, 0);
+    Table table = healthy();
     set(table, Layer::USER, Pattern::OFF, DARK, 0, 0);
 
     TEST_ASSERT_EQUAL(Layer::USER, resolve(table, 0).layer);
@@ -540,11 +532,10 @@ void test_user_off_suppresses_the_ambient_status(void) {
 }
 
 void test_button_press_release_reveals_underlying_status(void) {
-    Table table;
-    set(table, Layer::STATUS, Pattern::SOLID, GREEN, 0, 0);
+    Table table = healthy();
 
-    set(table, Layer::ALERT, Pattern::SOLID, Rgb{255, 255, 255}, 100, 0);  // held
-    assertColor(Rgb{255, 255, 255}, resolve(table, 100).color);
+    set(table, Layer::ALERT, Pattern::SOLID, WHITE, 100, 0);  // held
+    assertColor(WHITE, resolve(table, 100).color);
 
     release(table, Layer::ALERT);  // released
     assertColor(GREEN, resolve(table, 200).color);
