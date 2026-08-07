@@ -574,7 +574,7 @@ namespace CustomServer
         // the periodic health-check task rather than from the WiFi task so customwifi keeps
         // no knowledge of the services layered on top of it. Idempotent, so the worst case
         // is Modbus appearing up to one check interval after STA comes up.
-        ModbusTcp::syncWithNetwork(CustomWifi::isFullyConnected());
+        ModbusTcp::syncWithNetwork(CustomWifi::isFullyConnected(), CustomWifi::isApServing());
 
         // Perform a simple HTTP self-request to verify server responsiveness
         WiFiClient client;

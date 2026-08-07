@@ -41,17 +41,22 @@ namespace ModbusTcp
 
     // Modbus TCP carries no authentication, and ModbusServerTCPasync binds every interface.
     // While the SoftAP is up that means handing meter data to anyone in radio range who
-    // joins it, so the server only exists while there is a station link to serve it on.
+    // joins it, so the server only exists while there is a station link AND no SoftAP is
+    // broadcasting.
     //
-    // Bound to the STA link rather than to the provisioning state: the exposure comes from
-    // the AP being up at all, not from which state raised it.
-    void syncWithNetwork(bool staConnected)
+    // Bound to the STA link and the AP's own up/down state rather than to the provisioning
+    // state enum: the exposure comes from the AP being up at all, not from which state
+    // raised it. Gating on staConnected alone let this start during GRACE, where STA is
+    // already up but the AP is deliberately held up for a few more minutes - handing meter
+    // data to anyone on that AP for the length of the grace window.
+    void syncWithNetwork(bool staConnected, bool apServing)
     {
-        if (staConnected && !_running) {
-            LOG_INFO("STA link up - starting Modbus TCP");
+        bool shouldRun = staConnected && !apServing;
+        if (shouldRun && !_running) {
+            LOG_INFO("STA link up, no SoftAP broadcasting - starting Modbus TCP");
             begin();
-        } else if (!staConnected && _running) {
-            LOG_INFO("No STA link - stopping Modbus TCP so it is not exposed on the SoftAP");
+        } else if (!shouldRun && _running) {
+            LOG_INFO("SoftAP broadcasting or no STA link - stopping Modbus TCP so it is not exposed on it");
             stop();
         }
     }

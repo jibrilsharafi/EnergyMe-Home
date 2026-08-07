@@ -199,7 +199,7 @@ void setup()
   // interface, so starting it on an AP-only boot would serve meter data to anyone in radio
   // range of the provisioning SoftAP. The health-check task starts it when STA comes up.
   LOG_DEBUG("Setting up Modbus TCP...");
-  ModbusTcp::syncWithNetwork(CustomWifi::isFullyConnected());
+  ModbusTcp::syncWithNetwork(CustomWifi::isFullyConnected(), CustomWifi::isApServing());
   LOG_INFO("Modbus TCP setup done");
 
   if (!globalCommunityMode) {
