@@ -574,19 +574,10 @@ namespace CrashMonitor
             return;
         }
 
-        char btAddresses[256] = "";
-        for (uint32_t i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
-            char addr[12];
-            snprintf(addr, sizeof(addr), "0x%08lx ", (uint32_t)summary->exc_bt_info.bt[i]);
-            strncat(btAddresses, addr, sizeof(btAddresses) - strlen(btAddresses) - 1);
-        }
-
-        LOG_WARNING("Crash: reason=%s(%d) crashes=%lu consecutive=%lu task=%s pc=0x%08x%s bt=%s",
+        LOG_WARNING("Crash: Reason=%s(%d) | Crashes=%lu (consecutive=%lu) | Task=%s",
                     getResetReasonString(resetReason), (int32_t)resetReason,
                     _crashCount, _consecutiveCrashCount,
-                    summary->exc_task, (uint32_t)summary->exc_pc,
-                    summary->exc_bt_info.corrupted ? " corrupted" : "",
-                    btAddresses);
+                    summary->exc_task, (uint32_t)summary->exc_pc);
 
         free(summary);
     }
@@ -1041,7 +1032,7 @@ namespace CrashMonitor
             return false;
         }
 
-        LOG_INFO("Core dump compressed: %zu bytes -> %zu bytes (%.1f%% of original)",
+        LOG_DEBUG("Core dump compressed: %zu bytes -> %zu bytes (%.1f%% of original)",
                  elfSize, compressedSize, (float)compressedSize * 100.0f / (float)elfSize);
 
         metadata["crashId"] = crashId;
