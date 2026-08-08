@@ -329,12 +329,24 @@
         <h2>Factory Reset</h2>
         <p><i>This will reset the device to its factory settings. Useful if you are having issues with the device or
                 want to start fresh.</i></p>
-        <p><i>WiFi credentials will be kept.</i></p>
         <div class="warning-box"
             style="background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; margin: 10px 0;"> ⚠️
-            Warning: This will erase all configurations and data. This action cannot be undone.
+            Warning: This will erase all configurations, data, and WiFi credentials. This action cannot be undone.
         </div>
         <button class="buttonForm" onclick="factoryReset()" id="factoryReset">🏭 Reset</button>
+
+        <div id="provisioningInstructions" style="display: none; background-color: #d1ecf1; color: #0c5460; padding: 15px; border-radius: 5px; margin: 15px 0;">
+            <h3 style="margin-top: 0;">✅ Factory reset done - reconnect the device</h3>
+            <p>This device has left your WiFi network and is now waiting to be set up again. It is no longer
+                reachable at this address.</p>
+            <ol>
+                <li>Wait about 30 seconds for the device to finish restarting.</li>
+                <li>On your phone or laptop, join the WiFi network <b id="apSsidName">EnergyMe-&lt;device id&gt;</b>.</li>
+                <li>The setup page should open by itself. If it does not, open <b>http://172.31.42.1</b> in a browser.</li>
+                <li>Pick your WiFi network there and enter its password.</li>
+            </ol>
+            <p style="margin-bottom: 0;"><i>The LED blinks blue quickly while the device is waiting to be set up.</i></p>
+        </div>
     </div>
 
     <script src="/js/api-client.js"></script>
@@ -487,6 +499,16 @@
             }
         } 
         
+        function showProvisioningInstructions() {
+            // _deviceId comes from loadDeviceInfo() on page load; the SSID is built the
+            // same way the firmware builds it (WIFI_CONFIG_PORTAL_SSID "-" DEVICE_ID).
+            if (_deviceId) {
+                document.getElementById("apSsidName").textContent = "EnergyMe-" + _deviceId;
+            }
+            document.getElementById("provisioningInstructions").style.display = "block";
+            document.getElementById("provisioningInstructions").scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+
         async function factoryReset() {
             const confirm = window.confirm("Are you sure you want to reset the device to factory settings? All configurations and data will be lost.");
             if (!confirm) {
@@ -502,10 +524,12 @@
 
                 await energyApi.factoryReset();
 
-                showStatus("Reset successful! You will be redirected to the home page in 15 seconds.", 'success', 15000);
-                setTimeout(function () {
-                    window.location.href = "/";
-                }, 15000);
+                // Deliberately no redirect: the reset erases the WiFi credentials, so
+                // the device leaves this network and comes back only on its own SoftAP.
+                // Any navigation from here can only land on an unreachable host.
+                showStatus("Factory reset done. Follow the steps below to reconnect the device.", 'success', 10000);
+                button.classList.remove('loading'); // Stays disabled: this device is gone from the network
+                showProvisioningInstructions();
             } catch (error) {
                 showStatus("Error resetting to factory settings: " + error.message, 'error');
                 button.disabled = false;
