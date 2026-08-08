@@ -11,4 +11,5 @@ dependencies = [
     "urllib3>=2.7.0",
     "numpy>=2.3.4",
     "tqdm>=4.67.1",
+    "esp-coredump>=1.16.0",
 ]
