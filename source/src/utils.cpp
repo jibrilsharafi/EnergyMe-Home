@@ -944,6 +944,11 @@ static void _factoryReset() { // No logger here it is likely destroyed already
     // open at this point since none of them are in the stop-services list above.
     LittleFS.end();
 
+    // RTC memory is neither NVS nor LittleFS, so nothing above touches it: without
+    // this the reset device inherits the old crash/reset counts and can boot
+    // straight into safe mode.
+    CrashMonitor::clearPersistentState();
+
     Serial.println("[WARNING] Formatting LittleFS. This will take some time.");
     LittleFS.format();
 

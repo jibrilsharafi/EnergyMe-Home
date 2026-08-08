@@ -141,6 +141,13 @@ namespace CrashMonitor
         }
     }
 
+    void clearPersistentState() {
+        // Invalidating the magic word is enough: begin() zeroes every counter and
+        // flag whenever it fails to match, so this cannot drift out of sync with
+        // the set of variables that actually exist.
+        _magicWord = 0;
+    }
+
     void begin() {
         LOG_DEBUG("Setting up crash monitor...");
 

@@ -119,6 +119,12 @@ namespace CrashMonitor {
     uint32_t getMinimumUptimeRemaining(); // Returns milliseconds remaining before restart is allowed
     void clearSafeModeCounters(); // Manually reset safe mode (useful for testing)
 
+    // Wipe every RTC_NOINIT counter/flag so the next boot starts with no crash
+    // history. RTC memory survives a factory reset (it is neither NVS nor
+    // LittleFS), so without this a reset device inherits its predecessor's crash
+    // and reset counts - and can boot straight back into safe mode.
+    void clearPersistentState();
+
     // On-flash crash archive. Records are identified by their base name,
     // "<timestamp>_<crashId>"; the crashId alone is the identity carried in the
     // published payload.
