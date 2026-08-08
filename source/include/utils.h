@@ -61,6 +61,11 @@
 #define MINIMUM_FREE_LITTLEFS_SIZE (10 * 1024) // Below this value (in bytes), the system will clear the log
 #define SYSTEM_RESTART_FAILSAFE_TIMER_NAME "restart_failsafe"
 #define SYSTEM_RESTART_FAILSAFE_TIMEOUT (10 * 1000) // Failsafe timeout - if restart doesn't complete within this time, force restart via timer
+// A factory reset formats the whole LittleFS partition (7.36 MB), which alone
+// outruns the plain-restart failsafe: at 10 s the timer fired mid-format and
+// ESP.restart() truncated the erase. The format is the long pole, so the
+// factory-reset path gets its own, far looser ceiling.
+#define SYSTEM_FACTORY_RESET_FAILSAFE_TIMEOUT (120 * 1000)
 #define MINIMUM_FIRMWARE_SIZE (100 * 1024) // Minimum firmware size in bytes (100KB) - prevents empty/invalid uploads
 
 // First boot

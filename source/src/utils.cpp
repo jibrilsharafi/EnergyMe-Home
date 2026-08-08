@@ -37,7 +37,7 @@ static TaskHeartbeat _maintenanceHeartbeat;
 static void _factoryReset();
 static void _restartTask(void* parameter);
 static void _failsafeRestartCallback(void* parameter);
-static void _startFailsafeTimer();
+static void _startFailsafeTimer(uint32_t timeoutMs);
 static void _maintenanceTask(void* parameter);
 static bool _listLittleFsFilesRecursive(JsonDocument &doc, const char* dirname, const char* basePath, uint8_t levels);
 static bool _ensureDirectoryExists(const char* dirPath);
@@ -588,7 +588,7 @@ static void _failsafeRestartCallback(void* parameter) {
 }
 
 // Start the failsafe timer that guarantees restart even if something blocks
-static void _startFailsafeTimer() {
+static void _startFailsafeTimer(uint32_t timeoutMs) {
     // Ensure only one timer is running
     if (_failsafeTimer != NULL) return;
 
@@ -600,9 +600,9 @@ static void _startFailsafeTimer() {
         .skip_unhandled_events = true
     };
     if (esp_timer_create(&timerArgs, &_failsafeTimer) == ESP_OK) {
-        esp_timer_start_once(_failsafeTimer, SYSTEM_RESTART_FAILSAFE_TIMEOUT * 1000ULL); // Convert ms to us
+        esp_timer_start_once(_failsafeTimer, timeoutMs * 1000ULL); // Convert ms to us
         char failsafeHuman[DURATION_FORMAT_BUFFER_SIZE];
-        DurationFormat::humanizeDuration((uint64_t)SYSTEM_RESTART_FAILSAFE_TIMEOUT, failsafeHuman, sizeof(failsafeHuman));
+        DurationFormat::humanizeDuration((uint64_t)timeoutMs, failsafeHuman, sizeof(failsafeHuman));
         LOG_DEBUG("Failsafe restart timer started (%s)", failsafeHuman);
     } else {
         LOG_WARNING("Failed to create failsafe timer - restart may hang if blocked");
@@ -691,7 +691,7 @@ bool setRestartSystem(const char* reason, bool factoryReset) {
     }
 
     // START FAILSAFE TIMER FIRST - guarantees restart even if task creation or execution fails
-    _startFailsafeTimer();
+    _startFailsafeTimer(factoryReset ? SYSTEM_FACTORY_RESET_FAILSAFE_TIMEOUT : SYSTEM_RESTART_FAILSAFE_TIMEOUT);
 
     // Create task to handle graceful shutdown and restart
     BaseType_t result = xTaskCreate(
