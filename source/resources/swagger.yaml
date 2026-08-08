@@ -1666,6 +1666,64 @@ paths:
         '405':
           $ref: '#/components/responses/MethodNotAllowed'
 
+  /api/v1/crash/entry:
+    get:
+      summary: Get one archived crash
+      description: >-
+        The item counterpart to /crash/info's collection: one record's metadata, addressed
+        by id, instead of scanning the full list for it client-side. Same shape as one
+        element of /crash/info's `crashes` array.
+      tags:
+        - Crash Monitor
+      parameters:
+        - name: id
+          in: query
+          description: crashId of the record to fetch
+          required: true
+          schema:
+            type: string
+            example: "3f8a1c9d2e4b7016"
+      responses:
+        '200':
+          description: Archived crash metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Same shape as one element of /crash/info's `crashes` array
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      summary: Delete one archived crash
+      description: >-
+        Remove a single archived crash record - metadata and core dump alike - keeping the
+        rest. Unlike /crash/clear, which is all-or-nothing.
+      tags:
+        - Crash Monitor
+      parameters:
+        - name: id
+          in: query
+          description: crashId of the record to remove
+          required: true
+          schema:
+            type: string
+            example: "3f8a1c9d2e4b7016"
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   # Logging endpoints
   /api/v1/logs/level:
     get:

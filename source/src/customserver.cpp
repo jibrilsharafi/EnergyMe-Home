@@ -3599,6 +3599,56 @@ namespace CustomServer
             snprintf(message, sizeof(message), "Cleared %lu archived crash record(s)", removed);
             _sendSuccessResponse(request, message);
         });
+
+        // The item endpoint: /crash/info is the collection (list, no id), this is
+        // one entry addressed by id - GET to read it, DELETE to remove it. Same
+        // ?id= param as /crash/dump.
+        server.on("/api/v1/crash/entry", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            if (!request->hasParam("id")) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing 'id' query parameter");
+                return;
+            }
+
+            char baseName[CRASH_ARCHIVE_NAME_BUFFER_SIZE];
+            if (!CrashMonitor::findArchivedCrashById(request->getParam("id")->value().c_str(), baseName, sizeof(baseName))) {
+                _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "No archived crash with that id");
+                return;
+            }
+
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            if (!CrashMonitor::getArchivedCrashMetadata(baseName, doc)) {
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to read archived crash metadata");
+                return;
+            }
+
+            _sendJsonResponse(request, doc);
+        });
+
+        server.on("/api/v1/crash/entry", HTTP_DELETE, [](AsyncWebServerRequest *request)
+                  {
+            if (!_validateRequest(request, "DELETE")) return;
+
+            if (!request->hasParam("id")) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing 'id' query parameter");
+                return;
+            }
+
+            char baseName[CRASH_ARCHIVE_NAME_BUFFER_SIZE];
+            if (!CrashMonitor::findArchivedCrashById(request->getParam("id")->value().c_str(), baseName, sizeof(baseName))) {
+                _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "No archived crash with that id");
+                return;
+            }
+
+            if (!CrashMonitor::removeArchivedCrash(baseName)) {
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to remove the archived crash");
+                return;
+            }
+
+            LOG_INFO("Removed archived crash %s via API", baseName);
+            _sendSuccessResponse(request, "Archived crash removed");
+        });
     }
 
     // === LED ENDPOINTS ===
