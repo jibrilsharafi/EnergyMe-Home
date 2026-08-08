@@ -138,10 +138,11 @@ namespace Led
 
     uint8_t getBrightness() { return _brightness; }
 
-    void setPattern(LedState::Layer layer, LedPattern pattern, Color color, uint64_t durationMs)
+    void setPattern(LedState::Layer layer, LedPattern pattern, Color color, uint64_t durationMs,
+                    uint32_t seed)
     {
         if (!acquireMutex(&_tableMutex, LED_MUTEX_TIMEOUT_MS)) { return; }
-        LedState::set(_table, layer, pattern, color, millis64(), durationMs);
+        LedState::set(_table, layer, pattern, color, millis64(), durationMs, seed);
         releaseMutex(&_tableMutex);
     }
 

@@ -58,6 +58,7 @@ enum class Pattern : uint8_t {
     BLINK_FAST,     // 250 ms on, 250 ms off
     PULSE,          // 1000 ms fade up, 1000 ms fade down
     DOUBLE_BLINK,   // 100 on, 100 off, 100 on, 900 off
+    DISCO,          // always lit, a new palette colour every DISCO_STEP_MS
     Count
 };
 
@@ -70,6 +71,11 @@ constexpr uint64_t BLINK_FAST_HALF_MS = 250;
 constexpr uint64_t PULSE_HALF_MS = 1000;
 constexpr uint64_t DOUBLE_BLINK_SEGMENT_MS = 100;
 constexpr uint64_t DOUBLE_BLINK_CYCLE_MS = 1200;
+
+// One disco colour lasts this long. Chosen against the 25 ms render tick: every step
+// is sampled 4 or 5 times, so none can be skipped, and ~8 changes a second reads as
+// disco while still letting each colour register.
+constexpr uint64_t DISCO_STEP_MS = 120;
 
 constexpr uint8_t MAX_BRIGHTNESS_PERCENT = 100;
 
@@ -126,6 +132,7 @@ struct Slot {
     Rgb color;
     uint64_t setAtMs = 0;
     uint64_t durationMs = 0;  // 0 = indefinite
+    uint32_t seed = 0;        // DISCO only: selects the colour sequence
 };
 
 struct Table {
@@ -158,7 +165,9 @@ struct Frame {
 // setAtMs restarts the waveform phase, which is deliberate: re-setting the same
 // blink is how a repeated event stays visible as a fresh blink rather than
 // disappearing into an already-running cycle.
-void set(Table &table, Layer layer, Pattern pattern, Rgb color, uint64_t nowMs, uint64_t durationMs);
+// seed is read by DISCO only; every other pattern ignores it.
+void set(Table &table, Layer layer, Pattern pattern, Rgb color, uint64_t nowMs, uint64_t durationMs,
+         uint32_t seed = 0);
 
 // Frees a layer, revealing the highest-priority layer still occupied. Releasing a
 // free layer is a no-op. This is the operation the old queue could not express -
@@ -179,6 +188,13 @@ bool expire(Table &table, uint64_t nowMs);          // frees elapsed slots, true
 Active resolve(const Table &table, uint64_t nowMs); // does not expire - call expire() first
 bool isOn(Pattern pattern, uint64_t elapsedMs);
 Rgb render(Pattern pattern, Rgb color, uint64_t elapsedMs, uint8_t brightnessPercent);
+
+// The DISCO colour for one instant, before brightness. Deterministic in (seed,
+// elapsedMs) alone, so the same seed always replays the same sequence and the whole
+// pattern is host-testable. resolve() calls this and writes the result into
+// Active::color, which is why render() needs no seed of its own.
+Rgb discoColor(uint32_t seed, uint64_t elapsedMs);
+
 uint8_t effectiveBrightness(Layer layer, uint8_t configuredPercent);
 
 // Wire names for the REST API. Both directions live here so the mapping is stated

@@ -80,7 +80,9 @@ namespace Led {
     inline bool isBrightnessValid(uint8_t brightness) { return brightness <= LED_MAX_BRIGHTNESS_PERCENT; }
 
     // Writes one layer, replacing what it held. Never affects another layer.
-    void setPattern(LedState::Layer layer, LedPattern pattern, Color color, uint64_t durationMs = 0);
+    // seed is read by DISCO only.
+    void setPattern(LedState::Layer layer, LedPattern pattern, Color color, uint64_t durationMs = 0,
+                    uint32_t seed = 0);
     void setPattern(LedPattern pattern, Color color, LedPriority priority = 1, uint64_t durationMs = 0);
 
     // Frees a layer, revealing the highest-priority layer still occupied.

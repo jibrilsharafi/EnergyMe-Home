@@ -120,10 +120,49 @@
             pointer-events: none;
             cursor: default;
         }
+
+        /* Disco mode: the page joins in while the device LED does. Purely decorative,
+           so it never blocks input. */
+        #discoOverlay {
+            position: fixed;
+            inset: 0;
+            z-index: 9000;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.4s ease;
+            background-color: rgba(0, 0, 0, 0.55);
+        }
+
+        #discoOverlay.dancing {
+            opacity: 1;
+            animation: discoTint 3.2s steps(1, end) infinite;
+        }
+
+        /* 400 ms a colour, i.e. 2.5 Hz. Deliberately slower than the LED's 120 ms step:
+           a full-screen flash above ~3 Hz is a photosensitivity risk in a way a pinpoint
+           LED is not. */
+        @keyframes discoTint {
+            0%    { background-color: rgba(120, 0, 0, 0.62); }
+            12.5% { background-color: rgba(0, 110, 0, 0.62); }
+            25%   { background-color: rgba(0, 0, 130, 0.62); }
+            37.5% { background-color: rgba(120, 110, 0, 0.62); }
+            50%   { background-color: rgba(115, 0, 125, 0.62); }
+            62.5% { background-color: rgba(0, 110, 120, 0.62); }
+            75%   { background-color: rgba(125, 60, 0, 0.62); }
+            87.5% { background-color: rgba(90, 90, 90, 0.62); }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            #discoOverlay.dancing {
+                animation: none;
+            }
+        }
     </style>
 </head>
 
 <body>
+    <div id="discoOverlay"></div>
+
     <div class="buttonNavigation-container">
         <a class="buttonNavigation" type="home" href="/">🏠 Home</a>
         <a class="buttonNavigation" type="inner" href="/calibration">⚖️ Calibration</a>
@@ -147,7 +186,7 @@
     </div>
 
     <div class="section-box">
-        <h2>LED Brightness</h2>
+        <h2>LED</h2>
         <p><i>LED brightness is used to adjust the brightness of the status LED on the device. Keeping a small
                 amount of brightness is recommended.</i></p>
         <input type="range" id="ledBrightness" class="config-input slider" min="0" max="100"
@@ -155,6 +194,9 @@
         <span id="ledBrightnessValue">50%</span>
         <br><br>
         <button class="buttonForm" onclick="setLedBrightness()" id="setLedBrightnessButton">💡 Set brightness</button>
+        <p><i>Disco mode runs a short burst of colours on the status LED, then hands it back to the device.
+                Handy to confirm you are looking at the right meter.</i></p>
+        <button class="buttonForm" onclick="startDisco()" id="discoButton">🪩 Disco mode</button>
     </div>
 
     <div class="section-box">
@@ -792,6 +834,43 @@
                 button.disabled = false;
                 button.classList.remove('loading');
             }
+        }
+
+        // Well under the API's 60 s ceiling: 10 s is enough to spot which meter you are
+        // looking at. The countdown is cosmetic - the device releases the layer on its
+        // own schedule regardless of what the button shows.
+        const DISCO_DURATION_MS = 10000;
+
+        async function startDisco() {
+            const button = document.getElementById("discoButton");
+            const overlay = document.getElementById("discoOverlay");
+            const label = button.innerHTML;
+            button.disabled = true;
+
+            try {
+                await energyApi.setLedDisco(DISCO_DURATION_MS);
+            } catch (error) {
+                showStatus('Error: ' + error.message, 'error');
+                button.disabled = false;
+                return;
+            }
+
+            overlay.classList.add('dancing');
+
+            let remaining = Math.round(DISCO_DURATION_MS / 1000);
+            button.innerHTML = `🪩 Dancing... ${remaining}s`;
+
+            const countdown = setInterval(() => {
+                remaining--;
+                if (remaining > 0) {
+                    button.innerHTML = `🪩 Dancing... ${remaining}s`;
+                    return;
+                }
+                clearInterval(countdown);
+                overlay.classList.remove('dancing');
+                button.innerHTML = label;
+                button.disabled = false;
+            }, 1000);
         }
 
         function updateBrightnessValue() {

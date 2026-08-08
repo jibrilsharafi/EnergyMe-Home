@@ -541,6 +541,133 @@ void test_button_press_release_reveals_underlying_status(void) {
     assertColor(GREEN, resolve(table, 200).color);
 }
 
+// --- Disco --------------------------------------------------------------------------
+
+namespace {
+
+// The API's default disco duration. The tests walk the whole of it so nothing is
+// asserted only over the first cycle.
+constexpr uint64_t DISCO_RUN_MS = 15000;
+
+// The API's ceiling. The no-repeat rule has to hold over the longest run a caller can
+// ask for, which is four times the default.
+constexpr uint64_t DISCO_MAX_RUN_MS = 60000;
+
+Rgb discoAt(uint32_t seed, uint64_t elapsedMs) { return discoColor(seed, elapsedMs); }
+
+}  // namespace
+
+void test_disco_is_reproducible_for_the_same_seed(void) {
+    for (uint64_t t = 0; t < DISCO_RUN_MS; t += TICK_MS) {
+        assertColor(discoAt(0xC0FFEE, t), discoAt(0xC0FFEE, t));
+    }
+
+    // Two separate indications with the same seed replay the same sequence, which is
+    // the whole point of exposing a seed at all.
+    Table a, b;
+    set(a, Layer::USER, Pattern::DISCO, DARK, 0, DISCO_RUN_MS, 42);
+    set(b, Layer::USER, Pattern::DISCO, DARK, 5000, DISCO_RUN_MS, 42);
+    for (uint64_t t = 0; t < DISCO_RUN_MS; t += TICK_MS) {
+        assertColor(renderAt(a, t), renderAt(b, 5000 + t));
+    }
+}
+
+void test_disco_diverges_for_different_seeds(void) {
+    bool differs = false;
+    for (uint64_t t = 0; t < 16 * DISCO_STEP_MS && !differs; t += DISCO_STEP_MS) {
+        differs = discoAt(1, t) != discoAt(2, t);
+    }
+    TEST_ASSERT_TRUE(differs);
+}
+
+void test_disco_holds_a_colour_for_one_step(void) {
+    const uint32_t seed = 7;
+
+    // Sampled at the firmware's tick, not at step boundaries: a step must be stable
+    // across every sample inside it and different in the next one.
+    for (uint64_t step0 = 0; step0 + 2 * DISCO_STEP_MS <= DISCO_RUN_MS; step0 += DISCO_STEP_MS) {
+        const Rgb expected = discoAt(seed, step0);
+        for (uint64_t t = step0; t < step0 + DISCO_STEP_MS; t += TICK_MS) {
+            assertColor(expected, discoAt(seed, t));
+        }
+        TEST_ASSERT_TRUE(expected != discoAt(seed, step0 + DISCO_STEP_MS));
+    }
+}
+
+void test_disco_never_repeats_consecutive_colours(void) {
+    for (uint32_t seed = 0; seed < 8; seed++) {
+        for (uint64_t t = DISCO_STEP_MS; t < DISCO_MAX_RUN_MS; t += DISCO_STEP_MS) {
+            TEST_ASSERT_TRUE(discoAt(seed, t) != discoAt(seed, t - DISCO_STEP_MS));
+        }
+    }
+}
+
+// seed 0 is a legal input from the API and a plausible default, so it must not
+// degenerate into a two-colour flicker.
+void test_disco_with_seed_zero_is_not_degenerate(void) {
+    uint8_t distinct = 0;
+    Rgb seen[8];
+
+    for (uint64_t t = 0; t < DISCO_RUN_MS; t += DISCO_STEP_MS) {
+        const Rgb c = discoAt(0, t);
+        bool known = false;
+        for (uint8_t i = 0; i < distinct; i++) { known = known || seen[i] == c; }
+        if (!known && distinct < 8) { seen[distinct++] = c; }
+    }
+    TEST_ASSERT_GREATER_OR_EQUAL_UINT8(5, distinct);
+}
+
+// Disco chooses its own colours, so the requested one is irrelevant - including the
+// black an API caller sends when it omits the channels entirely.
+void test_disco_is_never_dark_even_when_set_to_black(void) {
+    Table table;
+    set(table, Layer::USER, Pattern::DISCO, DARK, 0, DISCO_RUN_MS, 99);
+
+    for (uint64_t t = 0; t < DISCO_RUN_MS; t += TICK_MS) {
+        const Frame frame = step(table, t, FULL);
+        TEST_ASSERT_TRUE(frame.isOn);
+        TEST_ASSERT_TRUE(isLit(frame.output));
+    }
+}
+
+void test_disco_brightness_is_applied_once(void) {
+    Table table;
+    set(table, Layer::USER, Pattern::DISCO, DARK, 0, DISCO_RUN_MS, 5);
+
+    for (uint64_t t = 0; t < DISCO_RUN_MS; t += 4 * DISCO_STEP_MS) {
+        const Frame frame = step(table, t, 50);
+        assertColor(render(Pattern::SOLID, frame.active.color, t, 50), frame.output);
+    }
+}
+
+// The resolved colour is what GET /api/v1/led reports, so it has to be the colour on
+// the pins rather than the placeholder the caller passed in.
+void test_disco_reports_the_colour_it_is_showing(void) {
+    Table table = healthy();
+    set(table, Layer::USER, Pattern::DISCO, MAGENTA, 0, DISCO_RUN_MS, 3);
+
+    const Active active = resolve(table, 5000);
+    TEST_ASSERT_EQUAL(Layer::USER, active.layer);
+    TEST_ASSERT_EQUAL(Pattern::DISCO, active.pattern);
+    assertColor(discoAt(3, 5000), active.color);
+    TEST_ASSERT_FALSE(active.indefinite);
+}
+
+void test_disco_expires_and_reveals_status(void) {
+    Table table = healthy();
+    set(table, Layer::USER, Pattern::DISCO, DARK, 0, DISCO_RUN_MS, 1);
+
+    TEST_ASSERT_EQUAL(Layer::USER, step(table, DISCO_RUN_MS - TICK_MS, FULL).active.layer);
+    assertColor(GREEN, renderAt(table, DISCO_RUN_MS));
+}
+
+void test_disco_wire_name(void) {
+    Pattern parsed = Pattern::OFF;
+    TEST_ASSERT_EQUAL_STRING("disco", patternName(Pattern::DISCO));
+    TEST_ASSERT_TRUE(patternFromName("disco", parsed));
+    TEST_ASSERT_EQUAL(Pattern::DISCO, parsed);
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
 
@@ -590,6 +717,17 @@ int main(int, char **) {
     RUN_TEST(test_user_colour_is_overridden_by_events_and_returns);
     RUN_TEST(test_user_off_suppresses_the_ambient_status);
     RUN_TEST(test_button_press_release_reveals_underlying_status);
+
+    RUN_TEST(test_disco_is_reproducible_for_the_same_seed);
+    RUN_TEST(test_disco_diverges_for_different_seeds);
+    RUN_TEST(test_disco_holds_a_colour_for_one_step);
+    RUN_TEST(test_disco_never_repeats_consecutive_colours);
+    RUN_TEST(test_disco_with_seed_zero_is_not_degenerate);
+    RUN_TEST(test_disco_is_never_dark_even_when_set_to_black);
+    RUN_TEST(test_disco_brightness_is_applied_once);
+    RUN_TEST(test_disco_reports_the_colour_it_is_showing);
+    RUN_TEST(test_disco_expires_and_reveals_status);
+    RUN_TEST(test_disco_wire_name);
 
     return UNITY_END();
 }

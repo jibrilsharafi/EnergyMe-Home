@@ -2325,6 +2325,10 @@ paths:
         reappears. Sending `pattern: "off"` keeps the layer occupied and dark, which
         is how an automation suppresses the ambient status colour. The user layer is
         not persisted and is empty after a reboot.
+
+
+        `red`, `green` and `blue` are required for every pattern except `disco`,
+        which chooses its own colours and ignores them if supplied.
       tags:
         - LED
       requestBody:
@@ -2333,25 +2337,39 @@ paths:
           application/json:
             schema:
               type: object
-              required: [red, green, blue]
               properties:
                 red: { type: integer, minimum: 0, maximum: 255, example: 255 }
                 green: { type: integer, minimum: 0, maximum: 255, example: 0 }
                 blue: { type: integer, minimum: 0, maximum: 255, example: 255 }
                 pattern:
                   type: string
-                  enum: ["off", solid, blink_slow, blink_fast, pulse, double_blink]
+                  enum: ["off", solid, blink_slow, blink_fast, pulse, double_blink, disco]
                   default: solid
+                  description: >
+                    `disco` steps through saturated colours every 120 ms and is always
+                    lit. It is time-limited by design - see duration_ms.
                 duration_ms:
                   type: integer
                   minimum: 0
-                  description: Release the user layer after this long. 0 or absent means indefinite.
+                  description: >
+                    Release the user layer after this long. 0 or absent means
+                    indefinite, except for `disco`, where it means 15000 and any
+                    value above 60000 is clamped to 60000.
                   example: 5000
+                seed:
+                  type: integer
+                  minimum: 0
+                  maximum: 4294967295
+                  description: >
+                    `disco` only - selects the colour sequence, so the same seed always
+                    replays the same one. Absent means the device picks one, so repeated
+                    calls differ. Ignored by every other pattern.
+                  example: 42
       responses:
         '200':
           $ref: '#/components/responses/Success'
         '400':
-          description: Missing or out-of-range colour channel, unknown pattern, or negative duration_ms
+          description: Missing or out-of-range colour channel, unknown pattern, negative duration_ms, or out-of-range seed
           content:
             application/json:
               schema:

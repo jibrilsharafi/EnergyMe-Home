@@ -70,6 +70,11 @@
 // has always promised - the firmware, not the browser, is the authority.
 #define MIN_PASSWORD_LENGTH 8
 
+// Disco is a novelty, so the API - not the render engine - decides it always ends on
+// its own. Absent or 0 duration means the default; anything longer is clamped.
+#define DISCO_DEFAULT_DURATION_MS 15000
+#define DISCO_MAX_DURATION_MS 60000
+
 // API Request Synchronization
 #define API_MUTEX_TIMEOUT_MS (2 * 1000) // Time to wait for API mutex for non-GET operations before giving up. Long timeouts cause wdt crash (like in async tcp)
 
