@@ -5,6 +5,8 @@
 #include "duration_format.h"
 #include "version_compare.h"
 
+#include <esp_wifi.h>
+
 #include "taskprofiler.h"
 
 static TaskHandle_t _restartTaskHandle = NULL;
@@ -926,6 +928,21 @@ static void _factoryReset() { // No logger here it is likely destroyed already
     Led::blinkRedFast(Led::PRIO_CRITICAL); // The critical layer carries its own brightness floor
 
     clearAllPreferences();
+
+    // clearAllPreferences() deliberately skips every "nvs.*" namespace (see its own
+    // comment), which includes the WiFi driver's own persisted association
+    // (nvs.net80211 - the same store CustomWifi::_hasStoredCredentials() reads and
+    // resetWifi() erases via this same call). Without this, a factory reset left the
+    // device rejoining its old network on the next boot instead of coming up unprovisioned.
+    esp_err_t err = esp_wifi_restore();
+    if (err != ESP_OK) {
+        Serial.printf("[ERROR] Failed to erase stored WiFi credentials: %s\n", esp_err_to_name(err));
+    }
+
+    // Unmount first: formatting a still-mounted filesystem is unsupported by esp_littlefs
+    // and every other module (crash archive, log file, waveform captures) still holds it
+    // open at this point since none of them are in the stop-services list above.
+    LittleFS.end();
 
     Serial.println("[WARNING] Formatting LittleFS. This will take some time.");
     LittleFS.format();
