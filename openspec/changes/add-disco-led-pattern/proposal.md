@@ -16,14 +16,14 @@ Issue #224: a fun/diagnostic "disco mode" - rapid pseudo-random colour changes f
 **REST API**
 
 - `PUT /api/v1/led/color` accepts `pattern: "disco"` with an optional `seed` (uint32) and `duration_ms`.
-- With `disco`, `red`/`green`/`blue` become optional (they are ignored), `duration_ms` defaults to 15000 ms when absent or 0, and is clamped to 15000 ms. Disco is never indefinite.
+- With `disco`, `red`/`green`/`blue` become optional (they are ignored), `duration_ms` defaults to 15000 ms when absent or 0, and is clamped to a 60000 ms ceiling. Disco is never indefinite.
 - Omitted `seed` is derived from the device clock, so two presses do not replay the same sequence.
 - No new route, no new auth or rate-limit surface: the existing `user` layer, its expiry, and `DELETE /api/v1/led/color` cover the whole lifecycle.
 - `resources/swagger.yaml` updated.
 
 **Web UI**
 
-- A "🪩 Disco mode" button in the existing **LED Brightness** block of `configuration.html`, next to the brightness slider. One click fires the 15 s disco; the button is disabled with a countdown until it expires.
+- A "🪩 Disco mode" button in the existing **LED Brightness** block of `configuration.html`, next to the brightness slider. One click fires a 10 s disco; the button is disabled with a countdown until it expires, and the page itself darkens and cycles colours for the same period.
 - `energyApi.setLedDisco(durationMs)` / `clearLedColor()` added to `js/api-client.js`.
 
 **Tests**

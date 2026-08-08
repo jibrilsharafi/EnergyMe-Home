@@ -64,7 +64,7 @@ The device SHALL expose `PUT /api/v1/led/color`, which sets the `user` layer fro
 
 `red`, `green` and `blue` SHALL be required for every pattern except `disco`, which chooses its own colours and SHALL accept a body without them. When they are supplied alongside `disco` they SHALL be ignored.
 
-For `pattern` of `disco`, `duration_ms` SHALL default to 15000 ms when absent or 0, and a larger value SHALL be clamped to 15000 ms. Disco SHALL NOT run indefinitely. `seed` SHALL select the colour sequence; when absent the device SHALL choose a seed that varies between requests, so repeated calls do not replay the same sequence.
+For `pattern` of `disco`, `duration_ms` SHALL default to 15000 ms when absent or 0, and SHALL be clamped to a maximum of 60000 ms. Disco SHALL NOT run indefinitely. `seed` SHALL select the colour sequence; when absent the device SHALL choose a seed that varies between requests, so repeated calls do not replay the same sequence.
 
 `seed` SHALL be ignored by every other pattern.
 
@@ -117,7 +117,7 @@ The `user` layer SHALL NOT be persisted across reboots.
 #### Scenario: Disco duration is capped
 
 - **WHEN** `PUT /api/v1/led/color` is called with `{"pattern": "disco", "duration_ms": 600000}`
-- **THEN** the request succeeds and the indication is released after 15000 ms
+- **THEN** the request succeeds and the indication is released after 60000 ms
 
 #### Scenario: Disco is interruptible
 
@@ -168,18 +168,25 @@ If the current indication cannot be determined, the request SHALL fail with HTTP
 
 ### Requirement: Disco mode is reachable from the web interface
 
-The web interface SHALL offer a control that starts disco mode on the `user` layer for its default duration, on the same page as the LED brightness control.
+The web interface SHALL offer a control that starts disco mode on the `user` layer for a fixed 10000 ms, on the same page as the LED brightness control. The browser SHALL NOT send a seed, so repeated activations differ.
 
 While the indication is running the control SHALL indicate that it is running and SHALL NOT be re-triggerable, and it SHALL become available again once the duration has elapsed.
 
-A failure to start SHALL be reported to the user and SHALL leave the control available.
+For the same duration, the page SHALL darken and cycle through tinted colours, so the browser reflects what the device is doing. This effect SHALL NOT intercept pointer input, SHALL change colour no more than 3 times per second, and SHALL hold a static tint when the viewer has asked for reduced motion.
+
+A failure to start SHALL be reported to the user and SHALL leave the control available, and SHALL NOT start the page effect.
 
 #### Scenario: Starting disco from the browser
 
 - **WHEN** the user activates the disco control
-- **THEN** the device runs disco for its default duration and the control is unavailable until it ends
+- **THEN** the device runs disco for 10000 ms, the page darkens and cycles colours for the same period, and the control is unavailable until it ends
+
+#### Scenario: The page effect does not block the page
+
+- **WHEN** the page effect is running
+- **THEN** every control on the page remains clickable
 
 #### Scenario: Disco control recovers from an error
 
 - **WHEN** the request to start disco fails
-- **THEN** an error is shown and the control is immediately available again
+- **THEN** an error is shown, the page effect does not start, and the control is immediately available again

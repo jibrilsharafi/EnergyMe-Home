@@ -38,7 +38,7 @@ Consecutive repeats are removed by advancing the index by `1 + (hash % (PALETTE_
 
 *Consequence:* the index for step *n* depends on step *n-1*, so it is a fold rather than a direct lookup, restarted from zero on every render to keep the renderer stateless (D2 of the previous design).
 
-The fold length is `(elapsedMs / 120) % DISCO_SEQUENCE_STEPS`, with `DISCO_SEQUENCE_STEPS = 256`. The modulo is not cosmetic: `led_state` will run an indefinite disco if asked (D5 keeps the 15 s cap in the API layer), and an unbounded fold would grow the render path linearly with uptime - hours in, the LED task would be folding tens of thousands of steps forty times a second. Capping it bounds the cost at 256 iterations and makes the sequence repeat after ~31 s, which is twice the API cap, so no caller ever observes the wrap.
+The fold length is `(elapsedMs / 120) % DISCO_SEQUENCE_STEPS`, with `DISCO_SEQUENCE_STEPS = 1024`. The modulo is not cosmetic: `led_state` will run an indefinite disco if asked (D5 keeps the duration cap in the API layer), and an unbounded fold would grow the render path linearly with uptime - hours in, the LED task would be folding tens of thousands of steps forty times a second. Capping it bounds the cost at 1024 iterations and makes the sequence repeat after ~123 s, which is twice the API's 60 s cap, so no caller ever observes the wrap. This constant has to be raised alongside the API cap: at the wrap the walk restarts from step 0, which is the one place the no-repeat guarantee can break.
 
 ### D2: xorshift32 keyed on `(seed, stepIndex)`
 
@@ -79,11 +79,13 @@ active.color = slot.pattern == Pattern::DISCO
 
 ### D5: Disco policy lives in the API handler, not in `led_state`
 
-The 15 s default and the 15 s cap are enforced in `_serveLedEndpoints()`, not in the engine. `led_state` will happily run disco indefinitely if asked.
+The 15 s default and the 60 s cap are enforced in `_serveLedEndpoints()`, not in the engine. `led_state` will happily run disco indefinitely if asked.
+
+The cap is the API's ceiling for an automation that wants a long attention signal; the web button asks for far less (D7). Default and maximum are separate constants precisely because they answer different questions - "what does a caller who said nothing get" versus "how long may a caller insist on".
 
 *Why:* `led_state` is a mechanism (what does layer X show at time T); "disco is a novelty and must not be left running" is a policy about the public API. Putting the cap in the engine would also make the pure module carry a magic number no unit test of the mechanism cares about.
 
-Out-of-range `duration_ms` is **clamped, not rejected**, matching the issue's "capped at 15000". Rejecting would be inconsistent: no other pattern has an upper bound, so a 400 on `duration_ms: 60000` would surprise a caller who read the existing contract. Malformed values (negative, non-integer) still 400 through the existing check.
+Out-of-range `duration_ms` is **clamped, not rejected**, matching the issue's "capped". Rejecting would be inconsistent: no other pattern has an upper bound, so a 400 on a long `duration_ms` would surprise a caller who read the existing contract. Malformed values (negative, non-integer) still 400 through the existing check.
 
 ### D6: Validation order changes so colour can be optional for disco
 
@@ -97,7 +99,9 @@ The handler currently reads `red`/`green`/`blue` before `pattern`. It is reorder
 
 A `🪩 Disco mode` button is added to the existing **LED Brightness** `section-box` in `configuration.html`, reusing `buttonForm`, the `loading` class and `showStatus()` exactly as `setLedBrightness()` does. The section heading becomes **LED** since it now holds more than brightness.
 
-The button disables itself for `DISCO_DEFAULT_DURATION_MS` and shows a seconds countdown in its label, then restores. On error it re-enables immediately. No polling of `GET /api/v1/led` - the duration is known client-side and a poll would add request load for nothing.
+The button asks for 10 s, well under the API's 60 s ceiling: it exists to answer "which meter am I looking at", and a browser trigger should not be able to take the LED for a minute. It disables itself for that period and shows a seconds countdown in its label, then restores. On error it re-enables immediately. No polling of `GET /api/v1/led` - the duration is known client-side and a poll would add request load for nothing.
+
+While it runs, a fixed full-page overlay darkens the page and steps through tinted colours, so the browser visibly joins in. It is `pointer-events: none`, so nothing on the page becomes unclickable, and it steps at **400 ms (2.5 Hz), not the LED's 120 ms**: a full-screen flash in the 3-60 Hz band is a photosensitivity risk in a way a pinpoint LED is not. `prefers-reduced-motion` holds a static tint instead.
 
 `api-client.js` gains `setLedDisco(durationMs)` (a `put('led/color', {pattern: 'disco', duration_ms})`) and `clearLedColor()`. `clearLedColor()` needs a `delete()` helper, which the client does not have yet; it is added alongside `put()`/`patch()` in the same shape.
 
@@ -109,8 +113,8 @@ The browser sends no `seed`, so the device picks one. Reproducibility is an API/
 
 ## Risks / Trade-offs
 
-- **The no-repeat fold is O(steps) per render** → bounded at 256 iterations of three shifts by `DISCO_SEQUENCE_STEPS` (D1), and 125 in practice for the 15 s cap, called at most 40 times/second on a priority-1 task. Measured against the existing render path this is noise; if it ever mattered, the fold could be replaced by a two-hash rejection rule. Confirm the LED task stack high-water via `/api/v1/system/info` after the change, as the previous LED change did.
-- **A disco left running masks the ambient status colour for 15 s** → same exposure as any other timed `user` indication, and strictly bounded by the cap. Every layer above `user` still overrides it, so a fault is never hidden.
+- **The no-repeat fold is O(steps) per render** → bounded at 1024 iterations of three shifts by `DISCO_SEQUENCE_STEPS` (D1), and 500 for the longest run a caller can request, called at most 40 times/second on a priority-1 task. Measured against the existing render path this is noise; if it ever mattered, the fold could be replaced by a two-hash rejection rule. Confirm the LED task stack high-water via `/api/v1/system/info` after the change, as the previous LED change did.
+- **A disco left running masks the ambient status colour for up to 60 s** → same exposure as any other timed `user` indication, and strictly bounded by the cap. Every layer above `user` still overrides it, so a fault is never hidden.
 - **Adding an enum value shifts `Pattern::Count`** → nothing persists a pattern value and the wire names are strings, so the only coupling is `PATTERN_NAMES[]`, which is already `static_assert`ed against `PATTERN_COUNT`. Append `DISCO` after `DOUBLE_BLINK`, before `Count`.
 - **`elapsedMs` clamps a future `setAtMs` to 0** (existing `_elapsed()` behaviour) → disco restarts its sequence rather than misbehaving. No new failure mode.
 - **The UI countdown drifts from the device** if the request is slow or a higher layer takes over → cosmetic only; the button is a fire-and-forget trigger, and the device releases the layer on its own schedule regardless of what the button shows.
