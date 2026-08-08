@@ -66,7 +66,8 @@ bool _blinkIsOn(uint64_t elapsedMs, uint64_t halfPeriodMs) {
 constexpr Rgb DISCO_PALETTE[] = {Colors::RED,    Colors::GREEN,  Colors::BLUE,   Colors::YELLOW,
                                  Colors::PURPLE, Colors::CYAN,   Colors::ORANGE, Colors::WHITE};
 constexpr uint8_t DISCO_PALETTE_SIZE = sizeof(DISCO_PALETTE) / sizeof(DISCO_PALETTE[0]);
-static_assert(DISCO_PALETTE_SIZE > 1, "The no-repeat walk divides by DISCO_PALETTE_SIZE - 1");
+static_assert(DISCO_PALETTE_SIZE > 1 && DISCO_PALETTE_SIZE % 2 == 0,
+              "discoColor() splits the palette into two even/odd halves");
 
 // xorshift32 over (seed, stepIndex). The golden-ratio multiply decorrelates adjacent
 // steps, so each step's hash stands alone rather than being iterated from the last.
@@ -77,13 +78,6 @@ uint32_t _discoHash(uint32_t seed, uint32_t stepIndex) {
     h ^= h << 5;
     return h;
 }
-
-// The no-repeat walk below is O(steps), and the renderer is stateless so it restarts
-// from step 0 on every tick. This caps how far it can ever fold: the sequence repeats
-// after this many steps (~123 s), which is twice the API's disco duration cap, so a
-// caller never sees the wrap - the bound exists only so a disco left running
-// indefinitely cannot make the render path grow without limit.
-constexpr uint32_t DISCO_SEQUENCE_STEPS = 1024;
 
 }  // namespace
 
@@ -196,16 +190,18 @@ Rgb render(Pattern pattern, Rgb color, uint64_t elapsedMs, uint8_t brightnessPer
 }
 
 Rgb discoColor(uint32_t seed, uint64_t elapsedMs) {
-    const uint32_t steps = (uint32_t)((elapsedMs / DISCO_STEP_MS) % DISCO_SEQUENCE_STEPS);
+    const uint32_t stepIndex = (uint32_t)(elapsedMs / DISCO_STEP_MS);
 
-    // Walk the palette instead of indexing it: each step advances by 1..SIZE-1, so two
-    // consecutive steps can never land on the same colour. A one-in-eight stall is very
-    // visible at eight changes a second.
-    uint8_t index = (uint8_t)(_discoHash(seed, 0) % DISCO_PALETTE_SIZE);
-    for (uint32_t i = 1; i <= steps; i++) {
-        const uint32_t advance = 1 + (_discoHash(seed, i) % (DISCO_PALETTE_SIZE - 1));
-        index = (uint8_t)((index + advance) % DISCO_PALETTE_SIZE);
-    }
+    // The palette splits into two disjoint halves, one for even step indices and one
+    // for odd. Consecutive steps always draw from different halves, so they can never
+    // land on the same colour - a structural guarantee rather than a probabilistic
+    // one. This costs a single hash call regardless of how long disco has been
+    // running: no walk, no retained history, no bound on step count needed to keep it
+    // cheap (an earlier version walked the palette from step 0 on every call, which
+    // made the render path grow with uptime and, at scale, occasionally let a
+    // multi-step hash collision slip a repeat past the walk anyway).
+    const uint32_t half = _discoHash(seed, stepIndex) % (DISCO_PALETTE_SIZE / 2);
+    const uint8_t index = (uint8_t)(2 * half + (stepIndex % 2));
     return DISCO_PALETTE[index];
 }
 
