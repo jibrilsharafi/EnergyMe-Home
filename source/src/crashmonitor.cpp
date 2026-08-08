@@ -551,54 +551,44 @@ namespace CrashMonitor
         LOG_DEBUG("Core dump cleared from flash");
     }
 
+    // Full detail (TCB pointer, SHA256, core dump size/address) still reaches
+    // the archive's metadata JSON via _getCoreDumpInfoJson() - this is just the
+    // serial trail, kept to one addr2line-pasteable line per crash.
     static void _logCompleteCrashData() {
-        LOG_WARNING("=== Crash Analysis ===");
-        
-        // Get reset reason and counters
         esp_reset_reason_t resetReason = _getCrashResetReason();
-        LOG_WARNING("Reset reason: %s (%d) | crashes: %lu, consecutive: %lu",
-                    getResetReasonString(resetReason), (int32_t)resetReason, 
-                    _crashCount, _consecutiveCrashCount);
-        
-        // Get core dump summary
+
         esp_core_dump_summary_t *summary = (esp_core_dump_summary_t*)ps_malloc(sizeof(esp_core_dump_summary_t));
-        if (summary) {
-            esp_err_t err = esp_core_dump_get_summary(summary);
-            if (err == ESP_OK) {                
-                // Essential crash info
-                LOG_WARNING("Task: %s | PC: 0x%08x | TCB: 0x%08x | SHA256 (partial): %s",
-                            summary->exc_task, (uint32_t)summary->exc_pc, 
-                            (uint32_t)summary->exc_tcb, summary->app_elf_sha256);
-                
-                // Backtrace info
-                LOG_WARNING("Backtrace depth: %d | Corrupted: %s", 
-                            summary->exc_bt_info.depth, summary->exc_bt_info.corrupted ? "yes" : "no");
-                
-                // On one line for easy copy-paste into addr2line
-                if (summary->exc_bt_info.depth > 0) {
-                    char btAddresses[512] = "";
-                    for (uint32_t i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
-                        char addr[12];
-                        snprintf(addr, sizeof(addr), "0x%08lx ", (uint32_t)summary->exc_bt_info.bt[i]);
-                        strncat(btAddresses, addr, sizeof(btAddresses) - strlen(btAddresses) - 1);
-                    }
-                    LOG_WARNING("Backtrace: %s", btAddresses);
-                }
-                
-                // Core dump availability info
-                size_t dumpSize = 0;
-                size_t dumpAddress = 0;
-                if (esp_core_dump_image_get(&dumpAddress, &dumpSize) == ESP_OK) {
-                    LOG_WARNING("Core dump available: %zu bytes at 0x%08x",
-                                dumpSize, (uint32_t)dumpAddress);
-                }
-            } else {
-                LOG_WARNING("Crash summary error: %d", err);
-            }
-            free(summary);
+        if (!summary) {
+            LOG_WARNING("Crash: reason=%s(%d) crashes=%lu consecutive=%lu (no memory for core dump summary)",
+                        getResetReasonString(resetReason), (int32_t)resetReason,
+                        _crashCount, _consecutiveCrashCount);
+            return;
         }
-        
-        LOG_WARNING("=== End Crash Analysis ===");
+
+        esp_err_t err = esp_core_dump_get_summary(summary);
+        if (err != ESP_OK) {
+            LOG_WARNING("Crash: reason=%s(%d) crashes=%lu consecutive=%lu (core dump summary error %d)",
+                        getResetReasonString(resetReason), (int32_t)resetReason,
+                        _crashCount, _consecutiveCrashCount, err);
+            free(summary);
+            return;
+        }
+
+        char btAddresses[256] = "";
+        for (uint32_t i = 0; i < summary->exc_bt_info.depth && i < 16; i++) {
+            char addr[12];
+            snprintf(addr, sizeof(addr), "0x%08lx ", (uint32_t)summary->exc_bt_info.bt[i]);
+            strncat(btAddresses, addr, sizeof(btAddresses) - strlen(btAddresses) - 1);
+        }
+
+        LOG_WARNING("Crash: reason=%s(%d) crashes=%lu consecutive=%lu task=%s pc=0x%08x%s bt=%s",
+                    getResetReasonString(resetReason), (int32_t)resetReason,
+                    _crashCount, _consecutiveCrashCount,
+                    summary->exc_task, (uint32_t)summary->exc_pc,
+                    summary->exc_bt_info.corrupted ? " corrupted" : "",
+                    btAddresses);
+
+        free(summary);
     }
 
     // The reset reason is the frozen one: this is built when the dump is
