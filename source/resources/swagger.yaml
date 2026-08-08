@@ -1666,6 +1666,64 @@ paths:
         '405':
           $ref: '#/components/responses/MethodNotAllowed'
 
+  /api/v1/crash/entry:
+    get:
+      summary: Get one archived crash
+      description: >-
+        The item counterpart to /crash/info's collection: one record's metadata, addressed
+        by id, instead of scanning the full list for it client-side. Same shape as one
+        element of /crash/info's `crashes` array.
+      tags:
+        - Crash Monitor
+      parameters:
+        - name: id
+          in: query
+          description: crashId of the record to fetch
+          required: true
+          schema:
+            type: string
+            example: "3f8a1c9d2e4b7016"
+      responses:
+        '200':
+          description: Archived crash metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Same shape as one element of /crash/info's `crashes` array
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      summary: Delete one archived crash
+      description: >-
+        Remove a single archived crash record - metadata and core dump alike - keeping the
+        rest. Unlike /crash/clear, which is all-or-nothing.
+      tags:
+        - Crash Monitor
+      parameters:
+        - name: id
+          in: query
+          description: crashId of the record to remove
+          required: true
+          schema:
+            type: string
+            example: "3f8a1c9d2e4b7016"
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   # Logging endpoints
   /api/v1/logs/level:
     get:
@@ -2198,6 +2256,115 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
   # LED Management endpoints
+  /api/v1/led:
+    get:
+      summary: Get current LED state
+      description: >
+        Report what the LED is showing right now. The LED is driven by priority
+        layers (`status` < `user` < `network` < `alert` < `critical`); the highest
+        occupied layer wins and `layer` names it. `status` is the ambient baseline
+        the device always holds, so a user colour sits directly above it. Both
+        `layer` and `remaining_ms` are null when no layer is occupied and when the
+        indication is indefinite, respectively.
+      tags:
+        - LED
+      responses:
+        '200':
+          description: Currently rendered indication
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pattern:
+                    type: string
+                    enum: ["off", solid, blink_slow, blink_fast, pulse, double_blink]
+                    example: pulse
+                  layer:
+                    type: string
+                    nullable: true
+                    enum: [status, user, network, alert, critical]
+                    description: Layer owning the indication, or null when the LED is idle
+                    example: network
+                  color:
+                    type: object
+                    description: The layer's colour, before brightness scaling
+                    properties:
+                      red: { type: integer, minimum: 0, maximum: 255, example: 0 }
+                      green: { type: integer, minimum: 0, maximum: 255, example: 0 }
+                      blue: { type: integer, minimum: 0, maximum: 255, example: 255 }
+                  remaining_ms:
+                    type: integer
+                    nullable: true
+                    description: Milliseconds until the indication expires, or null when indefinite
+                    example: null
+                  is_lit:
+                    type: boolean
+                    description: Whether the waveform is currently in an on phase
+                    example: true
+                  brightness:
+                    type: integer
+                    minimum: 0
+                    maximum: 100
+                    example: 75
+        '503':
+          description: The LED state could not be read. Retry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/led/color:
+    put:
+      summary: Set the user LED colour
+      description: >
+        Drive the LED from an automation. This writes the `user` layer, which sits
+        directly above the ambient `status` layer: it replaces the steady healthy
+        indication, and every eventful layer above it (`network`, `alert`,
+        `critical`) still overrides it while active, after which the user colour
+        reappears. Sending `pattern: "off"` keeps the layer occupied and dark, which
+        is how an automation suppresses the ambient status colour. The user layer is
+        not persisted and is empty after a reboot.
+      tags:
+        - LED
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [red, green, blue]
+              properties:
+                red: { type: integer, minimum: 0, maximum: 255, example: 255 }
+                green: { type: integer, minimum: 0, maximum: 255, example: 0 }
+                blue: { type: integer, minimum: 0, maximum: 255, example: 255 }
+                pattern:
+                  type: string
+                  enum: ["off", solid, blink_slow, blink_fast, pulse, double_blink]
+                  default: solid
+                duration_ms:
+                  type: integer
+                  minimum: 0
+                  description: Release the user layer after this long. 0 or absent means indefinite.
+                  example: 5000
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          description: Missing or out-of-range colour channel, unknown pattern, or negative duration_ms
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    delete:
+      summary: Clear the user LED colour
+      description: Release the `user` layer, revealing whatever system layer is occupied.
+      tags:
+        - LED
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+
   /api/v1/led/brightness:
     get:
       summary: Get LED brightness

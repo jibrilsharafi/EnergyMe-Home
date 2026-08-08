@@ -2416,10 +2416,15 @@ namespace Mqtt
             return CrashPublishOutcome::Retry;
         }
 
-        LOG_INFO("Published crash %s in a single message (%zu bytes of gzipped dump, %zu bytes encoded)",
+        LOG_DEBUG("Published crash %s in a single message (%zu bytes of gzipped dump, %zu bytes encoded)",
                  baseName, readSize, encodedLength);
 
+        // Only remove the crash in production builds; in dev we might want to inspect locally also
+        // NOTE: this means that all crashes will be continously published via MQTT at each boot; 
+        // given they have the same ID, this should not cause problems
+        #ifndef ENV_DEV
         CrashMonitor::removeArchivedCrash(baseName);
+        #endif
         return CrashPublishOutcome::Published;
     }
 

@@ -53,10 +53,10 @@ namespace ModbusTcp
     {
         bool shouldRun = staConnected && !apServing;
         if (shouldRun && !_running) {
-            LOG_INFO("STA link up, no SoftAP broadcasting - starting Modbus TCP");
+            LOG_DEBUG("STA link up, no SoftAP broadcasting - starting Modbus TCP");
             begin();
         } else if (!shouldRun && _running) {
-            LOG_INFO("SoftAP broadcasting or no STA link - stopping Modbus TCP so it is not exposed on it");
+            LOG_DEBUG("SoftAP broadcasting or no STA link - stopping Modbus TCP so it is not exposed on it");
             stop();
         }
     }

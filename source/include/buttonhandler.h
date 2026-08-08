@@ -12,7 +12,13 @@
 #include "utils.h"
 
 #define BUTTON_TASK_NAME "button_task"
-#define BUTTON_TASK_STACK_SIZE (3 * 1024)  // Week-long peak ~796 bytes (19.4%); 3 KB keeps ~73% margin while saving 1 KB internal heap (preserves room for occasional logging)
+// 3 KB crashed a bench device: LOG_DEBUG("Button pressed") on every press pushes
+// vsnprintf's 512-byte message buffer plus newlib's internal vfprintf stack usage
+// on top of the task's own frames, and the resulting overflow panicked inside
+// _svfprintf_r (see the crash archived 2026-08-08, task=button_task). Matches
+// every other logging task in the firmware (4-8 KB); only the LED task goes
+// smaller, and only because it deliberately never logs.
+#define BUTTON_TASK_STACK_SIZE (4 * 1024)
 #define BUTTON_TASK_PRIORITY 2
 
 // Timing constants

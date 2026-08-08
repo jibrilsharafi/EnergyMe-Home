@@ -56,9 +56,12 @@
             cursor: text;
         }
 
-        .auto-refresh-checkbox {
-            padding: 6px;
+        #refresh-logs {
+            padding: 5px 10px;
             margin-bottom: 10px;
+            border: none;
+            border-radius: 3px;
+            font-size: 14px;
             cursor: pointer;
         }
 
@@ -121,7 +124,7 @@
                 gap: 10px;
             }
             
-            .auto-refresh-checkbox {
+            #refresh-logs {
                 margin-bottom: 0;
                 align-self: flex-start;
             }
@@ -246,9 +249,9 @@
             <div class="controls">
                 <input type="text" id="search-input-text" class="search-input" placeholder="Search log..."
                     onkeyup="filterLogs()">
-                <label>
-                    <input type="checkbox" id="auto-refresh-checkbox" class="auto-refresh-checkbox">Auto-refresh
-                </label>
+                <button id="refresh-logs" type="button">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
                 <div class="filter-buttons">
                     <button class="filter-button active" data-level="ALL">All</button>
                     <button class="filter-button log-level-DEBUG" data-level="DEBUG">Debug</button>
@@ -280,7 +283,6 @@
     </div>
 
     <script>
-        let autoRefreshInterval;
         let isLogFetchActive = false;
         let lastFetchTime = 0;
         const FETCH_THROTTLE = 1000; // Minimum time between fetches in milliseconds
@@ -503,15 +505,7 @@
             document.body.removeChild(link);
         });
 
-        document.getElementById('auto-refresh-checkbox').addEventListener('change', function () {
-            if (this.checked) {
-                // Start with an immediate fetch
-                fetchLogs();
-                autoRefreshInterval = setInterval(fetchLogs, FETCH_THROTTLE);
-            } else {
-                clearInterval(autoRefreshInterval);
-            }
-        });
+        document.getElementById('refresh-logs').addEventListener('click', fetchLogs);
 
         // Replace the original filterLogs function with the debounced version
         const filterLogs = debouncedFilterLogs;

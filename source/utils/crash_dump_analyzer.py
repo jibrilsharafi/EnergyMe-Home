@@ -10,7 +10,9 @@ device, then decodes and analyzes the dump for debugging purposes. It locates th
 matching ELF in the releases/ folder by firmware version, falling back to SHA256.
 
 Devices archive each crash to flash on the boot it is detected, so several records may
-be waiting. The oldest is analyzed unless --crash-id says otherwise.
+be waiting. With exactly one, it's analyzed automatically; with several and neither
+--crash-id nor --all, an interactive prompt lists them (with a human-readable
+timestamp) and lets you analyze one, analyze all, or delete one in place.
 
 Usage:
     python crash_dump_analyzer.py -H <device_ip> [options]
@@ -18,6 +20,8 @@ Usage:
 Example:
     python crash_dump_analyzer.py -H 192.168.1.100
     python crash_dump_analyzer.py -H 192.168.1.100 --crash-id 3f8a1c02d94b7e15
+    python crash_dump_analyzer.py -H 192.168.1.100 --all
+    python crash_dump_analyzer.py -H 192.168.1.100 --delete 3f8a1c02d94b7e15
     python crash_dump_analyzer.py -H 192.168.1.100 -u admin -p secret123 --clear
 """
 
@@ -29,9 +33,19 @@ from requests.auth import HTTPDigestAuth
 from datetime import datetime
 from typing import Optional, Dict, Any
 import os
+import re
+import sys
 import hashlib
 
 from _device_auth import add_device_args, resolve_credentials
+
+# Windows consoles default to the cp1252 codepage, which cannot encode the emoji
+# this script prints throughout - reconfigure to UTF-8 so a plain `uv run` from
+# PowerShell doesn't crash on the first print. Both streams support reconfigure()
+# on the 3.13+ this project requires.
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # Unix ms for 2001-09-09. Records archived before NTP carry a few thousand ms
 # instead, which is not a date worth formatting.
@@ -150,14 +164,35 @@ class CrashDumpAnalyzer:
             print(f"❌ Error running debug command: {e}")
             return None
 
-    def get_crash_info(self, crash_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
-        """Fetch one archived crash record from the device.
+    @staticmethod
+    def format_timestamp(timestamp: Optional[int]) -> str:
+        """Human-readable local time for a device-supplied epoch-ms timestamp.
 
-        The device stores each crash as frozen metadata plus a gzipped dump, so
-        /api/v1/crash/info returns a list rather than a single live reading. The
-        record's nested crashInfo is flattened into the top level here, with the
-        archive fields (crashId, firmwareVersion, sizes) merged alongside it.
+        Written before NTP on a cold boot, so a near-epoch value is expected
+        rather than wrong - show it raw in that case. Tested on the raw value
+        because fromtimestamp() itself raises OSError on a near-epoch input in
+        any timezone west of UTC, which would abort the run before the dump is
+        even downloaded.
         """
+        if not timestamp:
+            return "unknown"
+        if timestamp <= UNSET_CLOCK_THRESHOLD_MS:
+            return f"{timestamp} ms - clock was not set when this was archived"
+        return datetime.fromtimestamp(timestamp / 1000).strftime('%Y-%m-%d %H:%M:%S')
+
+    @staticmethod
+    def _flatten_crash_record(record: Dict[str, Any]) -> Dict[str, Any]:
+        """Merge the archive-level fields (crashId, timestamp, sizes) into the
+        nested crashInfo the device reports, so callers see one flat dict."""
+        flattened = dict(record.get('crashInfo', {}))
+        for key in ('crashId', 'timestamp', 'firmwareVersion',
+                    'coreDumpRawSize', 'coreDumpCompressedSize'):
+            if key in record:
+                flattened[key] = record[key]
+        return flattened
+
+    def list_crashes(self) -> list:
+        """Fetch every archived crash record, oldest first, flattened like get_crash_info()."""
         try:
             print(f"🔍 Fetching archived crashes from {self.device_ip}...")
             response = self.session.get(f"{self.base_url}/api/v1/crash/info")
@@ -165,9 +200,17 @@ class CrashDumpAnalyzer:
             payload = response.json()
         except requests.exceptions.RequestException as e:
             print(f"❌ Error fetching crash info: {e}")
-            return None
+            return []
 
-        crashes = payload.get('crashes', [])
+        return [self._flatten_crash_record(r) for r in payload.get('crashes', [])]
+
+    def get_crash_info(self, crash_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Fetch one archived crash record from the device.
+
+        The device stores each crash as frozen metadata plus a gzipped dump, so
+        /api/v1/crash/info returns a list rather than a single live reading.
+        """
+        crashes = self.list_crashes()
         if not crashes:
             print("ℹ️  No archived crashes on device")
             return None
@@ -178,19 +221,68 @@ class CrashDumpAnalyzer:
                 available = ', '.join(str(c.get('crashId')) for c in crashes)
                 print(f"❌ No archived crash with id {crash_id}. Available: {available}")
                 return None
-        else:
-            record = crashes[0]  # Oldest, which is also the next to be published
-            if len(crashes) > 1:
-                print(f"ℹ️  {len(crashes)} archived crashes, analyzing the oldest "
-                      f"(crashId {record.get('crashId')}). Use --crash-id to pick another.")
+            return record
 
-        flattened = dict(record.get('crashInfo', {}))
-        for key in ('crashId', 'timestamp', 'firmwareVersion',
-                    'coreDumpRawSize', 'coreDumpCompressedSize'):
-            if key in record:
-                flattened[key] = record[key]
+        record = crashes[0]  # Oldest, which is also the next to be published
+        if len(crashes) > 1:
+            print(f"ℹ️  {len(crashes)} archived crashes, analyzing the oldest "
+                  f"(crashId {record.get('crashId')}). Use --crash-id, --all, or run "
+                  f"without either to pick interactively.")
+        return record
 
-        return flattened
+    def delete_crash(self, crash_id: str) -> bool:
+        """Remove one archived crash via DELETE /api/v1/crash/entry, keeping the rest."""
+        try:
+            response = self.session.delete(
+                f"{self.base_url}/api/v1/crash/entry", params={"id": crash_id})
+            if response.status_code == 200:
+                print(f"🗑️  Deleted crash {crash_id}")
+                return True
+            print(f"❌ Failed to delete crash {crash_id}: HTTP {response.status_code}")
+            return False
+        except requests.exceptions.RequestException as e:
+            print(f"❌ Error deleting crash {crash_id}: {e}")
+            return False
+
+    def choose_crashes_interactively(self, crashes: list) -> Optional[list]:
+        """Prompt the user to pick which archived crash(es) to analyze, or delete
+        crashes in place. Returns the list of crashIds to analyze, or None to quit.
+        Re-fetches after every delete so the menu never goes stale."""
+        while True:
+            print(f"\n{len(crashes)} archived crashes:")
+            for i, c in enumerate(crashes, start=1):
+                when = self.format_timestamp(c.get('timestamp'))
+                task = c.get('taskName', 'unknown task')
+                reason = c.get('resetReason', 'unknown reason')
+                print(f"  [{i}] {c.get('crashId')}  {when}  {reason}  {task}")
+
+            choice = input(
+                "\nAnalyze which? (number, 'a' for all, 'd<N>' to delete one, 'q' to quit): "
+            ).strip().lower()
+
+            if choice in ('q', ''):
+                return None
+            if choice == 'a':
+                return [c.get('crashId') for c in crashes]
+            if choice.startswith('d') and choice[1:].isdigit():
+                idx = int(choice[1:]) - 1
+                if 0 <= idx < len(crashes):
+                    self.delete_crash(crashes[idx].get('crashId'))
+                    crashes = self.list_crashes()
+                    if not crashes:
+                        print("ℹ️  No archived crashes left")
+                        return None
+                else:
+                    print(f"❌ No crash numbered {idx + 1}")
+                continue
+            if choice.isdigit():
+                idx = int(choice) - 1
+                if 0 <= idx < len(crashes):
+                    return [crashes[idx].get('crashId')]
+                print(f"❌ No crash numbered {choice}")
+                continue
+
+            print("❌ Not understood - enter a number, 'a', 'd<N>', or 'q'")
 
     def print_crash_info(self, crash_info: Dict[str, Any]) -> Optional[str]:
         """Print crash information in a readable format and return debug output."""
@@ -203,17 +295,8 @@ class CrashDumpAnalyzer:
         # Basic crash information
         if crash_info.get('crashId'):
             print(f"Crash ID: {crash_info['crashId']}")
-        # Written before NTP on a cold boot, so a near-epoch value is expected
-        # rather than wrong - show it raw in that case. Tested on the raw value
-        # because fromtimestamp() itself raises OSError on a near-epoch input in
-        # any timezone west of UTC, which would abort the run before the dump is
-        # even downloaded.
-        timestamp = crash_info.get('timestamp')
-        if timestamp:
-            when = f"{timestamp} ms - clock was not set when this was archived"
-            if timestamp > UNSET_CLOCK_THRESHOLD_MS:
-                when = datetime.fromtimestamp(timestamp / 1000).strftime('%Y-%m-%d %H:%M:%S')
-            print(f"Archived at: {when}")
+        if crash_info.get('timestamp'):
+            print(f"Archived at: {self.format_timestamp(crash_info['timestamp'])}")
         print(f"Firmware Version: {crash_info.get('firmwareVersion', 'Unknown')}")
         print(f"Reset Reason: {crash_info.get('resetReason', 'Unknown')}")
         print(f"Reset Code: {crash_info.get('resetReasonCode', 'Unknown')}")
@@ -251,6 +334,43 @@ class CrashDumpAnalyzer:
 
         print("="*80)
         return debug_output
+
+    @staticmethod
+    def _parse_addr2line_output(output: Optional[str], addresses: list) -> list:
+        """Turn addr2line -pfC's text into structured frames for the JSON report.
+
+        One line per frame: "func at file:line", optionally followed by one or
+        more " (inlined by) func at file:line" continuation lines for the same
+        address. rpartition(':') (not split) because a Windows path's drive
+        letter ("C:\\...") also contains a colon - only the last one, right
+        before the line number, is the real separator.
+        """
+        if not output:
+            return []
+
+        line_re = re.compile(r'^\s*(?:\(inlined by\)\s+)?(?P<func>.*) at (?P<loc>.+)$')
+        frames: list = []
+        for raw_line in output.splitlines():
+            if not raw_line.strip():
+                continue
+            m = line_re.match(raw_line)
+            if not m:
+                continue
+
+            file, _, lineno = m.group('loc').strip().rpartition(':')
+            entry = {
+                'function': m.group('func').strip(),
+                'file': file or m.group('loc').strip(),
+                'line': int(lineno) if lineno.isdigit() else None,
+            }
+
+            if raw_line.lstrip().startswith('(inlined by)') and frames:
+                frames[-1].setdefault('inlined_by', []).append(entry)
+            else:
+                if len(frames) < len(addresses):
+                    entry['address'] = f'0x{addresses[len(frames)]:08x}'
+                frames.append(entry)
+        return frames
 
     def _build_addr2line_command(self, addresses, crash_info: Dict[str, Any]) -> Optional[str]:
         """Compose an addr2line invocation for `addresses` against the local ELF."""
@@ -305,103 +425,71 @@ class CrashDumpAnalyzer:
             print(f"❌ Failed to decompress core dump: {e}")
             return None
 
-    def save_crash_dump_text(self, crash_info: Dict[str, Any], debug_output: Optional[str] = None, core_dump_data: Optional[bytes] = None) -> str:
-        """Save comprehensive crash dump information to a text file."""
+    def save_crash_dump_json(self, crash_info: Dict[str, Any], run_dir: str, debug_output: Optional[str] = None,
+                              firmware_path: Optional[str] = None) -> str:
+        """Save the crash's structured, machine-parseable data: the flattened
+        crash_info the device reported, plus the backtrace decoded into frames
+        (function/file/line, with inlined_by nesting) instead of a raw text blob."""
         try:
-            # Create coredump directory if it doesn't exist
-            dump_dir = "coredump"
-            os.makedirs(dump_dir, exist_ok=True)
-            
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = os.path.join(dump_dir, f"crash_dump_{self.device_ip}_{timestamp}.txt")
-            
+            filename = os.path.join(run_dir, "report.json")
+
+            backtrace = dict(crash_info.get('backtrace') or {})
+            addresses = backtrace.get('addresses', [])
+            backtrace['frames'] = self._parse_addr2line_output(debug_output, addresses)
+            backtrace['addresses'] = [f'0x{a:08x}' for a in addresses]
+
+            report = dict(crash_info)
+            report['backtrace'] = backtrace
+            report['archivedAt'] = self.format_timestamp(crash_info.get('timestamp'))
+            report['deviceIp'] = self.device_ip
+            report['analyzedAt'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            if firmware_path:
+                report['elfPath'] = firmware_path
+
             with open(filename, 'w', encoding='utf-8') as f:
-                # Write header
-                f.write("="*80 + "\n")
-                f.write("ENERGYME-HOME CRASH DUMP ANALYSIS REPORT\n")
-                f.write("="*80 + "\n")
-                f.write(f"Device IP: {self.device_ip}\n")
-                f.write(f"Analysis Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write("="*80 + "\n\n")
-                
-                # Basic crash information
-                f.write("CRASH INFORMATION:\n")
-                f.write("-"*40 + "\n")
-                if crash_info.get('crashId'):
-                    f.write(f"Crash ID: {crash_info['crashId']}\n")
-                f.write(f"Firmware Version: {crash_info.get('firmwareVersion', 'Unknown')}\n")
-                f.write(f"Reset Reason: {crash_info.get('resetReason', 'Unknown')}\n")
-                f.write(f"Reset Code: {crash_info.get('resetReasonCode', 'Unknown')}\n")
-                f.write(f"Crash Count: {crash_info.get('crashCount', 0)} (consecutive: {crash_info.get('consecutiveCrashCount', 0)})\n")
-                f.write(f"Reset Count: {crash_info.get('resetCount', 0)} (consecutive: {crash_info.get('consecutiveResetCount', 0)})\n")
-                f.write(f"Has Core Dump: {'Yes' if crash_info.get('hasCoreDump') else 'No'}\n")
-                
-                if crash_info.get('hasCoreDump'):
-                    f.write(f"Core Dump Size: {crash_info.get('coreDumpSize', 0):,} bytes\n")
-                    f.write(f"Core Dump Address: 0x{crash_info.get('coreDumpAddress', 0):08x}\n")
-                    
-                    # Task information
-                    if 'taskName' in crash_info:
-                        f.write(f"Crashed Task: {crash_info['taskName']}\n")
-                        f.write(f"Program Counter: 0x{crash_info.get('programCounter', 0):08x}\n")
-                        f.write(f"Task Control Block: 0x{crash_info.get('taskControlBlock', 0):08x}\n")
-                
-                f.write("\n")
-                
-                # Backtrace information
-                backtrace = crash_info.get('backtrace', {})
-                if backtrace:
-                    f.write("BACKTRACE INFORMATION:\n")
-                    f.write("-"*40 + "\n")
-                    f.write(f"Depth: {backtrace.get('depth', 0)}\n")
-                    f.write(f"Corrupted: {'Yes' if backtrace.get('corrupted') else 'No'}\n")
-                    
-                    addresses = backtrace.get('addresses', [])
-                    if addresses:
-                        f.write(f"Addresses: {' '.join([f'0x{addr:08x}' for addr in addresses])}\n")
-                    
-                    if debug_output:
-                        f.write(f"\nDEBUG OUTPUT:\n")
-                        f.write("-"*40 + "\n")
-                        f.write(debug_output)
-                        f.write("\n")
-                
-                f.write("\n" + "="*80 + "\n")
-                
-                # Core dump data (hex dump)
-                if core_dump_data:
-                    f.write("CORE DUMP DATA (HEX):\n")
-                    f.write("="*80 + "\n")
-                    
-                    # Write hex dump in 16-byte lines
-                    for i in range(0, len(core_dump_data), 16):
-                        chunk = core_dump_data[i:i+16]
-                        hex_bytes = ' '.join(f'{b:02x}' for b in chunk)
-                        ascii_chars = ''.join(chr(b) if 32 <= b <= 126 else '.' for b in chunk)
-                        f.write(f"{i:08x}: {hex_bytes:<48} |{ascii_chars}|\n")
-                    
-                    f.write("\n" + "="*80 + "\n")
-            
-            print(f"💾 Comprehensive crash dump saved to: {filename}")
+                json.dump(report, f, indent=2)
+
+            print(f"💾 Crash info saved to: {filename}")
             return filename
-            
+
         except Exception as e:
-            print(f"❌ Error saving crash dump text file: {e}")
+            print(f"❌ Error saving crash info JSON: {e}")
             return ""
 
-    def save_core_dump_temp(self, data: bytes) -> str:
-        """Save core dump data to a temporary file."""
+    def save_full_core_dump_text(self, full_dump_output: str, run_dir: str) -> str:
+        """Save the full core dump analysis (registers, per-thread backtraces with
+        locals - the output of analyze_locally()) as-is. Nothing else goes in this
+        file: basic crash info lives in the JSON, and the binary is already on disk
+        via save_core_dump_bin(), so there is no reason to also hex-dump it here."""
         try:
-            # Create temp directory if it doesn't exist
-            temp_dir = "temp"
-            os.makedirs(temp_dir, exist_ok=True)
-            
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = os.path.join(temp_dir, f"coredump_{self.device_ip}_{timestamp}.bin")
-            
+            filename = os.path.join(run_dir, "full_dump.txt")
+
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(full_dump_output)
+
+            print(f"💾 Full core dump analysis saved to: {filename}")
+            return filename
+
+        except Exception as e:
+            print(f"❌ Error saving full core dump text file: {e}")
+            return ""
+
+    def make_run_dir(self) -> str:
+        """One folder per analysis run, named by timestamp, holding the binary
+        dump, the structured JSON report, and the full core dump text together -
+        rather than scattered across temp/ and coredump/ under three different
+        naming schemes."""
+        run_dir = os.path.join("coredump", datetime.now().strftime("%Y%m%d_%H%M%S"))
+        os.makedirs(run_dir, exist_ok=True)
+        return run_dir
+
+    def save_core_dump_bin(self, data: bytes, run_dir: str) -> str:
+        """Save the raw core dump bytes into this run's folder."""
+        try:
+            filename = os.path.join(run_dir, "core.bin")
             with open(filename, 'wb') as f:
                 f.write(data)
-            print(f"💾 Core dump saved to temporary file: {filename}")
+            print(f"💾 Core dump saved to: {filename}")
             return filename
         except Exception as e:
             print(f"❌ Error saving core dump: {e}")
@@ -580,167 +668,117 @@ class CrashDumpAnalyzer:
         # This would need ESP-IDF specific knowledge
         print("  Binary format analysis not implemented")
 
-    def _find_esp_idf_installation(self) -> Optional[str]:
-        """Find ESP-IDF installation directory on Windows."""
-        import platform
+    def _find_gdb(self) -> Optional[str]:
+        """Find a xtensa GDB binary in the local PlatformIO toolchain, if any is
+        installed. esp_coredump.CoreDump needs one for info_corefile() - it has no
+        gdb-less mode. PlatformIO's default xtensa-esp toolchain does not bundle
+        gdb (that's a separate package), so this commonly returns None; the caller
+        degrades gracefully rather than demanding a manual install.
+
+        Requires gdb >= 14: espressif/tool-xtensa-esp-elf-gdb@12.1.0 (the version
+        `pio pkg install -g -t tool-xtensa-esp-elf-gdb` picks without a pinned
+        owner/version) raises a KeyError on 'current-thread-id' decoding a synthetic
+        ELF core file - its -thread-info MI response omits that field for a
+        --core=-loaded target. platformio/tool-xtensa-esp-elf-gdb@14.2.0+20240403
+        does not have this bug; that is what this glob picks up as the unversioned
+        default install directory."""
         import glob
-        
-        if platform.system() != "Windows":
-            return None
-        
-        # Common ESP-IDF installation paths
-        esp_idf_paths = [
-            "C:/Espressif/frameworks/esp-idf-*",
-            os.path.expanduser("~/esp/esp-idf"),
-            "C:/esp-idf",
+
+        candidates = [
+            "~/.platformio/packages/tool-xtensa-esp-elf-gdb/bin/xtensa-esp32-elf-gdb*",
+            "~/.platformio/packages/toolchain-xtensa-esp-elf/bin/xtensa-esp32-elf-gdb*",
         ]
-        
-        for pattern in esp_idf_paths:
-            matches = glob.glob(pattern)
+        for pattern in candidates:
+            matches = sorted(glob.glob(os.path.expanduser(pattern)))
             if matches:
-                # Take the most recent version if multiple matches
-                matches.sort(reverse=True)
-                esp_idf_dir = matches[0]
-                export_script = os.path.join(esp_idf_dir, "export.ps1")
-                if os.path.exists(export_script):
-                    return esp_idf_dir
-        
+                return matches[0]
         return None
 
-    def _generate_analysis_script(self, filename: str, firmware_path: str, esp_idf_dir: Optional[str]) -> str:
-        """Generate a helper PowerShell script to run the analysis."""
-        import platform
-        
-        script_path = os.path.join(os.path.dirname(filename), "run_coredump_analysis.ps1")
-        
+    def _resolve_firmware_elf(self, crash_info: Dict[str, Any]) -> Optional[str]:
+        """Find the ELF matching this crash: an explicit --elf override first,
+        then the releases/ lookup by SHA256/version, then the current build as a
+        last resort. Shared by analyze_locally() and the JSON report, so both
+        agree on which ELF was actually used."""
+        device_sha256 = crash_info.get('appElfSha256', '')
+        firmware_version = crash_info.get('firmwareVersion')
+
+        if self.elf_path:
+            if not os.path.exists(self.elf_path):
+                print(f"❌ ELF file not found: {self.elf_path}")
+                return None
+            print(f"📎 Using the ELF given on the command line: {self.elf_path}")
+            return self.elf_path
+
+        firmware_path = None
+        if device_sha256 or firmware_version:
+            firmware_path = self.find_matching_elf_in_releases(device_sha256, firmware_version)
+        if firmware_path:
+            return firmware_path
+
+        # Fallback to current build if no match found in releases
+        firmware_path = ".pio/build/esp32s3-dev/firmware.elf"
+        if not os.path.exists(firmware_path):
+            print(f"❌ Firmware file not found: {firmware_path}")
+            print(f"   Make sure you've built the project first with: pio run")
+            print(f"   Or ensure releases folder contains the correct ELF file")
+            return None
+
+        print(f"⚠️  Using current build ELF (no match found in releases): {firmware_path}")
+        return firmware_path
+
+    def analyze_locally(self, filename: str, crash_info: Dict[str, Any], firmware_path: str) -> Optional[str]:
+        """Decode the core dump entirely in-process: no subprocess shell-out to
+        `python -m esp_coredump`, no ESP-IDF export script, no separate terminal.
+        esp_coredump is a plain project dependency (uv add esp-coredump), so its
+        CoreDump class is just called directly like any other library.
+
+        `firmware_path` is resolved once by the caller (via _resolve_firmware_elf())
+        and shared with the JSON report, rather than re-resolved here - that would
+        re-scan every release folder's metadata.json a second time per run.
+
+        Returns the full captured output (also printed live) so the caller can
+        save it, or None if the dump could not be analyzed.
+        """
+        from esp_coredump import CoreDump
+
+        gdb_path = self._find_gdb()
+        if not gdb_path:
+            print("\nℹ️  Skipping the register/thread-level dump: no xtensa gdb found locally.")
+            print("   The addr2line backtrace above already has task/file/line for each frame,")
+            print("   which covers most debugging needs. For registers and locals too, install")
+            print("   `pio pkg install -g -t \"platformio/tool-xtensa-esp-elf-gdb@14.2.0+20240403\"` "
+                  "and re-run this script.")
+            return None
+
+        print(f"\n🔧 Running core dump analysis (gdb: {gdb_path})...")
+        print("=" * 80)
+        import contextlib
+        import io
+
+        class _Tee:
+            """Mirrors writes to both the real console and a buffer, so the full
+            dump still streams live while we also capture it for save_crash_dump_text()."""
+            def __init__(self, *streams):
+                self._streams = streams
+
+            def write(self, data):
+                for s in self._streams:
+                    s.write(data)
+
+            def flush(self):
+                for s in self._streams:
+                    s.flush()
+
+        buffer = io.StringIO()
         try:
-            with open(script_path, 'w', encoding='utf-8') as f:
-                f.write("# ESP-IDF Core Dump Analysis Helper Script\n")
-                f.write("# Auto-generated by crash_dump_analyzer.py\n\n")
-                
-                if platform.system() == "Windows" and esp_idf_dir:
-                    f.write("# Source ESP-IDF environment\n")
-                    f.write(f'. "{os.path.join(esp_idf_dir, "export.ps1")}"\n\n')
-                
-                f.write("# Run core dump analysis\n")
-                f.write(f'python -m esp_coredump info_corefile -c "{filename}" -t elf "{firmware_path}"\n')
-            
-            return script_path
+            with contextlib.redirect_stdout(_Tee(sys.stdout, buffer)):
+                CoreDump(chip='esp32s3', core=filename, core_format='elf', prog=firmware_path, gdb=gdb_path).info_corefile()
+            print("=" * 80)
+            return buffer.getvalue()
         except Exception as e:
-            print(f"⚠️  Could not generate helper script: {e}")
-            return ""
-
-    def analyze_with_esp_idf(self, filename: str, crash_info: Dict[str, Any]) -> bool:
-        """Automatically run ESP-IDF core dump analysis with firmware verification."""
-        try:
-            import subprocess
-            import platform
-            
-            print(f"\n🔧 Running ESP-IDF core dump analysis...")
-            
-            # First, try to find matching ELF in releases folder
-            device_sha256 = crash_info.get('appElfSha256', '')
-            firmware_version = crash_info.get('firmwareVersion')
-            firmware_path = None
-
-            if self.elf_path:
-                if not os.path.exists(self.elf_path):
-                    print(f"❌ ELF file not found: {self.elf_path}")
-                    return False
-                firmware_path = self.elf_path
-                print(f"📎 Using the ELF given on the command line: {firmware_path}")
-            elif device_sha256 or firmware_version:
-                firmware_path = self.find_matching_elf_in_releases(device_sha256, firmware_version)
-
-            # Fallback to current build if no match found in releases
-            if not firmware_path:
-                firmware_path = ".pio/build/esp32s3-dev/firmware.elf"
-                if not os.path.exists(firmware_path):
-                    print(f"❌ Firmware file not found: {firmware_path}")
-                    print(f"   Make sure you've built the project first with: pio run")
-                    print(f"   Or ensure releases folder contains the correct ELF file")
-                    return False
-                
-                print(f"⚠️  Using current build ELF (no match found in releases): {firmware_path}")
-            
-            # Verify firmware SHA256 using crash info
-            print("🔍 Verifying firmware SHA256 against device...")
-            self.verify_firmware_sha256(crash_info, firmware_path)
-            
-            # Check if esp_coredump is available in current environment
-            esp_coredump_cmd = f'python -m esp_coredump info_corefile -c "{filename}" -t elf "{firmware_path}"'
-            
-            # Try to run directly first (will work if ESP-IDF env is already sourced)
-            try:
-                print(f"🔧 Attempting direct execution...")
-                result = subprocess.run(
-                    esp_coredump_cmd,
-                    shell=True,
-                    capture_output=True,
-                    text=True,
-                    timeout=60
-                )
-                
-                if result.returncode == 0:
-                    print("✅ ESP-IDF analysis completed successfully!")
-                    print("\n" + "="*80)
-                    print("📊 ESP-IDF CORE DUMP ANALYSIS OUTPUT:")
-                    print("="*80)
-                    print(result.stdout)
-                    return True
-                else:
-                    # Command failed - likely because ESP-IDF environment not sourced
-                    error_msg = result.stderr.lower() if result.stderr else ""
-                    if "no module named esp_coredump" in error_msg or "no module" in error_msg:
-                        print(f"⚠️  ESP-IDF environment not available in current shell")
-                    else:
-                        print(f"⚠️  Command failed with code {result.returncode}")
-                        if result.stderr:
-                            print(f"   Error: {result.stderr}")
-            except subprocess.TimeoutExpired:
-                print(f"⚠️  Command timed out")
-            except Exception as e:
-                print(f"⚠️  Command failed: {e}")
-            
-            # If direct execution failed, provide helpful instructions
-            print(f"\n" + "="*80)
-            print("💡 MANUAL ANALYSIS REQUIRED")
-            print("="*80)
-            
-            if platform.system() == "Windows":
-                # Try to find ESP-IDF installation
-                esp_idf_dir = self._find_esp_idf_installation()
-                
-                if esp_idf_dir:
-                    print(f"✅ Found ESP-IDF installation: {esp_idf_dir}")
-                    
-                    # Generate helper script
-                    script_path = self._generate_analysis_script(filename, firmware_path, esp_idf_dir)
-                    if script_path:
-                        print(f"\n📝 Generated helper script: {script_path}")
-                        print(f"\n🚀 Run this command in a NEW PowerShell terminal:")
-                        print(f"   {script_path}")
-                    else:
-                        print(f"\n🚀 Run these commands in a NEW PowerShell terminal:")
-                        print(f"   . {os.path.join(esp_idf_dir, 'export.ps1')}")
-                        print(f"   {esp_coredump_cmd}")
-                else:
-                    print(f"⚠️  Could not locate ESP-IDF installation")
-                    print(f"\n🚀 Run these commands in a NEW PowerShell terminal:")
-                    print(f"   . C:/Espressif/frameworks/esp-idf-v5.5.1/export.ps1")
-                    print(f"   {esp_coredump_cmd}")
-            else:
-                # Unix/Mac instructions
-                print(f"\n� Run these commands in your terminal:")
-                print(f"   . $HOME/esp/esp-idf/export.sh")
-                print(f"   {esp_coredump_cmd}")
-            
-            print("="*80)
-            return False
-                
-        except Exception as e:
-            print(f"❌ Error running ESP-IDF analysis: {e}")
-            return False
+            print("=" * 80)
+            print(f"❌ Core dump analysis failed: {e}")
+            return buffer.getvalue() or None
 
     def clear_core_dump(self) -> bool:
         """Delete every archived crash record from device flash."""
@@ -771,12 +809,14 @@ class CrashDumpAnalyzer:
             return None
 
         debug_output = self.print_crash_info(crash_info)
+        firmware_path = self._resolve_firmware_elf(crash_info)
+        run_dir = self.make_run_dir()
 
         # Step 2: Check if core dump is available
         if not crash_info.get('hasCoreDump'):
             print("\nℹ️  No core dump available on device")
-            # Still save crash info to text file even without core dump
-            self.save_crash_dump_text(crash_info, debug_output, None)
+            # Still save the structured crash info even without a core dump
+            self.save_crash_dump_json(crash_info, run_dir, debug_output, firmware_path)
             return None
 
         # Step 3: Download core dump
@@ -784,19 +824,29 @@ class CrashDumpAnalyzer:
         if not core_dump_data:
             return None
 
-        # Step 4: Analyze core dump
+        # Step 4: Analyze core dump (a live sanity check only - not saved anywhere;
+        # the binary itself is already on disk via Step 5)
         self.analyze_core_dump_header(core_dump_data)
 
-        # Step 5: Save core dump to temp file (binary)
-        filename = self.save_core_dump_temp(core_dump_data)
+        # Step 5: Save core dump binary into this run's folder
+        filename = self.save_core_dump_bin(core_dump_data, run_dir)
         if not filename:
             return None
 
-        # Step 6: Save comprehensive crash dump to text file
-        self.save_crash_dump_text(crash_info, debug_output, core_dump_data)
+        # Step 6: Save the structured crash info + parsed backtrace as JSON,
+        # alongside the binary in the same run folder
+        self.save_crash_dump_json(crash_info, run_dir, debug_output, firmware_path)
 
-        # Step 7: Automatically run ESP-IDF analysis with smart ELF detection
-        self.analyze_with_esp_idf(filename, crash_info)
+        # Step 7: Run the register/thread-level dump in-process, and save its
+        # full text into the same run folder - nothing else goes in this file,
+        # the binary and the basic info both already have their own file there
+        if firmware_path:
+            print("🔍 Verifying firmware SHA256 against device...")
+            self.verify_firmware_sha256(crash_info, firmware_path)
+
+            full_dump_output = self.analyze_locally(filename, crash_info, firmware_path)
+            if full_dump_output:
+                self.save_full_core_dump_text(full_dump_output, run_dir)
 
         return filename
 
@@ -807,7 +857,12 @@ def main():
     )
     add_device_args(parser)
     parser.add_argument('--crash-id', default=None,
-                       help='crashId of the archived record to analyze (default: the oldest)')
+                       help='crashId of the archived record to analyze. With multiple '
+                            'archived crashes and no --crash-id/--all, prompts interactively')
+    parser.add_argument('--all', action='store_true',
+                       help='Analyze every archived crash, oldest first, without prompting')
+    parser.add_argument('--delete', metavar='CRASH_ID', default=None,
+                       help='Delete one archived crash by id and exit, without analyzing anything')
     parser.add_argument('--clear', action='store_true',
                        help='Delete every archived crash from the device after analysis')
     parser.add_argument('--elf', default=None,
@@ -820,11 +875,36 @@ def main():
     analyzer = CrashDumpAnalyzer(args.host, username, password, elf_path=args.elf)
 
     try:
-        # Run analysis automatically (no prompts)
-        filename = analyzer.analyze(args.crash_id)
+        if args.delete:
+            analyzer.delete_crash(args.delete)
+            return
+
+        if args.crash_id:
+            crash_ids = [args.crash_id]
+        elif args.all:
+            crash_ids = [c.get('crashId') for c in analyzer.list_crashes()]
+            if not crash_ids:
+                print("ℹ️  No archived crashes on device")
+                return
+        else:
+            crashes = analyzer.list_crashes()
+            if not crashes:
+                print("ℹ️  No archived crashes on device")
+                return
+            if len(crashes) == 1:
+                crash_ids = [crashes[0].get('crashId')]
+            else:
+                crash_ids = analyzer.choose_crashes_interactively(crashes)
+                if not crash_ids:
+                    return
+
+        analyzed_any = False
+        for crash_id in crash_ids:
+            filename = analyzer.analyze(crash_id)
+            analyzed_any = analyzed_any or bool(filename)
 
         # Clear archived crashes if --clear flag was provided
-        if args.clear and filename:
+        if args.clear and analyzed_any:
             print(f"\n🗑️  Clearing archived crashes from device (--clear flag provided)...")
             analyzer.clear_core_dump()
 

@@ -583,8 +583,8 @@ namespace CustomWifi
     _setupMdns();
     // Note: printDeviceStatusDynamic() removed to avoid flash I/O from this task
 
-    Led::clearPattern(Led::PRIO_MEDIUM); // Ensure that if we are connected again, we don't keep the blue pattern
-    Led::setGreen(Led::PRIO_NORMAL); // Hack: to ensure we get back to green light, we set it here even though a proper LED manager would handle priorities better
+    Led::clearPattern(Led::PRIO_MEDIUM); // Release the network layer; healthy status shows through
+    Led::setGreen(Led::PRIO_NORMAL);
     LOG_INFO("WiFi fully connected and operational");
 
     // Static-IP health (boot-fail backstop clear + DHCP auto-recovery) is serviced from the periodic
@@ -604,8 +604,8 @@ namespace CustomWifi
     bool hasCredentials = _hasStoredCredentials();
     WifiProvisioning::init(_provisioning, hasCredentials, millis64());
     _publishedState = _provisioning.state;
-    LOG_INFO("Provisioning init: %s credentials, state %d",
-             hasCredentials ? "found" : "no", (int)_provisioning.state);
+    LOG_INFO("Provisioning init: %s credentials, state %s",
+             hasCredentials ? "found" : "no", WifiProvisioning::stateName(_provisioning.state));
     _taskShouldRun = true;
 
     Led::pulseBlue(Led::PRIO_MEDIUM);
@@ -791,11 +791,11 @@ namespace CustomWifi
         if (notificationValue & WIFI_EVENT_DISCONNECTED)
         {
           statistics.wifiConnectionError++;
-          // Not while the SoftAP is up. _ledTask accepts on priority >= current, so this
-          // pulse and the AP's fast blink are last-write-wins at PRIO_MEDIUM, and a link
-          // that keeps failing fires this event exactly while the AP is broadcasting - the
-          // one time the AP indication has something to say. The AP owns the LED until it
-          // comes down, and _tearDownAp() hands it back.
+          // Not while the SoftAP is up. This pulse and the AP's fast blink both own the
+          // network layer, so they are last-write-wins, and a link that keeps failing fires
+          // this event exactly while the AP is broadcasting - the one time the AP indication
+          // has something to say. The AP owns the layer until it comes down, and
+          // _tearDownAp() hands it back.
           if (!_apRaised) Led::pulseBlue(Led::PRIO_MEDIUM);
           LOG_WARNING("WiFi disconnected - auto-reconnect will handle");
           _lastWifiConnectedMillis = 0; // Reset stabilization timer on disconnect
@@ -1174,7 +1174,7 @@ namespace CustomWifi
     _publishedState = current;
 
     if (current != previous) {
-      LOG_INFO("Provisioning state %d -> %d", (int)previous, (int)current);
+      LOG_INFO("Provisioning state %s -> %s", WifiProvisioning::stateName(previous), WifiProvisioning::stateName(current));
     }
 
     // Act on the decision immediately. onEvent() can decide an AP is needed (the move to
@@ -1397,12 +1397,12 @@ namespace CustomWifi
     _apRaised = false;
 
     // Drop the provisioning blink and hand the LED back to whatever the STA side is doing.
-    // clearPattern() alone is not enough: it also drops the disconnected pulse that
-    // WIFI_EVENT_DISCONNECTED suppresses while the AP is up, which would leave a device that
-    // is still searching for its network showing nothing at all.
+    // Releasing alone is not enough: the AP blink and the disconnected pulse share the
+    // network layer, and WIFI_EVENT_DISCONNECTED suppresses the pulse while the AP is up,
+    // so a device still searching for its network would be left showing nothing at all.
+    // When connected there is nothing to restore - the healthy status layer shows through.
     Led::clearPattern(Led::PRIO_MEDIUM);
-    if (isFullyConnected()) Led::setGreen(Led::PRIO_NORMAL);
-    else Led::pulseBlue(Led::PRIO_MEDIUM);
+    if (!isFullyConnected()) Led::pulseBlue(Led::PRIO_MEDIUM);
 
     LOG_INFO("SoftAP torn down");
   }

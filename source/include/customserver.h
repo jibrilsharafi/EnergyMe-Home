@@ -82,6 +82,7 @@
 #define HTTP_MAX_CONTENT_LENGTH_CUSTOM_MQTT 512
 #define HTTP_MAX_CONTENT_LENGTH_INFLUXDB 1024
 #define HTTP_MAX_CONTENT_LENGTH_LED_BRIGHTNESS 64
+#define HTTP_MAX_CONTENT_LENGTH_LED_COLOR 128
 #define HTTP_MAX_CONTENT_LENGTH_ADE7953_CONFIG 1024
 #define HTTP_MAX_CONTENT_LENGTH_ADE7953_SAMPLE_TIME 64
 #define HTTP_MAX_CONTENT_LENGTH_ADE7953_CHANNEL_DATA 512
@@ -248,6 +249,17 @@ private:
     std::function<uint64_t()> _clock = nullptr;
 };
 
+// The DENY response, shared with the upload path's own early check in customserver.cpp.
+// That second call site is not a copy of the *rule* (both go through the same
+// WebAuthGate::evaluate()) - it exists because ESPAsyncWebServer runs upload/body
+// handlers during body parsing, before the middleware chain gets a turn, so uploads
+// cannot rely on this middleware ever running. Centralizing just the response text
+// here means there is still only one string to edit.
+inline void sendDefaultPasswordDeniedResponse(AsyncWebServerRequest *request) {
+    request->send(HTTP_CODE_FORBIDDEN, "application/json",
+                  "{\"success\":false,\"error\":\"The default web password is still in use. Change it at / or via POST /api/v1/auth/change-password before using the API.\",\"reason\":\"default_password\"}");
+}
+
 // Refuses to serve a device that is still holding the shipped default web password.
 //
 // The rule itself is not here - it lives in lib/web_auth_gate and is unit-tested on the
@@ -295,8 +307,7 @@ public:
             case WebAuthGate::Action::DENY:
                 // Machine-readable, so the browser client can bounce a stale tab to the gate
                 // and a script can tell this apart from an ordinary authorization failure.
-                request->send(HTTP_CODE_FORBIDDEN, "application/json",
-                              "{\"success\":false,\"error\":\"The default web password is still in use. Change it at / before using the API.\",\"reason\":\"default_password\"}");
+                sendDefaultPasswordDeniedResponse(request);
                 return;
         }
     }

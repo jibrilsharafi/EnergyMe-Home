@@ -1395,8 +1395,7 @@ namespace CustomServer
         if (WebAuthGate::evaluate(_usingDefaultPassword, _isApOrigin(request), request->url().c_str()) != WebAuthGate::Action::ALLOW)
         {
             LOG_WARNING("Refused an upload while the default password is still in use");
-            request->send(HTTP_CODE_FORBIDDEN, "application/json",
-                          "{\"success\":false,\"error\":\"The default web password is still in use. Change it at / before using the API.\",\"reason\":\"default_password\"}");
+            sendDefaultPasswordDeniedResponse(request);
             return true;
         }
 
@@ -3600,12 +3599,183 @@ namespace CustomServer
             snprintf(message, sizeof(message), "Cleared %lu archived crash record(s)", removed);
             _sendSuccessResponse(request, message);
         });
+
+        // The item endpoint: /crash/info is the collection (list, no id), this is
+        // one entry addressed by id - GET to read it, DELETE to remove it. Same
+        // ?id= param as /crash/dump.
+        server.on("/api/v1/crash/entry", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            if (!request->hasParam("id")) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing 'id' query parameter");
+                return;
+            }
+
+            char baseName[CRASH_ARCHIVE_NAME_BUFFER_SIZE];
+            if (!CrashMonitor::findArchivedCrashById(request->getParam("id")->value().c_str(), baseName, sizeof(baseName))) {
+                _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "No archived crash with that id");
+                return;
+            }
+
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            if (!CrashMonitor::getArchivedCrashMetadata(baseName, doc)) {
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to read archived crash metadata");
+                return;
+            }
+
+            _sendJsonResponse(request, doc);
+        });
+
+        server.on("/api/v1/crash/entry", HTTP_DELETE, [](AsyncWebServerRequest *request)
+                  {
+            if (!_validateRequest(request, "DELETE")) return;
+
+            if (!request->hasParam("id")) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing 'id' query parameter");
+                return;
+            }
+
+            char baseName[CRASH_ARCHIVE_NAME_BUFFER_SIZE];
+            if (!CrashMonitor::findArchivedCrashById(request->getParam("id")->value().c_str(), baseName, sizeof(baseName))) {
+                _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "No archived crash with that id");
+                return;
+            }
+
+            if (!CrashMonitor::removeArchivedCrash(baseName)) {
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to remove the archived crash");
+                return;
+            }
+
+            LOG_INFO("Removed archived crash %s via API", baseName);
+            _sendSuccessResponse(request, "Archived crash removed");
+        });
     }
 
     // === LED ENDPOINTS ===
+
+    // Reads one 0-255 channel out of the body. Rejects anything that is not an
+    // integer in range, including a float that happens to land on a whole number -
+    // an automation sending 255.0 has a bug worth surfacing.
+    static bool _readColorChannel(AsyncWebServerRequest *request, const JsonDocument &doc,
+                                  const char *key, uint8_t &out)
+    {
+        char errorMsg[STATUS_BUFFER_SIZE];
+
+        if (!doc[key].is<int32_t>())
+        {
+            snprintf(errorMsg, sizeof(errorMsg), "Missing or invalid %s parameter", key);
+            _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, errorMsg);
+            return false;
+        }
+
+        const int32_t value = doc[key].as<int32_t>();
+        if (value < 0 || value > UINT8_MAX)
+        {
+            snprintf(errorMsg, sizeof(errorMsg), "Parameter %s out of range (0-%d)", key, UINT8_MAX);
+            _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, errorMsg);
+            return false;
+        }
+
+        out = (uint8_t)value;
+        return true;
+    }
+
     static void _serveLedEndpoints()
     {
-        // TODO: can we add a fun RGB LED control here? Of limited time of course, but it would allow for ha integrations
+        // Current LED state: what is actually being shown, not what the user asked
+        // for. An automation needs to see that a system indication has taken over.
+        //
+        // exact(), not the plain string: a matcher built from a string is
+        // BackwardCompatible, which matches the path *and everything under it*, and
+        // _attachHandler() takes the first match in registration order - so
+        // "/api/v1/led" would otherwise swallow GET /api/v1/led/brightness.
+        server.on(AsyncURIMatcher::exact("/api/v1/led"), HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            const Led::Snapshot state = Led::getState();
+            if (!state.valid) {
+                // Could not read the layer table. Reporting that as "off" would put a
+                // wrong answer on the wire, which is worse than no answer.
+                _sendErrorResponse(request, HTTP_CODE_SERVICE_UNAVAILABLE, "LED state temporarily unavailable");
+                return;
+            }
+
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+
+            doc["pattern"] = LedState::patternName(state.active.pattern);
+            doc["layer"] = state.active.any ? LedState::layerName(state.active.layer) : nullptr;
+
+            JsonObject color = doc["color"].to<JsonObject>();
+            color["red"] = state.active.color.red;
+            color["green"] = state.active.color.green;
+            color["blue"] = state.active.color.blue;
+
+            if (state.active.indefinite) { doc["remaining_ms"] = nullptr; }
+            else { doc["remaining_ms"] = state.active.remainingMs; }
+
+            doc["is_lit"] = state.isLit;
+            doc["brightness"] = state.brightness;
+
+            _sendJsonResponse(request, doc);
+        });
+
+        // Set the user layer. It sits just above the ambient status layer, so it
+        // replaces the healthy indication but is still overridden by anything
+        // eventful, and it is deliberately not persisted: a device must not boot
+        // into a colour that hides its own status.
+        static AsyncCallbackJsonWebHandler *setLedColorHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/led/color",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_LED_COLOR)) return;
+
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
+                doc.set(json);
+
+                uint8_t red, green, blue;
+                if (!_readColorChannel(request, doc, "red", red)) return;
+                if (!_readColorChannel(request, doc, "green", green)) return;
+                if (!_readColorChannel(request, doc, "blue", blue)) return;
+
+                LedPattern pattern = LedPattern::SOLID;
+                if (!doc["pattern"].isNull())
+                {
+                    if (!doc["pattern"].is<const char *>() ||
+                        !LedState::patternFromName(doc["pattern"].as<const char *>(), pattern))
+                    {
+                        _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Unknown pattern");
+                        return;
+                    }
+                }
+
+                uint64_t durationMs = 0; // Indefinite
+                if (!doc["duration_ms"].isNull())
+                {
+                    if (!doc["duration_ms"].is<int64_t>() || doc["duration_ms"].as<int64_t>() < 0)
+                    {
+                        _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid duration_ms parameter");
+                        return;
+                    }
+                    durationMs = doc["duration_ms"].as<uint64_t>();
+                }
+
+                Led::setPattern(LedState::Layer::USER, pattern, Led::Color(red, green, blue), durationMs);
+                _sendSuccessResponse(request, "LED color updated successfully");
+            });
+        server.addHandler(setLedColorHandler);
+
+        // Release the user layer, revealing whatever layer is occupied beneath it.
+        server.on("/api/v1/led/color", HTTP_DELETE, [](AsyncWebServerRequest *request)
+                  {
+            // Not optional: _sendSuccessResponse() releases the API mutex, so a
+            // handler that skips the acquire here gives back a lock it never took.
+            if (!_validateRequest(request, "DELETE")) return;
+
+            Led::clearLayer(LedState::Layer::USER);
+            _sendSuccessResponse(request, "LED color cleared successfully");
+        });
+
         // Get LED brightness
         server.on("/api/v1/led/brightness", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
@@ -3646,6 +3816,7 @@ namespace CustomServer
                 _sendSuccessResponse(request, "LED brightness updated successfully");
             });
         server.addHandler(setLedBrightnessHandler);
+
     }
 
     // === BACKUP ENDPOINTS ===
