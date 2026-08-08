@@ -80,10 +80,10 @@ uint32_t _discoHash(uint32_t seed, uint32_t stepIndex) {
 
 // The no-repeat walk below is O(steps), and the renderer is stateless so it restarts
 // from step 0 on every tick. This caps how far it can ever fold: the sequence repeats
-// after this many steps (~31 s), which is twice the API's disco duration cap, so a
+// after this many steps (~123 s), which is twice the API's disco duration cap, so a
 // caller never sees the wrap - the bound exists only so a disco left running
 // indefinitely cannot make the render path grow without limit.
-constexpr uint32_t DISCO_SEQUENCE_STEPS = 256;
+constexpr uint32_t DISCO_SEQUENCE_STEPS = 1024;
 
 }  // namespace
 

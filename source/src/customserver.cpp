@@ -3766,7 +3766,7 @@ namespace CustomServer
                     durationMs = doc["duration_ms"].as<uint64_t>();
                 }
 
-                // Disco always ends on its own. Over-long durations are clamped rather
+                // Disco always ends on its own. Over-long values are clamped rather
                 // than rejected: no other pattern has an upper bound, so a 400 here
                 // would surprise a caller who read the rest of the contract.
                 if (isDisco)

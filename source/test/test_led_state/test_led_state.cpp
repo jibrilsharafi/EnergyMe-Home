@@ -545,9 +545,13 @@ void test_button_press_release_reveals_underlying_status(void) {
 
 namespace {
 
-// The API caps disco at 15 s; the tests walk the whole of it so nothing is asserted
-// only over the first cycle.
+// The API's default disco duration. The tests walk the whole of it so nothing is
+// asserted only over the first cycle.
 constexpr uint64_t DISCO_RUN_MS = 15000;
+
+// The API's ceiling. The no-repeat rule has to hold over the longest run a caller can
+// ask for, which is four times the default.
+constexpr uint64_t DISCO_MAX_RUN_MS = 60000;
 
 Rgb discoAt(uint32_t seed, uint64_t elapsedMs) { return discoColor(seed, elapsedMs); }
 
@@ -592,7 +596,7 @@ void test_disco_holds_a_colour_for_one_step(void) {
 
 void test_disco_never_repeats_consecutive_colours(void) {
     for (uint32_t seed = 0; seed < 8; seed++) {
-        for (uint64_t t = DISCO_STEP_MS; t < DISCO_RUN_MS; t += DISCO_STEP_MS) {
+        for (uint64_t t = DISCO_STEP_MS; t < DISCO_MAX_RUN_MS; t += DISCO_STEP_MS) {
             TEST_ASSERT_TRUE(discoAt(seed, t) != discoAt(seed, t - DISCO_STEP_MS));
         }
     }
