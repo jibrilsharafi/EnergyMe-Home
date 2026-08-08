@@ -2419,7 +2419,9 @@ namespace Mqtt
         LOG_INFO("Published crash %s in a single message (%zu bytes of gzipped dump, %zu bytes encoded)",
                  baseName, readSize, encodedLength);
 
+        #ifndef ENV_DEV // Only remove the crash in production builds; in dev we might want to inspect locally also
         CrashMonitor::removeArchivedCrash(baseName);
+        #endif
         return CrashPublishOutcome::Published;
     }
 
