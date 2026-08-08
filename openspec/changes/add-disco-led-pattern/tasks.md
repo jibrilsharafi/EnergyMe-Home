@@ -6,12 +6,12 @@
 
 - [x] 1.1 `led_state.h`: `Pattern::DISCO` appended after `DOUBLE_BLINK` (before `Count`); `constexpr uint64_t DISCO_STEP_MS = 120;` next to the other period constants
 - [x] 1.2 `led_state.h`: `Slot` gains `uint32_t seed = 0`; `set()` gains a trailing `uint32_t seed = 0` parameter so existing callers are untouched
-- [x] 1.3 `led_state.h/.cpp`: `Rgb discoColor(uint32_t seed, uint64_t elapsedMs)` - xorshift32 over `(seed ^ stepIndex * 0x9E3779B9)`, folding `1 + (h % (PALETTE_SIZE - 1))` across steps so no two consecutive steps repeat (design D1/D2)
-- [x] 1.4 `led_state.cpp`: disco palette table built from the existing `Colors` constants, `static_assert`ed non-empty and > 1 entry (the fold divides by `size - 1`)
+- [x] 1.3 `led_state.h/.cpp`: `Rgb discoColor(uint32_t seed, uint64_t elapsedMs)` - xorshift32 over `(seed ^ stepIndex * 0x9E3779B9)`. Superseded during the review pass below: was a walk that folded `1 + (h % (PALETTE_SIZE - 1))` across steps, replaced by an O(1) even/odd palette split (design D1)
+- [x] 1.4 `led_state.cpp`: disco palette table built from the existing `Colors` constants, `static_assert`ed non-empty, > 1 entry, and even (the even/odd split needs two equal halves)
 - [x] 1.5 `led_state.cpp`: `resolve()` substitutes `discoColor(slot.seed, elapsedMs)` into `Active.color` for `DISCO` only
 - [x] 1.6 `led_state.cpp`: `isOn(DISCO, _) == true`; `render()` treats `DISCO` like `SOLID` (full factor, single brightness multiply) - no change needed in `render()`, only `PULSE` was ever special-cased
 - [x] 1.7 `led_state.cpp`: `PATTERN_NAMES[]` gains `"disco"`; the existing `static_assert` against `PATTERN_COUNT` still holds
-- [x] 1.8 **Found during implementation, not in the plan**: the fold restarts from step 0 on every render, so an *indefinite* disco would grow the render path linearly with uptime (tens of thousands of iterations 40x/second after a few hours). `led_state` allows indefinite disco even though the API caps it, so the fold length is bounded by `DISCO_SEQUENCE_STEPS = 256` (~31 s, twice the API cap - never observed by a caller). design.md D1 updated
+- [x] 1.8 **Found during implementation, not in the plan**: the fold restarts from step 0 on every render, so an *indefinite* disco would grow the render path linearly with uptime (tens of thousands of iterations 40x/second after a few hours). `led_state` allows indefinite disco even though the API caps it, so the fold length was bounded by `DISCO_SEQUENCE_STEPS = 256` (~31 s, twice the API cap). Superseded - see 9.1
 
 ## 2. Host unit tests
 
@@ -36,7 +36,7 @@
 
 - [x] 4.1 `customserver.cpp` `_serveLedEndpoints()`: parse `pattern` **before** the colour channels
 - [x] 4.2 Require `red`/`green`/`blue` only when `pattern != DISCO`; ignore them when supplied with disco
-- [x] 4.3 Parse optional `seed`: `is<int64_t>()`, range `0..UINT32_MAX`, else 400 "Invalid seed parameter". Absent -> `(uint32_t)millis()`
+- [x] 4.3 Parse optional `seed`: range `0..UINT32_MAX`, else 400 "Invalid seed parameter". Absent -> `esp_random()` (changed from `millis()` - see 9.3)
 - [x] 4.4 Disco duration policy: absent or 0 -> 15000 ms; > 60000 -> clamped to 60000 (design D5). Other patterns unchanged
 - [x] 4.5 `DISCO_DEFAULT_DURATION_MS` / `DISCO_MAX_DURATION_MS` in `include/customserver.h`, next to the other API limits
 - [x] 4.6 Every new exit path goes through `_sendErrorResponse`/`_sendSuccessResponse` (they release `_apiMutex`) - the two new 400s and the single success path
@@ -57,12 +57,12 @@
 
 ## 7. Review and verification
 
-- [ ] 7.1 Code-review agent(s) over the branch diff, per the project PR gate
-- [ ] 7.2 `simplify` skill pass; triage every finding
+- [x] 7.1 Code-review agent(s) over the branch diff, per the project PR gate - see 9
+- [x] 7.2 `simplify` skill pass; triage every finding - see 9
 - [x] 7.3 Re-run `pio test -e native` after every fix round
 - [ ] 7.4 `pio run -e esp32s3-dev` clean (only when asked - Jibril builds)
 - [x] 7.5 First bench test by Jibril: LED behaviour confirmed working
-- [ ] 7.6 Check the LED task stack high-water via `/api/v1/system/info` for no regression from the per-render fold
+- [ ] 7.6 Check the LED task stack high-water via `/api/v1/system/info` - no longer a real concern once `discoColor()` is O(1) (9.1), but still worth a look on the next bench test
 - [ ] 7.7 Open PR to `development` with `Closes #224`, labelled `enhancement` + `ux`
 
 ## 8. Follow-up after the first bench test (2026-08-08)
@@ -74,3 +74,15 @@
 - [x] 8.5 Full-page disco effect: fixed `pointer-events: none` overlay that darkens and cycles tints. Steps at 400 ms (2.5 Hz), **not** the LED's 120 ms - a full-screen flash in the 3-60 Hz band is a photosensitivity risk a pinpoint LED is not. `prefers-reduced-motion` holds a static tint
 - [x] 8.6 `pio test -e native -f test_led_state` green after the changes
 - [ ] 8.7 Second bench test by Jibril
+
+## 9. Review + simplify pass before the PR (2026-08-09)
+
+Two adversarial/general code-review agents and four simplify agents (reuse, simplification, efficiency, altitude) ran against the full branch diff. Three of them independently converged on the same root cause; the adversarial review found a real correctness bug from it. Findings and disposition:
+
+- [x] 9.1 **Fixed - real bug, found independently by 3 agents.** `discoColor()` walked the palette from step 0 on every render call: O(steps) on the LED task's 25 ms hot path, and the adversarial review showed the walk could cascade past its own no-repeat guarantee right at the `DISCO_SEQUENCE_STEPS` wrap (simulated: ~13% of seeds repeat a colour there). Replaced with an even/odd palette-half split (design D1): step *n* draws from a disjoint half selected by `n`'s parity, so `index(n) != index(n-1)` by construction, not by walking and comparing. O(1) per call, no `DISCO_SEQUENCE_STEPS`, no wrap, no cross-layer coupling to the API's duration cap. `pio test -e native -f test_led_state` 51/51 after the change (two tests failed transiently against the first attempted fix - see below - before landing on this one)
+- [x] 9.2 A first fix attempt (nudge away from the immediate predecessor's raw hash) was tried and rejected: it doesn't account for the predecessor itself having been nudged, so it can still collide two steps out. Caught by `test_disco_holds_a_colour_for_one_step` and `test_disco_never_repeats_consecutive_colours` failing - not shipped
+- [x] 9.3 **Fixed.** Default `seed` changed from `(uint32_t)millis()` to `esp_random()` - two requests inside the same millisecond would otherwise get an identical, guessable seed. `esp_random()` is already used the same way in `shadow.cpp`
+- [x] 9.4 **Fixed.** `duration_ms` and `seed` validation were two near-identical hand-rolled blocks; factored into `_readOptionalRangedInt()` next to the existing `_readColorChannel()`, called once per field
+- [ ] 9.5 **Skipped, by design.** `clearLedColor()` in `api-client.js` is unused by the button - deliberate per design D7 ("the natural pair for a future colour control"), not dead code to remove
+- [ ] 9.6 **Skipped, not a bug.** The `pattern`-before-colour validation reorder changes which error a malformed non-disco request gets back (e.g. bad pattern + missing red now reports "Unknown pattern" first) - intentional per design D6, not a regression
+- [x] 9.7 `pio test -e native -f test_led_state` re-run green (51/51) after 9.1/9.3/9.4

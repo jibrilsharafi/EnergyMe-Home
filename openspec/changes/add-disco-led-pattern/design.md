@@ -28,17 +28,17 @@ Constraints that shape the approach:
 
 ## Decisions
 
-### D1: Palette walk, not free RGB
+### D1: Palette walk, not free RGB (superseded by the even/odd split below)
 
 Each 120 ms step picks one entry from the existing `LedState::Colors` vivid palette (`RED, GREEN, BLUE, YELLOW, PURPLE, CYAN, ORANGE, WHITE` - 8 entries) rather than generating three random channel bytes.
 
 *Why:* random RGB spends most of its range on muddy low-saturation values that read as "the LED is broken", and it can land on near-black. A fixed saturated palette always looks deliberate, costs 8 `constexpr Rgb` already defined in the header, and makes the unit tests assert on exact colours instead of statistical properties.
 
-Consecutive repeats are removed by advancing the index by `1 + (hash % (PALETTE_SIZE - 1))` from the previous step's index rather than taking `hash % PALETTE_SIZE` directly. That guarantees a change on every step - a 1-in-8 chance of a stall is very visible at 8 steps per second.
+The first implementation removed consecutive repeats by advancing the index by `1 + (hash % (PALETTE_SIZE - 1))` from the previous step's index, walked from step 0 on every render call (bounded by a `DISCO_SEQUENCE_STEPS` wraparound so an indefinite disco couldn't make the walk grow with uptime). Review before merge found two problems with that: the walk was O(steps) on the LED render task's hot path, and - more importantly - a hash collision two steps back could cascade, so the "no consecutive repeat" guarantee it was written to provide could actually be violated right at the `DISCO_SEQUENCE_STEPS` wrap. Replaced by the even/odd split below, which fixes both: it's O(1) per call and the no-repeat property holds by construction, not by walking and hoping.
 
-*Consequence:* the index for step *n* depends on step *n-1*, so it is a fold rather than a direct lookup, restarted from zero on every render to keep the renderer stateless (D2 of the previous design).
+**Even/odd palette split:** the 8-entry palette is split into two disjoint halves, indices `{0,2,4,6}` and `{1,3,5,7}`. Step *n* draws from the half selected by `n`'s parity: `index = 2 * (hash(seed, n) % 4) + (n % 2)`. Consecutive steps always draw from different halves, so `index(n) != index(n-1)` unconditionally - no comparison to the previous step's value is needed, so there is nothing to walk and nothing that can cascade. `DISCO_PALETTE_SIZE` must be even for the split to exist; a `static_assert` enforces it.
 
-The fold length is `(elapsedMs / 120) % DISCO_SEQUENCE_STEPS`, with `DISCO_SEQUENCE_STEPS = 1024`. The modulo is not cosmetic: `led_state` will run an indefinite disco if asked (D5 keeps the duration cap in the API layer), and an unbounded fold would grow the render path linearly with uptime - hours in, the LED task would be folding tens of thousands of steps forty times a second. Capping it bounds the cost at 1024 iterations and makes the sequence repeat after ~123 s, which is twice the API's 60 s cap, so no caller ever observes the wrap. This constant has to be raised alongside the API cap: at the wrap the walk restarts from step 0, which is the one place the no-repeat guarantee can break.
+*Consequence:* `discoColor()` is a single hash call regardless of `elapsedMs`, so there is no `DISCO_SEQUENCE_STEPS` bound to keep in step with the API's duration cap (D5) - the cross-layer coupling that constant introduced is gone entirely.
 
 ### D2: xorshift32 keyed on `(seed, stepIndex)`
 
@@ -47,9 +47,9 @@ uint32_t h = seed ^ (stepIndex * 0x9E3779B9u);  // decorrelate adjacent steps
 h ^= h << 13; h ^= h >> 17; h ^= h << 5;        // xorshift32
 ```
 
-Seeded per step rather than iterated across steps, so a colour can be computed for any step without walking from step 0 - the fold in D1 is only for the no-repeat rule, and each step's hash is independent.
+Seeded per step rather than iterated across steps, so a colour can be computed for any step in O(1) - each step's hash stands on its own, and D1's even/odd split (not this hash) is what guarantees adjacent steps differ.
 
-`seed == 0` is a valid seed here because the multiply-and-xor gives a non-zero state for every step index except one, and the fold never observes a zero-state lockup. The tests cover `seed = 0`.
+`seed == 0` is a valid seed here because the multiply-and-xor gives a non-zero state for every step index except one. The tests cover `seed = 0`.
 
 ### D3: The seed lives in the slot; `resolve()` resolves the colour
 
@@ -91,7 +91,7 @@ Out-of-range `duration_ms` is **clamped, not rejected**, matching the issue's "c
 
 The handler currently reads `red`/`green`/`blue` before `pattern`. It is reordered to parse `pattern` first, then require the channels only when `pattern != DISCO`.
 
-`seed` is optional and validated as `is<int64_t>()` with range `0 .. 4294967295`, rejecting negatives and floats the same way `_readColorChannel` does. When absent, the firmware passes `(uint32_t)millis()`, so two presses differ.
+`seed` and `duration_ms` are both optional integers with a range check, so their validation shares a `_readOptionalRangedInt()` helper next to `_readColorChannel` rather than repeating the same `is<int64_t>()` / range / error-response shape twice. `seed`'s range is `0 .. 4294967295`. When absent, the firmware passes `esp_random()` (not `millis()` - two requests inside the same millisecond would otherwise get the same seed), so two presses differ.
 
 `HTTP_MAX_CONTENT_LENGTH_LED_COLOR` is 128 bytes. A maximal disco body (`{"pattern":"disco","seed":4294967295,"duration_ms":15000}`, 56 bytes) fits with room to spare, so the limit is unchanged.
 
@@ -113,7 +113,7 @@ The browser sends no `seed`, so the device picks one. Reproducibility is an API/
 
 ## Risks / Trade-offs
 
-- **The no-repeat fold is O(steps) per render** → bounded at 1024 iterations of three shifts by `DISCO_SEQUENCE_STEPS` (D1), and 500 for the longest run a caller can request, called at most 40 times/second on a priority-1 task. Measured against the existing render path this is noise; if it ever mattered, the fold could be replaced by a two-hash rejection rule. Confirm the LED task stack high-water via `/api/v1/system/info` after the change, as the previous LED change did.
+- **Confirm the LED task stack high-water** via `/api/v1/system/info` after the change, as the previous LED change did - `discoColor()` is O(1) (D1), so this is a formality rather than a real concern.
 - **A disco left running masks the ambient status colour for up to 60 s** → same exposure as any other timed `user` indication, and strictly bounded by the cap. Every layer above `user` still overrides it, so a fault is never hidden.
 - **Adding an enum value shifts `Pattern::Count`** → nothing persists a pattern value and the wire names are strings, so the only coupling is `PATTERN_NAMES[]`, which is already `static_assert`ed against `PATTERN_COUNT`. Append `DISCO` after `DOUBLE_BLINK`, before `Count`.
 - **`elapsedMs` clamps a future `setAtMs` to 0** (existing `_elapsed()` behaviour) → disco restarts its sequence rather than misbehaving. No new failure mode.
