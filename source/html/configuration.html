@@ -157,6 +157,28 @@
                 animation: none;
             }
         }
+
+        /* Loading indicator for config fields that show a stale default until
+           their real value arrives from the device (checkbox, slider, selects). */
+        .field-spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid var(--green);
+            border-right-color: transparent;
+            border-radius: 50%;
+            animation: field-spin 0.7s linear infinite;
+            vertical-align: middle;
+            margin-left: 8px;
+        }
+
+        @keyframes field-spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .config-input.field-loading {
+            opacity: 0.5;
+        }
     </style>
 </head>
 
@@ -173,8 +195,9 @@
         <h2>Cloud Services</h2>
         <p><i>Cloud services are used to send data to the cloud. This is useful for monitoring the device
                 remotely and get the latest firmware updates.</i></p>
-        <input type="checkbox" id="cloudServices" class="config-input">
+        <input type="checkbox" id="cloudServices" class="config-input field-loading" disabled>
         <label for="cloudServices">Enable cloud services</label>
+        <span id="cloudServicesSpinner" class="field-spinner"></span>
         <br><br>
         <button class="buttonForm" onclick="setCloudServices()" id="setCloudServicesButton">☁️ Set cloud services</button>
         <div id="portalBanner" class="portal-banner">
@@ -189,9 +212,10 @@
         <h2>LED</h2>
         <p><i>LED brightness is used to adjust the brightness of the status LED on the device. Keeping a small
                 amount of brightness is recommended.</i></p>
-        <input type="range" id="ledBrightness" class="config-input slider" min="0" max="100"
-            oninput="updateBrightnessValue()">
-        <span id="ledBrightnessValue">50%</span>
+        <input type="range" id="ledBrightness" class="config-input slider field-loading" min="0" max="100"
+            oninput="updateBrightnessValue()" disabled>
+        <span id="ledBrightnessValue">&nbsp;</span>
+        <span id="ledBrightnessSpinner" class="field-spinner"></span>
         <br><br>
         <button class="buttonForm" onclick="setLedBrightness()" id="setLedBrightnessButton">💡 Set brightness</button>
         <p><i>Disco mode runs a short burst of colours on the status LED, then hands it back to the device.
@@ -206,14 +230,16 @@
             <h3>Print</h3>
             <p><i>Print logging is used to display events and errors when the serial monitor is available. The serial
                     monitor is available when the device is connected to a computer via USB.</i></p>
-            <select id="printLogLevel" class="config-input"></select>
+            <select id="printLogLevel" class="config-input field-loading" disabled></select>
+            <span id="printLogLevelSpinner" class="field-spinner"></span>
         </div>
         <br>
         <div>
             <h3>Save</h3>
             <p><i>Save logging is used to record events and errors to the internal memory of the device. The internal
                     memory is limited, so it is recommended to only use this for troubleshooting.</i></p>
-            <select id="saveLogLevel" class="config-input"></select>
+            <select id="saveLogLevel" class="config-input field-loading" disabled></select>
+            <span id="saveLogLevelSpinner" class="field-spinner"></span>
         </div>
         <br>
         <button class="buttonForm" onclick="setLogLevel()" id="setLogLevel">📝 Set logging level</button>
@@ -395,6 +421,16 @@
     <script src="/js/issues.js"></script>
     <script>
         var logLevels = ["Verbose", "Debug", "Info", "Warning", "Error", "Fatal"];
+
+        // Shows a spinner + dims the control while its real value is still loading,
+        // instead of letting the user see a stale hardcoded default (e.g. brightness 50%).
+        function setFieldLoading(inputId, spinnerId, isLoading) {
+            var input = document.getElementById(inputId);
+            var spinner = document.getElementById(spinnerId);
+            input.disabled = isLoading;
+            input.classList.toggle('field-loading', isLoading);
+            spinner.style.display = isLoading ? 'inline-block' : 'none';
+        }
 
         function populateDropdown() {
             var printLogLevel = document.getElementById("printLogLevel");
@@ -666,7 +702,7 @@
         }
         
         function getLogLevel() {
-            energyApi.getLogLevels()
+            return energyApi.getLogLevels()
                 .then(data => {
                     // API returns string values like "VERBOSE", "DEBUG", etc.
                     // Convert to dropdown format (first letter uppercase, rest lowercase)
@@ -674,7 +710,7 @@
                         if (!level) return "Debug";
                         return level.charAt(0).toUpperCase() + level.slice(1).toLowerCase();
                     }
-                    
+
                     var printLogLevel = formatLevelForDropdown(data.print);
                     var saveLogLevel = formatLevelForDropdown(data.save);
 
@@ -684,8 +720,12 @@
                 })
                 .catch(error => {
                     console.log("Error getting log levels. Response: " + error.message);
+                })
+                .finally(() => {
+                    setFieldLoading("printLogLevel", "printLogLevelSpinner", false);
+                    setFieldLoading("saveLogLevel", "saveLogLevelSpinner", false);
                 });
-        } 
+        }
         
         async function clearLogs() {
             const confirm = window.confirm("Are you sure you want to clear the log?");
@@ -759,7 +799,7 @@
         }
 
         function getCloudServices() {
-            energyApi.getMqttCloudServices()
+            return energyApi.getMqttCloudServices()
                 .then(data => {
                     document.getElementById("cloudServices").checked = data.enabled;
                     _cloudEnabled = data.enabled;
@@ -767,6 +807,9 @@
                 })
                 .catch(error => {
                     console.log("Error getting cloud services status. Response: " + error.message);
+                })
+                .finally(() => {
+                    setFieldLoading("cloudServices", "cloudServicesSpinner", false);
                 });
         }
 
@@ -805,7 +848,7 @@
         }
 
         function getLedBrightness() {
-            energyApi.getLedBrightness()
+            return energyApi.getLedBrightness()
                 .then(data => {
                     // Assuming API returns brightness as 0-100 range
                     document.getElementById("ledBrightness").value = data.brightness;
@@ -813,6 +856,9 @@
                 })
                 .catch(error => {
                     console.log("Error getting LED brightness. Response: " + error.message);
+                })
+                .finally(() => {
+                    setFieldLoading("ledBrightness", "ledBrightnessSpinner", false);
                 });
         }
 
