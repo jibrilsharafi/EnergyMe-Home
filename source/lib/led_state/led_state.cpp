@@ -13,7 +13,8 @@ constexpr uint32_t FULL_PERMILLE = 1000;
 
 // Indexed by the enum value, so each name is stated once and both directions read
 // from it. Matches the table idiom in issue_logic and shadow_logic.
-const char *const PATTERN_NAMES[] = {"off", "solid", "blink_slow", "blink_fast", "pulse", "double_blink"};
+const char *const PATTERN_NAMES[] = {"off",   "solid",        "blink_slow", "blink_fast",
+                                     "pulse", "double_blink", "disco"};
 static_assert(sizeof(PATTERN_NAMES) / sizeof(PATTERN_NAMES[0]) == PATTERN_COUNT,
               "Every pattern needs a wire name");
 
@@ -59,15 +60,42 @@ bool _blinkIsOn(uint64_t elapsedMs, uint64_t halfPeriodMs) {
     return ((elapsedMs / halfPeriodMs) % 2) == 0;
 }
 
+// Saturated colours only. Free RGB spends most of its range on muddy values that read
+// as a broken LED, and can land on near-black; a fixed palette always looks deliberate
+// and lets the tests assert exact colours instead of statistics.
+constexpr Rgb DISCO_PALETTE[] = {Colors::RED,    Colors::GREEN,  Colors::BLUE,   Colors::YELLOW,
+                                 Colors::PURPLE, Colors::CYAN,   Colors::ORANGE, Colors::WHITE};
+constexpr uint8_t DISCO_PALETTE_SIZE = sizeof(DISCO_PALETTE) / sizeof(DISCO_PALETTE[0]);
+static_assert(DISCO_PALETTE_SIZE > 1, "The no-repeat walk divides by DISCO_PALETTE_SIZE - 1");
+
+// xorshift32 over (seed, stepIndex). The golden-ratio multiply decorrelates adjacent
+// steps, so each step's hash stands alone rather than being iterated from the last.
+uint32_t _discoHash(uint32_t seed, uint32_t stepIndex) {
+    uint32_t h = seed ^ (stepIndex * 0x9E3779B9u);
+    h ^= h << 13;
+    h ^= h >> 17;
+    h ^= h << 5;
+    return h;
+}
+
+// The no-repeat walk below is O(steps), and the renderer is stateless so it restarts
+// from step 0 on every tick. This caps how far it can ever fold: the sequence repeats
+// after this many steps (~31 s), which is twice the API's disco duration cap, so a
+// caller never sees the wrap - the bound exists only so a disco left running
+// indefinitely cannot make the render path grow without limit.
+constexpr uint32_t DISCO_SEQUENCE_STEPS = 256;
+
 }  // namespace
 
-void set(Table &table, Layer layer, Pattern pattern, Rgb color, uint64_t nowMs, uint64_t durationMs) {
+void set(Table &table, Layer layer, Pattern pattern, Rgb color, uint64_t nowMs, uint64_t durationMs,
+         uint32_t seed) {
     Slot &slot = table.slots[(uint8_t)layer];
     slot.occupied = true;
     slot.pattern = pattern;
     slot.color = color;
     slot.setAtMs = nowMs;
     slot.durationMs = durationMs;
+    slot.seed = seed;
 }
 
 void release(Table &table, Layer layer) {
@@ -101,8 +129,13 @@ Active resolve(const Table &table, uint64_t nowMs) {
         active.any = true;
         active.layer = (Layer)i;
         active.pattern = slot.pattern;
-        active.color = slot.color;
         active.elapsedMs = _elapsed(slot, nowMs);
+
+        // Resolved here, not in render(), so that everything reading the active
+        // indication - the pins, isLit, GET /api/v1/led - sees the colour that is
+        // actually showing rather than the placeholder the caller passed in.
+        active.color = slot.pattern == Pattern::DISCO ? discoColor(slot.seed, active.elapsedMs)
+                                                      : slot.color;
         active.indefinite = (slot.durationMs == 0);
         active.remainingMs = active.indefinite || slot.durationMs <= active.elapsedMs
                                  ? 0
@@ -129,6 +162,7 @@ Frame step(Table &table, uint64_t nowMs, uint8_t configuredBrightnessPercent) {
 bool isOn(Pattern pattern, uint64_t elapsedMs) {
     switch (pattern) {
     case Pattern::SOLID:
+    case Pattern::DISCO:
         return true;
 
     case Pattern::BLINK_SLOW:
@@ -159,6 +193,20 @@ Rgb render(Pattern pattern, Rgb color, uint64_t elapsedMs, uint8_t brightnessPer
 
     const uint32_t factor = pattern == Pattern::PULSE ? _pulseFactorPermille(elapsedMs) : FULL_PERMILLE;
     return _scaleColor(color, brightnessPercent, factor);
+}
+
+Rgb discoColor(uint32_t seed, uint64_t elapsedMs) {
+    const uint32_t steps = (uint32_t)((elapsedMs / DISCO_STEP_MS) % DISCO_SEQUENCE_STEPS);
+
+    // Walk the palette instead of indexing it: each step advances by 1..SIZE-1, so two
+    // consecutive steps can never land on the same colour. A one-in-eight stall is very
+    // visible at eight changes a second.
+    uint8_t index = (uint8_t)(_discoHash(seed, 0) % DISCO_PALETTE_SIZE);
+    for (uint32_t i = 1; i <= steps; i++) {
+        const uint32_t advance = 1 + (_discoHash(seed, i) % (DISCO_PALETTE_SIZE - 1));
+        index = (uint8_t)((index + advance) % DISCO_PALETTE_SIZE);
+    }
+    return DISCO_PALETTE[index];
 }
 
 uint8_t effectiveBrightness(Layer layer, uint8_t configuredPercent) {
