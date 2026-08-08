@@ -147,7 +147,7 @@
     </div>
 
     <div class="section-box">
-        <h2>LED Brightness</h2>
+        <h2>LED</h2>
         <p><i>LED brightness is used to adjust the brightness of the status LED on the device. Keeping a small
                 amount of brightness is recommended.</i></p>
         <input type="range" id="ledBrightness" class="config-input slider" min="0" max="100"
@@ -155,6 +155,9 @@
         <span id="ledBrightnessValue">50%</span>
         <br><br>
         <button class="buttonForm" onclick="setLedBrightness()" id="setLedBrightnessButton">💡 Set brightness</button>
+        <p><i>Disco mode runs a short burst of colours on the status LED, then hands it back to the device.
+                Handy to confirm you are looking at the right meter.</i></p>
+        <button class="buttonForm" onclick="startDisco()" id="discoButton">🪩 Disco mode</button>
     </div>
 
     <div class="section-box">
@@ -792,6 +795,38 @@
                 button.disabled = false;
                 button.classList.remove('loading');
             }
+        }
+
+        // Matches the device's disco cap. The countdown is cosmetic - the device
+        // releases the layer on its own schedule regardless of what the button shows.
+        const DISCO_DURATION_MS = 15000;
+
+        async function startDisco() {
+            const button = document.getElementById("discoButton");
+            const label = button.innerHTML;
+            button.disabled = true;
+
+            try {
+                await energyApi.setLedDisco(DISCO_DURATION_MS);
+            } catch (error) {
+                showStatus('Error: ' + error.message, 'error');
+                button.disabled = false;
+                return;
+            }
+
+            let remaining = Math.round(DISCO_DURATION_MS / 1000);
+            button.innerHTML = `🪩 Dancing... ${remaining}s`;
+
+            const countdown = setInterval(() => {
+                remaining--;
+                if (remaining > 0) {
+                    button.innerHTML = `🪩 Dancing... ${remaining}s`;
+                    return;
+                }
+                clearInterval(countdown);
+                button.innerHTML = label;
+                button.disabled = false;
+            }, 1000);
         }
 
         function updateBrightnessValue() {

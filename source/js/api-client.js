@@ -204,6 +204,24 @@ class EnergyMeAPI {
         return response.json().catch(() => ({}));
     }
 
+    /**
+     * DELETE request helper
+     * @param {string} endpoint - API endpoint
+     * @returns {Promise<any>} - Parsed JSON response
+     */
+    async delete(endpoint) {
+        const response = await this.apiCall(endpoint, {
+            method: 'DELETE'
+        }, this.otherTimeoutMs);
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`DELETE ${endpoint} failed: ${response.status} - ${errorText}`);
+        }
+
+        return response.json().catch(() => ({}));
+    }
+
     // API helper methods for common operations
     
     /**
@@ -326,6 +344,24 @@ class EnergyMeAPI {
      */
     async setLedBrightness(brightness) {
         return this.put('led/brightness', { brightness });
+    }
+
+    /**
+     * Start disco mode on the user LED layer. The device caps and defaults the
+     * duration, and releases the layer itself when it elapses.
+     * @param {number} [durationMs] - Omit to take the device default
+     */
+    async setLedDisco(durationMs) {
+        const body = { pattern: 'disco' };
+        if (durationMs) { body.duration_ms = durationMs; }
+        return this.put('led/color', body);
+    }
+
+    /**
+     * Release the user LED layer, revealing whatever system layer is occupied
+     */
+    async clearLedColor() {
+        return this.delete('led/color');
     }
 
     /**
