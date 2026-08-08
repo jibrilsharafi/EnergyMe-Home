@@ -10,6 +10,7 @@
 #include <Preferences.h>
 #include "nvs.h"
 #include "nvs_flash.h"
+#include <esp_random.h>
 
 namespace CustomServer
 {
@@ -3680,6 +3681,26 @@ namespace CustomServer
         return true;
     }
 
+    // Reads an optional 0..maxValue integer, leaving `out` at its caller-supplied
+    // default when the field is absent. Same shape as _readColorChannel above, for
+    // the two fields on this endpoint that are optional rather than required.
+    static bool _readOptionalRangedInt(AsyncWebServerRequest *request, const JsonDocument &doc,
+                                       const char *key, int64_t maxValue, int64_t &out)
+    {
+        if (doc[key].isNull()) return true;
+
+        char errorMsg[STATUS_BUFFER_SIZE];
+        if (!doc[key].is<int64_t>() || doc[key].as<int64_t>() < 0 || doc[key].as<int64_t>() > maxValue)
+        {
+            snprintf(errorMsg, sizeof(errorMsg), "Invalid %s parameter", key);
+            _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, errorMsg);
+            return false;
+        }
+
+        out = doc[key].as<int64_t>();
+        return true;
+    }
+
     static void _serveLedEndpoints()
     {
         // Current LED state: what is actually being shown, not what the user asked
@@ -3755,16 +3776,9 @@ namespace CustomServer
                     if (!_readColorChannel(request, doc, "blue", blue)) return;
                 }
 
-                uint64_t durationMs = 0; // Indefinite
-                if (!doc["duration_ms"].isNull())
-                {
-                    if (!doc["duration_ms"].is<int64_t>() || doc["duration_ms"].as<int64_t>() < 0)
-                    {
-                        _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid duration_ms parameter");
-                        return;
-                    }
-                    durationMs = doc["duration_ms"].as<uint64_t>();
-                }
+                int64_t durationValue = 0; // Indefinite
+                if (!_readOptionalRangedInt(request, doc, "duration_ms", INT64_MAX, durationValue)) return;
+                uint64_t durationMs = (uint64_t)durationValue;
 
                 // Disco always ends on its own. Over-long values are clamped rather
                 // than rejected: no other pattern has an upper bound, so a 400 here
@@ -3776,18 +3790,11 @@ namespace CustomServer
                 }
 
                 // Absent seed means "surprise me", so two presses of the same button do
-                // not replay the same sequence.
-                uint32_t seed = (uint32_t)millis();
-                if (!doc["seed"].isNull())
-                {
-                    if (!doc["seed"].is<int64_t>() || doc["seed"].as<int64_t>() < 0 ||
-                        doc["seed"].as<int64_t>() > (int64_t)UINT32_MAX)
-                    {
-                        _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid seed parameter");
-                        return;
-                    }
-                    seed = doc["seed"].as<uint32_t>();
-                }
+                // not replay the same sequence. esp_random() rather than millis(): two
+                // requests in the same millisecond would otherwise get the same seed.
+                int64_t seedValue = (int64_t)esp_random();
+                if (!_readOptionalRangedInt(request, doc, "seed", (int64_t)UINT32_MAX, seedValue)) return;
+                uint32_t seed = (uint32_t)seedValue;
 
                 Led::setPattern(LedState::Layer::USER, pattern, Led::Color(red, green, blue), durationMs, seed);
                 _sendSuccessResponse(request, "LED color updated successfully");
