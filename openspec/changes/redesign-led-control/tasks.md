@@ -38,10 +38,10 @@
 
 - [x] 4.1 Boot colour walk - confirmed by Jibril
 - [x] 4.2 WiFi disconnect/reconnect visual - confirmed by Jibril
-- [ ] 4.3 Button press-and-hold ladder - blocked mid-review by an unrelated crash (see 4.6); **re-test still left for physical review** once the fix below is flashed
+- [x] 4.3 Button press-and-hold ladder - confirmed by Jibril on the flashed fix (see 4.6)
 - [x] 4.4 Reported symptom gone: verified via API (`GET /api/v1/led` reflects `status` changes correctly while `user`/other layers are set) and by the no-drop unit test; physical confirmation still pending
 - [x] 4.5 Task timing/stack checked via `/api/v1/system/info` on the bench device (192.168.1.82, chipId 273201871555672): 26.4 ms/loop (target ~25 ms; old firmware measured 98.8 ms/loop this session), stack 43.0% used vs 42.6% before - no regression
-- [x] 4.6 **Pre-existing bug found during 4.3, unrelated to the LED redesign**: pressing the button panicked `button_task` (`Exception/panic`, `_svfprintf_r`). Root-caused with `crash_dump_analyzer.py` (rewritten this session to decode in-process, see below) down to `buttonhandler.cpp:160` - `BUTTON_TASK_STACK_SIZE` at 3 KB had no headroom for `LOG_DEBUG`'s message buffer plus newlib's `vfprintf` internals on the very first log call of every press. Fixed by growing the stack to 4 KB, matching every other logging task in the firmware. Confirmed via a full GDB-backed thread dump (registers + locals), not just the address-only backtrace. Native suite unaffected (a `#define` change); physical re-verification of 4.3 still needed once flashed
+- [x] 4.6 **Pre-existing bug found during 4.3, unrelated to the LED redesign**: pressing the button panicked `button_task` (`Exception/panic`, `_svfprintf_r`). Root-caused with `crash_dump_analyzer.py` (rewritten this session to decode in-process, see below) down to `buttonhandler.cpp:160` - `BUTTON_TASK_STACK_SIZE` at 3 KB had no headroom for `LOG_DEBUG`'s message buffer plus newlib's `vfprintf` internals on the very first log call of every press. Fixed by growing the stack to 4 KB, matching every other logging task in the firmware. Confirmed via a full GDB-backed thread dump (registers + locals), not just the address-only backtrace. Native suite unaffected (a `#define` change). Fix flashed and confirmed by Jibril - 4.3 now passes
 
 ## 5. REST API (#105)
 
@@ -58,7 +58,7 @@
 - [x] 7.1 `customwifi.cpp:587` hack comment removed
 - [x] 7.2 Redundant re-assert dropped
 - [x] 7.3 The three `setBrightness(max(...,1))` sites removed; also found and fixed a fourth failure mode (indefinite critical left occupied in `performNvsRestore()`) and a button-feedback ordering bug, both found during review
-- [ ] 7.4 Re-verification of button/factory-reset visibility at brightness 0 - **left for physical review** (unit-tested: `test_button_feedback_is_visible_at_zero_brightness`, `test_critical_stays_visible_at_zero_brightness`)
+- [x] 7.4 Re-verification of button/factory-reset visibility at brightness 0 - confirmed by Jibril, both stay visible (unit-tested: `test_button_feedback_is_visible_at_zero_brightness`, `test_critical_stays_visible_at_zero_brightness`). Unrelated finding during this pass: factory reset itself does not erase the WiFi driver's persisted association (`esp_wifi_get_config`/`nvs.net80211`), so the device rejoins its old network after a "reset" - pre-existing bug, outside LED scope, tracked separately
 
 ## 8. Review, simplify, merge
 
