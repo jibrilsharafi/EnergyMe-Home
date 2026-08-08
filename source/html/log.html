@@ -57,8 +57,11 @@
         }
 
         #refresh-logs {
-            padding: 6px 10px;
+            padding: 5px 10px;
             margin-bottom: 10px;
+            border: none;
+            border-radius: 3px;
+            font-size: 14px;
             cursor: pointer;
         }
 
@@ -246,7 +249,7 @@
             <div class="controls">
                 <input type="text" id="search-input-text" class="search-input" placeholder="Search log..."
                     onkeyup="filterLogs()">
-                <button id="refresh-logs" class="filter-button">
+                <button id="refresh-logs" type="button">
                     <i class="fas fa-sync-alt"></i> Refresh
                 </button>
                 <div class="filter-buttons">
