@@ -3733,11 +3733,8 @@ namespace CustomServer
                 JsonDocument doc(&allocator);
                 doc.set(json);
 
-                uint8_t red, green, blue;
-                if (!_readColorChannel(request, doc, "red", red)) return;
-                if (!_readColorChannel(request, doc, "green", green)) return;
-                if (!_readColorChannel(request, doc, "blue", blue)) return;
-
+                // Parsed before the channels: disco picks its own colours, so it is the
+                // pattern that decides whether they are required at all.
                 LedPattern pattern = LedPattern::SOLID;
                 if (!doc["pattern"].isNull())
                 {
@@ -3747,6 +3744,15 @@ namespace CustomServer
                         _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Unknown pattern");
                         return;
                     }
+                }
+                const bool isDisco = pattern == LedPattern::DISCO;
+
+                uint8_t red = 0, green = 0, blue = 0;
+                if (!isDisco)
+                {
+                    if (!_readColorChannel(request, doc, "red", red)) return;
+                    if (!_readColorChannel(request, doc, "green", green)) return;
+                    if (!_readColorChannel(request, doc, "blue", blue)) return;
                 }
 
                 uint64_t durationMs = 0; // Indefinite
@@ -3760,7 +3766,30 @@ namespace CustomServer
                     durationMs = doc["duration_ms"].as<uint64_t>();
                 }
 
-                Led::setPattern(LedState::Layer::USER, pattern, Led::Color(red, green, blue), durationMs);
+                // Disco always ends on its own. Over-long durations are clamped rather
+                // than rejected: no other pattern has an upper bound, so a 400 here
+                // would surprise a caller who read the rest of the contract.
+                if (isDisco)
+                {
+                    if (durationMs == 0) { durationMs = DISCO_DEFAULT_DURATION_MS; }
+                    if (durationMs > DISCO_MAX_DURATION_MS) { durationMs = DISCO_MAX_DURATION_MS; }
+                }
+
+                // Absent seed means "surprise me", so two presses of the same button do
+                // not replay the same sequence.
+                uint32_t seed = (uint32_t)millis();
+                if (!doc["seed"].isNull())
+                {
+                    if (!doc["seed"].is<int64_t>() || doc["seed"].as<int64_t>() < 0 ||
+                        doc["seed"].as<int64_t>() > (int64_t)UINT32_MAX)
+                    {
+                        _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid seed parameter");
+                        return;
+                    }
+                    seed = doc["seed"].as<uint32_t>();
+                }
+
+                Led::setPattern(LedState::Layer::USER, pattern, Led::Color(red, green, blue), durationMs, seed);
                 _sendSuccessResponse(request, "LED color updated successfully");
             });
         server.addHandler(setLedColorHandler);
