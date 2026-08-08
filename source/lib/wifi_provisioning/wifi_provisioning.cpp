@@ -7,6 +7,11 @@ namespace WifiProvisioning {
 
 namespace {
 
+// Indexed by the enum value, matching the table idiom in led_state/issue_logic/shadow_logic.
+const char *const STATE_NAMES[] = {"unprovisioned", "sta_connecting", "ap_assist", "grace", "sta_only"};
+static_assert(sizeof(STATE_NAMES) / sizeof(STATE_NAMES[0]) == STATE_COUNT,
+              "Every state needs a wire name");
+
 // 172.31.42.0/24 first: consumer routers essentially never use it, unlike the ESP
 // default 192.168.4.0/24 which does collide with some ISP CPE. The rest are
 // fallbacks for the rare LAN that occupies the first choice.
@@ -41,6 +46,11 @@ uint64_t elapsedSince(uint64_t startMs, uint64_t nowMs) {
 }
 
 }  // namespace
+
+const char *stateName(State state) {
+    if ((uint8_t)state >= STATE_COUNT) { return STATE_NAMES[(uint8_t)State::UNPROVISIONED]; }
+    return STATE_NAMES[(uint8_t)state];
+}
 
 void init(Context &context, bool hasCredentials, uint64_t nowMs) {
     context.hasCredentials = hasCredentials;

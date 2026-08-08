@@ -604,8 +604,8 @@ namespace CustomWifi
     bool hasCredentials = _hasStoredCredentials();
     WifiProvisioning::init(_provisioning, hasCredentials, millis64());
     _publishedState = _provisioning.state;
-    LOG_INFO("Provisioning init: %s credentials, state %d",
-             hasCredentials ? "found" : "no", (int)_provisioning.state);
+    LOG_INFO("Provisioning init: %s credentials, state %s",
+             hasCredentials ? "found" : "no", WifiProvisioning::stateName(_provisioning.state));
     _taskShouldRun = true;
 
     Led::pulseBlue(Led::PRIO_MEDIUM);
@@ -1174,7 +1174,7 @@ namespace CustomWifi
     _publishedState = current;
 
     if (current != previous) {
-      LOG_INFO("Provisioning state %d -> %d", (int)previous, (int)current);
+      LOG_INFO("Provisioning state %s -> %s", WifiProvisioning::stateName(previous), WifiProvisioning::stateName(current));
     }
 
     // Act on the decision immediately. onEvent() can decide an AP is needed (the move to

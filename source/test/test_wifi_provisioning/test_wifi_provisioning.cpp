@@ -4,6 +4,7 @@
 // Host unit tests for the WiFi provisioning decision logic. Run with:
 //   pio test -e native          (from WSL - Windows native toolchain is unreliable)
 
+#include <cstring>
 #include <unity.h>
 #include "wifi_provisioning.h"
 
@@ -581,6 +582,20 @@ void test_netmask_and_cidr_round_trip(void) {
     }
 }
 
+void test_every_state_has_a_distinct_wire_name(void) {
+    for (uint8_t i = 0; i < STATE_COUNT; i++) {
+        const char *name = stateName((State)i);
+        TEST_ASSERT_NOT_NULL(name);
+        for (uint8_t j = 0; j < i; j++) {
+            TEST_ASSERT_NOT_EQUAL(0, strcmp(name, stateName((State)j)));
+        }
+    }
+}
+
+void test_out_of_range_state_falls_back_to_unprovisioned(void) {
+    TEST_ASSERT_EQUAL_STRING(stateName(State::UNPROVISIONED), stateName((State)STATE_COUNT));
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
 
@@ -647,6 +662,9 @@ int main(int, char **) {
     RUN_TEST(test_prefix_lengths_convert_to_netmasks);
     RUN_TEST(test_cidr_zero_does_not_shift_by_the_operand_width);
     RUN_TEST(test_netmask_and_cidr_round_trip);
+
+    RUN_TEST(test_every_state_has_a_distinct_wire_name);
+    RUN_TEST(test_out_of_range_state_falls_back_to_unprovisioned);
 
     return UNITY_END();
 }

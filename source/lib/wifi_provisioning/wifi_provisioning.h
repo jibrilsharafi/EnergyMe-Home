@@ -41,8 +41,15 @@ enum class State : uint8_t {
     STA_CONNECTING,  // Association in progress or being retried.
     AP_ASSIST,       // In-service device that lost its network. AP up, full auth.
     GRACE,           // STA is up and the AP is deliberately held open a while longer.
-    STA_ONLY         // Steady state. AP down.
+    STA_ONLY,        // Steady state. AP down.
+    Count
 };
+
+constexpr uint8_t STATE_COUNT = (uint8_t)State::Count;
+
+// Wire/log name for a state, e.g. for %s in a log line instead of the numeric
+// value. Falls back to "unprovisioned" for an out-of-range value.
+const char *stateName(State state);
 
 enum class Event : uint8_t {
     STA_CONNECTED,
