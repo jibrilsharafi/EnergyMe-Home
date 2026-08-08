@@ -1395,8 +1395,7 @@ namespace CustomServer
         if (WebAuthGate::evaluate(_usingDefaultPassword, _isApOrigin(request), request->url().c_str()) != WebAuthGate::Action::ALLOW)
         {
             LOG_WARNING("Refused an upload while the default password is still in use");
-            request->send(HTTP_CODE_FORBIDDEN, "application/json",
-                          "{\"success\":false,\"error\":\"The default web password is still in use. Change it at / before using the API.\",\"reason\":\"default_password\"}");
+            sendDefaultPasswordDeniedResponse(request);
             return true;
         }
 
