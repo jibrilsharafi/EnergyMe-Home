@@ -110,8 +110,13 @@
 #define DEFAULT_LCYCMODE_REGISTER 0b00111111 // 0x3F line cycle accumulation on all channels; read-with-reset OFF (see guardrail above)
 #define DEFAULT_PGA_REGISTER 0 // PGA gain 1
 #define DEFAULT_CONFIG_REGISTER 0b1010000100001100 // Bits 2, 3 (line accumulation for PF), 8 (CRC), 13:12=10b (ZX_EDGE: positive-going zero crossings only; does not affect linecyc), 15 (HPF enabled, COMM_LOCK disabled)
-#define DEFAULT_IRQENA_REGISTER 0b001101001000000000000000 // ZXV (bit 15, grid frequency), CYCEND (bit 18), Reset (bit 20, mandatory), CRC change (bit 21)
+#define DEFAULT_IRQENA_REGISTER 0b001111001000000000000000 // ZXV (bit 15, grid frequency), CYCEND (bit 18), SAG (bit 19, grid-loss detection), Reset (bit 20, mandatory), CRC change (bit 21)
 #define MINIMUM_SAMPLE_TIME 200ULL // The settling time of the ADE7953 is 200 ms, so reading faster than this makes little sense
+
+// SAG detection (grid-loss precursor, see openspec/changes/add-blackout-sag-detection)
+#define ADE7953_SAGCYC_VALUE 1 // Minimum SAGCYC (one half line cycle, ~10ms @ 50Hz): fastest available trigger, matches the thin capacitor hold-up budget
+#define ADE7953_SAGLVL_PERCENT 80 // SAGLVL as a percentage of a live VPEAK reading (datasheet's own worked example)
+#define ADE7953_SAGLVL_SETTLE_MS 60ULL // Wait after resetting VPEAK before reading it for SAGLVL derivation (~3 line cycles @ 50Hz)
 
 // Channel validation ranges
 #define VALIDATE_CT_CURRENT_RATING_MIN 0.0f

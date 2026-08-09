@@ -144,6 +144,7 @@ namespace Ade7953
 
     // Interrupt handling
     static void _setupInterrupts();
+    static void _configureSagDetection();
     static void _handleInterrupt(uint64_t linecycUnix);
     static void _attachInterruptHandler();
     static void _detachInterruptHandler();
@@ -1891,13 +1892,37 @@ namespace Ade7953
     // ==================
 
     void _setupInterrupts() {
+        _configureSagDetection();
+
         writeRegister(IRQENA_32, BIT_32, DEFAULT_IRQENA_REGISTER);
 
         // Clear any existing interrupt status
         readRegister(RSTIRQSTATA_32, BIT_32, false);
         readRegister(RSTIRQSTATB_32, BIT_32, false);
 
-        LOG_DEBUG("ADE7953 interrupts enabled: ZXV, CYCEND, RESET, CRC");
+        LOG_DEBUG("ADE7953 interrupts enabled: ZXV, CYCEND, SAG, RESET, CRC");
+    }
+
+    // Derives SAGLVL from a live VPEAK reading (ADE7953 datasheet's own procedure):
+    // reset the peak register, wait a few line cycles for a fresh reading, then take
+    // ADE7953_SAGLVL_PERCENT of it. Self-scaling per device/region - no dependency on
+    // the separate voltage-gain calibration flow (see openspec/changes/add-blackout-sag-detection).
+    void _configureSagDetection() {
+        readRegister(RSTVPEAK_32, BIT_32, false); // reset peak, discard the stale value
+        delay(ADE7953_SAGLVL_SETTLE_MS);
+        int32_t vpeak = readRegister(VPEAK_32, BIT_32, false);
+        int32_t saglvl = (vpeak * ADE7953_SAGLVL_PERCENT) / 100;
+
+        writeRegister(SAGCYC_8, BIT_8, ADE7953_SAGCYC_VALUE);
+        writeRegister(SAGLVL_32, BIT_32, saglvl);
+
+        if (vpeak <= 0) {
+            // SAGLVL == 0 silently disables the sag feature entirely (datasheet), so a
+            // stuck-at-zero VPEAK here means SAG will never fire - worth a loud warning.
+            LOG_WARNING("SAG detection armed with VPEAK=%ld - SAGLVL=%ld may leave sag detection disabled", vpeak, saglvl);
+        } else {
+            LOG_INFO("SAG detection armed: VPEAK=%ld, SAGLVL=%ld (%u%%), SAGCYC=%u", vpeak, saglvl, ADE7953_SAGLVL_PERCENT, ADE7953_SAGCYC_VALUE);
+        }
     }
 
     void _handleInterrupt(uint64_t linecycUnix)
