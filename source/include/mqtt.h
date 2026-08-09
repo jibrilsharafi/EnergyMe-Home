@@ -33,6 +33,15 @@
 #define MQTT_GRID_QUEUE_SIZE (64 * 1024) // Size in bytes to allocate to PSRAM (~34 min of 500 ms points); overflow drops oldest
 #define QUEUE_WAIT_TIMEOUT 100 // Amount of milliseconds to wait if the queue is full or busy
 
+// Alarm: a small, high-priority payload checked ahead of the log queue and the
+// generic shadow publish in _handleConnectedState() - see Mqtt::pushAlarm() and
+// openspec/changes/add-blackout-sag-detection. Alarms are rare by nature (issue
+// raise edges only), so a small queue is plenty; sized generously anyway since
+// PSRAM is cheap and a burst (e.g. several ZXTO-driven raises close together)
+// should never silently drop an alarm.
+#define MQTT_ALARM_QUEUE_SIZE (4 * 1024) // Size in bytes to allocate to PSRAM
+#define MQTT_ALARM_MESSAGE_BUFFER_SIZE 192 // Keep >= issueregistry.h's ISSUE_MESSAGE_BUFFER_SIZE - messages are copied verbatim
+
 // AWS IoT Jobs OTA constants
 #define OTA_TASK_NAME "ota_task"
 #define OTA_TASK_STACK_SIZE (12 * 1024) // Has to be big to allow for the presigned S3 URL to be handled
@@ -99,6 +108,15 @@
 #define MQTT_OVERRIDE_KEEPALIVE 30 // 30 is the minimum value supported by AWS IoT Core (in seconds)
 
 #define MQTT_LOOP_INTERVAL 100 // Interval between two MQTT loop checks
+
+// Notification bit for the MQTT task's xTaskNotifyWait, alongside the shared
+// TASK_NOTIFY_SHUTDOWN_BIT (constants.h, already set by stopTaskGracefully()).
+// Wakes the task immediately instead of waiting up to MQTT_LOOP_INTERVAL for the
+// next _handleConnectedState() loop - see requestImmediatePublish() below and
+// pushAlarm(), its one caller (openspec/changes/add-blackout-sag-detection): the
+// alarm needs this to reach the cloud before a real power loss, not just before
+// the task's own poll tick.
+#define MQTT_NOTIFY_WAKE_BIT (1 << 1)
 #define MQTT_METER_ESTIMATED_PER_ENTRY 35 // Estimated size in bytes of each meter entry (unix ms, channel, active power, pf)
 #define MQTT_METER_QUEUE_ALMOST_FULL_RATIO 0.9 // Force a publish attempt once the meter queue is this fraction full, regardless of the byte/interval trigger, so pushMeter() doesn't silently drop the oldest entry
 #define MQTT_GRID_FREQUENCY_PAYLOAD_DECIMALS 4 // 0.1 mHz: preserves the ~0.8 mHz EMA resolution
@@ -146,6 +164,7 @@
 #define MQTT_TOPIC_STATISTICS "statistics"
 #define MQTT_TOPIC_CRASH "crash"
 #define MQTT_TOPIC_LOG "log"
+#define MQTT_TOPIC_ALARM "alarm" // Routed via its own rule (AWS_IOT_CORE_RULE_ALARM, awsconfig.h) - requires that rule to exist server-side, see openspec/changes/add-blackout-sag-detection
 // Subscribe topics. The legacy `command` topic is retired (-> IoT Commands +
 // system shadow); only AWS IoT Jobs (OTA) and shadow/command reserved topics remain.
 #define MQTT_TOPIC_SUBSCRIBE_JOBS "jobs"
@@ -185,6 +204,30 @@ struct PublishMqtt
     requestOta(true) {} // Always require on connection
 };
 
+#define MQTT_ALARM_NO_CHANNEL 255 // channel value for alarms with no single-channel scope
+
+// Wire format for Mqtt::pushAlarm() - a small, high-priority payload published
+// ahead of the log queue and the generic shadow report (see _handleConnectedState()
+// in mqtt.cpp). Mirrors LogEntry/PayloadMeter: a fixed-size POD struct so it can
+// go through a FreeRTOS queue with no dynamic allocation, safe to fill from any
+// task. Deliberately independent of IssueRegistry/IssueLogic - an alarm is a
+// direct, fire-and-forget MQTT message, not an issue-registry-tracked state (see
+// openspec/changes/add-blackout-sag-detection).
+struct AlarmEntry
+{
+    char code[NAME_BUFFER_SIZE];       // short machine-readable code, e.g. "grid_voltage_loss"
+    uint8_t channel;                   // MQTT_ALARM_NO_CHANNEL if not scoped to a single channel
+    char severity[16];                 // e.g. "error", "warning"
+    char message[MQTT_ALARM_MESSAGE_BUFFER_SIZE];
+    uint64_t unixTimeMs;
+
+    AlarmEntry() : channel(MQTT_ALARM_NO_CHANNEL), unixTimeMs(0) {
+        code[0] = '\0';
+        severity[0] = '\0';
+        message[0] = '\0';
+    }
+};
+
 namespace Mqtt
 {
     void begin();
@@ -198,11 +241,22 @@ namespace Mqtt
     // Public methods for requesting MQTT publications
     void requestChannelPublish();
     void requestCrashPublish();
+
+    // Wake the MQTT task now instead of waiting up to MQTT_LOOP_INTERVAL for its
+    // next loop - used by pushAlarm() below. Only rings the bell (xTaskNotify, no
+    // data) - safe from any task, no-op before begin() or after stop().
+    void requestImmediatePublish();
     
     // Public methods for pushing data to queues
     void pushLog(const LogEntry& entry);
     void pushMeter(const PayloadMeter& payload);
     void pushGrid(const PayloadGridPoint& point);
+
+    // Queues (and wakes, via requestImmediatePublish()) a high-priority alarm,
+    // published ahead of the log queue and the generic shadow report - see
+    // AlarmEntry above and openspec/changes/add-blackout-sag-detection. Safe to
+    // call from any task (e.g. the issue registry on a raise edge).
+    void pushAlarm(const AlarmEntry& entry);
 
     TaskInfo getMqttTaskInfo();
     TaskInfo getMqttOtaTaskInfo();

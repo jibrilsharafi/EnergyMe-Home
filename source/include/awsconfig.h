@@ -29,11 +29,13 @@ constexpr const char* AWS_IOT_CORE_RULE_METER  = "energyme_home_dev_rule_meter";
 constexpr const char* AWS_IOT_CORE_RULE_LOG    = "energyme_home_dev_rule_log";
 constexpr const char* AWS_IOT_CORE_RULE_GRID   = "energyme_home_dev_rule_grid";
 constexpr const char* AWS_IOT_CORE_RULE_ENERGY = "energyme_home_dev_rule_energy";
+constexpr const char* AWS_IOT_CORE_RULE_ALARM  = "energyme_home_dev_rule_alarm";
 #else
 constexpr const char* AWS_IOT_CORE_RULE_METER  = "energyme_home_prod_rule_meter";
 constexpr const char* AWS_IOT_CORE_RULE_LOG    = "energyme_home_prod_rule_log";
 constexpr const char* AWS_IOT_CORE_RULE_GRID   = "energyme_home_prod_rule_grid";
 constexpr const char* AWS_IOT_CORE_RULE_ENERGY = "energyme_home_prod_rule_energy";
+constexpr const char* AWS_IOT_CORE_RULE_ALARM  = "energyme_home_prod_rule_alarm";
 #endif
 
 // AWS reserved topic prefixes
