@@ -61,6 +61,17 @@ static bool parseDerLength(const uint8_t *data, size_t dataLen, size_t &pos, siz
     return false;
 }
 
+// Consumes one "02 <len> <content>" INTEGER TLV at data[pos], advancing pos past
+// it. Rejects a zero-length or out-of-bounds content, same as a malformed tag.
+static bool parseDerInteger(const uint8_t *data, size_t dataLen, size_t &pos) {
+    if (pos >= dataLen || data[pos++] != 0x02) return false;
+    size_t contentLen;
+    if (!parseDerLength(data, dataLen, pos, contentLen)) return false;
+    if (contentLen == 0 || pos + contentLen > dataLen) return false;
+    pos += contentLen;
+    return true;
+}
+
 static bool validateDerEcdsaSignatureShape(const uint8_t *der, size_t len) {
     if (!der || len < 8 || len > MAX_DER_SIGNATURE_LEN) return false;
 
@@ -71,17 +82,8 @@ static bool validateDerEcdsaSignatureShape(const uint8_t *der, size_t len) {
     if (!parseDerLength(der, len, pos, seqLen)) return false;
     if (pos + seqLen != len) return false;  // outer SEQUENCE must span exactly the decoded buffer
 
-    if (pos >= len || der[pos++] != 0x02) return false;  // INTEGER r
-    size_t rLen;
-    if (!parseDerLength(der, len, pos, rLen)) return false;
-    if (rLen == 0 || pos + rLen > len) return false;
-    pos += rLen;
-
-    if (pos >= len || der[pos++] != 0x02) return false;  // INTEGER s
-    size_t sLen;
-    if (!parseDerLength(der, len, pos, sLen)) return false;
-    if (sLen == 0 || pos + sLen > len) return false;
-    pos += sLen;
+    if (!parseDerInteger(der, len, pos)) return false;  // INTEGER r
+    if (!parseDerInteger(der, len, pos)) return false;  // INTEGER s
 
     return pos == len;  // no trailing garbage after the two integers
 }
