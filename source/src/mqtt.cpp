@@ -476,10 +476,8 @@ namespace Mqtt
     void pushAlarm(const AlarmEntry& entry)
     {
         if (!_initializeAlarmQueue()) return;
-        // No drop-oldest here (unlike meter/grid): an alarm dropped for a fresher
-        // one would silently lose an event a human needs to see. The queue is
-        // sized generously enough that overflow should never happen in practice;
-        // if it does, block briefly (same as pushLog) rather than discard.
+        // No drop-oldest (unlike meter/grid) - losing an alarm silently isn't
+        // acceptable; block briefly instead (same as pushLog).
         if (xQueueSend(_alarmQueue, &entry, pdMS_TO_TICKS(QUEUE_WAIT_TIMEOUT)) != pdTRUE) {
             LOG_WARNING("MQTT alarm queue full, dropping alarm: %s", entry.message);
         }
@@ -996,12 +994,9 @@ namespace Mqtt
                 _lastLoopToPublishData = false;
                 _taskShouldRun = false;
             } else {
-                // Wait for the next tick, OR wake early on a notification (e.g.
-                // pushAlarm() calling requestImmediatePublish() directly).
-                // Only the shutdown bit takes the flush-and-stop branch below - a
-                // wake-only notification (or a timeout) just falls through to the
-                // next loop iteration, which calls _handleConnectedState() again
-                // immediately instead of waiting out the rest of MQTT_LOOP_INTERVAL.
+                // Wake early on notification (e.g. pushAlarm's requestImmediatePublish)
+                // instead of waiting the full interval. Only the shutdown bit takes
+                // the flush-and-stop branch below.
                 uint32_t notifiedBits = 0;
                 xTaskNotifyWait(0, ULONG_MAX, &notifiedBits, pdMS_TO_TICKS(MQTT_LOOP_INTERVAL));
 
@@ -2020,13 +2015,9 @@ namespace Mqtt
         }
     }
 
-    // Minimal payload, published straight to _mqttTopicAlarm - deliberately NOT
-    // routed through Shadow (no issuesToJson()/full reported-state doc build).
-    // See openspec/changes/add-blackout-sag-detection: this is the fast path
-    // meant to beat a capacitor-backed last-gasp window. The power/pf/voltage
-    // snapshot is fetched here, at publish time, rather than carried in the
-    // queued AlarmEntry - keeps the queue item tiny and the snapshot as fresh
-    // as possible.
+    // Fast path meant to beat the capacitor hold-up window: published directly,
+    // not through Shadow. Power/pf/voltage snapshot fetched here (not carried in
+    // AlarmEntry) to stay fresh and keep the queued struct tiny.
     static void _publishAlarm(const AlarmEntry& entry)
     {
         SpiRamAllocator allocator;
@@ -2381,8 +2372,7 @@ namespace Mqtt
         }
     }
 
-    // Drained ahead of the log queue in _handleConnectedState() - see
-    // openspec/changes/add-blackout-sag-detection.
+    // Drained ahead of the log queue in _handleConnectedState().
     static void _processAlarmQueue()
     {
         if (!_initializeAlarmQueue()) return;
@@ -2665,8 +2655,7 @@ namespace Mqtt
             return;
         }
 
-        // Process queues and publishing. Alarm goes first, ahead of routine logs
-        // and everything else - see openspec/changes/add-blackout-sag-detection.
+        // Process queues and publishing. Alarm goes first, ahead of routine logs.
         _processAlarmQueue();
         _processLogQueue();
         _checkIfPublishMeterNeeded();

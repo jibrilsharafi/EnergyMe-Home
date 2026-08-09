@@ -1923,9 +1923,8 @@ namespace Ade7953
             _handleZxvInterrupt();
         }
 
-        // ZXTO next: a grid-loss precursor (complete absence of zero crossings for the
-        // configured timeout), serviced ahead of the routine CYCEND/RESET/CRC bookkeeping
-        // below - see openspec/changes/add-blackout-sag-detection.
+        // ZXTO next: grid-loss precursor (no zero crossings within the configured
+        // timeout), serviced ahead of routine CYCEND/RESET/CRC bookkeeping.
         if (statusA & (1 << IRQSTATA_ZXTO_BIT)) {
             statistics.ade7953ZxtoInterrupts++;
             _handleZxtoInterrupt();
@@ -1943,11 +1942,8 @@ namespace Ade7953
             _handleCrcChangeInterrupt();
         }
 
-        // IRQSTATA reports every channel/energy event continuously regardless of IRQENA -
-        // enable only gates the physical IRQ pin, not the status bit itself. Bits we never
-        // enabled (current-channel zero-crossing, overcurrent, no-load, energy overflow, ...)
-        // are therefore expected noise, not our concern: we only care about voltage (ZXV/ZXTO)
-        // and bookkeeping (CYCEND/RESET/CRC), so restrict the check to bits we actually enabled.
+        // IRQSTATA reports every event regardless of IRQENA - enable only gates the
+        // physical IRQ pin, not the status bit. Restrict the check to enabled bits.
         constexpr int32_t handledIrqMask =
             (1 << IRQSTATA_ZXV_BIT) | (1 << IRQSTATA_ZXTO_BIT) |
             (1 << IRQSTATA_CYCEND_BIT) | (1 << IRQSTATA_RESET_BIT) | (1 << IRQSTATA_CRC_BIT);
@@ -2179,27 +2175,10 @@ namespace Ade7953
         LOG_WARNING("TO BE IMPLEMENTED: ADE7953 reset interrupt detected - reinitializing device");
     }
 
-    // Only the FIRST ZXTO in a ADE7953_ZXTO_SUPPRESS_MS window does anything beyond
-    // counting: pushes the MQTT alarm directly and emits one LOG_FATAL. Every
-    // other occurrence in that window is LOG_DEBUG-only - no alarm, no FATAL, no
-    // MQTT log forwarding. ZXTOUT has no hardware debounce beyond its own timeout
-    // window, so a misconfigured ZXTOUT or a sustained no-AC condition can
-    // otherwise re-fire roughly every ZXTOUT period indefinitely, and each
-    // occurrence was competing for the same thin MQTT window the alarm itself
-    // needs to beat the capacitor hold-up - see
-    // openspec/changes/add-blackout-sag-detection. statistics.ade7953ZxtoInterrupts
-    // is NOT gated by this - every occurrence is still counted, only the
-    // log/alarm is throttled.
-    //
-    // Deliberately NOT routed through IssueRegistry: this is a direct,
-    // fire-and-forget MQTT alarm, not an issue-registry-tracked state. Going
-    // through the registry would add a task hop plus evaluation of every other
-    // global code (heap, LittleFS, NTP, connectivity...) under a mutex before
-    // ever reaching this one - pure added latency on the path racing the
-    // capacitor. Mqtt::pushAlarm() is a FreeRTOS-queue producer designed to be
-    // safe from any task (same as pushLog/pushMeter), so it's called directly
-    // here. This handler itself uses the already-cached channel-0 voltage (no SPI
-    // read) to stay cheap on a path that may be racing the capacitor.
+    // Deliberately bypasses IssueRegistry: going through it would add a task hop
+    // and mutex-guarded evaluation of unrelated codes, pure latency on a path
+    // racing the backup capacitor. Uses the already-cached voltage (no SPI read)
+    // for the same reason.
     void _handleZxtoInterrupt() {
         uint64_t nowMs = millis64();
         bool suppressed = (_zxtoLastTriggerMs != 0) && ((nowMs - _zxtoLastTriggerMs) < ADE7953_ZXTO_SUPPRESS_MS);

@@ -113,26 +113,17 @@
 #define DEFAULT_IRQENA_REGISTER 0b00001101001100000000000000 // ZXTO (bit 14, grid-loss detection), ZXV (bit 15, grid frequency), CYCEND (bit 18), Reset (bit 20, mandatory), CRC change (bit 21)
 #define MINIMUM_SAMPLE_TIME 200ULL // The settling time of the ADE7953 is 200 ms, so reading faster than this makes little sense
 
-// Zero-crossing timeout (grid-loss precursor, see openspec/changes/add-blackout-sag-detection).
-// ZXTOUT reloads on the raw zero-crossing detector output (both edges, LPF1 output) regardless
-// of the ZX_EDGE config bits - those only filter which crossings set the ZXV/ZXIA/ZXIB interrupt
-// bits, confirmed in the datasheet's Zero-Crossing Interrupts section ("changing ZX_EDGE affects
-// only the ZX status bits and interrupts"). So the normal reload interval is one half line cycle
-// (~10ms @ 50Hz), not a full cycle. ~15ms clears the worst-case healthy half-cycle gap (~10.6ms
-// at 47Hz, the low end of normal grid tolerance) plus margin for LPF1's own ~2.2ms phase delay,
-// so a single missed crossing still fires without false-triggering on normal frequency wobble.
-// Starting point, not verified against real jitter yet - tune from bench data.
+// ZXTOUT reloads on the raw zero-crossing (both edges), independent of ZX_EDGE, so
+// the normal reload interval is a half line cycle (~10ms @ 50Hz). 15ms clears the
+// worst-case healthy gap (~10.6ms @ 47Hz) plus LPF1 delay margin - starting point,
+// tune from bench data.
 #define ADE7953_ZXTOUT_RESOLUTION_US 71 // 1 / 14kHz (CLKIN/256) per LSB, datasheet rounds to 0.07ms
 #define ADE7953_ZXTOUT_TARGET_MS 15
 #define ADE7953_ZXTOUT_VALUE ((ADE7953_ZXTOUT_TARGET_MS * 1000UL) / ADE7953_ZXTOUT_RESOLUTION_US) // ~211
 
-// Only the first ZXTO in a window triggers the FATAL log + MQTT alarm/log
-// forwarding + issue registry wake; every other one within this window is
-// LOG_DEBUG-only (statistics.ade7953ZxtoInterrupts still counts it - see
-// _handleZxtoInterrupt). A sustained/misconfigured ZXTO can otherwise re-fire
-// roughly every ZXTOUT period, and each occurrence was competing for the same
-// thin MQTT window the alarm itself needs to beat the capacitor hold-up - see
-// openspec/changes/add-blackout-sag-detection.
+// Only the first ZXTO per window triggers the alarm/FATAL log; later ones are
+// LOG_DEBUG-only (still counted) - avoids resaturating the MQTT alarm window on
+// a sustained/misconfigured ZXTO re-firing every ZXTOUT period.
 #define ADE7953_ZXTO_SUPPRESS_MS (60 * 1000)
 
 // Channel validation ranges

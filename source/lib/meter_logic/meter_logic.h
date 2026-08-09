@@ -223,12 +223,9 @@ uint8_t wdrrPick(float* deficits, const bool* active, uint8_t count,
 // ============================================================================
 // Interrupt status demux
 // ============================================================================
-// A single RSTIRQSTATA read can OR multiple interrupt causes into one
-// snapshot (the IRQ pin is level-active-low but the ESP32 interrupt is
-// edge-triggered, so causes routinely co-pend). True if statusA sets any bit
-// outside handledMask, even when a handled bit is ALSO set in the same
-// snapshot - a status word is only "fully handled" when every set bit is one
-// the caller actually services, not merely when at least one is.
+// A single RSTIRQSTATA read can OR multiple causes into one snapshot (IRQ pin is
+// level-active-low, ESP32 interrupt is edge-triggered, so causes co-pend). True
+// if statusA sets any bit outside handledMask, even when a handled bit is also set.
 bool hasUnhandledIrqBits(int32_t statusA, int32_t handledMask);
 
 } // namespace MeterLogic
