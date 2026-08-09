@@ -117,6 +117,12 @@
 #define ADE7953_SAGCYC_VALUE 1 // Minimum SAGCYC (one half line cycle, ~10ms @ 50Hz): fastest available trigger, matches the thin capacitor hold-up budget
 #define ADE7953_SAGLVL_PERCENT 80 // SAGLVL as a percentage of a live VPEAK reading (datasheet's own worked example)
 #define ADE7953_SAGLVL_SETTLE_MS 60ULL // Wait after resetting VPEAK before reading it for SAGLVL derivation (~3 line cycles @ 50Hz)
+// VPEAK is a 24-bit unsigned register regardless of which address width it's read at (default
+// 0x000000). Plausibility floor for arming SAG at boot: comfortably below any real mains reading
+// at any supported voltage/PGA_V gain (a live 225V bench unit read ~26% of full scale), comfortably
+// above the ADC noise floor with no AC connected at all (e.g. booted on USB with AC disconnected).
+#define ADE7953_VPEAK_FULL_SCALE 16777215L // 2^24 - 1
+#define ADE7953_SAG_MIN_VPEAK_PERCENT 2 // % of ADE7953_VPEAK_FULL_SCALE
 
 // Channel validation ranges
 #define VALIDATE_CT_CURRENT_RATING_MIN 0.0f

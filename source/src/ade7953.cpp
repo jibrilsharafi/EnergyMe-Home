@@ -1912,18 +1912,22 @@ namespace Ade7953
         readRegister(RSTVPEAK_32, BIT_32, false); // reset peak, discard the stale value
         delay(ADE7953_SAGLVL_SETTLE_MS);
         int32_t vpeak = readRegister(VPEAK_32, BIT_32, false);
-        int32_t saglvl = (vpeak * ADE7953_SAGLVL_PERCENT) / 100;
 
+        constexpr int32_t minPlausibleVpeak = (ADE7953_VPEAK_FULL_SCALE * ADE7953_SAG_MIN_VPEAK_PERCENT) / 100;
+        if (vpeak < minPlausibleVpeak) {
+            // Explicit disable (not just "don't write") regardless of any prior arm state:
+            // SAGCYC == 0 silently disables sag detection entirely (datasheet). A reading this
+            // low doesn't look like real mains (e.g. booted on USB with AC disconnected) - arming
+            // with a threshold derived from it would be armed-but-meaningless, not a safe default.
+            writeRegister(SAGCYC_8, BIT_8, 0);
+            LOG_WARNING("SAG detection NOT armed - no plausible mains at boot (VPEAK=%ld)", vpeak);
+            return;
+        }
+
+        int32_t saglvl = (vpeak * ADE7953_SAGLVL_PERCENT) / 100;
         writeRegister(SAGCYC_8, BIT_8, ADE7953_SAGCYC_VALUE);
         writeRegister(SAGLVL_32, BIT_32, saglvl);
-
-        if (vpeak <= 0) {
-            // SAGLVL == 0 silently disables the sag feature entirely (datasheet), so a
-            // stuck-at-zero VPEAK here means SAG will never fire - worth a loud warning.
-            LOG_WARNING("SAG detection armed with VPEAK=%ld - SAGLVL=%ld may leave sag detection disabled", vpeak, saglvl);
-        } else {
-            LOG_INFO("SAG detection armed: VPEAK=%ld, SAGLVL=%ld (%u%%), SAGCYC=%u", vpeak, saglvl, ADE7953_SAGLVL_PERCENT, ADE7953_SAGCYC_VALUE);
-        }
+        LOG_INFO("SAG detection armed: VPEAK=%ld, SAGLVL=%ld (%u%%), SAGCYC=%u", vpeak, saglvl, ADE7953_SAGLVL_PERCENT, ADE7953_SAGCYC_VALUE);
     }
 
     void _handleInterrupt(uint64_t linecycUnix)
