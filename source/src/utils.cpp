@@ -551,8 +551,8 @@ void stopTaskGracefully(TaskHandle_t* taskHandle, const char* taskName) {
     }
 
     LOG_DEBUG("Stopping %s...", taskName ? taskName : "task");
-    
-    xTaskNotifyGive(*taskHandle);
+
+    xTaskNotify(*taskHandle, TASK_NOTIFY_SHUTDOWN_BIT, eSetBits);
     
     // Wait with timeout for clean shutdown
     int32_t timeout = TASK_STOPPING_TIMEOUT;

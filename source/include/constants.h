@@ -111,6 +111,16 @@
 // Timeouts and intervals
 #define TASK_STOPPING_TIMEOUT (3 * 1000)
 #define TASK_STOPPING_CHECK_INTERVAL 100
+
+// Shared task-notification bit convention. stopTaskGracefully() signals shutdown
+// via this bit (xTaskNotify ... eSetBits), so every task waiting with plain
+// ulTaskNotifyTake(pdTRUE, ...) keeps working unchanged (any nonzero value still
+// satisfies ">0"). The MQTT task distinguishes this bit from its own wake reason
+// (MQTT_NOTIFY_WAKE_BIT, mqtt.h) via xTaskNotifyWait - load-bearing for
+// Mqtt::pushAlarm(): without this distinction, an alarm wake would look
+// identical to a shutdown signal and incorrectly trigger the MQTT task's
+// flush-and-stop branch. See openspec/changes/add-blackout-sag-detection.
+#define TASK_NOTIFY_SHUTDOWN_BIT (1 << 0)
 #define CONFIG_MUTEX_TIMEOUT_MS (1 * 1000) // Generic timeout for configuration mutexes. Long timeouts cause wdt crash (like in async tcp)
 
 // Server used ports (here to ensure no conflicts)
