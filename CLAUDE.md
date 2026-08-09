@@ -72,7 +72,7 @@ Every PR gets a round of **code-review agents** and a **simplification agent** b
 
 ## Agent behaviour
 
-- **Don't compile without being asked.** `pio run` is slow and CPU-intensive; stop after code edits unless Jibril explicitly requests a build or OTA.
+- **Free to compile.** Run `pio run` after code edits to verify the build whenever useful, without waiting to be asked. OTA/flashing still requires explicit request.
 - Don't create new files (especially Markdown/docs) unless explicitly asked.
 - Don't remove TODO/FIXME comments unless the underlying task is done.
 - Be concise; stick to the request.
