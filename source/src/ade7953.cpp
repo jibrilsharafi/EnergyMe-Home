@@ -5,6 +5,7 @@
 #include "taskprofiler.h"
 #include "duration_format.h"
 #include "grid_frequency.h"
+#include "mqtt.h"
 #include "shadow_logic.h"
 
 namespace Ade7953
@@ -74,9 +75,8 @@ namespace Ade7953
     static uint32_t _criticalFailureCount = 0;
     static uint64_t _firstCriticalFailureTime = 0;
 
-    // ZXTO log burst guard (see _handleZxtoInterrupt/_handleCycendInterrupt)
-    static uint32_t _zxtoBurstCount = 0;
-    static bool _zxtoSeenThisCycendWindow = false;
+    // ZXTO suppression window (see _handleZxtoInterrupt). 0 = never triggered.
+    static uint64_t _zxtoLastTriggerMs = 0;
 
     // Operational flags
     static bool _hasConfigurationChanged = false; // Flag to track if configuration has changed (needed since we will get an interrupt for CRC change)
@@ -1998,13 +1998,6 @@ namespace Ade7953
         LOG_VERBOSE("Line cycle end detected on Channel A");
         statistics.ade7953TotalHandledInterrupts++;
 
-        // A full accumulation window with no ZXTO means the line is healthy again - rearm the
-        // ZXTO log burst guard (see _handleZxtoInterrupt). ZXTO is serviced before CYCEND on the
-        // same status snapshot (_handleInterrupt), so a ZXTO co-pending with this CYCEND already
-        // set _zxtoSeenThisCycendWindow = true and correctly blocks the rearm this round.
-        if (!_zxtoSeenThisCycendWindow) _zxtoBurstCount = 0;
-        _zxtoSeenThisCycendWindow = false;
-
         if (_hasToSkipReading) {
             // First window after a mux switch: it spans the channel transition, so it is
             // contaminated. We simply skip it - the next CYCEND overwrites the register with a
@@ -2186,28 +2179,50 @@ namespace Ade7953
         LOG_WARNING("TO BE IMPLEMENTED: ADE7953 reset interrupt detected - reinitializing device");
     }
 
-    // Phase 1 (see openspec/changes/add-blackout-sag-detection): observation only - no MQTT/network
-    // side effects here. Uses the already-cached channel-0 voltage (no SPI read) to stay cheap on a
-    // path that may be racing a capacitor's hold-up time.
+    // Only the FIRST ZXTO in a ADE7953_ZXTO_SUPPRESS_MS window does anything beyond
+    // counting: pushes the MQTT alarm directly and emits one LOG_FATAL. Every
+    // other occurrence in that window is LOG_DEBUG-only - no alarm, no FATAL, no
+    // MQTT log forwarding. ZXTOUT has no hardware debounce beyond its own timeout
+    // window, so a misconfigured ZXTOUT or a sustained no-AC condition can
+    // otherwise re-fire roughly every ZXTOUT period indefinitely, and each
+    // occurrence was competing for the same thin MQTT window the alarm itself
+    // needs to beat the capacitor hold-up - see
+    // openspec/changes/add-blackout-sag-detection. statistics.ade7953ZxtoInterrupts
+    // is NOT gated by this - every occurrence is still counted, only the
+    // log/alarm is throttled.
     //
-    // ZXTOUT has no hardware debounce beyond its own timeout window, so a misconfigured ZXTOUT or
-    // a sustained no-AC condition (e.g. bench unit on USB power with AC disconnected) can re-fire
-    // roughly every ZXTOUT period indefinitely - unthrottled, that saturates the log queue, which
-    // forces synchronous flash flushes onto THIS task. Log the first ADE7953_ZXTO_LOG_BURST
-    // occurrences in full, one suppression notice, then count-only until a clean CYCEND window
-    // (_handleCycendInterrupt) proves the line healthy again and rearms the burst.
-    // statistics.ade7953ZxtoInterrupts is NOT gated by this - every occurrence is still counted,
-    // only the log call is throttled.
+    // Deliberately NOT routed through IssueRegistry: this is a direct,
+    // fire-and-forget MQTT alarm, not an issue-registry-tracked state. Going
+    // through the registry would add a task hop plus evaluation of every other
+    // global code (heap, LittleFS, NTP, connectivity...) under a mutex before
+    // ever reaching this one - pure added latency on the path racing the
+    // capacitor. Mqtt::pushAlarm() is a FreeRTOS-queue producer designed to be
+    // safe from any task (same as pushLog/pushMeter), so it's called directly
+    // here. This handler itself uses the already-cached channel-0 voltage (no SPI
+    // read) to stay cheap on a path that may be racing the capacitor.
     void _handleZxtoInterrupt() {
-        _zxtoSeenThisCycendWindow = true;
-        _zxtoBurstCount++;
+        uint64_t nowMs = millis64();
+        bool suppressed = (_zxtoLastTriggerMs != 0) && ((nowMs - _zxtoLastTriggerMs) < ADE7953_ZXTO_SUPPRESS_MS);
 
-        if (_zxtoBurstCount <= ADE7953_ZXTO_LOG_BURST) {
-            LOG_FATAL("ADE7953 ZXTO detected (no zero crossing for ~%ums) - burst=%lu, count=%llu, last known voltage=%.1fV",
-                      ADE7953_ZXTOUT_TARGET_MS, _zxtoBurstCount, statistics.ade7953ZxtoInterrupts, _meterValues[0].voltage);
-        } else if (_zxtoBurstCount == ADE7953_ZXTO_LOG_BURST + 1) { // == not >=: log this once
-            LOG_WARNING("ZXTO sustained - suppressing further ZXTO logs until a clean line cycle; see ade7953ZxtoInterrupts in /system/info");
+        if (suppressed) {
+            LOG_DEBUG("ADE7953 ZXTO detected (suppressed, %llums since last trigger) - count=%llu, last known voltage=%.1fV",
+                       (unsigned long long)(nowMs - _zxtoLastTriggerMs), statistics.ade7953ZxtoInterrupts, _meterValues[0].voltage);
+            return;
         }
+
+        _zxtoLastTriggerMs = nowMs;
+
+        AlarmEntry alarm;
+        snprintf(alarm.code, sizeof(alarm.code), "grid_voltage_loss");
+        snprintf(alarm.severity, sizeof(alarm.severity), "error");
+        snprintf(alarm.message, sizeof(alarm.message),
+                 "ADE7953 detected no zero crossing for ~%ums (grid voltage loss precursor) - count=%llu, last known voltage=%.1fV",
+                 ADE7953_ZXTOUT_TARGET_MS, statistics.ade7953ZxtoInterrupts, _meterValues[0].voltage);
+        alarm.unixTimeMs = CustomTime::getUnixTimeMilliseconds();
+        Mqtt::pushAlarm(alarm);
+
+        LOG_FATAL("ADE7953 ZXTO detected (no zero crossing for ~%ums) - count=%llu, last known voltage=%.1fV",
+                  ADE7953_ZXTOUT_TARGET_MS, statistics.ade7953ZxtoInterrupts, _meterValues[0].voltage);
     }
 
     // Tasks

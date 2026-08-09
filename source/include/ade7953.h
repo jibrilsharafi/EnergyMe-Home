@@ -125,7 +125,15 @@
 #define ADE7953_ZXTOUT_RESOLUTION_US 71 // 1 / 14kHz (CLKIN/256) per LSB, datasheet rounds to 0.07ms
 #define ADE7953_ZXTOUT_TARGET_MS 15
 #define ADE7953_ZXTOUT_VALUE ((ADE7953_ZXTOUT_TARGET_MS * 1000UL) / ADE7953_ZXTOUT_RESOLUTION_US) // ~211
-#define ADE7953_ZXTO_LOG_BURST 3
+
+// Only the first ZXTO in a window triggers the FATAL log + MQTT alarm/log
+// forwarding + issue registry wake; every other one within this window is
+// LOG_DEBUG-only (statistics.ade7953ZxtoInterrupts still counts it - see
+// _handleZxtoInterrupt). A sustained/misconfigured ZXTO can otherwise re-fire
+// roughly every ZXTOUT period, and each occurrence was competing for the same
+// thin MQTT window the alarm itself needs to beat the capacitor hold-up - see
+// openspec/changes/add-blackout-sag-detection.
+#define ADE7953_ZXTO_SUPPRESS_MS (60 * 1000)
 
 // Channel validation ranges
 #define VALIDATE_CT_CURRENT_RATING_MIN 0.0f
