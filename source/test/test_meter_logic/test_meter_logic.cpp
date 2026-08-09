@@ -1230,6 +1230,33 @@ void test_witness_nan_never_rejects(void) {
 }
 
 // ============================================================================
+// hasUnhandledIrqBits
+// ============================================================================
+// handledMask covers bits 0, 1, 3 (0b1011) for all cases below - arbitrary bit
+// positions, chosen only so "recognized" vs "unrecognized" is unambiguous.
+
+static const int32_t IRQ_HANDLED_MASK = 0b1011;
+
+void test_unhandled_irq_all_recognized_bits_is_false(void) {
+    // Bits 0 and 3 both recognized; nothing outside the handled set.
+    TEST_ASSERT_FALSE(hasUnhandledIrqBits(0b1001, IRQ_HANDLED_MASK));
+}
+
+void test_unhandled_irq_recognized_plus_unrecognized_is_true(void) {
+    // Bit 0 (recognized) co-pends with bit 2 (not in the handled set) - the
+    // exact SAG-next-to-ZXV scenario this predicate exists to catch.
+    TEST_ASSERT_TRUE(hasUnhandledIrqBits(0b0101, IRQ_HANDLED_MASK));
+}
+
+void test_unhandled_irq_all_unrecognized_is_true(void) {
+    TEST_ASSERT_TRUE(hasUnhandledIrqBits(0b0100, IRQ_HANDLED_MASK));
+}
+
+void test_unhandled_irq_zero_status_is_false(void) {
+    TEST_ASSERT_FALSE(hasUnhandledIrqBits(0, IRQ_HANDLED_MASK));
+}
+
+// ============================================================================
 // runner
 // ============================================================================
 
@@ -1332,6 +1359,11 @@ int main(int, char **) {
     RUN_TEST(test_witness_genuine_transient_moves_together_keeps);
     RUN_TEST(test_witness_near_zero_current_no_false_trip);
     RUN_TEST(test_witness_nan_never_rejects);
+
+    RUN_TEST(test_unhandled_irq_all_recognized_bits_is_false);
+    RUN_TEST(test_unhandled_irq_recognized_plus_unrecognized_is_true);
+    RUN_TEST(test_unhandled_irq_all_unrecognized_is_true);
+    RUN_TEST(test_unhandled_irq_zero_status_is_false);
 
     return UNITY_END();
 }

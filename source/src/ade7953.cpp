@@ -153,7 +153,7 @@ namespace Ade7953
     static void _pollWaveformSamples();
     static void _handleCrcChangeInterrupt();
     static void _handleResetInterrupt();
-    
+
     // Task management
     static void _startMeterReadingTask();
     static void _stopMeterReadingTask();
@@ -1930,7 +1930,7 @@ namespace Ade7953
         constexpr int32_t handledIrqMask =
             (1 << IRQSTATA_ZXV_BIT) | (1 << IRQSTATA_CYCEND_BIT) |
             (1 << IRQSTATA_RESET_BIT) | (1 << IRQSTATA_CRC_BIT);
-        if ((statusA & handledIrqMask) == 0) {
+        if (MeterLogic::hasUnhandledIrqBits(statusA, handledIrqMask)) {
             statistics.ade7953UnhandledInterrupts++;
             LOG_WARNING("Unhandled ADE7953 interrupt status: 0x%08lX | %s", statusA, _irqstataBitName(statusA));
         }
@@ -2147,7 +2147,7 @@ namespace Ade7953
     }
 
     void _handleResetInterrupt() {
-        // This should never happen unless a powerful power drop occurs (which would likely reset also the ESP32) 
+        // This should never happen unless a powerful power drop occurs (which would likely reset also the ESP32)
         LOG_WARNING("TO BE IMPLEMENTED: ADE7953 reset interrupt detected - reinitializing device");
     }
 
