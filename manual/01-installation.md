@@ -93,6 +93,15 @@ The device comes with **two wires already connected** to the internal power term
 
 The CT on **Channel 0** is the most accurate channel and should be used to measure the total energy entering your home.
 
+> **ⓘ NOTE: Why Channel 0 updates faster than the rest**  
+> Channel 0 is sampled about every 200 ms, always. Channels 1-15 share a single multiplexed input, so each one only gets a slice of the sampling time; the device dynamically prioritises active/high-power channels and can leave a quiet, constant-low-power channel sampled as infrequently as every 15 s. This is normal, not a fault: if a branch channel feels slow to update, especially once you have many channels active, it's the multiplexer allocating time to where it matters more, not something wrong with the install.
+
+> **✅ TIP: Spend Channel 0's extra speed where it matters**  
+> If you're choosing between the main grid line and something else (e.g., a solar inverter) for your one non-multiplexed channel, prefer the grid line. It's the channel whose fast, accurate readings matter most (import/export, billing, dynamic pricing), while a PV inverter's output changes slowly enough that a multiplexed branch channel keeps up fine. Any load can still go on Channel 0 electrically, this is purely about getting the most value out of its higher sample rate.
+
+> **ⓘ NOTE: Channel 0 doesn't need a CT clamped on it, but it can't be switched off**  
+> Clamping a CT here is optional: if you'd rather not track your whole-home total, you can leave Channel 0 unclamped and it will simply read ~0 W. What you can't do is disable it in the software; unlike every other channel, its **Active** toggle in [§4.5](02-setup.md#45-configure-each-channel) can't be unticked. This is because Channel 0 isn't routed through the channel multiplexer like Channels 1-15: it's wired directly to the ADE7953's one voltage input, which doubles as the voltage reference every other channel's power calculation depends on, so it's always read regardless of whether anything is clamped to it.
+
 1. Take **one** of the CT clamps from the kit (any of them, they're all identical).
 2. Identify the **main line conductor** downstream of the main breaker (typically the brown/black wire coming from the kWh meter into the panel).
 3. Open the CT clamp.
@@ -105,6 +114,9 @@ The CT on **Channel 0** is the most accurate channel and should be used to measu
 
 > **⚠ Three-phase main supply**  
 > If your main supply is three-phase, the CT on Channel 0 goes on **one of the three phases**, and you'll need additional CTs on the other two phases (on free branch channels). See **[Appendix B](appendices.md#appendix-b-three-phase-configuration)**.
+
+> **⚠ WARNING: Channel 0 must be on the same phase as the device's own power feed**  
+> The device measures voltage only once, from its own **L/N power connection** ([§3.2](#32-connect-the-power-supply-l-and-n)), and uses that single reading as the voltage reference for every channel's power calculation. On a single-phase home there is only one phase, so this is automatic. On a **three-phase supply**, the phase that powers the device (its brown L wire) and the phase that Channel 0's CT is clamped on **must be the same physical conductor**. If Channel 0 ends up on a different phase than the device's own power feed, its power and power factor readings will be wrong, since the voltage and current being multiplied together come from two conductors that are ~120° apart. See **[Appendix B.1](appendices.md#b1-three-phase-main-supply)**.
 
 ### 3.4 Install the CTs on the branch channels (1 to 15): Critical step ⚠
 
@@ -120,6 +132,9 @@ Inside an electrical panel, breakers can be fed in **daisy-chain** on the **inpu
 The wire on the **OUTPUT (bottom) side** of the breaker carries **only** the current of the loads connected to that specific breaker. **This is where the CT must go.**
 
 ![CT Placement](assets/ct_placement_breaker.svg)
+
+> **✅ TIP: Turning this into a feature**  
+> Clamping a shared wire is only a mistake when it's accidental. If you deliberately want one CT to read several breakers combined, for example when you have more circuits than free channels, see **[Appendix B.4](appendices.md#b4-advanced-ct-placement-subsets-and-summed-breakers)** for the subset and summed-breaker patterns.
 
 #### 3.4.2 The rule
 
@@ -160,13 +175,16 @@ Before turning the main breaker back ON:
 
 | Check | OK? |
 | --- | --- |
-| All CT jacks are fully inserted in the device (1 on Channel 0, the others on Channels 1-15) | ☐ |
+| All CT jacks are **pushed in firmly until they click**, not just resting in the socket (1 on Channel 0, the others on Channels 1-15) | ☐ |
 | Brown (L) and Blue (N) wires from the device are tightly connected, no copper visible | ☐ |
 | Channel 0 CT is on the main Line conductor | ☐ |
 | Each branch CT is on the OUTPUT side of its breaker (not on the comb bar) | ☐ |
 | No tools or screws left inside the panel | ☐ |
 | Channel map ([Appendix A](appendices.md#appendix-a-channel-map)) filled in (where known) and photographed | ☐ |
 | Panel cover ready to be re-installed | ☐ |
+
+> **⚠ WARNING: The jack sockets sit close together; give each one a firm, deliberate push**  
+> The 3.5 mm jacks are packed tightly to fit up to 16 of them on the device, and a jack that only seated partway can work itself loose from vibration or from the panel cover pressing against the cables. A loose jack shows up later as a channel that suddenly reads zero, spikes erratically, or (in rare cases) trips the device's own error-recovery reset. If you ever see that on a channel that was previously working fine, check this connection before assuming a CT or hardware fault.
 
 ### 3.6 First power-on
 
@@ -181,9 +199,12 @@ After boot, three outcomes are possible:
 
 | LED behaviour | Meaning | Next step |
 | --- | --- | --- |
-| 🔵 Blue, fast blink | No Wi-Fi configured yet; captive portal active | Go to **[§4.1](02-setup.md#41-connect-to-the-devices-wi-fi-captive-portal)** |
+| 🔵 Blue, fast blink | No Wi-Fi configured yet; the device's own setup network is up | Go to **[§4.1](02-setup.md#41-connect-to-the-devices-wi-fi-setup-network)** |
 | 🔵 Blue, slow pulse | Known Wi-Fi found but not yet connected (e.g. router still booting) | Wait up to 60 s; LED should settle to solid green |
-| 🟢 Solid green | Connected to home Wi-Fi, monitoring | Go to **[§4.3](02-setup.md#43-access-the-web-interface)** (skip [§4.1](02-setup.md#41-connect-to-the-devices-wi-fi-captive-portal) and [§4.2](02-setup.md#42-configure-your-home-wi-fi)) |
+| 🟢 Solid green | Connected to home Wi-Fi, monitoring | Go to **[§4.3](02-setup.md#43-access-the-web-interface)** (skip [§4.1](02-setup.md#41-connect-to-the-devices-wi-fi-setup-network) and [§4.2](02-setup.md#42-configure-your-home-wi-fi)) |
+
+> **ⓘ NOTE: A device that later loses its Wi-Fi behaves the same way**  
+> If an already-configured device can't reach your router (router replaced, password changed, moved out of range), after several failed attempts it raises its own setup network again, same blue fast blink. The difference: since this device already holds your data and settings, its setup pages require your admin login this time, not the open access a brand-new device gives. Log in and repeat [§4.1](02-setup.md#41-connect-to-the-devices-wi-fi-setup-network)-[§4.2](02-setup.md#42-configure-your-home-wi-fi) to give it new Wi-Fi credentials.
 
 > **⚠ WARNING**  
 > If you smell anything burning, hear buzzing, or see smoke: **switch the main breaker OFF immediately** and contact support before doing anything else.
