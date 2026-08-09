@@ -123,6 +123,10 @@
 // above the ADC noise floor with no AC connected at all (e.g. booted on USB with AC disconnected).
 #define ADE7953_VPEAK_FULL_SCALE 16777215L // 2^24 - 1
 #define ADE7953_SAG_MIN_VPEAK_PERCENT 2 // % of ADE7953_VPEAK_FULL_SCALE
+// Sustained/misconfigured SAG has no hardware debounce (SAGCYC=1 is deliberate) and could
+// otherwise re-fire every half line cycle indefinitely - log the first few in full, then suppress
+// until a clean CYCEND window (see _handleSagInterrupt/_handleCycendInterrupt) proves the line healthy again.
+#define ADE7953_SAG_LOG_BURST 3
 
 // Channel validation ranges
 #define VALIDATE_CT_CURRENT_RATING_MIN 0.0f

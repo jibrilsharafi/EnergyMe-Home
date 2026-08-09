@@ -43,6 +43,11 @@ See `proposal.md` - Why. Key facts that shape this design, gathered during explo
 
 **New statistics counter, mirroring existing pattern.** `ade7953ZxInterrupts` / `ade7953UnhandledInterrupts` already exist; add `ade7953SagInterrupts` alongside them for `/system/info` visibility, consistent with how the codebase already surfaces this class of counter.
 
+**Arm-time plausibility floor on `VPEAK`, and a `CYCEND`-rearmed log burst guard.** `SAGCYC=1` has zero hardware debounce, so a misconfigured `SAGLVL` or a sustained no-AC condition (board stays powered from elsewhere, e.g. a bench unit on USB with AC disconnected) can re-fire every half line cycle indefinitely. Unthrottled, this is worse than noisy logs: `AdvancedLogger`'s queue does synchronous LittleFS flushes on the *producer* once full, meaning sustained SAG firing would push flash writes onto the priority-5 meter-reading task itself, stalling ZXV/CYCEND servicing. Two-part fix, no timers, no new lib abstraction:
+- At arm time, refuse to arm at all (`SAGCYC` stays 0, the datasheet's own "disabled" state) if `VPEAK` is below a plausibility floor - catches "no AC present at boot" outright, at zero runtime cost.
+- At runtime, a plain count latch (`_sagBurstCount`, `_sagSeenThisCycendWindow`): log the first `ADE7953_SAG_LOG_BURST` occurrences in full, one suppression notice, then count-only. Rearmed by a clean `CYCEND` window (real zero-crossings, so it naturally stays silent for the duration of a genuine sustained outage too - the pathological case gets maximum suppression for free). `ZXV` was considered and rejected as the rearm signal: it keeps firing during a partial sag with a valid waveform, which would reset the latch every cycle and defeat the throttle.
+- This does **not** contradict the `SAGCYC=1` non-goal below: `statistics.ade7953SagInterrupts` still counts every single occurrence untouched - only the `LOG_FATAL` call is rate-limited. Raw firing frequency is still fully observable via `/system/info`.
+
 ## Risks / Trade-offs
 
 - **[Risk]** `SAGCYC=1` will very likely fire on legitimate brief sags that never become a blackout (motor inrush elsewhere on the circuit, etc.) → **Mitigation**: explicitly the point of this phase - observe real firing frequency from logs/counter before deciding whether debounce is needed. Documented as a non-goal, not a bug.

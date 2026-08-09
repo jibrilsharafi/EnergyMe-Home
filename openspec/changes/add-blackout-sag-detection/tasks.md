@@ -17,10 +17,18 @@
 - [x] 3.3 Add the SAG branch to `_handleInterrupt()` (checked alongside the existing ZXV/CYCEND/RESET/CRC branches), and include the SAG bit in the demux's handled-bit mask (task 1.1) so it no longer counts as unhandled.
 - [x] 3.4 Expose `ade7953SagInterrupts` via `/system/info` (wherever the other ADE7953 interrupt counters are already surfaced).
 
-## 4. Bench validation
+## 4. Runaway-firing guard
 
-- [ ] 4.1 Build and flash via the `esp32s3-dev-v5` PlatformIO environment onto the bench device.
-- [ ] 4.2 Confirm boot-time log shows the derived `SAGLVL`/`VPEAK` values and they look sane (roughly 80% of a plausible peak reading for the device's mains).
-- [ ] 4.3 Induce a sag/outage (plug pull or switch) and confirm a `LOG_FATAL` SAG entry appears in the live log stream (serial/UDP listener) before/around the event.
-- [ ] 4.4 On any run where the device survives or reboots cleanly, confirm `ade7953SagInterrupts` increments as expected via `/system/info`, and confirm the demux fix (task 1) produces no spurious new warnings under normal operation (ZXV/CYCEND-only snapshots stay silent).
-- [ ] 4.5 Note observed firing behavior (false positives on non-blackout dips, timing relative to actual power loss) to inform the follow-up MQTT-alert change.
+- [x] 4.1 In `_configureSagDetection()`, refuse to arm SAG (leave `SAGCYC` at 0, explicitly written) if `VPEAK` is below a plausibility floor - catches "no plausible mains at boot" instead of arming with a meaningless threshold.
+- [x] 4.2 Change the successful-arm log from `LOG_DEBUG` to `LOG_INFO` so it's visible on prod builds (errors/warnings-only otherwise makes task 5.2 unverifiable in the field).
+- [x] 4.3 Add a count-based log burst guard to `_handleSagInterrupt()`: first `ADE7953_SAG_LOG_BURST` occurrences log in full, one suppression notice, then count-only (`statistics.ade7953SagInterrupts` still increments every time, unthrottled).
+- [x] 4.4 Rearm the burst guard from a clean `CYCEND` window (no SAG seen during that accumulation period) in `_handleCycendInterrupt()` - not `ZXV`, which would defeat the throttle during a partial sag with a still-valid waveform.
+
+## 5. Bench validation
+
+- [ ] 5.1 Build and flash via the `esp32s3-dev-v5` PlatformIO environment onto the bench device.
+- [ ] 5.2 Confirm boot-time log shows the derived `SAGLVL`/`VPEAK` values and they look sane (roughly 80% of a plausible peak reading for the device's mains).
+- [ ] 5.3 Induce a sag/outage (plug pull or switch) and confirm a `LOG_FATAL` SAG entry appears in the live log stream (serial/UDP listener) before/around the event.
+- [ ] 5.4 On any run where the device survives or reboots cleanly, confirm `ade7953SagInterrupts` increments as expected via `/system/info`, and confirm the demux fix (task 1) produces no spurious new warnings under normal operation (ZXV/CYCEND-only snapshots stay silent).
+- [ ] 5.5 Note observed firing behavior (false positives on non-blackout dips, timing relative to actual power loss) to inform the follow-up MQTT-alert change.
+- [ ] 5.6 Repeated plug-pull test: confirm each pull produces a fresh full-detail burst (not suppressed by a previous episode) and that the suppression notice appears if a single episode exceeds `ADE7953_SAG_LOG_BURST` occurrences.

@@ -74,6 +74,10 @@ namespace Ade7953
     static uint32_t _criticalFailureCount = 0;
     static uint64_t _firstCriticalFailureTime = 0;
 
+    // SAG log burst guard (see _handleSagInterrupt/_handleCycendInterrupt)
+    static uint32_t _sagBurstCount = 0;
+    static bool _sagSeenThisCycendWindow = false;
+
     // Operational flags
     static bool _hasConfigurationChanged = false; // Flag to track if configuration has changed (needed since we will get an interrupt for CRC change)
     static bool _hasToSkipReading = true; // Flag to skip the first reading on Channel B after a mux switch so the contaminated (transition-spanning) window is discarded
@@ -2018,7 +2022,14 @@ namespace Ade7953
     void _handleCycendInterrupt(uint64_t linecycUnix) {
         LOG_VERBOSE("Line cycle end detected on Channel A");
         statistics.ade7953TotalHandledInterrupts++;
-        
+
+        // A full accumulation window with no SAG means the line is healthy again - rearm the
+        // SAG log burst guard (see _handleSagInterrupt). SAG is serviced before CYCEND on the
+        // same status snapshot (_handleInterrupt), so a SAG co-pending with this CYCEND already
+        // set _sagSeenThisCycendWindow = true and correctly blocks the rearm this round.
+        if (!_sagSeenThisCycendWindow) _sagBurstCount = 0;
+        _sagSeenThisCycendWindow = false;
+
         if (_hasToSkipReading) {
             // First window after a mux switch: it spans the channel transition, so it is
             // contaminated. We simply skip it - the next CYCEND overwrites the register with a
@@ -2203,9 +2214,24 @@ namespace Ade7953
     // Phase 1 (see openspec/changes/add-blackout-sag-detection): observation only - no MQTT/network
     // side effects here. Uses the already-cached channel-0 voltage (no SPI read) to stay cheap on a
     // path that may be racing a capacitor's hold-up time.
+    //
+    // SAGCYC=1 has no hardware debounce, so a misconfigured SAGLVL or a sustained no-AC condition
+    // (e.g. bench unit on USB power with AC disconnected) can re-fire every half line cycle
+    // indefinitely - unthrottled, that saturates the log queue, which forces synchronous flash
+    // flushes onto THIS task. Log the first ADE7953_SAG_LOG_BURST occurrences in full, one
+    // suppression notice, then count-only until a clean CYCEND window (_handleCycendInterrupt)
+    // proves the line healthy again and rearms the burst. statistics.ade7953SagInterrupts is
+    // NOT gated by this - every occurrence is still counted, only the log call is throttled.
     void _handleSagInterrupt() {
-        LOG_FATAL("ADE7953 SAG detected (voltage below threshold for %u half-cycle(s)) - count=%llu, last known voltage=%.1fV",
-                  ADE7953_SAGCYC_VALUE, statistics.ade7953SagInterrupts, _meterValues[0].voltage);
+        _sagSeenThisCycendWindow = true;
+        _sagBurstCount++;
+
+        if (_sagBurstCount <= ADE7953_SAG_LOG_BURST) {
+            LOG_FATAL("ADE7953 SAG detected (voltage below threshold for %u half-cycle(s)) - burst=%lu, count=%llu, last known voltage=%.1fV",
+                      ADE7953_SAGCYC_VALUE, _sagBurstCount, statistics.ade7953SagInterrupts, _meterValues[0].voltage);
+        } else if (_sagBurstCount == ADE7953_SAG_LOG_BURST + 1) { // == not >=: log this once
+            LOG_WARNING("SAG sustained - suppressing further SAG logs until a clean line cycle; see ade7953SagInterrupts in /system/info");
+        }
     }
 
     // Tasks
