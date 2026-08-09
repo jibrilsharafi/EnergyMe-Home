@@ -204,28 +204,19 @@ struct PublishMqtt
     requestOta(true) {} // Always require on connection
 };
 
-#define MQTT_ALARM_NO_CHANNEL 255 // channel value for alarms with no single-channel scope
-
 // Wire format for Mqtt::pushAlarm() - a small, high-priority payload published
 // ahead of the log queue and the generic shadow report (see _handleConnectedState()
-// in mqtt.cpp). Mirrors LogEntry/PayloadMeter: a fixed-size POD struct so it can
-// go through a FreeRTOS queue with no dynamic allocation, safe to fill from any
-// task. Deliberately independent of IssueRegistry/IssueLogic - an alarm is a
-// direct, fire-and-forget MQTT message, not an issue-registry-tracked state (see
-// openspec/changes/add-blackout-sag-detection).
+// in mqtt.cpp). A fixed-size POD struct so it can go through a FreeRTOS queue
+// with no dynamic allocation, safe to fill from any task. The published JSON
+// also carries a live power/pf/voltage snapshot, fetched at publish time in
+// _publishAlarm() - not part of this struct, since it doesn't need to survive
+// the queue hop.
 struct AlarmEntry
 {
-    char code[NAME_BUFFER_SIZE];       // short machine-readable code, e.g. "grid_voltage_loss"
-    uint8_t channel;                   // MQTT_ALARM_NO_CHANNEL if not scoped to a single channel
-    char severity[16];                 // e.g. "error", "warning"
-    char message[MQTT_ALARM_MESSAGE_BUFFER_SIZE];
+    char message[MQTT_ALARM_MESSAGE_BUFFER_SIZE]; // plain-language, e.g. "Blackout detected - grid power lost"
     uint64_t unixTimeMs;
 
-    AlarmEntry() : channel(MQTT_ALARM_NO_CHANNEL), unixTimeMs(0) {
-        code[0] = '\0';
-        severity[0] = '\0';
-        message[0] = '\0';
-    }
+    AlarmEntry() : unixTimeMs(0) { message[0] = '\0'; }
 };
 
 namespace Mqtt

@@ -2205,24 +2205,20 @@ namespace Ade7953
         bool suppressed = (_zxtoLastTriggerMs != 0) && ((nowMs - _zxtoLastTriggerMs) < ADE7953_ZXTO_SUPPRESS_MS);
 
         if (suppressed) {
-            LOG_DEBUG("ADE7953 ZXTO detected (suppressed, %llums since last trigger) - count=%llu, last known voltage=%.1fV",
-                       (unsigned long long)(nowMs - _zxtoLastTriggerMs), statistics.ade7953ZxtoInterrupts, _meterValues[0].voltage);
+            LOG_DEBUG("Blackout still ongoing (suppressed, %llums since last alert, count=%llu)",
+                       (unsigned long long)(nowMs - _zxtoLastTriggerMs), statistics.ade7953ZxtoInterrupts);
             return;
         }
 
         _zxtoLastTriggerMs = nowMs;
 
         AlarmEntry alarm;
-        snprintf(alarm.code, sizeof(alarm.code), "grid_voltage_loss");
-        snprintf(alarm.severity, sizeof(alarm.severity), "error");
-        snprintf(alarm.message, sizeof(alarm.message),
-                 "ADE7953 detected no zero crossing for ~%ums (grid voltage loss precursor) - count=%llu, last known voltage=%.1fV",
-                 ADE7953_ZXTOUT_TARGET_MS, statistics.ade7953ZxtoInterrupts, _meterValues[0].voltage);
+        snprintf(alarm.message, sizeof(alarm.message), "Blackout detected - grid power lost");
         alarm.unixTimeMs = CustomTime::getUnixTimeMilliseconds();
         Mqtt::pushAlarm(alarm);
 
-        LOG_FATAL("ADE7953 ZXTO detected (no zero crossing for ~%ums) - count=%llu, last known voltage=%.1fV",
-                  ADE7953_ZXTOUT_TARGET_MS, statistics.ade7953ZxtoInterrupts, _meterValues[0].voltage);
+        LOG_FATAL("Blackout detected: grid power lost (count=%llu, last known voltage=%.1fV)",
+                  statistics.ade7953ZxtoInterrupts, _meterValues[0].voltage);
     }
 
     // Tasks

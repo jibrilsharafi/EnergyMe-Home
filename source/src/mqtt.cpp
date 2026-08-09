@@ -481,7 +481,7 @@ namespace Mqtt
         // sized generously enough that overflow should never happen in practice;
         // if it does, block briefly (same as pushLog) rather than discard.
         if (xQueueSend(_alarmQueue, &entry, pdMS_TO_TICKS(QUEUE_WAIT_TIMEOUT)) != pdTRUE) {
-            LOG_WARNING("MQTT alarm queue full, dropping alarm code=%s", entry.code);
+            LOG_WARNING("MQTT alarm queue full, dropping alarm: %s", entry.message);
         }
         requestImmediatePublish();
     }
@@ -2023,7 +2023,10 @@ namespace Mqtt
     // Minimal payload, published straight to _mqttTopicAlarm - deliberately NOT
     // routed through Shadow (no issuesToJson()/full reported-state doc build).
     // See openspec/changes/add-blackout-sag-detection: this is the fast path
-    // meant to beat a capacitor-backed last-gasp window.
+    // meant to beat a capacitor-backed last-gasp window. The power/pf/voltage
+    // snapshot is fetched here, at publish time, rather than carried in the
+    // queued AlarmEntry - keeps the queue item tiny and the snapshot as fresh
+    // as possible.
     static void _publishAlarm(const AlarmEntry& entry)
     {
         SpiRamAllocator allocator;
@@ -2032,13 +2035,26 @@ namespace Mqtt
         AdvancedLogger::getTimestampIsoUtcFromUnixTimeMilliseconds(entry.unixTimeMs, timestamp, sizeof(timestamp));
 
         doc["timestamp"] = timestamp;
-        doc["code"] = entry.code;
-        if (entry.channel != MQTT_ALARM_NO_CHANNEL) doc["channel"] = entry.channel;
-        doc["severity"] = entry.severity;
         doc["message"] = entry.message;
 
+        MeterValues voltageValues;
+        if (Ade7953::getMeterValues(voltageValues, 0)) {
+            doc["voltage"] = roundToDecimals(voltageValues.voltage, MQTT_GRID_VOLTAGE_PAYLOAD_DECIMALS);
+        }
+
+        JsonArray channels = doc["channels"].to<JsonArray>();
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
+            if (!Ade7953::isChannelActive(i)) continue;
+            MeterValues meterValues;
+            if (!Ade7953::getMeterValues(meterValues, i)) continue;
+            JsonObject channel = channels.add<JsonObject>();
+            channel["channel"] = i;
+            channel["power"] = roundToDecimals(meterValues.activePower, POWER_DECIMALS);
+            channel["pf"] = roundToDecimals(meterValues.powerFactor, POWER_FACTOR_DECIMALS);
+        }
+
         if (!_publishJsonStreaming(doc, _mqttTopicAlarm)) {
-            LOG_ERROR("Failed to publish alarm code=%s via streaming", entry.code);
+            LOG_ERROR("Failed to publish alarm via streaming");
         }
     }
 
