@@ -46,6 +46,7 @@
 #define OTA_TASK_PRIORITY 5
 #define OTA_HTTPS_BUFFER_SIZE_TX (2 * 1024)
 #define OTA_PRESIGNED_URL_BUFFER_SIZE (4 * 1024) // The presigned S3 URL can be very long
+#define OTA_SIGNATURE_HASH_CHUNK_SIZE 4096 // Chunk size for streaming the downloaded partition through SHA-256 before signature verification
 #define MQTT_OTA_SIZE_REPORT_UPDATE (128 * 1024)
 
 // OTA download retry schedule. The presigned S3 URL is minted when the device

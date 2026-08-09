@@ -16,7 +16,12 @@ static_assert(SHA256_HEX_BUFFER_SIZE == RollbackLogic::SHA256_HEX_LEN + 1,
 #include "mqtt_energy_publish_gate.h"
 #include "crash_archive_policy.h"
 #include "backoff_schedule.h"
+#include "ota_keys.h"
+#include "ota_signature.h"
 #include "mbedtls/base64.h"
+#include "mbedtls/sha256.h"
+#include "mbedtls/pk.h"
+#include "mbedtls/md.h"
 #include <algorithm>
 
 namespace Mqtt
@@ -118,6 +123,18 @@ namespace Mqtt
     };
     static OtaAttempt _otaAttempt = {};
 
+    // Decoded DER ECDSA signature for the OTA job currently being downloaded,
+    // set by _handleSingleJobExecution before the OTA task is spawned, consumed
+    // by _verifyOtaSignature() before the boot partition is switched.
+    static uint8_t _otaCurrentSignature[OtaSignature::MAX_DER_SIGNATURE_LEN];
+    static size_t _otaCurrentSignatureLen = 0;
+
+    // Reason published for a "FAILED" OTA status; reset to the generic default at
+    // the start of every _performOtaUpdate() call, overwritten at specific
+    // failure points (e.g. "signature_invalid") so _otaTask can publish a reason
+    // distinct from a plain download failure.
+    static char _otaFailureReason[NAME_BUFFER_SIZE] = "download_failed";
+
     // Thread safety
     static SemaphoreHandle_t _configMutex = nullptr;
 
@@ -192,6 +209,7 @@ namespace Mqtt
     static void _probeOtaHost();
     static esp_err_t _otaHttpEventHandler(esp_http_client_event_t *event);
     static bool _performOtaUpdate();
+    static bool _verifyOtaSignature(esp_https_ota_handle_t otaHandle);
     
     // OTA validation functions (clearOtaPendingState is public, declared in mqtt.h)
     static void _otaValidationTask(void* parameter);
@@ -1615,6 +1633,87 @@ namespace Mqtt
         return ESP_OK;
     }
 
+    // Verifies the just-downloaded (but not yet activated) OTA partition against the
+    // decoded signature captured from the job document, using the compiled-in public
+    // key. Runs while the currently-active (already-trusted) firmware is still in
+    // control, before esp_https_ota_finish() would switch the boot partition - the
+    // new image is never given control before this decision is made (see
+    // openspec/changes/mqtt-ota-signature-verification/design.md, Decision 3).
+    static bool _verifyOtaSignature(esp_https_ota_handle_t otaHandle) {
+        const esp_partition_t* update_partition = esp_ota_get_next_update_partition(NULL);
+        if (!update_partition) {
+            LOG_ERROR("Failed to get update partition for signature verification");
+            snprintf(_otaFailureReason, sizeof(_otaFailureReason), "partition_error");
+            return false;
+        }
+
+        int imageLen = esp_https_ota_get_image_len_read(otaHandle);
+        if (imageLen <= 0) {
+            LOG_ERROR("Invalid downloaded image length for signature verification: %d", imageLen);
+            snprintf(_otaFailureReason, sizeof(_otaFailureReason), "invalid_image_length");
+            return false;
+        }
+
+        // Hash the bytes actually written to flash ourselves - never trust a hash
+        // supplied alongside the download, only what we can read back.
+        mbedtls_sha256_context shaCtx;
+        mbedtls_sha256_init(&shaCtx);
+        mbedtls_sha256_starts(&shaCtx, 0); // 0 = SHA-256 (not the SHA-224 variant)
+
+        uint8_t buffer[OTA_SIGNATURE_HASH_CHUNK_SIZE];
+        size_t offset = 0;
+        uint32_t loopIterations = 0;
+        while (offset < (size_t)imageLen) {
+            if (++loopIterations > MAX_LOOP_ITERATIONS) {
+                LOG_ERROR("Partition hashing loop exceeded max iterations");
+                mbedtls_sha256_free(&shaCtx);
+                snprintf(_otaFailureReason, sizeof(_otaFailureReason), "hash_loop_exceeded");
+                return false;
+            }
+
+            size_t chunkSize = std::min((size_t)OTA_SIGNATURE_HASH_CHUNK_SIZE, (size_t)imageLen - offset);
+            esp_err_t readErr = esp_partition_read(update_partition, offset, buffer, chunkSize);
+            if (readErr != ESP_OK) {
+                LOG_ERROR("Failed to read partition at offset %u for hashing: %s", (unsigned)offset, esp_err_to_name(readErr));
+                mbedtls_sha256_free(&shaCtx);
+                snprintf(_otaFailureReason, sizeof(_otaFailureReason), "partition_read_error");
+                return false;
+            }
+
+            mbedtls_sha256_update(&shaCtx, buffer, chunkSize);
+            offset += chunkSize;
+        }
+
+        uint8_t digest[32];
+        mbedtls_sha256_finish(&shaCtx, digest);
+        mbedtls_sha256_free(&shaCtx);
+
+        mbedtls_pk_context pk;
+        mbedtls_pk_init(&pk);
+        int parseRet = mbedtls_pk_parse_public_key(
+            &pk,
+            reinterpret_cast<const unsigned char*>(OTA_SIGNING_PUBLIC_KEY_PEM),
+            strlen(OTA_SIGNING_PUBLIC_KEY_PEM) + 1); // +1: mbedtls PEM parsing requires the null terminator
+        if (parseRet != 0) {
+            LOG_ERROR("Failed to parse embedded OTA signing public key: -0x%04X", -parseRet);
+            mbedtls_pk_free(&pk);
+            snprintf(_otaFailureReason, sizeof(_otaFailureReason), "pubkey_parse_error");
+            return false;
+        }
+
+        int verifyRet = mbedtls_pk_verify(&pk, MBEDTLS_MD_SHA256, digest, sizeof(digest), _otaCurrentSignature, _otaCurrentSignatureLen);
+        mbedtls_pk_free(&pk);
+
+        if (verifyRet != 0) {
+            LOG_WARNING("OTA firmware signature verification failed: -0x%04X", -verifyRet);
+            snprintf(_otaFailureReason, sizeof(_otaFailureReason), "signature_invalid");
+            return false;
+        }
+
+        LOG_INFO("OTA firmware signature verified successfully (%d bytes)", imageLen);
+        return true;
+    }
+
     // Run once per download rather than per attempt: it is only a log-level
     // diagnostic, and each call opens a socket on the heap the download needs.
     static void _probeOtaHost() {
@@ -1639,6 +1738,7 @@ namespace Mqtt
         // Reset per attempt: a retry whose response carries no Content-Length
         // would otherwise inherit the previous attempt's counters.
         _otaAttempt = {};
+        snprintf(_otaFailureReason, sizeof(_otaFailureReason), "download_failed"); // Default unless a later step overwrites it
 
         esp_http_client_config_t _httpConfig = {
             .url = _otaCurrentUrl,
@@ -1661,12 +1761,43 @@ namespace Mqtt
         // runs (no verifyOta/verifyRollbackLater override in this project), so a crash
         // in setup() or later is covered only by CrashMonitor's application-level
         // rollback, not by the bootloader.
-        esp_err_t result = esp_https_ota(&_otaConfig);
+        //
+        // Granular begin/perform/verify/finish-or-abort sequence instead of the
+        // single esp_https_ota() call, so the signature can be checked - from this
+        // still-running trusted firmware - before the boot partition is switched.
+        esp_https_ota_handle_t otaHandle = nullptr;
+        esp_err_t result = esp_https_ota_begin(&_otaConfig, &otaHandle);
+
+        if (result == ESP_OK) {
+            do {
+                result = esp_https_ota_perform(otaHandle);
+            } while (result == ESP_ERR_HTTPS_OTA_IN_PROGRESS);
+
+            if (result == ESP_OK && !esp_https_ota_is_complete_data_read(otaHandle)) {
+                LOG_ERROR("OTA download incomplete (connection closed early)");
+                snprintf(_otaFailureReason, sizeof(_otaFailureReason), "incomplete_download");
+                result = ESP_FAIL;
+            }
+
+            if (result == ESP_OK && !_verifyOtaSignature(otaHandle)) {
+                // _verifyOtaSignature() has already set _otaFailureReason and logged the cause
+                result = ESP_FAIL;
+                esp_https_ota_abort(otaHandle);
+            } else if (result == ESP_OK) {
+                result = esp_https_ota_finish(otaHandle);
+                if (result != ESP_OK) {
+                    LOG_ERROR("OTA finish failed: %s (%d)", esp_err_to_name(result), result);
+                    snprintf(_otaFailureReason, sizeof(_otaFailureReason), "finish_failed");
+                }
+            } else {
+                esp_https_ota_abort(otaHandle);
+            }
+        }
 
         _otaAttempt.error = result;
 
         if (result == ESP_OK) {
-            LOG_INFO("OTA update downloaded successfully (not yet validated)");
+            LOG_INFO("OTA update downloaded, signature verified, and activated (not yet post-reboot validated)");
             return true;
         }
 
@@ -1798,12 +1929,13 @@ namespace Mqtt
 
             setRestartSystem("OTA download complete, rebooting for validation");
         } else {
-            LOG_ERROR("OTA download failed for job %s after %u attempts.", _otaCurrentJobId, attempt);
+            LOG_ERROR("OTA download failed for job %s after %u attempts: %s.", _otaCurrentJobId, attempt, _otaFailureReason);
 
-            // Publish failure status immediately. `reason` keeps its original
-            // value so existing consumers are unaffected; the detail that makes
-            // the failure diagnosable rides alongside it.
-            _publishOtaStatus(_otaCurrentJobId, "FAILED", "download_failed", true, attempt);
+            // Publish failure status immediately. `reason` carries the specific
+            // cause set by _performOtaUpdate() / _verifyOtaSignature() (e.g.
+            // "signature_invalid", distinct from a plain "download_failed"); the
+            // detail that makes the failure diagnosable rides alongside it.
+            _publishOtaStatus(_otaCurrentJobId, "FAILED", _otaFailureReason, true, attempt);
         }
 
         // Clean up
@@ -1924,6 +2056,7 @@ namespace Mqtt
         const char* operation = doc["execution"]["jobDocument"]["operation"].as<const char*>();
         const char* url = doc["execution"]["jobDocument"]["firmware"]["url"].as<const char*>();
         const char* targetVersion = doc["execution"]["jobDocument"]["firmware"]["version"].as<const char*>();
+        const char* signatureBase64 = doc["execution"]["jobDocument"]["firmware"]["signature"].as<const char*>();
         // Read force strictly as a bool: ArduinoJson's as<bool>() returns true
         // for ANY non-null value regardless of type (v6.12+), so a job document
         // with force sent as the JSON string "false" would otherwise silently
@@ -1945,6 +2078,19 @@ namespace Mqtt
         if (strcmp(operation, "ota_update") != 0) {
             LOG_WARNING("Job operation '%s' is not supported, rejecting job %s.", operation, jobId);
             _publishOtaStatus(jobId, "REJECTED", "unsupported_operation");
+            return;
+        }
+
+        // Mandatory and unconditional: a missing/malformed firmware.signature is
+        // always rejected here, before any download starts, and is never treated as
+        // "skip verification". A field-presence fallback would be reachable by
+        // exactly the compromised-job-document attacker this check defends against
+        // (see openspec/changes/mqtt-ota-signature-verification/design.md, Decision 4).
+        // Decoded (not just format-checked) so the bytes are ready for
+        // _verifyOtaSignature() once the OTA task actually downloads the firmware.
+        if (!OtaSignature::decodeAndValidate(signatureBase64, _otaCurrentSignature, sizeof(_otaCurrentSignature), _otaCurrentSignatureLen)) {
+            LOG_WARNING("Job '%s' has no valid firmware.signature, rejecting.", jobId);
+            _publishOtaStatus(jobId, "REJECTED", "signature_missing_or_invalid");
             return;
         }
 
