@@ -19,10 +19,10 @@
 - [x] 3.7 Add the ZXTO branch to `_handleInterrupt()` (checked alongside the existing ZXV/CYCEND/RESET/CRC branches), and include the ZXTO bit in the demux's handled-bit mask so it no longer counts as unhandled.
 - [x] 3.8 Expose `ade7953ZxtoInterrupts` via `/system/info` (wherever the other ADE7953 interrupt counters are already surfaced).
 
-## 4. Runaway-firing guard
+## 4. Runaway-firing guard (count-based burst, superseded by task group 8)
 
-- [x] 4.1 Add a count-based log burst guard to `_handleZxtoInterrupt()`: first `ADE7953_ZXTO_LOG_BURST` occurrences log in full, one suppression notice, then count-only (`statistics.ade7953ZxtoInterrupts` still increments every time, unthrottled).
-- [x] 4.2 Rearm the burst guard from a clean `CYCEND` window (no ZXTO seen during that accumulation period) in `_handleCycendInterrupt()` - not `ZXV`, which would defeat the throttle during a still-partially-valid waveform.
+- [x] 4.1 ~~Add a count-based log burst guard to `_handleZxtoInterrupt()`: first `ADE7953_ZXTO_LOG_BURST` occurrences log in full, one suppression notice, then count-only.~~ Worked, but each extra FATAL/log-forward was found (task group 6) to compete for the same thin MQTT window the alarm needs - replaced by a flat 60s suppression window, task group 8.
+- [x] 4.2 ~~Rearm the burst guard from a clean `CYCEND` window.~~ Removed along with 4.1 - the flat time floor (task group 8) doesn't need a rearm signal.
 
 ## 5. Bench validation
 
@@ -32,3 +32,31 @@
 - [x] 5.4 Confirm `ade7953ZxtoInterrupts` increments as expected, and confirm the demux fix (task 1) produces no spurious new warnings under normal operation. Confirmed inline in the log itself (`count=1` -> `count=2` -> `count=3`, in lockstep with `burst`); live `/system/statistics` post-reboot shows `unhandledInterrupts: 0` under normal operation. Counters read 0 post-reboot because they are not NVS-persisted (documented non-goal, not a bug) - the reboot itself is why.
 - [x] 5.5 Note observed firing behavior. ZXTO succeeded where SAG previously produced no log at all: burst fired at ~4-40ms spacing (roughly matching the ~15ms `ZXTOUT` plus jitter), burst guard correctly capped it at 3 full entries + 1 suppression notice with no flood. The device took a genuine "Power on" reset shortly after - likely reflects how long the physical plug-pull/reseat took, not the capacitor's real hold-up time (this bench board's cap differs from v6.1 - see design.md caveat).
 - [x] 5.6 Repeated plug-pull test: confirm each pull produces a fresh full-detail burst (not suppressed by a previous episode) and that the suppression notice appears if a single episode exceeds `ADE7953_ZXTO_LOG_BURST` occurrences. Confirmed 2026-08-09: tested across multiple pulls, rearm behaved correctly each time.
+
+## 6. Immediate-wake mechanism (`xTaskNotifyWait`) for the issue registry and MQTT task
+
+- [x] 6.1 Add a shared `TASK_NOTIFY_SHUTDOWN_BIT` convention (`constants.h`); migrate `stopTaskGracefully()` to `xTaskNotify(handle, TASK_NOTIFY_SHUTDOWN_BIT, eSetBits)` instead of a plain `xTaskNotifyGive()` - every existing `ulTaskNotifyTake(pdTRUE, ticks) > 0` consumer is unaffected (only checks truthiness).
+- [x] 6.2 `IssueRegistry::requestImmediateEvaluation()`: registry task loop swapped from `ulTaskNotifyTake` to `xTaskNotifyWait`, own `ISSUE_REGISTRY_NOTIFY_REEVALUATE_BIT`.
+- [x] 6.3 `Mqtt::requestImmediatePublish()`: MQTT task loop swapped from `ulTaskNotifyTake` to `xTaskNotifyWait`, own `MQTT_NOTIFY_WAKE_BIT`; `Shadow::requestReport()` calls it on every report request.
+- [x] 6.4 Bench-confirmed the demonstrated mechanism works mechanically (wake latency eliminated at both hops) - see task group 7 for why it wasn't sufficient on its own for the grid-loss alarm.
+
+## 7. `grid_voltage_loss` as an `IssueRegistry` code (attempted, removed)
+
+- [x] 7.1 ~~Add `Code::GridVoltageLoss` to `IssueLogic`, evaluate in `_evaluateGlobalCodes()` (pulse on `ade7953ZxtoInterrupts` delta), raise via the normal 4-state lifecycle, push an MQTT alarm on the raise edge from inside `_updateInstance()`.~~ Implemented, bench-tested twice (2026-08-09) after task group 6's immediate-wake fix. Both times the AWS shadow never showed the issue, despite the local "Issue raised" log line firing and the wake latency being confirmed eliminated. Root cause: the registry's generic reported-state publish (`issuesToJson()` walking all 32 issue slots, full shadow doc, drift check across every other shadow) was too heavy for a deadline-critical payload - a wake-latency fix alone doesn't help if the publish itself is slow. All `grid_voltage_loss`/`GridVoltageLoss` code removed from `IssueLogic::Code`, `issueregistry.cpp`, and the unit tests - see task group 8 for the replacement.
+
+## 8. Direct MQTT alarm (replaces task groups 4 and 7)
+
+- [x] 8.1 New `AlarmEntry` payload type (`mqtt.h`): code, channel, severity, message, timestamp - a fixed-size POD struct, independent of `IssueLogic`/`IssueRegistry`.
+- [x] 8.2 New dedicated MQTT topic/AWS IoT Rule (`MQTT_TOPIC_ALARM "alarm"`, `AWS_IOT_CORE_RULE_ALARM`), following the existing one-rule-per-category convention (`meter`/`grid`/`energy`/`log`).
+- [x] 8.3 `Mqtt::pushAlarm()`: FreeRTOS-queue producer (PSRAM-backed static queue, mirrors `pushLog`/`pushMeter`/`pushGrid`), safe to call from any task; wakes the MQTT task via `requestImmediatePublish()`.
+- [x] 8.4 `_processAlarmQueue()` drained first in `_handleConnectedState()`, ahead of `_processLogQueue()` and everything else.
+- [x] 8.5 `Ade7953::_handleZxtoInterrupt()` calls `Mqtt::pushAlarm()` directly - not routed through `IssueRegistry` (see task group 7 for why).
+- [x] 8.6 Replace the count-based burst guard (task group 4) with a flat `ADE7953_ZXTO_SUPPRESS_MS` (60s) suppression window: `_zxtoLastTriggerMs` timestamp, only the first ZXTO since that window elapsed triggers the alarm/FATAL; every other occurrence is `LOG_DEBUG`-only (filtered out of the MQTT log queue by `pushLog()`'s level check, so a runaway condition costs nothing on the MQTT task beyond the one real trigger).
+- [x] 8.7 `AWS_IOT_CORE_RULE_ALARM` confirmed provisioned server-side (infra repo).
+
+## 9. Bench validation, round 2 (direct alarm path)
+
+- [ ] 9.1 Build and flash the direct-alarm-path firmware (task group 8) via `esp32s3-dev-v5`.
+- [ ] 9.2 Induce a grid-loss event; confirm exactly one `LOG_FATAL` + one alarm publish trace appears (not the old 3-burst pattern), and any further ZXTO within 60s shows only `LOG_DEBUG`.
+- [ ] 9.3 Confirm the alarm is received on the AWS side (not just that the device-side publish call succeeded) - the outstanding open question from design.md.
+- [ ] 9.4 Repeat across multiple plug-pulls spaced more than 60s apart; confirm each produces a fresh trigger.
