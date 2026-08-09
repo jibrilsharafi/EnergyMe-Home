@@ -810,10 +810,11 @@ void printStatistics() {
     updateStatistics();
 
     LOG_DEBUG("--- Statistics ---");
-    LOG_DEBUG("Statistics - ADE7953: %llu total interrupts | %llu handled interrupts | %llu zx interrupts | %llu service passes | %llu unhandled | %llu readings | %llu reading failures",
+    LOG_DEBUG("Statistics - ADE7953: %llu total interrupts | %llu handled interrupts | %llu zx interrupts | %llu sag interrupts | %llu service passes | %llu unhandled | %llu readings | %llu reading failures",
         statistics.ade7953TotalInterrupts,
         statistics.ade7953TotalHandledInterrupts,
         statistics.ade7953ZxInterrupts,
+        statistics.ade7953SagInterrupts,
         statistics.ade7953ServicePasses,
         statistics.ade7953UnhandledInterrupts,
         statistics.ade7953ReadingCount,
@@ -874,6 +875,7 @@ void statisticsToJson(Statistics& statistics, JsonDocument &jsonDocument) {
     jsonDocument["ade7953"]["totalInterrupts"] = statistics.ade7953TotalInterrupts;
     jsonDocument["ade7953"]["totalHandledInterrupts"] = statistics.ade7953TotalHandledInterrupts;
     jsonDocument["ade7953"]["zxInterrupts"] = statistics.ade7953ZxInterrupts;
+    jsonDocument["ade7953"]["sagInterrupts"] = statistics.ade7953SagInterrupts;
     jsonDocument["ade7953"]["servicePasses"] = statistics.ade7953ServicePasses;
     jsonDocument["ade7953"]["unhandledInterrupts"] = statistics.ade7953UnhandledInterrupts;
     jsonDocument["ade7953"]["readingCount"] = statistics.ade7953ReadingCount;

@@ -154,6 +154,7 @@ namespace Ade7953
     static void _pollWaveformSamples();
     static void _handleCrcChangeInterrupt();
     static void _handleResetInterrupt();
+    static void _handleSagInterrupt();
 
     // Task management
     static void _startMeterReadingTask();
@@ -1940,6 +1941,13 @@ namespace Ade7953
             _handleZxvInterrupt();
         }
 
+        // SAG next: a grid-loss precursor, serviced ahead of the routine CYCEND/RESET/CRC
+        // bookkeeping below (see openspec/changes/add-blackout-sag-detection).
+        if (statusA & (1 << IRQSTATA_SAG_BIT)) {
+            statistics.ade7953SagInterrupts++;
+            _handleSagInterrupt();
+        }
+
         if (statusA & (1 << IRQSTATA_CYCEND_BIT)) {
             _handleCycendInterrupt(linecycUnix);
         }
@@ -1953,7 +1961,7 @@ namespace Ade7953
         }
 
         constexpr int32_t handledIrqMask =
-            (1 << IRQSTATA_ZXV_BIT) | (1 << IRQSTATA_CYCEND_BIT) |
+            (1 << IRQSTATA_ZXV_BIT) | (1 << IRQSTATA_SAG_BIT) | (1 << IRQSTATA_CYCEND_BIT) |
             (1 << IRQSTATA_RESET_BIT) | (1 << IRQSTATA_CRC_BIT);
         if (MeterLogic::hasUnhandledIrqBits(statusA, handledIrqMask)) {
             statistics.ade7953UnhandledInterrupts++;
@@ -2174,6 +2182,14 @@ namespace Ade7953
     void _handleResetInterrupt() {
         // This should never happen unless a powerful power drop occurs (which would likely reset also the ESP32)
         LOG_WARNING("TO BE IMPLEMENTED: ADE7953 reset interrupt detected - reinitializing device");
+    }
+
+    // Phase 1 (see openspec/changes/add-blackout-sag-detection): observation only - no MQTT/network
+    // side effects here. Uses the already-cached channel-0 voltage (no SPI read) to stay cheap on a
+    // path that may be racing a capacitor's hold-up time.
+    void _handleSagInterrupt() {
+        LOG_FATAL("ADE7953 SAG detected (voltage below threshold for %u half-cycle(s)) - count=%llu, last known voltage=%.1fV",
+                  ADE7953_SAGCYC_VALUE, statistics.ade7953SagInterrupts, _meterValues[0].voltage);
     }
 
     // Tasks
