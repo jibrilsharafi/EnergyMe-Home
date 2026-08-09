@@ -13,3 +13,6 @@ dependencies = [
     "tqdm>=4.67.1",
     "esp-coredump>=1.16.0",
 ]
+
+[tool.uv]
+environments = ["sys_platform != 'darwin' or platform_machine != 'x86_64'"]
