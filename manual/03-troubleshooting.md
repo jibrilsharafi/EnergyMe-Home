@@ -5,8 +5,8 @@
 A full symptom-driven troubleshooting guide is being prepared. Anticipated sections:
 
 - **LED behaviour** — what each colour and pattern means (cross-reference: [Appendix C](appendices.md#appendix-c-led-status-reference))
-- **Wi-Fi & connectivity** — captive portal doesn't appear, `energyme.local` unreachable, device drops off the network
-- **Login & access** — forgot password, default credentials not accepted
+- **Wi-Fi & connectivity** — setup network doesn't appear, `energyme.local` unreachable, device drops off the network
+- **Login & access** — forgot password, default credentials not accepted, temporarily locked out after repeated wrong passwords
 - **Readings** — negative power values, no readings on a channel, branch sum greater than main, all zeros
 - **CT placement** — symptoms suggesting a misclamped or inverted CT (cross-reference: the kettle test in [§4.7](02-setup.md#47-verification))
 - **Reset procedures** — when and how to use restart, password reset, Wi-Fi reset, factory reset (cross-reference: [Appendix D](appendices.md#appendix-d-user-button-reference))
