@@ -180,6 +180,13 @@
     <div id="update" class="section-box">
         <h2>Update</h2>
         <p>Upload a new firmware to the device (only <i>.bin</i> files are allowed)</p>
+        <div class="warning-box"
+            style="background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; margin: 10px 0;">
+            ⚠️ Local uploads are <b>not cryptographically verified</b> - only flash firmware you trust. Official
+            builds are published on
+            <a href="https://github.com/jibrilsharafi/EnergyMe-Home/releases" target="_blank" rel="noopener">GitHub
+                Releases</a>.
+        </div>
         <form method='POST' action='/api/v1/ota/upload' enctype='multipart/form-data' onsubmit="return formSubmitted(event)">
             <input type='file' id='file' name='firmware' accept='.bin' required
                 title="Select the firmware .bin file to upload">
