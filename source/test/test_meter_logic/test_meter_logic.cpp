@@ -1244,7 +1244,7 @@ void test_unhandled_irq_all_recognized_bits_is_false(void) {
 
 void test_unhandled_irq_recognized_plus_unrecognized_is_true(void) {
     // Bit 0 (recognized) co-pends with bit 2 (not in the handled set) - the
-    // exact SAG-next-to-ZXV scenario this predicate exists to catch.
+    // exact ZXTO-next-to-ZXV scenario this predicate exists to catch.
     TEST_ASSERT_TRUE(hasUnhandledIrqBits(0b0101, IRQ_HANDLED_MASK));
 }
 

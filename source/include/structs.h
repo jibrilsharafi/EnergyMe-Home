@@ -12,7 +12,7 @@ struct Statistics { // This will be global and we accept the very small race con
   uint64_t ade7953TotalInterrupts;
   uint64_t ade7953TotalHandledInterrupts;
   uint64_t ade7953ZxInterrupts; // ZXV (voltage zero-crossing) services, counted separately from CYCEND
-  uint64_t ade7953SagInterrupts; // SAG (voltage sag / grid-loss precursor) services
+  uint64_t ade7953ZxtoInterrupts; // ZXTO (zero-crossing timeout / grid-loss precursor) services
   uint64_t ade7953ServicePasses; // Semaphore takes; ade7953TotalInterrupts - this = ISR wakeups coalesced into another pass
   uint64_t ade7953UnhandledInterrupts; // Status snapshot had a bit set outside the handled set (even if a handled bit also co-pended)
   uint64_t ade7953ReadingCount;
@@ -50,7 +50,7 @@ struct Statistics { // This will be global and we accept the very small race con
   uint64_t logDropped;
 
   Statistics()
-    : ade7953TotalInterrupts(0), ade7953TotalHandledInterrupts(0), ade7953ZxInterrupts(0), ade7953SagInterrupts(0), ade7953ServicePasses(0), ade7953UnhandledInterrupts(0), ade7953ReadingCount(0), ade7953ReadingCountFailure(0),
+    : ade7953TotalInterrupts(0), ade7953TotalHandledInterrupts(0), ade7953ZxInterrupts(0), ade7953ZxtoInterrupts(0), ade7953ServicePasses(0), ade7953UnhandledInterrupts(0), ade7953ReadingCount(0), ade7953ReadingCountFailure(0),
     mqttMessagesPublished(0), mqttMessagesPublishedError(0), mqttConnections(0), mqttConnectionErrors(0), mqttMeterPointsDropped(0), mqttGridPointsDropped(0),
     customMqttMessagesPublished(0), customMqttMessagesPublishedError(0), modbusRequests(0), modbusRequestsError(0),
     influxdbUploadCount(0), influxdbUploadCountError(0), wifiConnection(0), wifiConnectionError(0),

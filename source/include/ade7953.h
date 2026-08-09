@@ -110,23 +110,22 @@
 #define DEFAULT_LCYCMODE_REGISTER 0b00111111 // 0x3F line cycle accumulation on all channels; read-with-reset OFF (see guardrail above)
 #define DEFAULT_PGA_REGISTER 0 // PGA gain 1
 #define DEFAULT_CONFIG_REGISTER 0b1010000100001100 // Bits 2, 3 (line accumulation for PF), 8 (CRC), 13:12=10b (ZX_EDGE: positive-going zero crossings only; does not affect linecyc), 15 (HPF enabled, COMM_LOCK disabled)
-#define DEFAULT_IRQENA_REGISTER 0b001111001000000000000000 // ZXV (bit 15, grid frequency), CYCEND (bit 18), SAG (bit 19, grid-loss detection), Reset (bit 20, mandatory), CRC change (bit 21)
+#define DEFAULT_IRQENA_REGISTER 0b00001101001100000000000000 // ZXTO (bit 14, grid-loss detection), ZXV (bit 15, grid frequency), CYCEND (bit 18), Reset (bit 20, mandatory), CRC change (bit 21)
 #define MINIMUM_SAMPLE_TIME 200ULL // The settling time of the ADE7953 is 200 ms, so reading faster than this makes little sense
 
-// SAG detection (grid-loss precursor, see openspec/changes/add-blackout-sag-detection)
-#define ADE7953_SAGCYC_VALUE 1 // Minimum SAGCYC (one half line cycle, ~10ms @ 50Hz): fastest available trigger, matches the thin capacitor hold-up budget
-#define ADE7953_SAGLVL_PERCENT 80 // SAGLVL as a percentage of a live VPEAK reading (datasheet's own worked example)
-#define ADE7953_SAGLVL_SETTLE_MS 60ULL // Wait after resetting VPEAK before reading it for SAGLVL derivation (~3 line cycles @ 50Hz)
-// VPEAK is a 24-bit unsigned register regardless of which address width it's read at (default
-// 0x000000). Plausibility floor for arming SAG at boot: comfortably below any real mains reading
-// at any supported voltage/PGA_V gain (a live 225V bench unit read ~26% of full scale), comfortably
-// above the ADC noise floor with no AC connected at all (e.g. booted on USB with AC disconnected).
-#define ADE7953_VPEAK_FULL_SCALE 16777215L // 2^24 - 1
-#define ADE7953_SAG_MIN_VPEAK_PERCENT 2 // % of ADE7953_VPEAK_FULL_SCALE
-// Sustained/misconfigured SAG has no hardware debounce (SAGCYC=1 is deliberate) and could
-// otherwise re-fire every half line cycle indefinitely - log the first few in full, then suppress
-// until a clean CYCEND window (see _handleSagInterrupt/_handleCycendInterrupt) proves the line healthy again.
-#define ADE7953_SAG_LOG_BURST 3
+// Zero-crossing timeout (grid-loss precursor, see openspec/changes/add-blackout-sag-detection).
+// ZXTOUT reloads on the raw zero-crossing detector output (both edges, LPF1 output) regardless
+// of the ZX_EDGE config bits - those only filter which crossings set the ZXV/ZXIA/ZXIB interrupt
+// bits, confirmed in the datasheet's Zero-Crossing Interrupts section ("changing ZX_EDGE affects
+// only the ZX status bits and interrupts"). So the normal reload interval is one half line cycle
+// (~10ms @ 50Hz), not a full cycle. ~15ms clears the worst-case healthy half-cycle gap (~10.6ms
+// at 47Hz, the low end of normal grid tolerance) plus margin for LPF1's own ~2.2ms phase delay,
+// so a single missed crossing still fires without false-triggering on normal frequency wobble.
+// Starting point, not verified against real jitter yet - tune from bench data.
+#define ADE7953_ZXTOUT_RESOLUTION_US 71 // 1 / 14kHz (CLKIN/256) per LSB, datasheet rounds to 0.07ms
+#define ADE7953_ZXTOUT_TARGET_MS 15
+#define ADE7953_ZXTOUT_VALUE ((ADE7953_ZXTOUT_TARGET_MS * 1000UL) / ADE7953_ZXTOUT_RESOLUTION_US) // ~211
+#define ADE7953_ZXTO_LOG_BURST 3
 
 // Channel validation ranges
 #define VALIDATE_CT_CURRENT_RATING_MIN 0.0f

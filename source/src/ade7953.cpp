@@ -74,9 +74,9 @@ namespace Ade7953
     static uint32_t _criticalFailureCount = 0;
     static uint64_t _firstCriticalFailureTime = 0;
 
-    // SAG log burst guard (see _handleSagInterrupt/_handleCycendInterrupt)
-    static uint32_t _sagBurstCount = 0;
-    static bool _sagSeenThisCycendWindow = false;
+    // ZXTO log burst guard (see _handleZxtoInterrupt/_handleCycendInterrupt)
+    static uint32_t _zxtoBurstCount = 0;
+    static bool _zxtoSeenThisCycendWindow = false;
 
     // Operational flags
     static bool _hasConfigurationChanged = false; // Flag to track if configuration has changed (needed since we will get an interrupt for CRC change)
@@ -148,7 +148,6 @@ namespace Ade7953
 
     // Interrupt handling
     static void _setupInterrupts();
-    static void _configureSagDetection();
     static void _handleInterrupt(uint64_t linecycUnix);
     static void _attachInterruptHandler();
     static void _detachInterruptHandler();
@@ -158,7 +157,7 @@ namespace Ade7953
     static void _pollWaveformSamples();
     static void _handleCrcChangeInterrupt();
     static void _handleResetInterrupt();
-    static void _handleSagInterrupt();
+    static void _handleZxtoInterrupt();
 
     // Task management
     static void _startMeterReadingTask();
@@ -1897,7 +1896,8 @@ namespace Ade7953
     // ==================
 
     void _setupInterrupts() {
-        _configureSagDetection();
+        // Static timeout (see ADE7953_ZXTOUT_VALUE rationale) - no per-boot computation needed.
+        writeRegister(ZXTOUT_16, BIT_16, ADE7953_ZXTOUT_VALUE);
 
         writeRegister(IRQENA_32, BIT_32, DEFAULT_IRQENA_REGISTER);
 
@@ -1905,33 +1905,7 @@ namespace Ade7953
         readRegister(RSTIRQSTATA_32, BIT_32, false);
         readRegister(RSTIRQSTATB_32, BIT_32, false);
 
-        LOG_DEBUG("ADE7953 interrupts enabled: ZXV, CYCEND, SAG, RESET, CRC");
-    }
-
-    // Derives SAGLVL from a live VPEAK reading (ADE7953 datasheet's own procedure):
-    // reset the peak register, wait a few line cycles for a fresh reading, then take
-    // ADE7953_SAGLVL_PERCENT of it. Self-scaling per device/region - no dependency on
-    // the separate voltage-gain calibration flow (see openspec/changes/add-blackout-sag-detection).
-    void _configureSagDetection() {
-        readRegister(RSTVPEAK_32, BIT_32, false); // reset peak, discard the stale value
-        delay(ADE7953_SAGLVL_SETTLE_MS);
-        int32_t vpeak = readRegister(VPEAK_32, BIT_32, false);
-
-        constexpr int32_t minPlausibleVpeak = (ADE7953_VPEAK_FULL_SCALE * ADE7953_SAG_MIN_VPEAK_PERCENT) / 100;
-        if (vpeak < minPlausibleVpeak) {
-            // Explicit disable (not just "don't write") regardless of any prior arm state:
-            // SAGCYC == 0 silently disables sag detection entirely (datasheet). A reading this
-            // low doesn't look like real mains (e.g. booted on USB with AC disconnected) - arming
-            // with a threshold derived from it would be armed-but-meaningless, not a safe default.
-            writeRegister(SAGCYC_8, BIT_8, 0);
-            LOG_WARNING("SAG detection NOT armed - no plausible mains at boot (VPEAK=%ld)", vpeak);
-            return;
-        }
-
-        int32_t saglvl = (vpeak * ADE7953_SAGLVL_PERCENT) / 100;
-        writeRegister(SAGCYC_8, BIT_8, ADE7953_SAGCYC_VALUE);
-        writeRegister(SAGLVL_32, BIT_32, saglvl);
-        LOG_INFO("SAG detection armed: VPEAK=%ld, SAGLVL=%ld (%u%%), SAGCYC=%u", vpeak, saglvl, ADE7953_SAGLVL_PERCENT, ADE7953_SAGCYC_VALUE);
+        LOG_INFO("ADE7953 interrupts enabled: ZXV, ZXTO (ZXTOUT=%u, ~%ums), CYCEND, RESET, CRC", ADE7953_ZXTOUT_VALUE, ADE7953_ZXTOUT_TARGET_MS);
     }
 
     void _handleInterrupt(uint64_t linecycUnix)
@@ -1949,11 +1923,12 @@ namespace Ade7953
             _handleZxvInterrupt();
         }
 
-        // SAG next: a grid-loss precursor, serviced ahead of the routine CYCEND/RESET/CRC
-        // bookkeeping below (see openspec/changes/add-blackout-sag-detection).
-        if (statusA & (1 << IRQSTATA_SAG_BIT)) {
-            statistics.ade7953SagInterrupts++;
-            _handleSagInterrupt();
+        // ZXTO next: a grid-loss precursor (complete absence of zero crossings for the
+        // configured timeout), serviced ahead of the routine CYCEND/RESET/CRC bookkeeping
+        // below - see openspec/changes/add-blackout-sag-detection.
+        if (statusA & (1 << IRQSTATA_ZXTO_BIT)) {
+            statistics.ade7953ZxtoInterrupts++;
+            _handleZxtoInterrupt();
         }
 
         if (statusA & (1 << IRQSTATA_CYCEND_BIT)) {
@@ -1971,11 +1946,11 @@ namespace Ade7953
         // IRQSTATA reports every channel/energy event continuously regardless of IRQENA -
         // enable only gates the physical IRQ pin, not the status bit itself. Bits we never
         // enabled (current-channel zero-crossing, overcurrent, no-load, energy overflow, ...)
-        // are therefore expected noise, not our concern: we only care about voltage (ZXV/SAG)
+        // are therefore expected noise, not our concern: we only care about voltage (ZXV/ZXTO)
         // and bookkeeping (CYCEND/RESET/CRC), so restrict the check to bits we actually enabled.
         constexpr int32_t handledIrqMask =
-            (1 << IRQSTATA_ZXV_BIT) | (1 << IRQSTATA_SAG_BIT) | (1 << IRQSTATA_CYCEND_BIT) |
-            (1 << IRQSTATA_RESET_BIT) | (1 << IRQSTATA_CRC_BIT);
+            (1 << IRQSTATA_ZXV_BIT) | (1 << IRQSTATA_ZXTO_BIT) |
+            (1 << IRQSTATA_CYCEND_BIT) | (1 << IRQSTATA_RESET_BIT) | (1 << IRQSTATA_CRC_BIT);
         int32_t enabledStatus = statusA & DEFAULT_IRQENA_REGISTER;
         if (MeterLogic::hasUnhandledIrqBits(enabledStatus, handledIrqMask)) {
             statistics.ade7953UnhandledInterrupts++;
@@ -2023,12 +1998,12 @@ namespace Ade7953
         LOG_VERBOSE("Line cycle end detected on Channel A");
         statistics.ade7953TotalHandledInterrupts++;
 
-        // A full accumulation window with no SAG means the line is healthy again - rearm the
-        // SAG log burst guard (see _handleSagInterrupt). SAG is serviced before CYCEND on the
-        // same status snapshot (_handleInterrupt), so a SAG co-pending with this CYCEND already
-        // set _sagSeenThisCycendWindow = true and correctly blocks the rearm this round.
-        if (!_sagSeenThisCycendWindow) _sagBurstCount = 0;
-        _sagSeenThisCycendWindow = false;
+        // A full accumulation window with no ZXTO means the line is healthy again - rearm the
+        // ZXTO log burst guard (see _handleZxtoInterrupt). ZXTO is serviced before CYCEND on the
+        // same status snapshot (_handleInterrupt), so a ZXTO co-pending with this CYCEND already
+        // set _zxtoSeenThisCycendWindow = true and correctly blocks the rearm this round.
+        if (!_zxtoSeenThisCycendWindow) _zxtoBurstCount = 0;
+        _zxtoSeenThisCycendWindow = false;
 
         if (_hasToSkipReading) {
             // First window after a mux switch: it spans the channel transition, so it is
@@ -2215,22 +2190,23 @@ namespace Ade7953
     // side effects here. Uses the already-cached channel-0 voltage (no SPI read) to stay cheap on a
     // path that may be racing a capacitor's hold-up time.
     //
-    // SAGCYC=1 has no hardware debounce, so a misconfigured SAGLVL or a sustained no-AC condition
-    // (e.g. bench unit on USB power with AC disconnected) can re-fire every half line cycle
-    // indefinitely - unthrottled, that saturates the log queue, which forces synchronous flash
-    // flushes onto THIS task. Log the first ADE7953_SAG_LOG_BURST occurrences in full, one
-    // suppression notice, then count-only until a clean CYCEND window (_handleCycendInterrupt)
-    // proves the line healthy again and rearms the burst. statistics.ade7953SagInterrupts is
-    // NOT gated by this - every occurrence is still counted, only the log call is throttled.
-    void _handleSagInterrupt() {
-        _sagSeenThisCycendWindow = true;
-        _sagBurstCount++;
+    // ZXTOUT has no hardware debounce beyond its own timeout window, so a misconfigured ZXTOUT or
+    // a sustained no-AC condition (e.g. bench unit on USB power with AC disconnected) can re-fire
+    // roughly every ZXTOUT period indefinitely - unthrottled, that saturates the log queue, which
+    // forces synchronous flash flushes onto THIS task. Log the first ADE7953_ZXTO_LOG_BURST
+    // occurrences in full, one suppression notice, then count-only until a clean CYCEND window
+    // (_handleCycendInterrupt) proves the line healthy again and rearms the burst.
+    // statistics.ade7953ZxtoInterrupts is NOT gated by this - every occurrence is still counted,
+    // only the log call is throttled.
+    void _handleZxtoInterrupt() {
+        _zxtoSeenThisCycendWindow = true;
+        _zxtoBurstCount++;
 
-        if (_sagBurstCount <= ADE7953_SAG_LOG_BURST) {
-            LOG_FATAL("ADE7953 SAG detected (voltage below threshold for %u half-cycle(s)) - burst=%lu, count=%llu, last known voltage=%.1fV",
-                      ADE7953_SAGCYC_VALUE, _sagBurstCount, statistics.ade7953SagInterrupts, _meterValues[0].voltage);
-        } else if (_sagBurstCount == ADE7953_SAG_LOG_BURST + 1) { // == not >=: log this once
-            LOG_WARNING("SAG sustained - suppressing further SAG logs until a clean line cycle; see ade7953SagInterrupts in /system/info");
+        if (_zxtoBurstCount <= ADE7953_ZXTO_LOG_BURST) {
+            LOG_FATAL("ADE7953 ZXTO detected (no zero crossing for ~%ums) - burst=%lu, count=%llu, last known voltage=%.1fV",
+                      ADE7953_ZXTOUT_TARGET_MS, _zxtoBurstCount, statistics.ade7953ZxtoInterrupts, _meterValues[0].voltage);
+        } else if (_zxtoBurstCount == ADE7953_ZXTO_LOG_BURST + 1) { // == not >=: log this once
+            LOG_WARNING("ZXTO sustained - suppressing further ZXTO logs until a clean line cycle; see ade7953ZxtoInterrupts in /system/info");
         }
     }
 
