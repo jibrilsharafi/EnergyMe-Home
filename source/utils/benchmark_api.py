@@ -19,6 +19,7 @@ Example:
 import argparse
 import json
 import sys
+import threading
 import time
 import statistics
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -72,43 +73,66 @@ class EndpointResult:
 class ApiBenchmark:
     """Main benchmarking class for EnergyMe-Home API"""
     
-    # All GET endpoints from the swagger.yaml
+    # All GET endpoints from the swagger.yaml.
+    # Excludes: /api/v1/files/{filepath} and /api/v1/crash/entry (need a real,
+    # dynamic id/path we can't know in advance), and /api/v1/backup/* (large
+    # streamed dumps not representative of a normal request/response cycle).
     GET_ENDPOINTS = [
         "/api/v1/health",
         "/api/v1/auth/status",
         "/api/v1/ota/status",
         "/api/v1/system/info",
         "/api/v1/system/statistics",
+        "/api/v1/system/safe-mode",
         "/api/v1/system/secrets",
+        "/api/v1/system/time",
+        "/api/v1/system/issues",
         "/api/v1/firmware/update-info",
         "/api/v1/list-files",
+        "/api/v1/network/wifi/scan",
+        "/api/v1/network/wifi/status",
+        "/api/v1/network/wifi/diagnostics",
+        "/api/v1/network/config",
         "/api/v1/crash/info",
         "/api/v1/crash/dump",
         "/api/v1/logs/level",
         "/api/v1/logs",
+        "/api/v1/logs-udp-destination",
         "/api/v1/custom-mqtt/config",
         "/api/v1/custom-mqtt/status",
         "/api/v1/mqtt/cloud-services",
         "/api/v1/influxdb/config",
         "/api/v1/influxdb/status",
+        "/api/v1/led",
         "/api/v1/led/brightness",
         "/api/v1/ade7953/config",
         "/api/v1/ade7953/sample-time",
         "/api/v1/ade7953/channel",
+        "/api/v1/ade7953/register?address=0x031E&bits=32",
         "/api/v1/ade7953/meter-values",
         "/api/v1/ade7953/grid-frequency",
+        "/api/v1/ade7953/waveform/status",
+        "/api/v1/ade7953/waveform/data",
         # Parameterized endpoints with common parameter values
         "/api/v1/ade7953/channel?index=0",
         "/api/v1/ade7953/channel?index=1",
         "/api/v1/ade7953/meter-values?index=0",
-        "/api/v1/crash/dump?offset=0&size=1024",
     ]
-    
-    def __init__(self, host: str, port: int = 80, protocol: str = "http", timeout: float = 10.0, 
+
+    # Endpoints reachable with zero credentials. Note GET /api/v1/auth/status
+    # is exempt from the default-password 403 lockdown per swagger, but that
+    # exemption is app-level only - it still requires valid Digest auth (401
+    # without it), confirmed against a real device. Only /api/v1/health skips
+    # authentication entirely.
+    UNAUTH_ENDPOINTS = [
+        "/api/v1/health",
+    ]
+
+    def __init__(self, host: str, port: int = 80, protocol: str = "http", timeout: float = 10.0,
                  username: str = None, password: str = None):
         """
         Initialize the benchmark with connection parameters
-        
+
         Args:
             host: Target host IP address or hostname
             port: Target port number
@@ -121,48 +145,56 @@ class ApiBenchmark:
         self.timeout = timeout
         self.username = username
         self.password = password
-        self.session = self._create_session()
+        self.session = self._create_session(authenticated=True)
+        # Only meaningful as a distinct check when credentials were supplied;
+        # otherwise self.session is already anonymous.
+        self.session_unauth = self._create_session(authenticated=False) if username and password else None
         self.results: Dict[str, EndpointResult] = {}
-    
-    def _create_session(self) -> requests.Session:
+        # Endpoints run concurrently on separate threads; without this, their
+        # incremental "Testing X... ..." progress prints interleave into
+        # garbled output. Each endpoint's line is built up in memory and
+        # printed as one atomic write instead.
+        self._print_lock = threading.Lock()
+
+    def _create_session(self, authenticated: bool) -> requests.Session:
         """Create a configured requests session with retry strategy"""
         session = requests.Session()
-        
+
         # Configure authentication if credentials provided
-        if self.username and self.password:
+        if authenticated and self.username and self.password:
             session.auth = HTTPDigestAuth(self.username, self.password)
-        
+
         # Configure retry strategy
         retry_strategy = Retry(
             total=3,
             backoff_factor=0.1,
             status_forcelist=[429, 500, 502, 503, 504],
         )
-        
+
         adapter = HTTPAdapter(max_retries=retry_strategy)
         session.mount("http://", adapter)
         session.mount("https://", adapter)
-        
+
         # Set default headers
         session.headers.update({
             'User-Agent': 'EnergyMe-Home-Benchmark/1.0',
             'Accept': 'application/json',
         })
-        
+
         return session
-    
-    def test_endpoint(self, endpoint: str) -> Tuple[bool, float, int, Optional[str]]:
+
+    def test_endpoint(self, endpoint: str, session: Optional[requests.Session] = None) -> Tuple[bool, float, int, Optional[str]]:
         """
         Test a single endpoint and return results
-        
+
         Returns:
             Tuple of (success, response_time, status_code, error_message)
         """
         url = self.base_url + endpoint
         start_time = time.time()
-        
+
         try:
-            response = self.session.get(url, timeout=self.timeout)
+            response = (session or self.session).get(url, timeout=self.timeout)
             response_time = time.time() - start_time
             
             # Consider 2xx and 3xx as success, 4xx/5xx as application errors
@@ -179,24 +211,27 @@ class ApiBenchmark:
             response_time = time.time() - start_time
             return False, response_time, 0, str(e)
     
-    def benchmark_endpoint(self, endpoint: str, num_requests: int) -> EndpointResult:
+    def benchmark_endpoint(self, endpoint: str, num_requests: int,
+                            session: Optional[requests.Session] = None, label: Optional[str] = None) -> EndpointResult:
         """
         Benchmark a single endpoint with multiple requests
-        
+
         Args:
             endpoint: The endpoint path to test
             num_requests: Number of requests to make
-            
+            session: Session to use (defaults to the authenticated session)
+            label: Display/result-key override (defaults to endpoint)
+
         Returns:
             EndpointResult with aggregated statistics
         """
-        result = EndpointResult(endpoint=endpoint)
-        
-        print(f"Testing {endpoint}... ", end="", flush=True)
-        
+        display_name = label or endpoint
+        result = EndpointResult(endpoint=display_name)
+        progress = []
+
         for i in range(num_requests):
-            success, response_time, status_code, error_msg = self.test_endpoint(endpoint)
-            
+            success, response_time, status_code, error_msg = self.test_endpoint(endpoint, session=session)
+
             if success:
                 result.success_count += 1
                 result.response_times.append(response_time)
@@ -204,15 +239,16 @@ class ApiBenchmark:
                 result.error_count += 1
                 if error_msg:
                     result.error_messages.append(error_msg)
-            
+
             # Track status codes
             result.status_codes[status_code] = result.status_codes.get(status_code, 0) + 1
-            
+
             # Show progress
             if num_requests > 1 and (i + 1) % max(1, num_requests // 10) == 0:
-                print(".", end="", flush=True)
-        
-        print(f" Done ({result.success_count}/{num_requests} successful)")
+                progress.append(".")
+
+        with self._print_lock:
+            print(f"Testing {display_name}... {''.join(progress)} Done ({result.success_count}/{num_requests} successful)")
         return result
     
     def benchmark_all_endpoints(self, num_requests: int = 10, max_workers: int = 5) -> Dict[str, EndpointResult]:
@@ -226,35 +262,43 @@ class ApiBenchmark:
         Returns:
             Dictionary mapping endpoint paths to their results
         """
-        print(f"Starting benchmark of {len(self.GET_ENDPOINTS)} endpoints...")
+        # (endpoint, session, result_key) for every request to make
+        jobs = [(endpoint, self.session, endpoint) for endpoint in self.GET_ENDPOINTS]
+        if self.session_unauth:
+            jobs += [
+                (endpoint, self.session_unauth, f"{endpoint} [unauth]")
+                for endpoint in self.UNAUTH_ENDPOINTS
+            ]
+
+        print(f"Starting benchmark of {len(jobs)} endpoints...")
         print(f"Requests per endpoint: {num_requests}")
         print(f"Target: {self.base_url}")
         print(f"Timeout: {self.timeout}s")
         print("-" * 60)
-        
+
         start_time = time.time()
-        
+
         if max_workers == 1:
             # Sequential execution
-            for endpoint in self.GET_ENDPOINTS:
-                self.results[endpoint] = self.benchmark_endpoint(endpoint, num_requests)
+            for endpoint, session, result_key in jobs:
+                self.results[result_key] = self.benchmark_endpoint(endpoint, num_requests, session=session, label=result_key)
         else:
             # Concurrent execution
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                future_to_endpoint = {
-                    executor.submit(self.benchmark_endpoint, endpoint, num_requests): endpoint
-                    for endpoint in self.GET_ENDPOINTS
+                future_to_key = {
+                    executor.submit(self.benchmark_endpoint, endpoint, num_requests, session, result_key): result_key
+                    for endpoint, session, result_key in jobs
                 }
-                
-                for future in as_completed(future_to_endpoint):
-                    endpoint = future_to_endpoint[future]
+
+                for future in as_completed(future_to_key):
+                    result_key = future_to_key[future]
                     try:
                         result = future.result()
-                        self.results[endpoint] = result
+                        self.results[result_key] = result
                     except Exception as e:
-                        print(f"Error testing {endpoint}: {e}")
+                        print(f"Error testing {result_key}: {e}")
                         # Create empty result for failed endpoint
-                        self.results[endpoint] = EndpointResult(endpoint=endpoint)
+                        self.results[result_key] = EndpointResult(endpoint=result_key)
         
         total_time = time.time() - start_time
         print("-" * 60)
