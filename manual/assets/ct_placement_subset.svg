@@ -1,0 +1,78 @@
+<svg width="680" viewBox="0 0 680 460" xmlns="http://www.w3.org/2000/svg" font-family="Arial, sans-serif">
+  <title>CT on a subset of the panel — shared tap feeding a group of breakers</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="680" height="460" fill="#ffffff"/>
+
+  <!-- Panel dashed border -->
+  <rect x="28" y="28" width="452" height="392" rx="10" fill="none" stroke="#888" stroke-width="1" stroke-dasharray="6 4"/>
+  <text x="254" y="450" text-anchor="middle" font-size="12" fill="#666">Electrical panel — CT on a subset (sub-feed) of breakers</text>
+
+  <!-- Supply label + wire -->
+  <text x="88" y="52" text-anchor="end" font-size="12" fill="#444">Supply</text>
+  <line x1="115" y1="28" x2="115" y2="90" stroke="#333" stroke-width="3.5" stroke-linecap="round"/>
+
+  <!-- Main bus -->
+  <line x1="115" y1="90" x2="350" y2="90" stroke="#333" stroke-width="3.5" stroke-linecap="round"/>
+
+  <!-- Individually-monitored breaker, faded: not the focus of this diagram -->
+  <g opacity="0.5">
+    <line x1="115" y1="90" x2="115" y2="130" stroke="#333" stroke-width="3.5" stroke-linecap="round"/>
+    <rect x="73" y="130" width="84" height="52" rx="6" fill="#f0ede8" stroke="#9e9c94" stroke-width="0.8"/>
+    <text x="115" y="153" text-anchor="middle" font-size="13" font-weight="500" fill="#2c2c2a">Breaker 1</text>
+    <text x="115" y="170" text-anchor="middle" font-size="10" fill="#5f5e5a">(see §3.4)</text>
+    <line x1="115" y1="182" x2="115" y2="356" stroke="#333" stroke-width="3.5" stroke-linecap="round"/>
+    <rect x="73" y="356" width="84" height="38" rx="6" fill="#e6f1fb" stroke="#185fa5" stroke-width="0.8"/>
+    <text x="115" y="378" text-anchor="middle" font-size="12" fill="#0c447c">Load 1</text>
+  </g>
+
+  <!-- Drop to the shared tap -->
+  <line x1="350" y1="90" x2="350" y2="140" stroke="#333" stroke-width="3.5" stroke-linecap="round"/>
+
+  <!-- Subset CT on the tap wire (correct/intentional) -->
+  <ellipse cx="350" cy="140" rx="20" ry="12" fill="#EAF3DE" stroke="#639922" stroke-width="2.5"/>
+  <polyline points="344,140 348,145 357,133" fill="none" stroke="#3B6D11" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  <line x1="370" y1="140" x2="392" y2="140" stroke="#639922" stroke-width="1" stroke-dasharray="3 2"/>
+  <circle cx="394" cy="140" r="3" fill="#639922"/>
+
+  <line x1="350" y1="152" x2="350" y2="230" stroke="#333" stroke-width="3.5" stroke-linecap="round"/>
+
+  <!-- Nested sub-feed group -->
+  <rect x="250" y="170" width="210" height="225" rx="8" fill="none" stroke="#888" stroke-width="1" stroke-dasharray="4 3"/>
+  <text x="260" y="187" font-size="11" fill="#666">Sub-feed group (shared tap)</text>
+
+  <!-- inner local bus -->
+  <line x1="300" y1="230" x2="410" y2="230" stroke="#333" stroke-width="3" stroke-linecap="round"/>
+  <line x1="300" y1="230" x2="300" y2="250" stroke="#333" stroke-width="3" stroke-linecap="round"/>
+  <line x1="355" y1="230" x2="355" y2="250" stroke="#333" stroke-width="3" stroke-linecap="round"/>
+  <line x1="410" y1="230" x2="410" y2="250" stroke="#333" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- 3 breakers sharing the tap -->
+  <rect x="277" y="250" width="46" height="34" rx="5" fill="#f0ede8" stroke="#9e9c94" stroke-width="0.8"/>
+  <text x="300" y="271" text-anchor="middle" font-size="10" fill="#2c2c2a">Brk A</text>
+  <rect x="332" y="250" width="46" height="34" rx="5" fill="#f0ede8" stroke="#9e9c94" stroke-width="0.8"/>
+  <text x="355" y="271" text-anchor="middle" font-size="10" fill="#2c2c2a">Brk B</text>
+  <rect x="387" y="250" width="46" height="34" rx="5" fill="#f0ede8" stroke="#9e9c94" stroke-width="0.8"/>
+  <text x="410" y="271" text-anchor="middle" font-size="10" fill="#2c2c2a">Brk C</text>
+
+  <!-- outputs to loads -->
+  <line x1="300" y1="284" x2="300" y2="370" stroke="#333" stroke-width="3" stroke-linecap="round"/>
+  <line x1="355" y1="284" x2="355" y2="370" stroke="#333" stroke-width="3" stroke-linecap="round"/>
+  <line x1="410" y1="284" x2="410" y2="370" stroke="#333" stroke-width="3" stroke-linecap="round"/>
+  <text x="355" y="388" text-anchor="middle" font-size="10" fill="#666">to loads (A, B, C)</text>
+
+  <!-- Callout -->
+  <rect x="490" y="95" width="165" height="110" rx="8" fill="#EAF3DE" stroke="#3B6D11" stroke-width="0.8"/>
+  <text x="572" y="118" text-anchor="middle" font-size="14" font-weight="500" fill="#173404">SUBSET CT</text>
+  <text x="572" y="136" text-anchor="middle" font-size="12" fill="#3B6D11">Reads everything fed</text>
+  <text x="572" y="153" text-anchor="middle" font-size="12" fill="#3B6D11">from this tap combined</text>
+  <text x="572" y="170" text-anchor="middle" font-size="12" fill="#3B6D11">(Breakers A–C as one)</text>
+
+  <!-- Leader: subset CT -> callout -->
+  <path d="M 394 140 L 420 140 L 488 150" fill="none" stroke="#639922" stroke-width="1" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+</svg>
