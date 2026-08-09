@@ -2191,10 +2191,12 @@ namespace Ade7953
 
         _zxtoLastTriggerMs = nowMs;
 
-        AlarmEntry alarm;
-        snprintf(alarm.message, sizeof(alarm.message), "Blackout detected - grid power lost");
-        alarm.unixTimeMs = CustomTime::getUnixTimeMilliseconds();
-        Mqtt::pushAlarm(alarm);
+        if (!globalCommunityMode) {
+            AlarmEntry alarm;
+            snprintf(alarm.message, sizeof(alarm.message), "Blackout detected - grid power lost");
+            alarm.unixTimeMs = CustomTime::getUnixTimeMilliseconds();
+            Mqtt::pushAlarm(alarm);
+        }
 
         LOG_FATAL("Blackout detected: grid power lost (count=%llu, last known voltage=%.1fV)",
                   statistics.ade7953ZxtoInterrupts, _meterValues[0].voltage);
