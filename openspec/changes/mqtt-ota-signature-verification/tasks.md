@@ -39,3 +39,11 @@
 ## 7. Documentation touch-points (only where behavior is externally observable)
 
 - [x] 7.1 Skipped: `/api/v1/ota/upload`'s response schema and endpoint contract are unchanged (only a server-side log line was added), so `resources/swagger.yaml` needs no update
+
+## 8. Adversarial code-review fixes (see design.md Decisions 7-9)
+
+- [x] 8.1 Closed a downgrade-replay hole: signature verification alone doesn't bind the job document's claimed `firmware.version` - added a post-verification check in `_verifyOtaSignature` against the version actually embedded in the verified image, skipped only when `force` is set. New spec requirement added ("Verified firmware's actual version is re-checked against a downgrade...").
+- [x] 8.2 Fixed a race: the decoded signature was being written to shared state (`_otaCurrentSignature`) before the "OTA already in flight" guards in `_handleSingleJobExecution` instead of after, unlike `_otaCurrentUrl`/`_otaCurrentJobId` - moved the write to match, closing the window where a second job execution could overwrite a signature `_verifyOtaSignature()` was still reading on the OTA task.
+- [x] 8.3 Fixed a regression that would have broken every real OTA download: removed the `MAX_LOOP_ITERATIONS` counters added to the `esp_https_ota_perform` loop and the partition-hashing loop - `esp_http_client`'s default 512-byte RX buffer meant the perform loop would hit the 1000-iteration cap at ~500KB, far under this project's ~4.3MB OTA partitions. Both loops are already bounded by a real size variable, which is this project's own documented exemption from that convention.
+- [x] 8.4 Moved the 4KB SHA-256 chunk buffer from the OTA task's stack (~1/3 of `OTA_TASK_STACK_SIZE`) to a PSRAM buffer allocated once in `begin()`, matching the existing `_otaCurrentUrl` pattern.
+- [x] 8.5 Extracted a `parseDerInteger` helper in `lib/ota_signature/ota_signature.cpp` to remove duplicated DER-parsing code between the `r` and `s` integer fields (simplify-agent finding).
