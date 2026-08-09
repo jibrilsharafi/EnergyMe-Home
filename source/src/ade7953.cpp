@@ -1960,12 +1960,24 @@ namespace Ade7953
             _handleCrcChangeInterrupt();
         }
 
+        // IRQSTATA reports every channel/energy event continuously regardless of IRQENA -
+        // enable only gates the physical IRQ pin, not the status bit itself. Bits we never
+        // enabled (current-channel zero-crossing, overcurrent, no-load, energy overflow, ...)
+        // are therefore expected noise, not our concern: we only care about voltage (ZXV/SAG)
+        // and bookkeeping (CYCEND/RESET/CRC), so restrict the check to bits we actually enabled.
         constexpr int32_t handledIrqMask =
             (1 << IRQSTATA_ZXV_BIT) | (1 << IRQSTATA_SAG_BIT) | (1 << IRQSTATA_CYCEND_BIT) |
             (1 << IRQSTATA_RESET_BIT) | (1 << IRQSTATA_CRC_BIT);
-        if (MeterLogic::hasUnhandledIrqBits(statusA, handledIrqMask)) {
+        int32_t enabledStatus = statusA & DEFAULT_IRQENA_REGISTER;
+        if (MeterLogic::hasUnhandledIrqBits(enabledStatus, handledIrqMask)) {
             statistics.ade7953UnhandledInterrupts++;
-            LOG_WARNING("Unhandled ADE7953 interrupt status: 0x%08lX | %s", statusA, _irqstataBitName(statusA));
+            int32_t unhandledBits = enabledStatus & ~handledIrqMask;
+            for (uint8_t bit = 0; bit < 32 && unhandledBits != 0; bit++) {
+                if (unhandledBits & (1 << bit)) {
+                    LOG_WARNING("Unhandled ADE7953 interrupt status: 0x%08lX | %s", statusA, _irqstataBitName(bit));
+                    unhandledBits &= ~(1 << bit);
+                }
+            }
         }
     }
 
