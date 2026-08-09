@@ -1626,6 +1626,16 @@ namespace Mqtt
         JsonVariant forceVariant = doc["execution"]["jobDocument"]["force"];
         bool force = forceVariant.is<bool>() ? forceVariant.as<bool>() : false;
 
+        // This job is the one currently being validated post-reboot: its target
+        // version now equals FIRMWARE_BUILD_VERSION, which would otherwise hit the
+        // "already up to date" branch below and publish REJECTED - a terminal status
+        // that then makes the validation task's later SUCCEEDED publish be refused
+        // by AWS IoT Jobs (terminal states cannot transition again).
+        if (_otaValidationTaskHandle != nullptr && strcmp(jobId, _otaCurrentJobId) == 0) {
+            LOG_DEBUG("Job '%s' is the one currently being validated, skipping re-evaluation", jobId);
+            return;
+        }
+
         // Additional validation for operation type (validation function only checks existence)
         if (strcmp(operation, "ota_update") != 0) {
             LOG_WARNING("Job operation '%s' is not supported, rejecting job %s.", operation, jobId);
