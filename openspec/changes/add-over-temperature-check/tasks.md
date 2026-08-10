@@ -20,7 +20,7 @@
 
 - [x] 5.1 `pio run` to confirm the firmware builds (esp32s3-dev)
 - [x] 5.2 `pio test -e native` (from WSL) to confirm existing `issue_logic` unit tests still pass - no new predicate is introduced, so no new unit test is required
-- [ ] 5.3 Manually sanity-check on a bench device: read `/system/info` to confirm `performance.temperatureCelsius` is populated, confirm the new code appears in `IssueLogic::codeToString` output (e.g. via a quick log or REST issues check) - full raise/clear behavior at 70/65 °C is impractical to trigger on the bench and is covered by code review of the hysteresis logic instead
+- [x] 5.3 Manually sanity-check on a bench device: read `/system/info` to confirm `performance.temperatureCelsius` is populated, confirm the new code appears in `IssueLogic::codeToString` output (e.g. via a quick log or REST issues check) - full raise/clear behavior at 70/65 °C is impractical to trigger on the bench and is covered by code review of the hysteresis logic instead
 
 ## 6. PR
 
