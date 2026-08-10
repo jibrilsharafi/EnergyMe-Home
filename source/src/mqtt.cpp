@@ -2379,6 +2379,7 @@ namespace Mqtt
         AlarmEntry entry;
         uint32_t loops = 0;
         while (xQueueReceive(_alarmQueue, &entry, 0) == pdTRUE && loops < MAX_LOOP_ITERATIONS) {
+            loops++;
             if (CustomWifi::isFullyConnected() && _clientMqtt.connected()) {
                 _publishAlarm(entry);
             } else {
