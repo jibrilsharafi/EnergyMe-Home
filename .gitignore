@@ -33,6 +33,7 @@
 
 # Secrets
 secrets
+.env
 
 # Mac
 .DS_Store

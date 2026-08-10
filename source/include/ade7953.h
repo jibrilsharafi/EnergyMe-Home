@@ -110,8 +110,21 @@
 #define DEFAULT_LCYCMODE_REGISTER 0b00111111 // 0x3F line cycle accumulation on all channels; read-with-reset OFF (see guardrail above)
 #define DEFAULT_PGA_REGISTER 0 // PGA gain 1
 #define DEFAULT_CONFIG_REGISTER 0b1010000100001100 // Bits 2, 3 (line accumulation for PF), 8 (CRC), 13:12=10b (ZX_EDGE: positive-going zero crossings only; does not affect linecyc), 15 (HPF enabled, COMM_LOCK disabled)
-#define DEFAULT_IRQENA_REGISTER 0b001101001000000000000000 // ZXV (bit 15, grid frequency), CYCEND (bit 18), Reset (bit 20, mandatory), CRC change (bit 21)
+#define DEFAULT_IRQENA_REGISTER 0b00001101001100000000000000 // ZXTO (bit 14, grid-loss detection), ZXV (bit 15, grid frequency), CYCEND (bit 18), Reset (bit 20, mandatory), CRC change (bit 21)
 #define MINIMUM_SAMPLE_TIME 200ULL // The settling time of the ADE7953 is 200 ms, so reading faster than this makes little sense
+
+// ZXTOUT reloads on the raw zero-crossing (both edges), independent of ZX_EDGE, so
+// the normal reload interval is a half line cycle (~10ms @ 50Hz). 15ms clears the
+// worst-case healthy gap (~10.6ms @ 47Hz) plus LPF1 delay margin - starting point,
+// tune from bench data.
+#define ADE7953_ZXTOUT_RESOLUTION_US 71 // 1 / 14kHz (CLKIN/256) per LSB, datasheet rounds to 0.07ms
+#define ADE7953_ZXTOUT_TARGET_MS 15
+#define ADE7953_ZXTOUT_VALUE ((ADE7953_ZXTOUT_TARGET_MS * 1000UL) / ADE7953_ZXTOUT_RESOLUTION_US) // ~211
+
+// Only the first ZXTO per window triggers the alarm/FATAL log; later ones are
+// LOG_DEBUG-only (still counted) - avoids resaturating the MQTT alarm window on
+// a sustained/misconfigured ZXTO re-firing every ZXTOUT period.
+#define ADE7953_ZXTO_SUPPRESS_MS (60 * 1000)
 
 // Channel validation ranges
 #define VALIDATE_CT_CURRENT_RATING_MIN 0.0f

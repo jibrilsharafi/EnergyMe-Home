@@ -5,6 +5,7 @@
 #include "taskprofiler.h"
 #include "duration_format.h"
 #include "grid_frequency.h"
+#include "mqtt.h"
 #include "shadow_logic.h"
 
 namespace Ade7953
@@ -73,6 +74,9 @@ namespace Ade7953
     // Critical failure tracking (for missed interrupts)
     static uint32_t _criticalFailureCount = 0;
     static uint64_t _firstCriticalFailureTime = 0;
+
+    // ZXTO suppression window (see _handleZxtoInterrupt). 0 = never triggered.
+    static uint64_t _zxtoLastTriggerMs = 0;
 
     // Operational flags
     static bool _hasConfigurationChanged = false; // Flag to track if configuration has changed (needed since we will get an interrupt for CRC change)
@@ -153,7 +157,8 @@ namespace Ade7953
     static void _pollWaveformSamples();
     static void _handleCrcChangeInterrupt();
     static void _handleResetInterrupt();
-    
+    static void _handleZxtoInterrupt();
+
     // Task management
     static void _startMeterReadingTask();
     static void _stopMeterReadingTask();
@@ -1891,13 +1896,16 @@ namespace Ade7953
     // ==================
 
     void _setupInterrupts() {
+        // Static timeout (see ADE7953_ZXTOUT_VALUE rationale) - no per-boot computation needed.
+        writeRegister(ZXTOUT_16, BIT_16, ADE7953_ZXTOUT_VALUE);
+
         writeRegister(IRQENA_32, BIT_32, DEFAULT_IRQENA_REGISTER);
 
         // Clear any existing interrupt status
         readRegister(RSTIRQSTATA_32, BIT_32, false);
         readRegister(RSTIRQSTATB_32, BIT_32, false);
 
-        LOG_DEBUG("ADE7953 interrupts enabled: ZXV, CYCEND, RESET, CRC");
+        LOG_INFO("ADE7953 interrupts enabled: ZXV, ZXTO (ZXTOUT=%u, ~%ums), CYCEND, RESET, CRC", ADE7953_ZXTOUT_VALUE, ADE7953_ZXTOUT_TARGET_MS);
     }
 
     void _handleInterrupt(uint64_t linecycUnix)
@@ -1915,6 +1923,13 @@ namespace Ade7953
             _handleZxvInterrupt();
         }
 
+        // ZXTO next: grid-loss precursor (no zero crossings within the configured
+        // timeout), serviced ahead of routine CYCEND/RESET/CRC bookkeeping.
+        if (statusA & (1 << IRQSTATA_ZXTO_BIT)) {
+            statistics.ade7953ZxtoInterrupts++;
+            _handleZxtoInterrupt();
+        }
+
         if (statusA & (1 << IRQSTATA_CYCEND_BIT)) {
             _handleCycendInterrupt(linecycUnix);
         }
@@ -1927,12 +1942,21 @@ namespace Ade7953
             _handleCrcChangeInterrupt();
         }
 
+        // IRQSTATA reports every event regardless of IRQENA - enable only gates the
+        // physical IRQ pin, not the status bit. Restrict the check to enabled bits.
         constexpr int32_t handledIrqMask =
-            (1 << IRQSTATA_ZXV_BIT) | (1 << IRQSTATA_CYCEND_BIT) |
-            (1 << IRQSTATA_RESET_BIT) | (1 << IRQSTATA_CRC_BIT);
-        if ((statusA & handledIrqMask) == 0) {
+            (1 << IRQSTATA_ZXV_BIT) | (1 << IRQSTATA_ZXTO_BIT) |
+            (1 << IRQSTATA_CYCEND_BIT) | (1 << IRQSTATA_RESET_BIT) | (1 << IRQSTATA_CRC_BIT);
+        int32_t enabledStatus = statusA & DEFAULT_IRQENA_REGISTER;
+        if (MeterLogic::hasUnhandledIrqBits(enabledStatus, handledIrqMask)) {
             statistics.ade7953UnhandledInterrupts++;
-            LOG_WARNING("Unhandled ADE7953 interrupt status: 0x%08lX | %s", statusA, _irqstataBitName(statusA));
+            int32_t unhandledBits = enabledStatus & ~handledIrqMask;
+            for (uint8_t bit = 0; bit < 32 && unhandledBits != 0; bit++) {
+                if (unhandledBits & (1 << bit)) {
+                    LOG_WARNING("Unhandled ADE7953 interrupt status: 0x%08lX | %s", statusA, _irqstataBitName(bit));
+                    unhandledBits &= ~(1 << bit);
+                }
+            }
         }
     }
 
@@ -1969,7 +1993,7 @@ namespace Ade7953
     void _handleCycendInterrupt(uint64_t linecycUnix) {
         LOG_VERBOSE("Line cycle end detected on Channel A");
         statistics.ade7953TotalHandledInterrupts++;
-        
+
         if (_hasToSkipReading) {
             // First window after a mux switch: it spans the channel transition, so it is
             // contaminated. We simply skip it - the next CYCEND overwrites the register with a
@@ -2147,8 +2171,36 @@ namespace Ade7953
     }
 
     void _handleResetInterrupt() {
-        // This should never happen unless a powerful power drop occurs (which would likely reset also the ESP32) 
+        // This should never happen unless a powerful power drop occurs (which would likely reset also the ESP32)
         LOG_WARNING("TO BE IMPLEMENTED: ADE7953 reset interrupt detected - reinitializing device");
+    }
+
+    // Deliberately bypasses IssueRegistry: going through it would add a task hop
+    // and mutex-guarded evaluation of unrelated codes, pure latency on a path
+    // racing the backup capacitor. Uses the already-cached voltage (no SPI read)
+    // for the same reason.
+    void _handleZxtoInterrupt() {
+        uint64_t nowMs = millis64();
+        bool suppressed = (_zxtoLastTriggerMs != 0) && ((nowMs - _zxtoLastTriggerMs) < ADE7953_ZXTO_SUPPRESS_MS);
+
+        if (suppressed) {
+            LOG_DEBUG("Blackout still ongoing (suppressed, %llums since last alert, count=%llu)",
+                       (unsigned long long)(nowMs - _zxtoLastTriggerMs), statistics.ade7953ZxtoInterrupts);
+            return;
+        }
+
+        _zxtoLastTriggerMs = nowMs;
+
+        if (!globalCommunityMode) {
+            AlarmEntry alarm;
+            generateHexToken(alarm.eventId, sizeof(alarm.eventId));
+            snprintf(alarm.type, sizeof(alarm.type), "zero_crossing_timeout");
+            alarm.unixTimeMs = CustomTime::getUnixTimeMilliseconds();
+            Mqtt::pushAlarm(alarm);
+        }
+
+        LOG_FATAL("Blackout detected: grid power lost (count=%llu, last known voltage=%.1fV)",
+                  statistics.ade7953ZxtoInterrupts, _meterValues[0].voltage);
     }
 
     // Tasks

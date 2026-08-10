@@ -33,6 +33,13 @@
 #define MQTT_GRID_QUEUE_SIZE (64 * 1024) // Size in bytes to allocate to PSRAM (~34 min of 500 ms points); overflow drops oldest
 #define QUEUE_WAIT_TIMEOUT 100 // Amount of milliseconds to wait if the queue is full or busy
 
+// High-priority payload, checked ahead of the log queue and shadow publish in
+// _handleConnectedState() - see Mqtt::pushAlarm(). Alarms are rare (issue raise
+// edges only); sized generously anyway since PSRAM is cheap.
+#define MQTT_ALARM_QUEUE_SIZE (4 * 1024) // Size in bytes to allocate to PSRAM
+#define MQTT_ALARM_TYPE_BUFFER_SIZE 32 // Short machine-readable identifier, e.g. "zero_crossing_timeout" - not a free-text message
+#define MQTT_ALARM_EVENT_ID_BUFFER_SIZE 17 // 16-char lowercase-hex token (see generateHexToken, utils.h) + null terminator
+
 // AWS IoT Jobs OTA constants
 #define OTA_TASK_NAME "ota_task"
 #define OTA_TASK_STACK_SIZE (12 * 1024) // Has to be big to allow for the presigned S3 URL to be handled
@@ -99,6 +106,11 @@
 #define MQTT_OVERRIDE_KEEPALIVE 30 // 30 is the minimum value supported by AWS IoT Core (in seconds)
 
 #define MQTT_LOOP_INTERVAL 100 // Interval between two MQTT loop checks
+
+// Notification bit alongside TASK_NOTIFY_SHUTDOWN_BIT (constants.h) that wakes
+// the MQTT task immediately instead of waiting up to MQTT_LOOP_INTERVAL - see
+// requestImmediatePublish() and its caller pushAlarm().
+#define MQTT_NOTIFY_WAKE_BIT (1 << 1)
 #define MQTT_METER_ESTIMATED_PER_ENTRY 35 // Estimated size in bytes of each meter entry (unix ms, channel, active power, pf)
 #define MQTT_METER_QUEUE_ALMOST_FULL_RATIO 0.9 // Force a publish attempt once the meter queue is this fraction full, regardless of the byte/interval trigger, so pushMeter() doesn't silently drop the oldest entry
 #define MQTT_GRID_FREQUENCY_PAYLOAD_DECIMALS 4 // 0.1 mHz: preserves the ~0.8 mHz EMA resolution
@@ -146,6 +158,7 @@
 #define MQTT_TOPIC_STATISTICS "statistics"
 #define MQTT_TOPIC_CRASH "crash"
 #define MQTT_TOPIC_LOG "log"
+#define MQTT_TOPIC_ALARM "alarm" // Routed via its own rule (AWS_IOT_CORE_RULE_ALARM, awsconfig.h); requires that rule to exist server-side
 // Subscribe topics. The legacy `command` topic is retired (-> IoT Commands +
 // system shadow); only AWS IoT Jobs (OTA) and shadow/command reserved topics remain.
 #define MQTT_TOPIC_SUBSCRIBE_JOBS "jobs"
@@ -185,6 +198,19 @@ struct PublishMqtt
     requestOta(true) {} // Always require on connection
 };
 
+// Wire format for Mqtt::pushAlarm() - a fixed-size POD so it can pass through a
+// FreeRTOS queue with no dynamic allocation. The published JSON also carries a
+// power/pf/voltage snapshot, fetched at publish time (_publishAlarm) rather than
+// carried here.
+struct AlarmEntry
+{
+    char eventId[MQTT_ALARM_EVENT_ID_BUFFER_SIZE]; // unique per event, lets the cloud dedupe/correlate
+    char type[MQTT_ALARM_TYPE_BUFFER_SIZE]; // e.g. "zero_crossing_timeout" - lets future alarm types share this same wire shape
+    uint64_t unixTimeMs;
+
+    AlarmEntry() : unixTimeMs(0) { eventId[0] = '\0'; type[0] = '\0'; }
+};
+
 namespace Mqtt
 {
     void begin();
@@ -198,11 +224,20 @@ namespace Mqtt
     // Public methods for requesting MQTT publications
     void requestChannelPublish();
     void requestCrashPublish();
+
+    // Wake the MQTT task now instead of waiting up to MQTT_LOOP_INTERVAL for its
+    // next loop - used by pushAlarm() below. Only rings the bell (xTaskNotify, no
+    // data) - safe from any task, no-op before begin() or after stop().
+    void requestImmediatePublish();
     
     // Public methods for pushing data to queues
     void pushLog(const LogEntry& entry);
     void pushMeter(const PayloadMeter& payload);
     void pushGrid(const PayloadGridPoint& point);
+
+    // Queues a high-priority alarm and wakes the MQTT task (requestImmediatePublish).
+    // Published ahead of the log queue and shadow report. Safe from any task.
+    void pushAlarm(const AlarmEntry& entry);
 
     TaskInfo getMqttTaskInfo();
     TaskInfo getMqttOtaTaskInfo();

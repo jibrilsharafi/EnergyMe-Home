@@ -5,6 +5,7 @@
 #include "duration_format.h"
 #include "version_compare.h"
 
+#include <esp_random.h>
 #include <esp_wifi.h>
 
 #include "taskprofiler.h"
@@ -551,8 +552,8 @@ void stopTaskGracefully(TaskHandle_t* taskHandle, const char* taskName) {
     }
 
     LOG_DEBUG("Stopping %s...", taskName ? taskName : "task");
-    
-    xTaskNotifyGive(*taskHandle);
+
+    xTaskNotify(*taskHandle, TASK_NOTIFY_SHUTDOWN_BIT, eSetBits);
     
     // Wait with timeout for clean shutdown
     int32_t timeout = TASK_STOPPING_TIMEOUT;
@@ -810,10 +811,11 @@ void printStatistics() {
     updateStatistics();
 
     LOG_DEBUG("--- Statistics ---");
-    LOG_DEBUG("Statistics - ADE7953: %llu total interrupts | %llu handled interrupts | %llu zx interrupts | %llu service passes | %llu unhandled | %llu readings | %llu reading failures",
+    LOG_DEBUG("Statistics - ADE7953: %llu total interrupts | %llu handled interrupts | %llu zx interrupts | %llu zxto interrupts | %llu service passes | %llu unhandled | %llu readings | %llu reading failures",
         statistics.ade7953TotalInterrupts,
         statistics.ade7953TotalHandledInterrupts,
         statistics.ade7953ZxInterrupts,
+        statistics.ade7953ZxtoInterrupts,
         statistics.ade7953ServicePasses,
         statistics.ade7953UnhandledInterrupts,
         statistics.ade7953ReadingCount,
@@ -874,6 +876,7 @@ void statisticsToJson(Statistics& statistics, JsonDocument &jsonDocument) {
     jsonDocument["ade7953"]["totalInterrupts"] = statistics.ade7953TotalInterrupts;
     jsonDocument["ade7953"]["totalHandledInterrupts"] = statistics.ade7953TotalHandledInterrupts;
     jsonDocument["ade7953"]["zxInterrupts"] = statistics.ade7953ZxInterrupts;
+    jsonDocument["ade7953"]["zxtoInterrupts"] = statistics.ade7953ZxtoInterrupts;
     jsonDocument["ade7953"]["servicePasses"] = statistics.ade7953ServicePasses;
     jsonDocument["ade7953"]["unhandledInterrupts"] = statistics.ade7953UnhandledInterrupts;
     jsonDocument["ade7953"]["readingCount"] = statistics.ade7953ReadingCount;
@@ -1053,10 +1056,15 @@ void clearAllPreferences() {
 void getDeviceId(char* deviceId, size_t maxLength) {
     uint8_t mac[6];
     esp_efuse_mac_get_default(mac);
-    
+
     // Use lowercase hex formatting without colons
-    snprintf(deviceId, maxLength, "%02x%02x%02x%02x%02x%02x", 
+    snprintf(deviceId, maxLength, "%02x%02x%02x%02x%02x%02x",
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+}
+
+void generateHexToken(char* out, size_t outSize) {
+    if (!out || outSize < 17) return;
+    snprintf(out, outSize, "%08x%08x", esp_random(), esp_random());
 }
 
 

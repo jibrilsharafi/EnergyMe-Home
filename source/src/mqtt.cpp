@@ -31,14 +31,17 @@ namespace Mqtt
     static QueueHandle_t _logQueue = nullptr;
     static QueueHandle_t _meterQueue = nullptr;
     static QueueHandle_t _gridQueue = nullptr;
+    static QueueHandle_t _alarmQueue = nullptr;
 
     // Static queue structures and storage for PSRAM
     static StaticQueue_t _logQueueStruct;
     static StaticQueue_t _meterQueueStruct;
     static StaticQueue_t _gridQueueStruct;
+    static StaticQueue_t _alarmQueueStruct;
     static uint8_t* _logQueueStorage = nullptr;
     static uint8_t* _meterQueueStorage = nullptr;
     static uint8_t* _gridQueueStorage = nullptr;
+    static uint8_t* _alarmQueueStorage = nullptr;
 
     // Connection attempt tracking
     static uint32_t _mqttConnectionAttempt = 0;
@@ -81,6 +84,7 @@ namespace Mqtt
     static char _mqttTopicStatistics[MQTT_TOPIC_BUFFER_SIZE];
     static char _mqttTopicCrash[MQTT_TOPIC_BUFFER_SIZE];
     static char _mqttTopicLog[MQTT_TOPIC_BUFFER_SIZE];
+    static char _mqttTopicAlarm[MQTT_TOPIC_BUFFER_SIZE];
 
     // Task variables
     static TaskHandle_t _taskHandle = nullptr;
@@ -105,6 +109,7 @@ namespace Mqtt
     static bool _initializeLogQueue();
     static bool _initializeMeterQueue();
     static bool _initializeGridQueue();
+    static bool _initializeAlarmQueue();
     
     // Configuration management
     static void _loadConfigFromPreferences();
@@ -143,6 +148,7 @@ namespace Mqtt
     static void _setTopicStatistics();
     static void _setTopicCrash();
     static void _setTopicLog();
+    static void _setTopicAlarm();
 
     // Subscription management
     static void _subscribeToTopics();
@@ -180,8 +186,10 @@ namespace Mqtt
     static void _publishStatistics();
     static void _publishCrash();
     static void _publishLog(const LogEntry& entry);
+    static void _publishAlarm(const AlarmEntry& entry);
     static void _publishOtaJobsRequest();
-    
+
+    static void _processAlarmQueue();
     static void _checkPublishMqtt();
     static void _checkIfPublishMeterNeeded();
     static void _checkIfPublishGridNeeded();
@@ -256,6 +264,7 @@ namespace Mqtt
         _initializeLogQueue();
         _initializeMeterQueue();
         _initializeGridQueue();
+        _initializeAlarmQueue();
         
         // Initialize OTA buffers before checking pending validation
         if (_otaCurrentUrl == nullptr) {
@@ -312,13 +321,14 @@ namespace Mqtt
         _logQueue = nullptr;
         _meterQueue = nullptr;
         _gridQueue = nullptr;
-        
+        _alarmQueue = nullptr;
+
         if (_logQueueStorage != nullptr) {
             free(_logQueueStorage);
             _logQueueStorage = nullptr;
             LOG_DEBUG("MQTT log queue PSRAM freed");
         }
-        
+
         if (_meterQueueStorage != nullptr) {
             free(_meterQueueStorage);
             _meterQueueStorage = nullptr;
@@ -329,6 +339,12 @@ namespace Mqtt
             free(_gridQueueStorage);
             _gridQueueStorage = nullptr;
             LOG_DEBUG("MQTT grid queue PSRAM freed");
+        }
+
+        if (_alarmQueueStorage != nullptr) {
+            free(_alarmQueueStorage);
+            _alarmQueueStorage = nullptr;
+            LOG_DEBUG("MQTT alarm queue PSRAM freed");
         }
 
         deleteMutex(&_configMutex);
@@ -401,6 +417,12 @@ namespace Mqtt
     void requestChannelPublish() { Shadow::requestReport("channels"); }
     void requestCrashPublish() {_publishMqtt.crash = true; }
 
+    void requestImmediatePublish()
+    {
+        if (_taskHandle == nullptr) return;
+        xTaskNotify(_taskHandle, MQTT_NOTIFY_WAKE_BIT, eSetBits);
+    }
+
     // Public methods for pushing data to queues
     // =========================================
 
@@ -449,6 +471,17 @@ namespace Mqtt
             xQueueSend(_gridQueue, &point, 0);
             statistics.mqttGridPointsDropped++;
         }
+    }
+
+    void pushAlarm(const AlarmEntry& entry)
+    {
+        if (!_initializeAlarmQueue()) return;
+        // No drop-oldest (unlike meter/grid) - losing an alarm silently isn't
+        // acceptable; block briefly instead (same as pushLog).
+        if (xQueueSend(_alarmQueue, &entry, pdMS_TO_TICKS(QUEUE_WAIT_TIMEOUT)) != pdTRUE) {
+            LOG_WARNING("MQTT alarm queue full, dropping alarm: %s", entry.type);
+        }
+        requestImmediatePublish();
     }
 
     TaskInfo getMqttTaskInfo()
@@ -661,6 +694,32 @@ namespace Mqtt
         }
 
         LOG_DEBUG("MQTT grid queue initialized with PSRAM buffer (%zu bytes) | Free PSRAM: %zu bytes", realQueueSize, heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+        return true;
+    }
+
+    bool _initializeAlarmQueue()
+    {
+        if (_alarmQueueStorage != nullptr) return true;
+
+        // Allocate queue storage in PSRAM
+        uint32_t queueLength = MQTT_ALARM_QUEUE_SIZE / sizeof(AlarmEntry);
+        size_t realQueueSize = queueLength * sizeof(AlarmEntry);
+        _alarmQueueStorage = (uint8_t*)ps_malloc(realQueueSize);
+
+        if (_alarmQueueStorage == nullptr) {
+            LOG_ERROR("Failed to allocate PSRAM for MQTT alarm queue (%zu bytes)", realQueueSize);
+            return false;
+        }
+
+        _alarmQueue = xQueueCreateStatic(queueLength, sizeof(AlarmEntry), _alarmQueueStorage, &_alarmQueueStruct);
+        if (_alarmQueue == nullptr) {
+            LOG_ERROR("Failed to create MQTT alarm queue");
+            free(_alarmQueueStorage);
+            _alarmQueueStorage = nullptr;
+            return false;
+        }
+
+        LOG_DEBUG("MQTT alarm queue initialized with PSRAM buffer (%zu bytes) | Free PSRAM: %zu bytes", realQueueSize, heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
         return true;
     }
 
@@ -934,12 +993,20 @@ namespace Mqtt
             if (_lastLoopToPublishData) {
                 _lastLoopToPublishData = false;
                 _taskShouldRun = false;
-            } else if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(MQTT_LOOP_INTERVAL)) > 0) {
-                _lastLoopToPublishData = true;
-                _publishMqtt.meter = true;
-                _publishMqtt.systemDynamic = true;
-                _publishMqtt.statistics = true;
-                break;
+            } else {
+                // Wake early on notification (e.g. pushAlarm's requestImmediatePublish)
+                // instead of waiting the full interval. Only the shutdown bit takes
+                // the flush-and-stop branch below.
+                uint32_t notifiedBits = 0;
+                xTaskNotifyWait(0, ULONG_MAX, &notifiedBits, pdMS_TO_TICKS(MQTT_LOOP_INTERVAL));
+
+                if (notifiedBits & TASK_NOTIFY_SHUTDOWN_BIT) {
+                    _lastLoopToPublishData = true;
+                    _publishMqtt.meter = true;
+                    _publishMqtt.systemDynamic = true;
+                    _publishMqtt.statistics = true;
+                    break;
+                }
             }
         }
 
@@ -1015,6 +1082,7 @@ namespace Mqtt
         _setTopicStatistics();
         _setTopicCrash();
         _setTopicLog();
+        _setTopicAlarm();
 
         LOG_DEBUG("MQTT topics setup complete");
     }
@@ -1026,6 +1094,7 @@ namespace Mqtt
     static void _setTopicStatistics() { _constructMqttTopic(MQTT_TOPIC_STATISTICS, _mqttTopicStatistics, sizeof(_mqttTopicStatistics)); }
     static void _setTopicCrash() { _constructMqttTopic(MQTT_TOPIC_CRASH, _mqttTopicCrash, sizeof(_mqttTopicCrash)); }
     static void _setTopicLog() { _constructMqttTopicWithRule(AWS_IOT_CORE_RULE_LOG, MQTT_TOPIC_LOG, _mqttTopicLog, sizeof(_mqttTopicLog)); }
+    static void _setTopicAlarm() { _constructMqttTopicWithRule(AWS_IOT_CORE_RULE_ALARM, MQTT_TOPIC_ALARM, _mqttTopicAlarm, sizeof(_mqttTopicAlarm)); }
 
     static void _subscribeToTopics() {
         _subscribeAwsIotJobs();
@@ -1946,6 +2015,39 @@ namespace Mqtt
         }
     }
 
+    // Fast path meant to beat the capacitor hold-up window: published directly,
+    // not through Shadow. Power/pf/voltage snapshot fetched here (not carried in
+    // AlarmEntry) to stay fresh and keep the queued struct tiny.
+    static void _publishAlarm(const AlarmEntry& entry)
+    {
+        SpiRamAllocator allocator;
+        JsonDocument doc(&allocator);
+
+        doc["eventId"] = entry.eventId;
+        doc["unixTime"] = entry.unixTimeMs;
+        doc["type"] = entry.type;
+
+        MeterValues voltageValues;
+        if (Ade7953::getMeterValues(voltageValues, 0)) {
+            doc["voltage"] = roundToDecimals(voltageValues.voltage, MQTT_GRID_VOLTAGE_PAYLOAD_DECIMALS);
+        }
+
+        JsonArray channels = doc["channels"].to<JsonArray>();
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
+            if (!Ade7953::isChannelActive(i)) continue;
+            MeterValues meterValues;
+            if (!Ade7953::getMeterValues(meterValues, i)) continue;
+            JsonObject channel = channels.add<JsonObject>();
+            channel["channel"] = i;
+            channel["power"] = roundToDecimals(meterValues.activePower, POWER_DECIMALS);
+            channel["pf"] = roundToDecimals(meterValues.powerFactor, POWER_FACTOR_DECIMALS);
+        }
+
+        if (!_publishJsonStreaming(doc, _mqttTopicAlarm)) {
+            LOG_ERROR("Failed to publish alarm via streaming");
+        }
+    }
+
     static void _checkPublishMqtt() {
         if (_publishMqtt.meter) {_publishMeter();}
         if (_publishMqtt.grid) {_publishGrid();}
@@ -2269,6 +2371,24 @@ namespace Mqtt
         }
     }
 
+    // Drained ahead of the log queue in _handleConnectedState().
+    static void _processAlarmQueue()
+    {
+        if (!_initializeAlarmQueue()) return;
+
+        AlarmEntry entry;
+        uint32_t loops = 0;
+        while (xQueueReceive(_alarmQueue, &entry, 0) == pdTRUE && loops < MAX_LOOP_ITERATIONS) {
+            loops++;
+            if (CustomWifi::isFullyConnected() && _clientMqtt.connected()) {
+                _publishAlarm(entry);
+            } else {
+                xQueueSendToFront(_alarmQueue, &entry, 0);
+                break;
+            }
+        }
+    }
+
     static bool _publishMeterStreaming() {
         // Power-only: bare array of [unixTimeMs, channel, activePower, powerFactor]
         // points. Voltage and per-channel energy counters are published
@@ -2535,7 +2655,8 @@ namespace Mqtt
             return;
         }
 
-        // Process queues and publishing
+        // Process queues and publishing. Alarm goes first, ahead of routine logs.
+        _processAlarmQueue();
         _processLogQueue();
         _checkIfPublishMeterNeeded();
         _checkIfPublishGridNeeded();

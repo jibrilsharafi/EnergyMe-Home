@@ -236,4 +236,11 @@ uint8_t wdrrPick(float* deficits, const bool* active, uint8_t count,
     return bestChannel;
 }
 
+// ----------------------------------------------------------------------------
+// Interrupt status demux
+// ----------------------------------------------------------------------------
+bool hasUnhandledIrqBits(int32_t statusA, int32_t handledMask) {
+    return (statusA & ~handledMask) != 0;
+}
+
 } // namespace MeterLogic
