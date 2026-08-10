@@ -2023,6 +2023,7 @@ namespace Mqtt
         SpiRamAllocator allocator;
         JsonDocument doc(&allocator);
 
+        doc["eventId"] = entry.eventId;
         doc["unixTime"] = entry.unixTimeMs;
         doc["type"] = entry.type;
 

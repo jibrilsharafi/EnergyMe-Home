@@ -138,6 +138,10 @@ inline double roundToDecimals(double value, uint8_t decimals = 3) {
 // Device identification
 void getDeviceId(char* deviceId, size_t maxLength);
 
+// Fills out with a 16-char lowercase-hex random token (e.g. for an event/correlation
+// id) plus null terminator; outSize must be >= 17, else out is left untouched.
+void generateHexToken(char* out, size_t outSize);
+
 // System information and monitoring
 void populateSystemStaticInfo(SystemStaticInfo& info);
 void populateSystemDynamicInfo(SystemDynamicInfo& info);

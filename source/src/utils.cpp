@@ -5,6 +5,7 @@
 #include "duration_format.h"
 #include "version_compare.h"
 
+#include <esp_random.h>
 #include <esp_wifi.h>
 
 #include "taskprofiler.h"
@@ -1055,10 +1056,15 @@ void clearAllPreferences() {
 void getDeviceId(char* deviceId, size_t maxLength) {
     uint8_t mac[6];
     esp_efuse_mac_get_default(mac);
-    
+
     // Use lowercase hex formatting without colons
-    snprintf(deviceId, maxLength, "%02x%02x%02x%02x%02x%02x", 
+    snprintf(deviceId, maxLength, "%02x%02x%02x%02x%02x%02x",
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+}
+
+void generateHexToken(char* out, size_t outSize) {
+    if (!out || outSize < 17) return;
+    snprintf(out, outSize, "%08x%08x", esp_random(), esp_random());
 }
 
 

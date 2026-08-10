@@ -2193,7 +2193,8 @@ namespace Ade7953
 
         if (!globalCommunityMode) {
             AlarmEntry alarm;
-            snprintf(alarm.type, sizeof(alarm.type), "blackout");
+            generateHexToken(alarm.eventId, sizeof(alarm.eventId));
+            snprintf(alarm.type, sizeof(alarm.type), "zero_crossing_timeout");
             alarm.unixTimeMs = CustomTime::getUnixTimeMilliseconds();
             Mqtt::pushAlarm(alarm);
         }
