@@ -479,7 +479,7 @@ namespace Mqtt
         // No drop-oldest (unlike meter/grid) - losing an alarm silently isn't
         // acceptable; block briefly instead (same as pushLog).
         if (xQueueSend(_alarmQueue, &entry, pdMS_TO_TICKS(QUEUE_WAIT_TIMEOUT)) != pdTRUE) {
-            LOG_WARNING("MQTT alarm queue full, dropping alarm: %s", entry.message);
+            LOG_WARNING("MQTT alarm queue full, dropping alarm: %s", entry.type);
         }
         requestImmediatePublish();
     }
@@ -2022,11 +2022,9 @@ namespace Mqtt
     {
         SpiRamAllocator allocator;
         JsonDocument doc(&allocator);
-        char timestamp[TIMESTAMP_ISO_BUFFER_SIZE];
-        AdvancedLogger::getTimestampIsoUtcFromUnixTimeMilliseconds(entry.unixTimeMs, timestamp, sizeof(timestamp));
 
-        doc["timestamp"] = timestamp;
-        doc["message"] = entry.message;
+        doc["unixTime"] = entry.unixTimeMs;
+        doc["type"] = entry.type;
 
         MeterValues voltageValues;
         if (Ade7953::getMeterValues(voltageValues, 0)) {

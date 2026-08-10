@@ -2193,7 +2193,7 @@ namespace Ade7953
 
         if (!globalCommunityMode) {
             AlarmEntry alarm;
-            snprintf(alarm.message, sizeof(alarm.message), "Blackout detected - grid power lost");
+            snprintf(alarm.type, sizeof(alarm.type), "blackout");
             alarm.unixTimeMs = CustomTime::getUnixTimeMilliseconds();
             Mqtt::pushAlarm(alarm);
         }

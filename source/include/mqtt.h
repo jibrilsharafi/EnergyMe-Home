@@ -37,7 +37,7 @@
 // _handleConnectedState() - see Mqtt::pushAlarm(). Alarms are rare (issue raise
 // edges only); sized generously anyway since PSRAM is cheap.
 #define MQTT_ALARM_QUEUE_SIZE (4 * 1024) // Size in bytes to allocate to PSRAM
-#define MQTT_ALARM_MESSAGE_BUFFER_SIZE 192 // Keep >= issueregistry.h's ISSUE_MESSAGE_BUFFER_SIZE - messages are copied verbatim
+#define MQTT_ALARM_TYPE_BUFFER_SIZE 32 // Short machine-readable identifier, e.g. "blackout" - not a free-text message
 
 // AWS IoT Jobs OTA constants
 #define OTA_TASK_NAME "ota_task"
@@ -203,10 +203,10 @@ struct PublishMqtt
 // carried here.
 struct AlarmEntry
 {
-    char message[MQTT_ALARM_MESSAGE_BUFFER_SIZE]; // plain-language, e.g. "Blackout detected - grid power lost"
+    char type[MQTT_ALARM_TYPE_BUFFER_SIZE]; // e.g. "blackout" - lets future alarm types share this same wire shape
     uint64_t unixTimeMs;
 
-    AlarmEntry() : unixTimeMs(0) { message[0] = '\0'; }
+    AlarmEntry() : unixTimeMs(0) { type[0] = '\0'; }
 };
 
 namespace Mqtt
