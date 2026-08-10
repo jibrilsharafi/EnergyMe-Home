@@ -140,6 +140,8 @@ void getDeviceId(char* deviceId, size_t maxLength);
 
 // Fills out with a 16-char lowercase-hex random token (e.g. for an event/correlation
 // id) plus null terminator; outSize must be >= 17, else out is left untouched.
+// Free function rather than ShadowLogic::formatClientToken (lib/shadow_logic) -
+// that helper is Shadow-owned; this avoids coupling unrelated features to it.
 void generateHexToken(char* out, size_t outSize);
 
 // System information and monitoring
