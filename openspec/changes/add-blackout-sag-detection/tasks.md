@@ -46,17 +46,18 @@
 
 ## 8. Direct MQTT alarm (replaces task groups 4 and 7)
 
-- [x] 8.1 New `AlarmEntry` payload type (`mqtt.h`): code, channel, severity, message, timestamp - a fixed-size POD struct, independent of `IssueLogic`/`IssueRegistry`.
+- [x] 8.1 New `AlarmEntry` payload type (`mqtt.h`): `eventId` (16-char hex token), `type` (e.g. `"zero_crossing_timeout"`), `unixTimeMs` - a fixed-size POD struct, independent of `IssueLogic`/`IssueRegistry`. Published JSON adds a live `voltage` + per-active-channel `channels` (`channel`/`power`/`pf`) snapshot, fetched at publish time rather than carried in the queued struct. Earlier drafts used `code`/`channel`/`severity`/`message`/ISO-string `timestamp`; simplified after review to match the `unixTime`-raw-ms convention every other structured payload uses, and to keep the wire shape extensible for future alarm `type`s instead of a one-off free-text sentence.
 - [x] 8.2 New dedicated MQTT topic/AWS IoT Rule (`MQTT_TOPIC_ALARM "alarm"`, `AWS_IOT_CORE_RULE_ALARM`), following the existing one-rule-per-category convention (`meter`/`grid`/`energy`/`log`).
 - [x] 8.3 `Mqtt::pushAlarm()`: FreeRTOS-queue producer (PSRAM-backed static queue, mirrors `pushLog`/`pushMeter`/`pushGrid`), safe to call from any task; wakes the MQTT task via `requestImmediatePublish()`.
 - [x] 8.4 `_processAlarmQueue()` drained first in `_handleConnectedState()`, ahead of `_processLogQueue()` and everything else.
 - [x] 8.5 `Ade7953::_handleZxtoInterrupt()` calls `Mqtt::pushAlarm()` directly - not routed through `IssueRegistry` (see task group 7 for why).
 - [x] 8.6 Replace the count-based burst guard (task group 4) with a flat `ADE7953_ZXTO_SUPPRESS_MS` (60s) suppression window: `_zxtoLastTriggerMs` timestamp, only the first ZXTO since that window elapsed triggers the alarm/FATAL; every other occurrence is `LOG_DEBUG`-only (filtered out of the MQTT log queue by `pushLog()`'s level check, so a runaway condition costs nothing on the MQTT task beyond the one real trigger).
 - [x] 8.7 `AWS_IOT_CORE_RULE_ALARM` confirmed provisioned server-side (infra repo).
+- [x] 8.8 `pushAlarm()` guarded behind `globalCommunityMode` in `_handleZxtoInterrupt()`, matching every other `Mqtt::push*` call site in `ade7953.cpp` - found by adversarial code review (see design.md Decisions), fixes an unbounded alarm-queue fill + up to 100ms meter-task stall on community-mode devices.
 
 ## 9. Bench validation, round 2 (direct alarm path)
 
-- [ ] 9.1 Build and flash the direct-alarm-path firmware (task group 8) via `esp32s3-dev-v5`.
-- [ ] 9.2 Induce a grid-loss event; confirm exactly one `LOG_FATAL` + one alarm publish trace appears (not the old 3-burst pattern), and any further ZXTO within 60s shows only `LOG_DEBUG`.
-- [ ] 9.3 Confirm the alarm is received on the AWS side (not just that the device-side publish call succeeded) - the outstanding open question from design.md.
-- [ ] 9.4 Repeat across multiple plug-pulls spaced more than 60s apart; confirm each produces a fresh trigger.
+- [x] 9.1 Build and flash the direct-alarm-path firmware (task group 8) via `esp32s3-dev-v5`.
+- [x] 9.2 Induce a grid-loss event; confirm exactly one `LOG_FATAL` + one alarm publish trace appears (not the old 3-burst pattern), and any further ZXTO within 60s shows only `LOG_DEBUG`.
+- [x] 9.3 Confirm the alarm is received on the AWS side (not just that the device-side publish call succeeded) - the outstanding open question from design.md. Confirmed 2026-08-09.
+- [x] 9.4 Repeat across multiple plug-pulls spaced more than 60s apart; confirm each produces a fresh trigger. Confirmed working end-to-end.
