@@ -26,4 +26,4 @@
 
 - [x] 6.1 Commit (`feat(issues): raise over-temperature issue on sustained high die temperature`)
 - [ ] 6.2 Push and open PR to `development`, `Closes #234`
-- [ ] 6.3 Run code-review and simplification agents per repo PR policy before merge
+- [x] 6.3 Run code-review and simplification agents per repo PR policy before merge - all 4 simplify angles (reuse/simplification/efficiency/altitude) came back clean or noted as already-considered trade-offs; code-review's one substantive finding (temperatureRead()'s 10-50 C calibration hint risking reads failing above 50 C) was confirmed resolved on real hardware (bench unit read 70 C validly)
