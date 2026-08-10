@@ -62,6 +62,7 @@ namespace IssueRegistry
     static uint64_t _prevAde7953Failures = 0;
     static uint64_t _prevAuthLockouts = 0;
     static bool _littleFsCondition = false;
+    static bool _overTemperatureCondition = false;
     static bool _firstTick = true;
 
     // Task
@@ -434,6 +435,17 @@ namespace IssueRegistry
                      fsFraction * 100.0f, (unsigned)(fsUsed / 1024), (unsigned)(fsTotal / 1024));
         }
         _updateInstance(IssueLogic::Code::LittleFsNearFull, ISSUE_GLOBAL_SCOPE, _littleFsCondition, message);
+
+        // --- over_temperature (raise/clear thresholds differ: simple hysteresis)
+        float temperatureCelsius = temperatureRead();
+        if (temperatureCelsius >= ISSUE_TEMPERATURE_RAISE_CELSIUS) _overTemperatureCondition = true;
+        else if (temperatureCelsius <= ISSUE_TEMPERATURE_CLEAR_CELSIUS) _overTemperatureCondition = false;
+        message[0] = '\0';
+        if (_overTemperatureCondition) {
+            snprintf(message, sizeof(message), "Internal temperature %.1f C is above the %.0f C threshold",
+                     temperatureCelsius, ISSUE_TEMPERATURE_RAISE_CELSIUS);
+        }
+        _updateInstance(IssueLogic::Code::OverTemperature, ISSUE_GLOBAL_SCOPE, _overTemperatureCondition, message);
 
         // --- voltage_out_of_range (channel 0 carries the only voltage measurement)
         MeterValues meterValues;

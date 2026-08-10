@@ -1905,7 +1905,7 @@ namespace Ade7953
         readRegister(RSTIRQSTATA_32, BIT_32, false);
         readRegister(RSTIRQSTATB_32, BIT_32, false);
 
-        LOG_INFO("ADE7953 interrupts enabled: ZXV, ZXTO (ZXTOUT=%u, ~%ums), CYCEND, RESET, CRC", ADE7953_ZXTOUT_VALUE, ADE7953_ZXTOUT_TARGET_MS);
+        LOG_DEBUG("ADE7953 interrupts enabled: ZXV, ZXTO (ZXTOUT=%u, ~%ums), CYCEND, RESET, CRC", ADE7953_ZXTOUT_VALUE, ADE7953_ZXTOUT_TARGET_MS);
     }
 
     void _handleInterrupt(uint64_t linecycUnix)

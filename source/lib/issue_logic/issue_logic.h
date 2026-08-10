@@ -40,6 +40,7 @@ enum class Code : uint8_t {
     GridFrequencyOutOfRange,  // sustained deviation from nominal grid frequency
     Ade7953ReadFailures,      // sustained meter reading failures
     AuthBruteForce,           // event: a source was locked out for repeated failed web logins
+    OverTemperature,          // sustained high internal die temperature
     Count
 };
 

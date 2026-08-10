@@ -29,6 +29,7 @@ static constexpr CodeDescriptor CODE_TABLE[] = {
     {"grid_frequency_out_of_range", Severity::Warning}, // Code::GridFrequencyOutOfRange
     {"ade7953_read_failures",       Severity::Warning}, // Code::Ade7953ReadFailures
     {"auth_brute_force",            Severity::Warning}, // Code::AuthBruteForce
+    {"over_temperature",            Severity::Warning}, // Code::OverTemperature
 };
 static_assert(sizeof(CODE_TABLE) / sizeof(CODE_TABLE[0]) == (size_t)Code::Count,
               "every IssueLogic::Code needs a CODE_TABLE row");

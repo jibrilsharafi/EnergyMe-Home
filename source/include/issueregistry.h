@@ -46,6 +46,8 @@
 #define ISSUE_FREQUENCY_TOLERANCE_HZ 1.0f
 #define ISSUE_ADE7953_FAILURES_PER_WINDOW 7 // failures in one ~5 s window to count as bad
 #define ISSUE_NTP_BOOT_GRACE_MS (5 * 60 * 1000)
+#define ISSUE_TEMPERATURE_RAISE_CELSIUS 70.0f
+#define ISSUE_TEMPERATURE_CLEAR_CELSIUS 65.0f
 
 namespace IssueRegistry
 {
