@@ -1,16 +1,16 @@
 name: Platform Guard
 
-# Blocks unacknowledged pioarduino platform bumps. The Arduino core's baked-in
-# sdkconfig can change memory placement invisibly (see the 2026-08-12 OTA
-# incident: CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP dropped between cores, moving
-# WiFi/LWIP buffers from PSRAM to internal RAM). A PR that changes any
-# `platform =` line (or touches platform_packages / extra_configs, which can
-# swap the core artifact just as silently) must carry the [platform-bump-ack]
-# marker on its own line in the PR body; the sdkconfig diff is printed either
-# way.
+# Blocks unacknowledged pioarduino platform changes: the core's baked-in
+# sdkconfig can move memory placement invisibly (see the warning block above
+# `platform =` in source/platformio.ini). Detection and diff logic live in
+# source/utils/diff_platform_sdkconfig.py so they are runnable locally; this
+# workflow is enforcement only. A platform change must carry the marker
+# [platform-bump-ack] on its own line in the PR body.
 
 on:
   pull_request:
+    # `edited` keeps the marker check honest when the body changes after the
+    # initial run (both adding and removing the acknowledgement).
     types: [opened, synchronize, reopened, edited]
     branches: [ development, main ]
     paths:
@@ -26,43 +26,20 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v6
+
+    - name: Set up Python
+      uses: actions/setup-python@v6
       with:
-        fetch-depth: 0
+        python-version: '3.11'
 
     - name: Detect platform changes
       id: detect
       shell: bash
       run: |
-        git show "origin/$GITHUB_BASE_REF:source/platformio.ini" > /tmp/base-platformio.ini
-
-        # Every platform-defining line, not just the first: an env-section
-        # override or a decoy line must register as a change too.
-        extract_pins() { grep -E '^[[:space:]]*platform[[:space:]]*=' "$1" | sed 's/[[:space:]]*$//' | sort; }
-
-        if ! diff <(extract_pins /tmp/base-platformio.ini) <(extract_pins source/platformio.ini); then
-          echo "changed=true" >> "$GITHUB_OUTPUT"
-          echo "::warning::platform line(s) changed (see diff above)"
-        elif git diff "origin/$GITHUB_BASE_REF"...HEAD -- source/platformio.ini | grep -E '^[+-].*(platform_packages|extra_configs)'; then
-          # These keys can replace the core libs artifact without touching
-          # the platform line.
-          echo "changed=true" >> "$GITHUB_OUTPUT"
-          echo "::warning::platform_packages/extra_configs touched"
-        else
-          echo "changed=false" >> "$GITHUB_OUTPUT"
-          echo "Platform pin unchanged"
-        fi
-
-        # Best-effort URLs for the sdkconfig diff: the [common] pin is the
-        # only URL-valued platform line ('native' and interpolated env lines
-        # do not match).
-        echo "old=$(grep -oE '^platform = https?://[^ ]+' /tmp/base-platformio.ini | head -n1 | cut -d' ' -f3-)" >> "$GITHUB_OUTPUT"
-        echo "new=$(grep -oE '^platform = https?://[^ ]+' source/platformio.ini | head -n1 | cut -d' ' -f3-)" >> "$GITHUB_OUTPUT"
-
-    - name: Set up Python
-      if: steps.detect.outputs.changed == 'true'
-      uses: actions/setup-python@v6
-      with:
-        python-version: '3.11.7'
+        git fetch --no-tags --depth=1 origin "$GITHUB_BASE_REF"
+        git show FETCH_HEAD:source/platformio.ini > /tmp/base-platformio.ini
+        python source/utils/diff_platform_sdkconfig.py --detect \
+          /tmp/base-platformio.ini source/platformio.ini >> "$GITHUB_OUTPUT"
 
     - name: Print sdkconfig diff
       if: steps.detect.outputs.changed == 'true'
@@ -101,10 +78,8 @@ jobs:
           echo "::error::The platform configuration changed but the PR body does not contain"
           echo "::error::the acknowledgement marker on its own line."
           echo ""
-          echo "Before bumping the platform:"
-          echo "  1. Run: uv run source/utils/diff_platform_sdkconfig.py <old> <new>"
-          echo "  2. Review the memory-relevant sdkconfig diff (above and in the job summary)"
-          echo "  3. Soak the bench device with a heap watch (free/minFree/maxAlloc during MQTT publishes)"
-          echo "  4. Add the marker [platform-bump-ack] on its own line in the PR body"
+          echo "Follow the bump checklist in the warning block above 'platform =' in"
+          echo "source/platformio.ini, then add the marker [platform-bump-ack] on its"
+          echo "own line in the PR body."
           exit 1
         fi

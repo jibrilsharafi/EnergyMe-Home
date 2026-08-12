@@ -2,32 +2,35 @@
 """
 Diff the baked-in sdkconfig of two pioarduino platform versions.
 
-The Arduino core ships as prebuilt libs whose sdkconfig is fixed at build
-time; application code cannot override it, and `pio run` RAM totals do not
-reveal changes to it. A dropped flag there caused the 2026-08-12 fleet OTA
-incident (CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP: WiFi/LWIP buffers silently
-moved from PSRAM to internal RAM). Run this before ANY platform bump.
+The core's sdkconfig is fixed when Espressif builds the libs; application
+code cannot override it and `pio run` RAM totals do not reveal changes to
+it. Why this matters: see the warning block above `platform =` in
+source/platformio.ini (2026-08-12 OTA incident). Run this before ANY
+platform bump.
 
-Each platform release zip contains a platform.json that pins the
-framework-arduinoespressif32-libs package by URL; this script downloads both
-zips, follows those URLs, extracts <target>/sdkconfig from each libs tarball
-and prints a memory-relevant filtered diff followed by the full diff.
-
-Exits non-zero when CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP differs between the
-two versions (the known fleet-incident sentinel) unless --no-fail-on-sentinel
-is given, and always on download/resolution errors.
+Exits non-zero when CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP differs between
+the two versions (the incident sentinel) unless --no-fail-on-sentinel is
+given, and always on download/resolution errors.
 
 Usage:
     uv run source/utils/diff_platform_sdkconfig.py 55.03.32 55.03.311
     uv run source/utils/diff_platform_sdkconfig.py <old-zip-url> <new-zip-url> --target esp32s3
+
+CI mode (used by .github/workflows/platform-guard.yml):
+    python source/utils/diff_platform_sdkconfig.py --detect base.ini head.ini
+Prints `changed=`/`old=`/`new=` GitHub-output lines comparing every
+platform-defining key (platform =, platform_packages, extra_configs)
+between the two platformio.ini files.
 """
 
 import argparse
 import json
 import re
+import shutil
 import sys
 import tarfile
 import tempfile
+import time
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -39,7 +42,8 @@ PLATFORM_ZIP_URL = (
 LIBS_PACKAGE = "framework-arduinoespressif32-libs"
 SENTINEL_FLAG = "CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP"
 MEMORY_FLAG_PATTERN = re.compile(r"MBEDTLS|LWIP|WIFI|SPIRAM|HEAP|CACHE|BUF|MEM")
-DOWNLOAD_CHUNK_BYTES = 1 << 20
+PLATFORM_KEY_PATTERN = re.compile(r"^\s*(platform\s*=|platform_packages|extra_configs)")
+URL_PIN_PATTERN = re.compile(r"^platform = (https?://\S+)", re.MULTILINE)
 
 
 def platform_zip_url(version_or_url: str) -> str:
@@ -48,17 +52,20 @@ def platform_zip_url(version_or_url: str) -> str:
     return PLATFORM_ZIP_URL.format(version=version_or_url)
 
 
-def download(url: str, dest: Path, label: str) -> None:
-    print(f"Downloading {label}: {url}")
-    try:
-        with urllib.request.urlopen(url, timeout=60) as response, open(dest, "wb") as out:
-            while True:
-                chunk = response.read(DOWNLOAD_CHUNK_BYTES)
-                if not chunk:
-                    break
-                out.write(chunk)
-    except OSError as error:
-        sys.exit(f"ERROR: failed to download {label} ({url}): {error}")
+def open_url(url: str):
+    """GitHub's edge intermittently resets urllib connections (curl is fine);
+    retry with growing backoff before giving up."""
+    request = urllib.request.Request(url, headers={"User-Agent": "energyme-platform-guard"})
+    delays = [0, 5, 15, 45]
+    for attempt, delay in enumerate(delays):
+        time.sleep(delay)
+        try:
+            return urllib.request.urlopen(request, timeout=60)
+        except OSError as error:
+            if attempt == len(delays) - 1:
+                raise
+            print(f"retrying after {error}", file=sys.stderr)
+    raise AssertionError("unreachable")
 
 
 def resolve_libs_url(platform_zip: Path, label: str) -> str:
@@ -75,37 +82,79 @@ def resolve_libs_url(platform_zip: Path, label: str) -> str:
     return url
 
 
-def extract_sdkconfig(libs_tarball: Path, target: str, label: str) -> list[str]:
-    suffix = f"{target}/sdkconfig"
-    with tarfile.open(libs_tarball) as archive:
-        for member in archive:
-            if member.name.endswith(suffix):
-                extracted = archive.extractfile(member)
-                if extracted is None:
-                    continue  # dir/link with a matching name; keep scanning
-                return extracted.read().decode("utf-8", errors="replace").splitlines()
+def fetch_sdkconfig(label: str, target: str) -> list[str]:
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+            platform_zip = Path(tmp.name)
+            print(f"Downloading platform {label}", file=sys.stderr)
+            with open_url(platform_zip_url(label)) as response:
+                shutil.copyfileobj(response, tmp)
+        libs_url = resolve_libs_url(platform_zip, label)
+        platform_zip.unlink()
+
+        # Stream the ~300 MB libs tarball and stop at the sdkconfig member:
+        # only the bytes up to it are ever transferred, nothing hits disk.
+        suffix = f"{target}/sdkconfig"
+        print(f"Streaming core libs for {label}: {libs_url}", file=sys.stderr)
+        with open_url(libs_url) as response:
+            with tarfile.open(fileobj=response, mode="r|xz") as archive:
+                for member in archive:
+                    if member.name.endswith(suffix):
+                        extracted = archive.extractfile(member)
+                        if extracted is None:
+                            continue  # dir/link with a matching name; keep scanning
+                        return extracted.read().decode("utf-8", errors="replace").splitlines()
+    except OSError as error:
+        sys.exit(f"ERROR: fetching sdkconfig for {label} failed: {error}")
     sys.exit(f"ERROR: {suffix} not found in libs package for {label}")
-
-
-def fetch_sdkconfig(version_or_url: str, target: str, workdir: Path) -> list[str]:
-    label = version_or_url
-    platform_zip = workdir / f"platform-{Path(label).name}.zip"
-    download(platform_zip_url(version_or_url), platform_zip, f"platform {label}")
-    libs_url = resolve_libs_url(platform_zip, label)
-    libs_tarball = workdir / f"libs-{Path(label).name}.tar.xz"
-    download(libs_url, libs_tarball, f"core libs for {label}")
-    return extract_sdkconfig(libs_tarball, target, label)
 
 
 def sentinel_state(lines: list[str]) -> bool:
     return any(line.strip() == f"{SENTINEL_FLAG}=y" for line in lines)
 
 
+def print_sides(old_label: str, old_lines: list[str], new_label: str, new_lines: list[str], keep) -> None:
+    for line in old_lines:
+        if keep(line):
+            print(f"only in {old_label}: {line}")
+    for line in new_lines:
+        if keep(line):
+            print(f"only in {new_label}: {line}")
+
+
+def detect(base_ini: Path, head_ini: Path) -> None:
+    """Compare platform-defining keys of two platformio.ini files and print
+    GitHub-output lines (changed/old/new). Every platform line counts, so an
+    env-section override or a decoy line registers as a change too."""
+    base_text = base_ini.read_text()
+    head_text = head_ini.read_text()
+
+    def pins(text: str) -> list[str]:
+        return sorted(l.strip() for l in text.splitlines() if PLATFORM_KEY_PATTERN.match(l))
+
+    changed = pins(base_text) != pins(head_text)
+    if changed:
+        print("platform-defining lines changed:", file=sys.stderr)
+        for line in sorted(set(pins(base_text)) ^ set(pins(head_text))):
+            print(f"  {line}", file=sys.stderr)
+
+    old_match = URL_PIN_PATTERN.search(base_text)
+    new_match = URL_PIN_PATTERN.search(head_text)
+    print(f"changed={'true' if changed else 'false'}")
+    print(f"old={old_match.group(1) if old_match else ''}")
+    print(f"new={new_match.group(1) if new_match else ''}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
-    parser.add_argument("old", help="current platform version (e.g. 55.03.32) or zip URL")
-    parser.add_argument("new", help="proposed platform version or zip URL")
+    parser.add_argument("old", help="current platform version (e.g. 55.03.32), zip URL, or base platformio.ini with --detect")
+    parser.add_argument("new", help="proposed platform version, zip URL, or head platformio.ini with --detect")
     parser.add_argument("--target", default="esp32s3", help="chip target (default: esp32s3)")
+    parser.add_argument(
+        "--detect",
+        action="store_true",
+        help="treat the two arguments as platformio.ini files and print changed/old/new outputs",
+    )
     parser.add_argument(
         "--no-fail-on-sentinel",
         action="store_true",
@@ -113,27 +162,22 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    with tempfile.TemporaryDirectory() as tmp:
-        workdir = Path(tmp)
-        old_lines = fetch_sdkconfig(args.old, args.target, workdir)
-        new_lines = fetch_sdkconfig(args.new, args.target, workdir)
+    if args.detect:
+        detect(Path(args.old), Path(args.new))
+        return
 
-    old_only = sorted(set(old_lines) - set(new_lines))
-    new_only = sorted(set(new_lines) - set(old_lines))
+    # Sequential on purpose: concurrent fetches to the GitHub CDN got reset.
+    old_lines = fetch_sdkconfig(args.old, args.target)
+    new_lines = fetch_sdkconfig(args.new, args.target)
+
+    old_set, new_set = set(old_lines), set(new_lines)
+    old_only = sorted(old_set - new_set)
+    new_only = sorted(new_set - old_set)
 
     print(f"\n=== MEMORY-RELEVANT DIFF ({args.target}) ===")
-    for line in old_only:
-        if MEMORY_FLAG_PATTERN.search(line):
-            print(f"only in {args.old}: {line}")
-    for line in new_only:
-        if MEMORY_FLAG_PATTERN.search(line):
-            print(f"only in {args.new}: {line}")
-
+    print_sides(args.old, old_only, args.new, new_only, MEMORY_FLAG_PATTERN.search)
     print(f"\n=== FULL DIFF ({len(old_only)} + {len(new_only)} lines) ===")
-    for line in old_only:
-        print(f"only in {args.old}: {line}")
-    for line in new_only:
-        print(f"only in {args.new}: {line}")
+    print_sides(args.old, old_only, args.new, new_only, lambda _: True)
 
     old_sentinel = sentinel_state(old_lines)
     new_sentinel = sentinel_state(new_lines)
@@ -143,7 +187,7 @@ def main() -> None:
             f"{'SET' if old_sentinel else 'NOT set'} in {args.old} but "
             f"{'SET' if new_sentinel else 'NOT set'} in {args.new}. "
             "This flag decides whether WiFi/LWIP buffers live in PSRAM or "
-            "internal RAM - see the 2026-08-12 OTA incident (issue #191)."
+            "internal RAM - see the platform warning in source/platformio.ini."
         )
         if not args.no_fail_on_sentinel:
             sys.exit(2)
