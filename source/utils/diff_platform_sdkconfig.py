@@ -15,6 +15,11 @@ given, and always on download/resolution errors.
 Usage:
     uv run source/utils/diff_platform_sdkconfig.py 55.03.32 55.03.311
     uv run source/utils/diff_platform_sdkconfig.py <old-zip-url> <new-zip-url> --target esp32s3
+    uv run source/utils/diff_platform_sdkconfig.py old-sdkconfig.txt new-sdkconfig.txt
+
+Each argument may be a pioarduino release version, a platform zip URL, or a
+path to an already-downloaded sdkconfig file. --dump-dir saves both raw
+sdkconfigs for a side-by-side view (e.g. `code --diff old new`).
 
 CI mode (used by .github/workflows/platform-guard.yml):
     python source/utils/diff_platform_sdkconfig.py --detect base.ini head.ini
@@ -44,6 +49,10 @@ SENTINEL_FLAG = "CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP"
 MEMORY_FLAG_PATTERN = re.compile(r"MBEDTLS|LWIP|WIFI|SPIRAM|HEAP|CACHE|BUF|MEM")
 PLATFORM_KEY_PATTERN = re.compile(r"^\s*(platform\s*=|platform_packages|extra_configs)")
 URL_PIN_PATTERN = re.compile(r"^platform = (https?://\S+)", re.MULTILINE)
+CONFIG_SET_PATTERN = re.compile(r"^(CONFIG_[A-Za-z0-9_]+)=(.*)$")
+CONFIG_NOT_SET_PATTERN = re.compile(r"^# (CONFIG_[A-Za-z0-9_]+) is not set$")
+NOT_SET = "not set"
+ABSENT = "absent"
 
 
 def platform_zip_url(version_or_url: str) -> str:
@@ -83,6 +92,8 @@ def resolve_libs_url(platform_zip: Path, label: str) -> str:
 
 
 def fetch_sdkconfig(label: str, target: str) -> list[str]:
+    if Path(label).is_file():
+        return Path(label).read_text(encoding="utf-8", errors="replace").splitlines()
     try:
         with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
             platform_zip = Path(tmp.name)
@@ -109,17 +120,34 @@ def fetch_sdkconfig(label: str, target: str) -> list[str]:
     sys.exit(f"ERROR: {suffix} not found in libs package for {label}")
 
 
-def sentinel_state(lines: list[str]) -> bool:
-    return any(line.strip() == f"{SENTINEL_FLAG}=y" for line in lines)
+def parse_config(lines: list[str]) -> dict[str, str]:
+    """Kconfig semantics: `KEY=value` and `# KEY is not set` are both explicit
+    states; anything else (comments, section banners) is presentation noise."""
+    values: dict[str, str] = {}
+    for line in lines:
+        line = line.strip()
+        if match := CONFIG_SET_PATTERN.match(line):
+            values[match.group(1)] = match.group(2)
+        elif match := CONFIG_NOT_SET_PATTERN.match(line):
+            values[match.group(1)] = NOT_SET
+    return values
 
 
-def print_sides(old_label: str, old_lines: list[str], new_label: str, new_lines: list[str], keep) -> None:
-    for line in old_lines:
-        if keep(line):
-            print(f"only in {old_label}: {line}")
-    for line in new_lines:
-        if keep(line):
-            print(f"only in {new_label}: {line}")
+def print_changes(old_label: str, old_cfg: dict[str, str], new_label: str, new_cfg: dict[str, str], keys: list[str]) -> None:
+    changed = sorted(k for k in keys if k in old_cfg and k in new_cfg)
+    added = sorted(k for k in keys if k not in old_cfg)
+    removed = sorted(k for k in keys if k not in new_cfg)
+    width = max((len(k) for k in keys), default=0)
+    for key in changed:
+        print(f"  {key:<{width}}  {old_cfg[key]} -> {new_cfg[key]}")
+    if added:
+        print(f"  --- only in {new_label} ---")
+        for key in added:
+            print(f"  {key:<{width}}  {new_cfg[key]}")
+    if removed:
+        print(f"  --- only in {old_label} ---")
+        for key in removed:
+            print(f"  {key:<{width}}  {old_cfg[key]}")
 
 
 def detect(base_ini: Path, head_ini: Path) -> None:
@@ -160,6 +188,11 @@ def main() -> None:
         action="store_true",
         help=f"do not exit non-zero when {SENTINEL_FLAG} differs",
     )
+    parser.add_argument(
+        "--dump-dir",
+        type=Path,
+        help="also save both raw sdkconfigs here, for `code --diff` / `git diff --no-index`",
+    )
     args = parser.parse_args()
 
     if args.detect:
@@ -170,24 +203,34 @@ def main() -> None:
     old_lines = fetch_sdkconfig(args.old, args.target)
     new_lines = fetch_sdkconfig(args.new, args.target)
 
-    old_set, new_set = set(old_lines), set(new_lines)
-    old_only = sorted(old_set - new_set)
-    new_only = sorted(new_set - old_set)
+    if args.dump_dir:
+        args.dump_dir.mkdir(parents=True, exist_ok=True)
+        paths = []
+        for label, lines in ((args.old, old_lines), (args.new, new_lines)):
+            safe = Path(label).stem if Path(label).is_file() else re.sub(r"[^A-Za-z0-9._-]+", "_", label)
+            path = args.dump_dir / f"sdkconfig-{args.target}-{safe}.txt"
+            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            paths.append(path)
+        print(f"Raw sdkconfigs saved; side-by-side view:\n  code --diff {paths[0]} {paths[1]}", file=sys.stderr)
 
-    print(f"\n=== MEMORY-RELEVANT DIFF ({args.target}) ===")
-    print_sides(args.old, old_only, args.new, new_only, MEMORY_FLAG_PATTERN.search)
-    print(f"\n=== FULL DIFF ({len(old_only)} + {len(new_only)} lines) ===")
-    print_sides(args.old, old_only, args.new, new_only, lambda _: True)
+    old_cfg = parse_config(old_lines)
+    new_cfg = parse_config(new_lines)
+    diff_keys = [k for k in old_cfg.keys() | new_cfg.keys() if old_cfg.get(k) != new_cfg.get(k)]
+    memory_keys = [k for k in diff_keys if MEMORY_FLAG_PATTERN.search(k)]
 
-    old_sentinel = sentinel_state(old_lines)
-    new_sentinel = sentinel_state(new_lines)
+    print(f"\n=== MEMORY-RELEVANT CHANGES ({args.target}): {len(memory_keys)} keys ===")
+    print_changes(args.old, old_cfg, args.new, new_cfg, memory_keys)
+    print(f"\n=== ALL CHANGES ({args.target}): {len(diff_keys)} keys ===")
+    print_changes(args.old, old_cfg, args.new, new_cfg, diff_keys)
+
+    old_sentinel = old_cfg.get(SENTINEL_FLAG, ABSENT)
+    new_sentinel = new_cfg.get(SENTINEL_FLAG, ABSENT)
     if old_sentinel != new_sentinel:
         print(
-            f"\nWARNING: {SENTINEL_FLAG} is "
-            f"{'SET' if old_sentinel else 'NOT set'} in {args.old} but "
-            f"{'SET' if new_sentinel else 'NOT set'} in {args.new}. "
-            "This flag decides whether WiFi/LWIP buffers live in PSRAM or "
-            "internal RAM - see the platform warning in source/platformio.ini."
+            f"\nWARNING: {SENTINEL_FLAG} is '{old_sentinel}' in {args.old} but "
+            f"'{new_sentinel}' in {args.new}. This flag decides whether "
+            "WiFi/LWIP buffers live in PSRAM or internal RAM - see the "
+            "platform warning in source/platformio.ini."
         )
         if not args.no_fail_on_sentinel:
             sys.exit(2)
