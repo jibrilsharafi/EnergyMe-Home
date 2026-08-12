@@ -1,0 +1,30 @@
+# Tasks: revert-platform-pin
+
+## 1. Platform revert
+
+- [x] 1.1 Create branch `fix/revert-platform-pin` off `development`
+- [x] 1.2 Revert `platform =` to 55.03.32 in `source/platformio.ini` and restore the warning block, rewritten with the verified root cause (`SPIRAM_TRY_ALLOCATE_WIFI_LWIP` dropped, WiFi/LWIP buffers moved to internal RAM, 2026-08-12 fleet OTA incident) and a pointer to the diff script (commit 1)
+- [x] 1.3 Bump firmware version to 2.3.2 in `source/include/constants.h` (commit 2)
+- [x] 1.4 Build `esp32s3-prod` and `esp32s3-dev-v5`; confirm PLATFORM line reports 55.3.32 in both
+
+## 2. Platform-bump guard script
+
+- [ ] 2.1 Add `source/utils/diff_platform_sdkconfig.py`: resolve two platform versions to their `framework-arduinoespressif32-libs` URLs via each release zip's `platform.json`, download, extract `esp32s3/sdkconfig`, print filtered (MBEDTLS|LWIP|WIFI|SPIRAM|HEAP|CACHE|BUF|MEM) then full diff; sentinel check on `CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP` exits non-zero unless `--no-fail-on-sentinel` (commit 3)
+- [ ] 2.2 Run the script for 55.03.32 vs 55.03.311 and verify it flags the sentinel and exits non-zero
+
+## 3. CI enforcement
+
+- [ ] 3.1 Add `.github/workflows/platform-guard.yml`: trigger on PRs touching `source/platformio.ini`; detect `platform =` line change vs base; if changed, run the diff script (old vs new) and fail unless PR body contains `[platform-bump-ack]`; no platform download when the line is unchanged (commit 4)
+
+## 4. Verification and PR
+
+- [ ] 4.1 Flash the 2.3.2 `esp32s3-dev-v5` build to the bench device and verify heap profile (free >= 60 K, minFree floor >= 35 K over a soak with publishes) and core 3.3.2 in `/api/v1/system/info`
+- [ ] 4.2 Push branch, open PR to `development` referencing #191/#237 context (no Closes - neither is closed by this PR)
+- [ ] 4.3 Run code-review agent(s) on the branch diff and triage findings
+- [ ] 4.4 Run simplification agent and apply safe cleanups
+- [ ] 4.5 Merge to `development` after review findings are resolved
+
+## 5. Operational validation (dev, outside the repo change)
+
+- [ ] 5.1 Reflash bench device to stock 2.3.0 (3.3.11 core) and validate the brute-force recovery approach: remote restart, then OTA to 2.3.2 shortly after boot; record attempts needed
+- [ ] 5.2 Leave the bench device on 2.3.2 (3.3.2 core) at the end
