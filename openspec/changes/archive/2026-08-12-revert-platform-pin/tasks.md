@@ -22,7 +22,7 @@
 - [x] 4.2 Push branch, open PR to `development` referencing #191/#237 context (no Closes - neither is closed by this PR)
 - [x] 4.3 Run code-review agent(s) on the branch diff and triage findings (7 confirmed findings fixed: guard bypass via env override/decoy, shell injection, pipefail, edited trigger, full-line marker, script member/timeout/manifest)
 - [x] 4.4 Run simplification agent and apply safe cleanups (4 agents: detection moved into script --detect mode, tarball streaming, print dedup, narrative dedup)
-- [ ] 4.5 Merge to `development` after review findings are resolved
+- [x] 4.5 Merge to `development` after review findings are resolved
 
 ## 5. Operational validation (dev, outside the repo change)
 
