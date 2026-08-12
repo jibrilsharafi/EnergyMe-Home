@@ -51,7 +51,7 @@ def platform_zip_url(version_or_url: str) -> str:
 def download(url: str, dest: Path, label: str) -> None:
     print(f"Downloading {label}: {url}")
     try:
-        with urllib.request.urlopen(url) as response, open(dest, "wb") as out:
+        with urllib.request.urlopen(url, timeout=60) as response, open(dest, "wb") as out:
             while True:
                 chunk = response.read(DOWNLOAD_CHUNK_BYTES)
                 if not chunk:
@@ -66,7 +66,8 @@ def resolve_libs_url(platform_zip: Path, label: str) -> str:
         candidates = [n for n in archive.namelist() if n.endswith("platform.json")]
         if not candidates:
             sys.exit(f"ERROR: no platform.json inside platform zip for {label}")
-        manifest = json.loads(archive.read(min(candidates, key=len)))
+        # Least-nested candidate: the root manifest, not a copy inside examples/
+        manifest = json.loads(archive.read(min(candidates, key=lambda n: (n.count("/"), len(n)))))
     package = manifest.get("packages", {}).get(LIBS_PACKAGE, {})
     url = package.get("version", "")
     if not url.startswith("http"):
@@ -81,7 +82,7 @@ def extract_sdkconfig(libs_tarball: Path, target: str, label: str) -> list[str]:
             if member.name.endswith(suffix):
                 extracted = archive.extractfile(member)
                 if extracted is None:
-                    break
+                    continue  # dir/link with a matching name; keep scanning
                 return extracted.read().decode("utf-8", errors="replace").splitlines()
     sys.exit(f"ERROR: {suffix} not found in libs package for {label}")
 
