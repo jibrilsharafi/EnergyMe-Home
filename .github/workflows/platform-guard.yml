@@ -1,0 +1,85 @@
+name: Platform Guard
+
+# Blocks unacknowledged pioarduino platform changes: the core's baked-in
+# sdkconfig can move memory placement invisibly (see the warning block above
+# `platform =` in source/platformio.ini). Detection and diff logic live in
+# source/utils/diff_platform_sdkconfig.py so they are runnable locally; this
+# workflow is enforcement only. A platform change must carry the marker
+# [platform-bump-ack] on its own line in the PR body.
+
+on:
+  pull_request:
+    # `edited` keeps the marker check honest when the body changes after the
+    # initial run (both adding and removing the acknowledgement).
+    types: [opened, synchronize, reopened, edited]
+    branches: [ development, main ]
+    paths:
+      - 'source/platformio.ini'
+
+jobs:
+  platform-guard:
+    runs-on: ubuntu-latest
+    name: Platform pin guard
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.11'
+
+    - name: Detect platform changes
+      id: detect
+      shell: bash
+      run: |
+        git fetch --no-tags --depth=1 origin "$GITHUB_BASE_REF"
+        git show FETCH_HEAD:source/platformio.ini > /tmp/base-platformio.ini
+        python source/utils/diff_platform_sdkconfig.py --detect \
+          /tmp/base-platformio.ini source/platformio.ini >> "$GITHUB_OUTPUT"
+
+    - name: Print sdkconfig diff
+      if: steps.detect.outputs.changed == 'true'
+      shell: bash
+      env:
+        OLD_URL: ${{ steps.detect.outputs.old }}
+        NEW_URL: ${{ steps.detect.outputs.new }}
+      run: |
+        set -o pipefail
+        if [ -z "$OLD_URL" ] || [ -z "$NEW_URL" ]; then
+          echo "::warning::could not resolve a platform URL on one side; skipping sdkconfig diff"
+          exit 0
+        fi
+        python source/utils/diff_platform_sdkconfig.py "$OLD_URL" "$NEW_URL" \
+          --no-fail-on-sentinel | tee sdkconfig-diff.txt
+        {
+          echo "### ⚠️ Platform pin changed"
+          echo ""
+          echo '```'
+          sed -n '/=== MEMORY-RELEVANT DIFF/,/=== FULL DIFF/p' sdkconfig-diff.txt
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Require acknowledgement marker
+      if: steps.detect.outputs.changed == 'true'
+      shell: bash
+      env:
+        PR_BODY: ${{ github.event.pull_request.body }}
+      run: |
+        # Full-line match so a pasted CI log or quoted instruction never
+        # counts as an acknowledgement.
+        if echo "$PR_BODY" | grep -qE '^[[:space:]]*\[platform-bump-ack\][[:space:]]*$'; then
+          echo "Platform change acknowledged via marker."
+          echo "Review the sdkconfig diff above before merging."
+        else
+          echo "::error::The platform configuration changed but the PR body does not contain"
+          echo "::error::the acknowledgement marker on its own line."
+          echo ""
+          echo "Follow the bump checklist in the warning block above 'platform =' in"
+          echo "source/platformio.ini, then add the marker [platform-bump-ack] on its"
+          echo "own line in the PR body."
+          exit 1
+        fi
