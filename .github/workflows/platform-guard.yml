@@ -1,0 +1,85 @@
+name: Platform Guard
+
+# Blocks unacknowledged pioarduino platform bumps. The Arduino core's baked-in
+# sdkconfig can change memory placement invisibly (see the 2026-08-12 OTA
+# incident: CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP dropped between cores, moving
+# WiFi/LWIP buffers from PSRAM to internal RAM). A PR that changes the
+# `platform =` line must carry the marker [platform-bump-ack] in its body,
+# and the sdkconfig diff is printed in the log either way.
+
+on:
+  pull_request:
+    branches: [ development, main ]
+    paths:
+      - 'source/platformio.ini'
+
+jobs:
+  platform-guard:
+    runs-on: ubuntu-latest
+    name: Platform pin guard
+    permissions:
+      contents: read
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    - name: Detect platform line change
+      id: detect
+      run: |
+        OLD=$(git show origin/${{ github.base_ref }}:source/platformio.ini | grep -oP '^platform = \K.*' | head -n1)
+        NEW=$(grep -oP '^platform = \K.*' source/platformio.ini | head -n1)
+        echo "old=$OLD" >> $GITHUB_OUTPUT
+        echo "new=$NEW" >> $GITHUB_OUTPUT
+        if [ "$OLD" != "$NEW" ]; then
+          echo "changed=true" >> $GITHUB_OUTPUT
+          echo "⚠️ Platform pin changed:"
+          echo "  base: $OLD"
+          echo "  PR:   $NEW"
+        else
+          echo "changed=false" >> $GITHUB_OUTPUT
+          echo "✅ Platform pin unchanged"
+        fi
+
+    - name: Set up Python
+      if: steps.detect.outputs.changed == 'true'
+      uses: actions/setup-python@v6
+      with:
+        python-version: '3.11.7'
+
+    - name: Print sdkconfig diff
+      if: steps.detect.outputs.changed == 'true'
+      run: |
+        python source/utils/diff_platform_sdkconfig.py \
+          "${{ steps.detect.outputs.old }}" \
+          "${{ steps.detect.outputs.new }}" \
+          --no-fail-on-sentinel | tee sdkconfig-diff.txt
+        {
+          echo "### ⚠️ Platform pin changed"
+          echo ""
+          echo '```'
+          sed -n '/=== MEMORY-RELEVANT DIFF/,/=== FULL DIFF/p' sdkconfig-diff.txt
+          echo '```'
+        } >> $GITHUB_STEP_SUMMARY
+
+    - name: Require acknowledgement marker
+      if: steps.detect.outputs.changed == 'true'
+      env:
+        PR_BODY: ${{ github.event.pull_request.body }}
+      run: |
+        if echo "$PR_BODY" | grep -qF '[platform-bump-ack]'; then
+          echo "✅ Platform bump acknowledged via [platform-bump-ack] marker."
+          echo "Review the sdkconfig diff above before merging."
+        else
+          echo "❌ The platform pin changed but the PR body does not contain"
+          echo "   the [platform-bump-ack] marker."
+          echo ""
+          echo "Before bumping the platform:"
+          echo "  1. Run: uv run source/utils/diff_platform_sdkconfig.py <old> <new>"
+          echo "  2. Review the memory-relevant sdkconfig diff (above and in the job summary)"
+          echo "  3. Soak the bench device with a heap watch (free/minFree/maxAlloc during MQTT publishes)"
+          echo "  4. Add [platform-bump-ack] to the PR body"
+          exit 1
+        fi
