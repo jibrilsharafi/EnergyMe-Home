@@ -3,12 +3,15 @@ name: Platform Guard
 # Blocks unacknowledged pioarduino platform bumps. The Arduino core's baked-in
 # sdkconfig can change memory placement invisibly (see the 2026-08-12 OTA
 # incident: CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP dropped between cores, moving
-# WiFi/LWIP buffers from PSRAM to internal RAM). A PR that changes the
-# `platform =` line must carry the marker [platform-bump-ack] in its body,
-# and the sdkconfig diff is printed in the log either way.
+# WiFi/LWIP buffers from PSRAM to internal RAM). A PR that changes any
+# `platform =` line (or touches platform_packages / extra_configs, which can
+# swap the core artifact just as silently) must carry the [platform-bump-ack]
+# marker on its own line in the PR body; the sdkconfig diff is printed either
+# way.
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited]
     branches: [ development, main ]
     paths:
       - 'source/platformio.ini'
@@ -26,22 +29,34 @@ jobs:
       with:
         fetch-depth: 0
 
-    - name: Detect platform line change
+    - name: Detect platform changes
       id: detect
+      shell: bash
       run: |
-        OLD=$(git show origin/${{ github.base_ref }}:source/platformio.ini | grep -oP '^platform = \K.*' | head -n1)
-        NEW=$(grep -oP '^platform = \K.*' source/platformio.ini | head -n1)
-        echo "old=$OLD" >> $GITHUB_OUTPUT
-        echo "new=$NEW" >> $GITHUB_OUTPUT
-        if [ "$OLD" != "$NEW" ]; then
-          echo "changed=true" >> $GITHUB_OUTPUT
-          echo "⚠️ Platform pin changed:"
-          echo "  base: $OLD"
-          echo "  PR:   $NEW"
+        git show "origin/$GITHUB_BASE_REF:source/platformio.ini" > /tmp/base-platformio.ini
+
+        # Every platform-defining line, not just the first: an env-section
+        # override or a decoy line must register as a change too.
+        extract_pins() { grep -E '^[[:space:]]*platform[[:space:]]*=' "$1" | sed 's/[[:space:]]*$//' | sort; }
+
+        if ! diff <(extract_pins /tmp/base-platformio.ini) <(extract_pins source/platformio.ini); then
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "::warning::platform line(s) changed (see diff above)"
+        elif git diff "origin/$GITHUB_BASE_REF"...HEAD -- source/platformio.ini | grep -E '^[+-].*(platform_packages|extra_configs)'; then
+          # These keys can replace the core libs artifact without touching
+          # the platform line.
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "::warning::platform_packages/extra_configs touched"
         else
-          echo "changed=false" >> $GITHUB_OUTPUT
-          echo "✅ Platform pin unchanged"
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+          echo "Platform pin unchanged"
         fi
+
+        # Best-effort URLs for the sdkconfig diff: the [common] pin is the
+        # only URL-valued platform line ('native' and interpolated env lines
+        # do not match).
+        echo "old=$(grep -oE '^platform = https?://[^ ]+' /tmp/base-platformio.ini | head -n1 | cut -d' ' -f3-)" >> "$GITHUB_OUTPUT"
+        echo "new=$(grep -oE '^platform = https?://[^ ]+' source/platformio.ini | head -n1 | cut -d' ' -f3-)" >> "$GITHUB_OUTPUT"
 
     - name: Set up Python
       if: steps.detect.outputs.changed == 'true'
@@ -51,10 +66,17 @@ jobs:
 
     - name: Print sdkconfig diff
       if: steps.detect.outputs.changed == 'true'
+      shell: bash
+      env:
+        OLD_URL: ${{ steps.detect.outputs.old }}
+        NEW_URL: ${{ steps.detect.outputs.new }}
       run: |
-        python source/utils/diff_platform_sdkconfig.py \
-          "${{ steps.detect.outputs.old }}" \
-          "${{ steps.detect.outputs.new }}" \
+        set -o pipefail
+        if [ -z "$OLD_URL" ] || [ -z "$NEW_URL" ]; then
+          echo "::warning::could not resolve a platform URL on one side; skipping sdkconfig diff"
+          exit 0
+        fi
+        python source/utils/diff_platform_sdkconfig.py "$OLD_URL" "$NEW_URL" \
           --no-fail-on-sentinel | tee sdkconfig-diff.txt
         {
           echo "### ⚠️ Platform pin changed"
@@ -62,24 +84,27 @@ jobs:
           echo '```'
           sed -n '/=== MEMORY-RELEVANT DIFF/,/=== FULL DIFF/p' sdkconfig-diff.txt
           echo '```'
-        } >> $GITHUB_STEP_SUMMARY
+        } >> "$GITHUB_STEP_SUMMARY"
 
     - name: Require acknowledgement marker
       if: steps.detect.outputs.changed == 'true'
+      shell: bash
       env:
         PR_BODY: ${{ github.event.pull_request.body }}
       run: |
-        if echo "$PR_BODY" | grep -qF '[platform-bump-ack]'; then
-          echo "✅ Platform bump acknowledged via [platform-bump-ack] marker."
+        # Full-line match so a pasted CI log or quoted instruction never
+        # counts as an acknowledgement.
+        if echo "$PR_BODY" | grep -qE '^[[:space:]]*\[platform-bump-ack\][[:space:]]*$'; then
+          echo "Platform change acknowledged via marker."
           echo "Review the sdkconfig diff above before merging."
         else
-          echo "❌ The platform pin changed but the PR body does not contain"
-          echo "   the [platform-bump-ack] marker."
+          echo "::error::The platform configuration changed but the PR body does not contain"
+          echo "::error::the acknowledgement marker on its own line."
           echo ""
           echo "Before bumping the platform:"
           echo "  1. Run: uv run source/utils/diff_platform_sdkconfig.py <old> <new>"
           echo "  2. Review the memory-relevant sdkconfig diff (above and in the job summary)"
           echo "  3. Soak the bench device with a heap watch (free/minFree/maxAlloc during MQTT publishes)"
-          echo "  4. Add [platform-bump-ack] to the PR body"
+          echo "  4. Add the marker [platform-bump-ack] on its own line in the PR body"
           exit 1
         fi
