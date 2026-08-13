@@ -526,8 +526,18 @@
             }
         }
 
-        function doRollback() {
-            if (!confirm("Are you sure you want to rollback to the previous firmware version? The device will restart.")) {
+        async function doRollback() {
+            // Best-effort enrichment: the server enforces the real gate (400 when
+            // the other slot has no valid image). The device cannot know that
+            // slot's version; the sha256 fingerprint is its only identity.
+            const status = await energyApi.getOtaStatus().catch(() => null);
+            if (status && !status.otherPartitionSha256) {
+                showStatus('No firmware found in the other partition - rollback is not possible on this device.', 'error');
+                return;
+            }
+            const targetLine = status ? "\n\nTarget firmware fingerprint (sha256): " + status.otherPartitionSha256.substring(0, 12) + "…" : "";
+
+            if (!confirm("Are you sure you want to rollback to the previous firmware version? The device will restart." + targetLine)) {
                 return;
             }
 

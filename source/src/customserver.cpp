@@ -1664,7 +1664,6 @@ namespace CustomServer
             JsonDocument doc(&allocator);
             
             doc["status"] = Update.isRunning() ? "running" : "idle";
-            doc["canRollback"] = Update.canRollBack();
             
             const esp_partition_t *running = esp_ota_get_running_partition();
             doc["currentPartition"] = running->label;
@@ -1678,6 +1677,20 @@ namespace CustomServer
             // Add current firmware info
             doc["currentVersion"] = FIRMWARE_BUILD_VERSION;
             doc["currentMD5"] = ESP.getSketchMD5();
+
+            // Rollback target fingerprint; null when the passive slot holds no
+            // valid descriptor. Not read mid-upload: Update.write() is streaming
+            // into that very partition (2 s poll would race the flash writes and
+            // report a half-overwritten descriptor), and canRollback derives from
+            // the same read so status and actuator agree on one predicate.
+            char otherSha[SHA256_HEX_BUFFER_SIZE];
+            bool otherShaReadable = !Update.isRunning() && getOtherPartitionSha256(otherSha, sizeof(otherSha));
+            doc["canRollback"] = otherShaReadable;
+            if (otherShaReadable) {
+                doc["otherPartitionSha256"] = otherSha;
+            } else {
+                doc["otherPartitionSha256"] = nullptr;
+            }
             
             _sendJsonResponse(request, doc);
         });
@@ -1687,21 +1700,30 @@ namespace CustomServer
     {
         server.on("/api/v1/ota/rollback", HTTP_POST, [](AsyncWebServerRequest *request)
                   {
+            if (!_validateRequest(request, "POST")) return;
+
             if (Update.isRunning()) {
                 Update.abort();
                 LOG_INFO("Aborted running OTA update");
                 _stopOtaTimeoutTask(); // Stop timeout task when aborting OTA
             }
 
-            if (Update.canRollBack()) {
-                LOG_WARNING("Firmware rollback requested via API");
-                _sendSuccessResponse(request, "Rollback initiated. Device will restart.");
-                
-                Update.rollBack();
-                setRestartSystem("Firmware rollback requested via API");
-            } else {
-                LOG_ERROR("Rollback not possible: %s", Update.errorString());
-                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Rollback not possible");
+            // Act first, respond from the actual outcome. The old shape gated on
+            // Update.canRollBack() (a one-byte flash[0]==0xE9 check, true even for
+            // a half-downloaded image) and reported success before switching.
+            LOG_WARNING("Firmware rollback requested via API");
+            FirmwareRollbackResult result = attemptFirmwareRollback("Firmware rollback requested via API");
+
+            switch (result) {
+                case FirmwareRollbackResult::SUCCESS:
+                    _sendSuccessResponse(request, "Rollback initiated. Device will restart.");
+                    break;
+                case FirmwareRollbackResult::INVALID_IMAGE:
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "No valid firmware in the other partition");
+                    break;
+                case FirmwareRollbackResult::RESTART_BLOCKED:
+                    _sendErrorResponse(request, HTTP_CODE_LOCKED, "Restart currently blocked. Boot partition unchanged");
+                    break;
             }
         });
     }

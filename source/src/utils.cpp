@@ -713,6 +713,99 @@ bool setRestartSystem(const char* reason, bool factoryReset) {
     return true;
 }
 
+// Firmware rollback (#237)
+// -----------------------------
+
+void sha256BytesToHex(const uint8_t sha256[32], char* out, size_t outSize) {
+    if (!out || outSize < SHA256_HEX_BUFFER_SIZE) return;
+    static const char hex[] = "0123456789abcdef";
+    for (size_t i = 0; i < 32; i++) {
+        out[i * 2] = hex[sha256[i] >> 4];
+        out[i * 2 + 1] = hex[sha256[i] & 0x0F];
+    }
+    out[64] = '\0';
+}
+
+static const esp_partition_t* _getPassiveOtaPartition() {
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    const esp_partition_t* passive = esp_ota_get_next_update_partition(NULL);
+    if (!passive || passive == running) return nullptr;
+    return passive;
+}
+
+static bool _getPartitionSha256(const esp_partition_t* partition, char* out, size_t outSize) {
+    if (!partition || !out || outSize < SHA256_HEX_BUFFER_SIZE) return false;
+
+    esp_app_desc_t desc;
+    if (esp_ota_get_partition_description(partition, &desc) != ESP_OK) return false;
+
+    sha256BytesToHex(desc.app_elf_sha256, out, outSize);
+    return true;
+}
+
+bool getRunningPartitionSha256(char* out, size_t outSize) {
+    return _getPartitionSha256(esp_ota_get_running_partition(), out, outSize);
+}
+
+bool getOtherPartitionSha256(char* out, size_t outSize) {
+    return _getPartitionSha256(_getPassiveOtaPartition(), out, outSize);
+}
+
+FirmwareRollbackResult attemptFirmwareRollback(const char* reason) {
+    // Refuse up front while nothing has been touched. Calling setRestartSystem
+    // and reacting to its false return is not equivalent: its uptime-gate branch
+    // LATCHES the request (a ghost restart would fire minutes after we reported
+    // failure), and its already-scheduled branch would make us restore the boot
+    // partition of an in-flight rollback that was already reported successful.
+    if (_restartTaskHandle != NULL || !CrashMonitor::canRestartNow()) {
+        LOG_WARNING("Rollback: refused, restart already scheduled or blocked");
+        return FirmwareRollbackResult::RESTART_BLOCKED;
+    }
+
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    const esp_partition_t* passive = _getPassiveOtaPartition();
+    if (!passive) {
+        LOG_ERROR("Rollback: no passive OTA partition found");
+        return FirmwareRollbackResult::INVALID_IMAGE;
+    }
+
+    // The real gate: esp_ota_set_boot_partition runs full image_validate on the
+    // target and refuses an erased/partial/corrupt image with ESP_ERR_OTA_VALIDATE_FAILED.
+    esp_err_t err = esp_ota_set_boot_partition(passive);
+    if (err != ESP_OK) {
+        LOG_ERROR("Rollback: esp_ota_set_boot_partition(%s) failed: %s", passive->label, esp_err_to_name(err));
+        return FirmwareRollbackResult::INVALID_IMAGE;
+    }
+
+    // Disarm the crash-driven auto-rollback BEFORE scheduling the restart: the
+    // restart task can preempt this one, and the device must never reboot with
+    // the flag unset (the crash ladder would bounce straight back to the image
+    // the operator just left). The pending-OTA record is deliberately NOT
+    // cleared: it belongs to the job that flashed the currently running image,
+    // and the post-reboot validation reporting that job FAILED
+    // (sha256_mismatch_firmware_rollback) is its correct terminal status.
+    CrashMonitor::markRollbackTried();
+
+    if (!setRestartSystem(reason)) {
+        // Residual race only (both refusal branches were pre-checked above).
+        // setRestartSystem holds a refused restart rather than cancelling it, so
+        // undo everything or that held restart would silently execute the
+        // rollback after we report failure.
+        CrashMonitor::clearRollbackTried();
+        esp_err_t restoreErr = esp_ota_set_boot_partition(running);
+        if (restoreErr != ESP_OK) {
+            // Practically unreachable (the running image validated at boot); if it
+            // happens the next reboot boots the passive slot despite the failure report.
+            LOG_FATAL("Rollback: failed to restore boot partition %s: %s", running->label, esp_err_to_name(restoreErr));
+        }
+        LOG_WARNING("Rollback: restart refused, boot partition restored to %s", running->label);
+        return FirmwareRollbackResult::RESTART_BLOCKED;
+    }
+
+    LOG_WARNING("Rollback: boot partition switched to %s, restarting", passive->label);
+    return FirmwareRollbackResult::SUCCESS;
+}
+
 // Print functions
 // -----------------------------
 

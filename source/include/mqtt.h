@@ -256,6 +256,8 @@ namespace Mqtt
     void saveTransientLogLevel(int level);   // persist active transient level (no-op if unchanged)
     void clearTransientLogLevel();           // clear the marker (revert / persistent set)
     int  getTransientLogLevel();             // persisted transient level, or -1 if none
+    void clearOtaPendingState();             // drop the pending-OTA validation record once its job has a terminal status
+
     bool getSendPowerData();
     void setSendPowerData(bool enabled);     // persisted
     bool getSendGridData();

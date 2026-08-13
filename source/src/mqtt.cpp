@@ -5,7 +5,11 @@
 #include "issueregistry.h"
 #include "crashmonitor.h"
 #include "shadow.h"
+#include "rollback_logic.h"
 #include "shadow_logic.h"
+
+static_assert(SHA256_HEX_BUFFER_SIZE == RollbackLogic::SHA256_HEX_LEN + 1,
+              "sha256 hex buffers are sized by constants.h but indexed by rollback_logic's length");
 #include "taskprofiler.h"
 #include "duration_format.h"
 #include "mqtt_grid_schedule.h"
@@ -172,8 +176,7 @@ namespace Mqtt
     static esp_err_t _otaHttpEventHandler(esp_http_client_event_t *event);
     static bool _performOtaUpdate();
     
-    // OTA validation functions
-    static void _clearOtaPendingState();
+    // OTA validation functions (clearOtaPendingState is public, declared in mqtt.h)
     static void _otaValidationTask(void* parameter);
     static void _checkPendingOtaValidation();
     static void _publishOtaStatus(const char* jobId, const char* status, const char* reason);
@@ -233,7 +236,6 @@ namespace Mqtt
 
     // Utilities
     static const char* _getMqttStateReason(int32_t state);
-    static void _sha256ToHex(const uint8_t sha256[32], char hexOut[65]);
     bool extractHost(const char* url, char* buffer, size_t bufferSize);
 
     // Public API functions
@@ -1341,6 +1343,52 @@ namespace Mqtt
                     _publishCommandStatus(executionId, "REJECTED", "NO_SUCH_ISSUE", "Unknown issue code or no matching instance");
                 }
             }
+        } else if (strcmp(operation, "firmware_rollback") == 0) {
+            // Boot the passive OTA partition without a download (#237). The required
+            // expected_sha256 makes QoS1 redelivery idempotent (a duplicate matches
+            // the now-running slot and no-ops) and refuses to boot a partial or
+            // unknown image. A fingerprint, not a version: see getOtherPartitionSha256.
+            const char* expectedSha = doc["expected_sha256"].is<const char*>()
+                                          ? doc["expected_sha256"].as<const char*>()
+                                          : nullptr;
+
+            char runningSha[SHA256_HEX_BUFFER_SIZE] = {0};
+            char passiveSha[SHA256_HEX_BUFFER_SIZE] = {0};
+            getRunningPartitionSha256(runningSha, sizeof(runningSha));
+            bool passiveReadable = getOtherPartitionSha256(passiveSha, sizeof(passiveSha));
+
+            switch (RollbackLogic::decide(expectedSha, passiveReadable, passiveSha, runningSha)) {
+                case RollbackLogic::Decision::MISSING_SHA:
+                    _publishCommandStatus(executionId, "REJECTED", "MISSING_SHA256", "expected_sha256 must be 64 hex chars");
+                    break;
+                case RollbackLogic::Decision::NO_TARGET:
+                    _publishCommandStatus(executionId, "REJECTED", "NO_ROLLBACK_TARGET", "Passive partition has no valid firmware");
+                    break;
+                case RollbackLogic::Decision::MISMATCH:
+                    _publishCommandStatus(executionId, "REJECTED", "TARGET_MISMATCH", "expected_sha256 matches neither partition");
+                    break;
+                case RollbackLogic::Decision::NOOP_ALREADY_DONE:
+                    // Redelivery after a completed rollback: success, touch nothing.
+                    LOG_INFO("Command %s: already running expected firmware, no-op", executionId);
+                    _publishCommandStatus(executionId, "SUCCEEDED", nullptr, nullptr);
+                    break;
+                case RollbackLogic::Decision::PROCEED:
+                    switch (attemptFirmwareRollback("Command: firmware_rollback")) {
+                        case FirmwareRollbackResult::SUCCESS:
+                            // The restart task shuts other services down before
+                            // Mqtt::stop(), leaving time for this publish to flush.
+                            _publishCommandStatus(executionId, "SUCCEEDED", nullptr, nullptr);
+                            delay(2000); // let the status flush before the reboot (same pattern as restart)
+                            break;
+                        case FirmwareRollbackResult::RESTART_BLOCKED:
+                            _publishCommandStatus(executionId, "FAILED", "ROLLBACK_FAILED", "Restart blocked; boot partition unchanged");
+                            break;
+                        case FirmwareRollbackResult::INVALID_IMAGE:
+                            _publishCommandStatus(executionId, "FAILED", "ROLLBACK_FAILED", "Passive image failed validation");
+                            break;
+                    }
+                    break;
+            }
         } else {
             LOG_WARNING("Unknown command operation: %s", operation);
             _publishCommandStatus(executionId, "REJECTED", "UNKNOWN_OPERATION", operation);
@@ -1490,7 +1538,11 @@ namespace Mqtt
             .max_http_request_size = 0
         };
 
-        // Perform OTA without validating the partition (allows rollback if new firmware crashes)
+        // Note: there is no bootloader-level rollback protection for the new image.
+        // initArduino() calls esp_ota_mark_app_valid_cancel_rollback() before setup()
+        // runs (no verifyOta/verifyRollbackLater override in this project), so a crash
+        // in setup() or later is covered only by CrashMonitor's application-level
+        // rollback, not by the bootloader.
         esp_err_t result = esp_https_ota(&_otaConfig);
 
         if (result == ESP_OK) {
@@ -1532,8 +1584,8 @@ namespace Mqtt
             }
             
             // Convert SHA256 to hex string
-            char sha256Hex[65];
-            _sha256ToHex(new_app_desc.app_elf_sha256, sha256Hex);
+            char sha256Hex[SHA256_HEX_BUFFER_SIZE];
+            sha256BytesToHex(new_app_desc.app_elf_sha256, sha256Hex, sizeof(sha256Hex));
             
             // Save OTA job ID, pending state, and expected SHA256 to Preferences
             Preferences prefs;  
@@ -2702,13 +2754,6 @@ namespace Mqtt
         }
     }
 
-    static void _sha256ToHex(const uint8_t sha256[32], char hexOut[65]) {
-        for (int i = 0; i < 32; i++) {
-            snprintf(&hexOut[i*2], 3, "%02x", sha256[i]);
-        }
-        hexOut[64] = '\0';
-    }
-
     bool extractHost(const char* url, char* buffer, size_t bufferSize) {
         if (!url || !buffer || bufferSize == 0) return false;
 
@@ -2732,7 +2777,7 @@ namespace Mqtt
     // OTA validation functions
     // ========================
 
-    static void _clearOtaPendingState() {
+    void clearOtaPendingState() {
         Preferences prefs;
         if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {
             LOG_ERROR("Failed to clear OTA pending state");
@@ -2802,7 +2847,7 @@ namespace Mqtt
         if (result != pdPASS) {
             LOG_ERROR("Failed to create OTA validation task");
             _otaValidationTaskHandle = nullptr;
-            _clearOtaPendingState();
+            clearOtaPendingState();
         }
     }
 
@@ -2810,17 +2855,11 @@ namespace Mqtt
         LOG_INFO("OTA validation task started - monitoring stability for %d seconds", OTA_VALIDATION_TIMEOUT / 1000);
         
         uint64_t validationStartTime = millis64();
-        const esp_partition_t* boot_partition = esp_ota_get_boot_partition();
-        
-        if (!boot_partition) {
-            LOG_ERROR("Failed to get boot partition for OTA validation");
-            _clearOtaPendingState();
-            _otaValidationTaskHandle = nullptr;
-            vTaskDelete(nullptr);
-            return;
-        }
 
-        // Monitor for stability period (here we just wait, rollback will occur automatically on failure)
+        // Monitor for stability period. This wait is telemetry-only: the image was
+        // already marked valid by initArduino() before setup(), so no bootloader
+        // rollback fires on failure - a crash during this window is handled by
+        // CrashMonitor's application-level rollback instead.
         while (millis64() - validationStartTime < OTA_VALIDATION_TIMEOUT) {
             char otaRemainingHuman[DURATION_FORMAT_BUFFER_SIZE];
             DurationFormat::humanizeDuration(OTA_VALIDATION_TIMEOUT + validationStartTime - millis64(), otaRemainingHuman, sizeof(otaRemainingHuman));
@@ -2832,45 +2871,39 @@ namespace Mqtt
         Preferences prefs;
         if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
             LOG_ERROR("Failed to open preferences for SHA256 validation");
-            _clearOtaPendingState();
+            clearOtaPendingState();
             _otaValidationTaskHandle = nullptr;
             vTaskDelete(nullptr);
             return;
         }
         
-        char expectedSha256[65];
+        char expectedSha256[SHA256_HEX_BUFFER_SIZE];
         memset(expectedSha256, 0, sizeof(expectedSha256));
         prefs.getString(MQTT_PREFERENCES_OTA_EXPECTED_SHA256_KEY, expectedSha256, sizeof(expectedSha256));
         prefs.end();
-        
-        if (strlen(expectedSha256) != 64) {
+
+        if (!RollbackLogic::isValidSha256Hex(expectedSha256)) {
             LOG_ERROR("Invalid expected SHA256 in preferences (length: %d)", strlen(expectedSha256));
-            _clearOtaPendingState();
+            clearOtaPendingState();
             _otaValidationTaskHandle = nullptr;
             vTaskDelete(nullptr);
             return;
         }
-        
-        // Get current running partition's SHA256
-        esp_app_desc_t current_app_desc;
-        esp_err_t err = esp_ota_get_partition_description(boot_partition, &current_app_desc);
-        if (err != ESP_OK) {
-            LOG_ERROR("Failed to get current partition description: %s", esp_err_to_name(err));
-            _clearOtaPendingState();
+
+        char currentSha256[SHA256_HEX_BUFFER_SIZE];
+        if (!getRunningPartitionSha256(currentSha256, sizeof(currentSha256))) {
+            LOG_ERROR("Failed to get current partition description");
+            clearOtaPendingState();
             _otaValidationTaskHandle = nullptr;
             vTaskDelete(nullptr);
             return;
         }
-        
-        // Convert current SHA256 to hex string
-        char currentSha256[65];
-        _sha256ToHex(current_app_desc.app_elf_sha256, currentSha256);
-        
+
         // Compare SHA256 hashes
-        if (strcmp(expectedSha256, currentSha256) != 0) {
+        if (!RollbackLogic::sha256HexEquals(expectedSha256, currentSha256)) {
             LOG_ERROR("OTA validation failed - SHA256 mismatch (expected: %s, current: %s) - firmware rolled back", expectedSha256, currentSha256);
             _publishOtaStatus(_otaCurrentJobId, "FAILED", "sha256_mismatch_firmware_rollback");
-            _clearOtaPendingState();
+            clearOtaPendingState();
             _otaValidationTaskHandle = nullptr;
             vTaskDelete(nullptr);
             return;
@@ -2878,7 +2911,7 @@ namespace Mqtt
         
         LOG_INFO("OTA validation successful - SHA256 verified: %s", currentSha256);
         _publishOtaStatus(_otaCurrentJobId, "SUCCEEDED", "validated after successful boot and stability period");
-        _clearOtaPendingState();
+        clearOtaPendingState();
         LOG_INFO("OTA update completed and validated successfully");
 
         _otaValidationTaskHandle = nullptr;
