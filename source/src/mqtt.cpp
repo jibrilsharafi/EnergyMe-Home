@@ -1637,8 +1637,9 @@ namespace Mqtt
 
             // A 4xx is the server refusing us, not a transient: an expired or
             // malformed presigned URL answers 403 and will answer 403 for every
-            // remaining attempt. Retrying spends the rest of the schedule, with
-            // telemetry suppressed throughout, on a request that cannot succeed.
+            // remaining attempt. Retrying would spend the rest of the schedule,
+            // and delay the FAILED report by half an hour, on a request that
+            // cannot succeed.
             if (_otaAttempt.httpStatus >= 400 && _otaAttempt.httpStatus < 500) {
                 LOG_ERROR(
                     "OTA download refused with HTTP %d - not retryable, abandoning schedule",
