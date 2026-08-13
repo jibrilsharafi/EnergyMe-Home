@@ -67,3 +67,9 @@
 
 - [x] 11.1 Extracted `sha256BytesToHex` from `utils.cpp` into new `lib/sha256_hex/` (pure, dependency-free); `utils.cpp` keeps a forwarder (same pattern as #239's backoff extraction) plus a `static_assert` tying `SHA256_HEX_BUFFER_SIZE` to `Sha256Hex::BUFFER_SIZE`. 7 new native tests (known vectors, nibble order/lowercase, canary overwrite check, undersized/null rejection)
 - [x] 11.2 Extracted the post-verification downgrade gate into `OtaSignature::isStrictUpgrade(running, image)` - pins the comparison direction and argument order in host tests (5 new: newer/equal/older/malformed-degrades-to-reject/v-prefix). `force` bypass stays at the call site. The mbedtls verify itself remains ESP-only (native env has no mbedtls; unchanged descope, see 6.2)
+
+## 12. Rollback-command bypass and per-environment keys (found by Jibril, see design.md Decisions 11-12)
+
+- [x] 12.1 Closed the `firmware_rollback` bypass: a fully-downloaded-then-rejected image stayed intact in the passive slot, and the rollback command (sha256 match + structural `esp_image_verify` only) could boot it - added `_scrubRejectedOtaImage()` erasing the image header on any failed download that wrote bytes, scoped by `bytesWritten > 0` so failures that never touched flash preserve the legitimate rollback target. New spec requirement + 2 scenarios added
+- [x] 12.2 Gated `ota_keys.h` by `ENV_PROD`: dev builds embed the bench dev key; prod builds get a deliberately invalid placeholder that fails closed (`pubkey_parse_error`) until the KMS public key is provisioned - keeps CI's esp32s3-prod build green without ever trusting a placeholder
+- [ ] 12.3 Hardware/e2e test (with 6.3-6.5): after a tampered-signature rejection, confirm `firmware_rollback` targeting the rejected image's sha256 is refused

@@ -55,6 +55,17 @@ The system SHALL embed the OTA signing public key as a constant in firmware sour
 - **WHEN** any runtime configuration or NVS value is modified through a device API
 - **THEN** the public key used for MQTT OTA signature verification is unaffected, because it is not read from NVS or any runtime-writable location
 
+### Requirement: A rejected image does not remain activatable in the passive partition
+Rejecting an image at verification time is not enough if its bytes remain intact in the passive OTA slot: the `firmware_rollback` cloud command and the crash-driven rollback both switch the boot partition to whatever sits there, gated only by structural image validation (`esp_image_verify`) - which a well-formed-but-unsigned image passes. The system SHALL render the passive partition's content non-bootable (by destroying its image header) whenever an MQTT/cloud OTA download that wrote to the partition ends in failure, so no later activation path can boot bytes that failed verification.
+
+#### Scenario: Rollback command cannot activate a rejected image
+- **WHEN** an OTA job's image is fully downloaded but rejected (invalid signature, downgrade replay, or activation failure), and a `firmware_rollback` command subsequently targets the passive partition's sha256
+- **THEN** the rollback is refused, because the rejected image's header was scrubbed and it no longer passes image validation
+
+#### Scenario: Failure before any byte is written preserves the rollback target
+- **WHEN** an OTA download fails before writing anything to the passive partition (DNS failure, TLS failure, HTTP 4xx refusal)
+- **THEN** the passive partition is left untouched, and the previous firmware stored there remains a valid rollback target
+
 ### Requirement: Local OTA upload discloses that it is unverified
 The system SHALL indicate, in the local web upload interface and in the device log for every accepted local upload, that firmware submitted via `POST /api/v1/ota/upload` is not cryptographically verified. This disclosure SHALL NOT block or otherwise alter the outcome of a local upload.
 
