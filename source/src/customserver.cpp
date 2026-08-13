@@ -2517,7 +2517,42 @@ namespace CustomServer
             });
         server.addHandler(injectCommandHandler);
 
-        LOG_DEBUG("Registered dev-only shadow delta + command injection endpoints");
+        // Dev-only: inject a synthetic AWS IoT job execution document so the OTA
+        // download path can be driven with an arbitrary (unreachable, refused, or
+        // real) firmware URL without minting a job. The body IS the notify-next
+        // payload, so the real validator and version guard run unchanged.
+        // Body: {"execution":{"jobId":"dev-1","jobDocument":{"operation":"ota_update",
+        //        "force":true,"firmware":{"url":"https://...","version":"9.9.9"}}}}
+        static AsyncCallbackJsonWebHandler *injectJobHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/ota/inject-job",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (!_validateRequest(request, "POST", HTTP_MAX_CONTENT_LENGTH_ADE7953_CHANNEL_DATA * MAX_CHANNEL_COUNT)) return;
+
+                if (json["execution"].isNull()) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Body requires an 'execution' object");
+                    return;
+                }
+
+                SpiRamAllocator allocator;
+                JsonDocument jobDoc(&allocator);
+                jobDoc.set(json);
+
+                size_t len = measureJson(jobDoc) + 1;
+                char *payload = (char *)ps_malloc(len);
+                if (!payload) {
+                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Allocation failed");
+                    return;
+                }
+                serializeJson(jobDoc, payload, len);
+
+                Mqtt::injectJobExecution(payload);
+                free(payload);
+                _sendSuccessResponse(request, "Synthetic job execution injected");
+            });
+        server.addHandler(injectJobHandler);
+
+        LOG_DEBUG("Registered dev-only shadow delta + command + job injection endpoints");
     }
 
     static const char* _nvsTypeToString(nvs_type_t type) {

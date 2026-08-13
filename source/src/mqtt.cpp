@@ -1487,6 +1487,54 @@ namespace Mqtt
         _queueCommand(topic, payload);
         LOG_INFO("Injected synthetic command execution %s", executionId);
     }
+
+    // Dev-only synthetic job injection: feeds a full jobs/notify-next payload
+    // through the same validate-and-handle path the broker RX uses, so a fake or
+    // unreachable firmware URL can exercise the download retry schedule without
+    // minting a real job. Staged rather than handled inline for the same reason as
+    // the command inject above: the caller is the web server task, and
+    // _handleSingleJobExecution publishes IN_PROGRESS on the shared, unsynchronised
+    // PubSubClient. Its own slot, so a job and a command cannot evict each other.
+    static char* _pendingJobPayload = nullptr;
+
+    void injectJobExecution(const char* payload) {
+        if (payload == nullptr) return;
+        size_t len = strlen(payload) + 1;
+        char* p = (char*)ps_malloc(len);
+        if (p == nullptr) {
+            LOG_ERROR("Failed to allocate pending job buffer");
+            return;
+        }
+        memcpy(p, payload, len);
+
+        if (acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
+            if (_pendingJobPayload != nullptr) {
+                LOG_WARNING("Overwriting an undrained pending job; previous one dropped");
+                free(_pendingJobPayload);
+            }
+            _pendingJobPayload = p;
+            releaseMutex(&_configMutex);
+            LOG_INFO("Injected synthetic job execution");
+        } else {
+            free(p);
+            LOG_ERROR("Failed to acquire mutex queuing job");
+        }
+    }
+
+    static void _drainPendingJob() {
+        char* p = nullptr;
+        if (acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
+            p = _pendingJobPayload;
+            _pendingJobPayload = nullptr;
+            releaseMutex(&_configMutex);
+        }
+        if (p == nullptr) return;
+
+        char topic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructMqttTopicReservedThings("jobs/notify-next", topic, sizeof(topic));
+        _handleAwsIotJobMessage(p, topic);
+        free(p);
+    }
 #endif
 
     // AWS IoT Jobs OTA functions
@@ -2817,6 +2865,9 @@ namespace Mqtt
         _checkPublishMqtt();
         Shadow::checkPublish(); // drain shadow deltas/local-edits/reports (MQTT task body)
         _drainPendingCommand(); // process queued IoT Command (broker RX or dev inject) off the callback
+#ifdef ENV_DEV
+        _drainPendingJob(); // dev-injected synthetic job, same off-the-callback rule
+#endif
     }
 
     // Utilities

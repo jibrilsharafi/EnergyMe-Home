@@ -285,5 +285,11 @@ namespace Mqtt
     // Dev-only: inject a synthetic IoT Command execution through the real handler
     // (staged from the caller's task, dispatched on the MQTT task). Never in prod.
     void injectCommandExecution(const char* executionId, const char* payload);
+
+    // Dev-only: inject a synthetic AWS IoT job execution document (as delivered on
+    // jobs/notify-next) through the real validate-and-handle path, so a fake or
+    // unreachable firmware URL can drive the OTA download retry schedule on the
+    // bench without minting a real job. Never in prod.
+    void injectJobExecution(const char* payload);
 #endif
 }
