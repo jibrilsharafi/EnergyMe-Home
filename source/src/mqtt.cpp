@@ -5,6 +5,7 @@
 #include "issueregistry.h"
 #include "crashmonitor.h"
 #include "shadow.h"
+#include "rollback_logic.h"
 #include "shadow_logic.h"
 #include "taskprofiler.h"
 #include "duration_format.h"
@@ -1341,6 +1342,47 @@ namespace Mqtt
                     _publishCommandStatus(executionId, "SUCCEEDED", nullptr, nullptr);
                 } else {
                     _publishCommandStatus(executionId, "REJECTED", "NO_SUCH_ISSUE", "Unknown issue code or no matching instance");
+                }
+            }
+        } else if (strcmp(operation, "firmware_rollback") == 0) {
+            // Boot the passive OTA partition without a download (#237). The command
+            // must carry the 64-hex app_elf_sha256 it expects to find there: that
+            // makes QoS1 redelivery idempotent (a duplicate matches the now-running
+            // slot and no-ops) and refuses to boot a partial or unknown image. A
+            // fingerprint, not a version: esp_app_desc_t.version is a frozen
+            // arduino-lib-builder constant on this toolchain, identical in every build.
+            const char* expectedSha = doc["expected_sha256"].is<const char*>()
+                                          ? doc["expected_sha256"].as<const char*>()
+                                          : nullptr;
+
+            char runningSha[SHA256_HEX_BUFFER_SIZE] = {0};
+            char passiveSha[SHA256_HEX_BUFFER_SIZE] = {0};
+            getRunningPartitionSha256(runningSha, sizeof(runningSha));
+            bool passiveReadable = getOtherPartitionSha256(passiveSha, sizeof(passiveSha));
+
+            RollbackLogic::Decision decision = RollbackLogic::decide(expectedSha, passiveReadable, passiveSha, runningSha);
+            if (decision == RollbackLogic::Decision::MISSING_SHA) {
+                _publishCommandStatus(executionId, "REJECTED", "MISSING_SHA256", "expected_sha256 must be 64 hex chars");
+            } else if (decision == RollbackLogic::Decision::NO_TARGET) {
+                _publishCommandStatus(executionId, "REJECTED", "NO_ROLLBACK_TARGET", "Passive partition has no valid firmware");
+            } else if (decision == RollbackLogic::Decision::MISMATCH) {
+                _publishCommandStatus(executionId, "REJECTED", "TARGET_MISMATCH", "expected_sha256 matches neither partition");
+            } else if (decision == RollbackLogic::Decision::NOOP_ALREADY_DONE) {
+                // Already running the requested firmware (redelivery after a
+                // completed rollback): success without touching the slots.
+                LOG_INFO("Command %s: already running expected firmware, no-op", executionId);
+                _publishCommandStatus(executionId, "SUCCEEDED", nullptr, nullptr);
+            } else {
+                FirmwareRollbackResult result = attemptFirmwareRollback("Command: firmware_rollback");
+                if (result == FirmwareRollbackResult::SUCCESS) {
+                    // Restart is scheduled but its task stops four other services
+                    // before Mqtt::stop(), leaving time for this publish + flush.
+                    _publishCommandStatus(executionId, "SUCCEEDED", nullptr, nullptr);
+                    delay(2000); // let the status flush before the reboot (same pattern as restart)
+                } else if (result == FirmwareRollbackResult::RESTART_BLOCKED) {
+                    _publishCommandStatus(executionId, "FAILED", "ROLLBACK_FAILED", "Restart blocked; boot partition unchanged");
+                } else {
+                    _publishCommandStatus(executionId, "FAILED", "ROLLBACK_FAILED", "Passive image failed validation");
                 }
             }
         } else {
