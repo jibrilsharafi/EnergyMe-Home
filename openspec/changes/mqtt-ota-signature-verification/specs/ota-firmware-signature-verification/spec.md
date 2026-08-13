@@ -19,17 +19,6 @@ The system SHALL verify an ECDSA P-256/SHA-256 signature over the downloaded fir
 - **WHEN** an OTA job document is missing `firmware.signature`, or the field is not a valid base64-encoded DER ECDSA signature
 - **THEN** the system rejects the job before starting the firmware download and publishes a job status reason indicating the signature was missing or invalid
 
-### Requirement: Verified firmware's actual version is re-checked against a downgrade, independent of the job document's claim
-A validly-signed image is only proof of who signed it, not of what version the job document claims it to be - that claim is not part of the signed content. The system SHALL, after signature verification succeeds and unless the job document's `force` field is `true`, read the actual version embedded in the verified firmware and reject the update if that version is not newer than the running firmware, even though the signature itself is valid.
-
-#### Scenario: Replayed old signed firmware under a forged version claim
-- **WHEN** an OTA job's `firmware.signature` validly verifies against a downloaded image, but the version actually embedded in that image is not newer than the running firmware, and `force` is absent or `false`
-- **THEN** the system rejects the update, does not activate the new partition, and publishes a job status reason distinct from an invalid-signature failure
-
-#### Scenario: Forced install bypasses the re-check
-- **WHEN** an OTA job's `firmware.signature` validly verifies and the job document's `force` field is `true`
-- **THEN** the system does not compare the verified firmware's embedded version against the running firmware before activating it
-
 ### Requirement: Verification occurs before boot-partition activation
 The system SHALL perform signature verification from the currently-running (already-trusted) firmware, using only the newly-downloaded partition's bytes as inert data, and SHALL complete verification before the boot partition is switched to the new image. The system SHALL NOT rely on any check performed by code within the newly-downloaded image itself.
 

@@ -30,11 +30,18 @@
 
 ## 6. Tests
 
-- [x] 6.1 Added native/Unity unit tests (`test/test_ota_signature/`) for the job-document signature field parsing/validation logic (missing/empty/null field, malformed base64, malformed DER shape - wrong tag, truncated/overclaimed length, zero-length integer, missing second integer, oversized-but-well-formed, output-capacity-too-small). Extracted into host-compilable `lib/ota_signature/` (mirrors the existing `lib/version_compare/` pattern). Later extended with `isStrictUpgrade` gate tests and `lib/sha256_hex/` tests (see group 11); full native suite passes under `pio test -e native` (verified via WSL).
+- [x] 6.1 Added native/Unity unit tests (`test/test_ota_signature/`) for the job-document signature field parsing/validation logic (missing/empty/null field, malformed base64, malformed DER shape - wrong tag, truncated/overclaimed length, zero-length integer, missing second integer, oversized-but-well-formed, output-capacity-too-small). Extracted into host-compilable `lib/ota_signature/` (mirrors the existing `lib/version_compare/` pattern). Plus `lib/sha256_hex/` tests (see group 11); full native suite passes under `pio test -e native` (verified via WSL).
 - [ ] 6.2 ~~Native/Unity unit tests for the mbedtls verify wrapper~~ **Descoped from native testing**: this codebase has no existing precedent for linking mbedtls into the `native`/host test environment (no lib/test currently depends on it), and `_verifyOtaSignature`'s cryptographic step (`mbedtls_pk_verify`, `esp_partition_read`) is ESP32/ESP-IDF-only code with no host-portable path without adding new native toolchain dependencies untested in this session. Covered instead by the hardware/e2e tests below, consistent with "test later on a dev device."
-- [ ] 6.3 Hardware/e2e test (requires bench device + a real signed test build, using the dev/test key in `ota_keys.h`): confirm a validly-signed OTA job installs and boots normally
-- [ ] 6.4 Hardware/e2e test: confirm a job with a tampered/invalid signature is rejected, the device does not reboot into the new partition, and the running firmware is unaffected
-- [ ] 6.5 Hardware/e2e test: confirm a job document missing `firmware.signature` is rejected before any download starts
+- [x] 6.3 Hardware/e2e (bench 2026-08-13): valid signature over the downloaded image verifies (`OTA firmware signature verified successfully`)
+- [x] 6.4 Hardware/e2e (bench 2026-08-13): tampered signature → `_verifyOtaSignature` fails (`-0x4E00`), OTA aborts, image header scrubbed, `signature_invalid` reason, single attempt (not retried), device stays on the running partition
+- [x] 6.5 Hardware/e2e (bench 2026-08-13): missing and malformed signatures both rejected before any download (`REJECTED`, `signature_missing_or_invalid`)
+
+## 13. Hardware e2e findings (bench device, 2026-08-13)
+
+- [x] 13.1 Tampered-signature scrub confirmed end to end: after rejection, `firmware_rollback` to the rejected image is refused (`No valid firmware in the other partition`, HTTP 400) - the design.md Decision 11 bypass is closed on hardware
+- [x] 13.2 Downgrade-replay check found broken and REVERTED (see 8.1 / design.md Decision 7): `esp_app_desc_t.version` is frozen on this toolchain, so a validly-signed same-version image replayed under a faked `9.9.9` claim installed and booted. Removed the check rather than ship a control that does not work; anti-rollback deferred to a future signed-manifest change
+- [x] 13.3 Test-process fixes captured as memory + project CLAUDE.md guidance: never set log `save` level to DEBUG (crashed `AdvancedLogTask` during the OTA heap-tight window); use `source/utils/udp_log_listener.py` for verbose diagnostics instead
+- [ ] 13.4 Follow-up (separate change, with KMS/CI): if anti-downgrade-replay is wanted, bind the version into the signature via a signed `{version, firmware-hash}` manifest
 
 ## 7. Documentation touch-points (only where behavior is externally observable)
 
@@ -42,7 +49,7 @@
 
 ## 8. Adversarial code-review fixes (see design.md Decisions 7-9)
 
-- [x] 8.1 Closed a downgrade-replay hole: signature verification alone doesn't bind the job document's claimed `firmware.version` - added a post-verification check in `_verifyOtaSignature` against the version actually embedded in the verified image, skipped only when `force` is set. New spec requirement added ("Verified firmware's actual version is re-checked against a downgrade...").
+- [x] ~~8.1 Closed a downgrade-replay hole with a post-verification embedded-version check~~ **REVERTED after hardware testing (see group 13)**: `esp_app_desc_t.version` is a frozen toolchain constant, not the semantic version, so the check never fired. Anti-rollback is a Non-Goal; removed the check, its spec requirement, and the `isStrictUpgrade` helper + tests. Accidental downgrades stay covered by the pre-download `ota-job-version-guard`.
 - [x] 8.2 Fixed a race: the decoded signature was being written to shared state (`_otaCurrentSignature`) before the "OTA already in flight" guards in `_handleSingleJobExecution` instead of after, unlike `_otaCurrentUrl`/`_otaCurrentJobId` - moved the write to match, closing the window where a second job execution could overwrite a signature `_verifyOtaSignature()` was still reading on the OTA task.
 - [x] 8.3 Fixed a regression that would have broken every real OTA download: removed the `MAX_LOOP_ITERATIONS` counters added to the `esp_https_ota_perform` loop and the partition-hashing loop - `esp_http_client`'s default 512-byte RX buffer meant the perform loop would hit the 1000-iteration cap at ~500KB, far under this project's ~4.3MB OTA partitions. Both loops are already bounded by a real size variable, which is this project's own documented exemption from that convention.
 - [x] 8.4 Moved the 4KB SHA-256 chunk buffer from the OTA task's stack (~1/3 of `OTA_TASK_STACK_SIZE`) to a PSRAM buffer allocated once in `begin()`, matching the existing `_otaCurrentUrl` pattern.
