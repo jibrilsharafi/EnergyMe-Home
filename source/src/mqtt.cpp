@@ -1543,6 +1543,22 @@ namespace Mqtt
     // Custom HTTPS OTA implementation
     // =================================
 
+    // The response status separates an expired-URL 403 from a genuine transport or
+    // memory failure, and it is the only thing that does: esp_https_ota() collapses
+    // every 4xx and 5xx into a bare ESP_FAIL.
+    //
+    // Sampled on several events rather than one because the client only assigns
+    // response->status_code in its on_headers_complete parser callback, which runs
+    // AFTER every HTTP_EVENT_ON_HEADER - reading it there yields the -1 initialiser.
+    // (HTTP_EVENT_ON_STATUS_CODE would be the direct answer but does not exist in
+    // the pinned IDF v5.5.1.) Whichever event first has it populated wins, and a
+    // later one refreshes it, so a redirect chain reports the final status. Only a
+    // positive value is stored: 0 then means "no response was ever parsed".
+    static void _captureOtaHttpStatus(esp_http_client_handle_t client) {
+        int status = esp_http_client_get_status_code(client);
+        if (status > 0) _otaAttempt.httpStatus = status;
+    }
+
     static esp_err_t _otaHttpEventHandler(esp_http_client_event_t *event) {
         switch (event->event_id) {
             case HTTP_EVENT_ERROR:        LOG_DEBUG("OTA HTTPS Event Error"); break;
@@ -1550,9 +1566,7 @@ namespace Mqtt
             case HTTP_EVENT_HEADER_SENT:  LOG_DEBUG("OTA HTTPS Event Header Sent"); break;
             case HTTP_EVENT_ON_HEADER:
                 LOG_DEBUG("OTA HTTPS Event On Header, key=%s, value=%s", event->header_key, event->header_value);
-                // Status code is only available once a response is being parsed;
-                // it separates an expired-URL 403 from a genuine transfer failure.
-                _otaAttempt.httpStatus = esp_http_client_get_status_code(event->client);
+                _captureOtaHttpStatus(event->client);
                 // Capture content length from headers
                 if (strcmp(event->header_key, "Content-Length") == 0) {
                     _otaAttempt.contentLength = atoi(event->header_value);
@@ -1562,6 +1576,7 @@ namespace Mqtt
                 }
                 break;
             case HTTP_EVENT_ON_DATA:
+                _captureOtaHttpStatus(event->client);
                 // Track progress and log periodically
                 _otaAttempt.bytesReceived += event->data_len;
                 if (_otaAttempt.bytesReceived >= _otaAttempt.lastProgressBytes + MQTT_OTA_SIZE_REPORT_UPDATE || _otaAttempt.bytesReceived == event->data_len) {
@@ -1570,8 +1585,17 @@ namespace Mqtt
                     _otaAttempt.lastProgressBytes = _otaAttempt.bytesReceived;
                 }
                 break;
-            case HTTP_EVENT_ON_FINISH:    LOG_DEBUG("OTA HTTPS Event On Finish"); break;
-            case HTTP_EVENT_DISCONNECTED: LOG_DEBUG("OTA HTTPS Event Disconnected"); break;
+            case HTTP_EVENT_ON_FINISH:
+                _captureOtaHttpStatus(event->client);
+                LOG_DEBUG("OTA HTTPS Event On Finish");
+                break;
+            case HTTP_EVENT_DISCONNECTED:
+                // The last chance to see the status: a refused response (404, 403)
+                // makes esp_https_ota abandon before any body arrives, so ON_DATA
+                // and ON_FINISH never fire for exactly the case that needs it most.
+                _captureOtaHttpStatus(event->client);
+                LOG_DEBUG("OTA HTTPS Event Disconnected");
+                break;
             case HTTP_EVENT_REDIRECT:     LOG_DEBUG("OTA HTTPS Event Redirect"); break;
         }
         return ESP_OK;
