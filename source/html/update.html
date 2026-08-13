@@ -527,14 +527,13 @@
         }
 
         async function doRollback() {
-            // The device cannot know the other slot's version (the app descriptor
-            // version is a frozen toolchain constant); the sha256 fingerprint is
-            // the only identity it has, so show that instead of a blind confirm.
+            // The device cannot know the other slot's version; its sha256
+            // fingerprint is the only identity it has, so show that in the confirm.
             let targetLine = "";
             try {
                 const status = await energyApi.getOtaStatus();
                 if (!status.otherPartitionSha256) {
-                    alert("No firmware found in the other partition - rollback is not possible on this device.");
+                    showStatus('No firmware found in the other partition - rollback is not possible on this device.', 'error');
                     return;
                 }
                 targetLine = "\n\nTarget firmware fingerprint (sha256): " + status.otherPartitionSha256.substring(0, 12) + "…";

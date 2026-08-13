@@ -716,15 +716,30 @@ bool setRestartSystem(const char* reason, bool factoryReset) {
 // Firmware rollback (#237)
 // -----------------------------
 
+void sha256BytesToHex(const uint8_t sha256[32], char* out, size_t outSize) {
+    if (!out || outSize < SHA256_HEX_BUFFER_SIZE) return;
+    static const char hex[] = "0123456789abcdef";
+    for (size_t i = 0; i < 32; i++) {
+        out[i * 2] = hex[sha256[i] >> 4];
+        out[i * 2 + 1] = hex[sha256[i] & 0x0F];
+    }
+    out[64] = '\0';
+}
+
+static const esp_partition_t* _getPassiveOtaPartition() {
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    const esp_partition_t* passive = esp_ota_get_next_update_partition(NULL);
+    if (!passive || passive == running) return nullptr;
+    return passive;
+}
+
 static bool _getPartitionSha256(const esp_partition_t* partition, char* out, size_t outSize) {
     if (!partition || !out || outSize < SHA256_HEX_BUFFER_SIZE) return false;
 
     esp_app_desc_t desc;
     if (esp_ota_get_partition_description(partition, &desc) != ESP_OK) return false;
 
-    for (size_t i = 0; i < sizeof(desc.app_elf_sha256); i++) {
-        snprintf(&out[i * 2], 3, "%02x", desc.app_elf_sha256[i]);
-    }
+    sha256BytesToHex(desc.app_elf_sha256, out, outSize);
     return true;
 }
 
@@ -733,28 +748,19 @@ bool getRunningPartitionSha256(char* out, size_t outSize) {
 }
 
 bool getOtherPartitionSha256(char* out, size_t outSize) {
-    const esp_partition_t* running = esp_ota_get_running_partition();
-    const esp_partition_t* passive = esp_ota_get_next_update_partition(NULL);
-    if (!passive || passive == running) return false;
-    return _getPartitionSha256(passive, out, outSize);
+    return _getPartitionSha256(_getPassiveOtaPartition(), out, outSize);
 }
 
 FirmwareRollbackResult attemptFirmwareRollback(const char* reason) {
     const esp_partition_t* running = esp_ota_get_running_partition();
-    const esp_partition_t* passive = esp_ota_get_next_update_partition(NULL);
-    if (!passive || passive == running) {
+    const esp_partition_t* passive = _getPassiveOtaPartition();
+    if (!passive) {
         LOG_ERROR("Rollback: no passive OTA partition found");
-        return FirmwareRollbackResult::NO_TARGET;
-    }
-
-    esp_app_desc_t desc;
-    if (esp_ota_get_partition_description(passive, &desc) != ESP_OK) {
-        LOG_ERROR("Rollback: passive partition %s has no readable app descriptor", passive->label);
-        return FirmwareRollbackResult::NO_TARGET;
+        return FirmwareRollbackResult::INVALID_IMAGE;
     }
 
     // The real gate: esp_ota_set_boot_partition runs full image_validate on the
-    // target and refuses a partial/corrupt image with ESP_ERR_OTA_VALIDATE_FAILED.
+    // target and refuses an erased/partial/corrupt image with ESP_ERR_OTA_VALIDATE_FAILED.
     esp_err_t err = esp_ota_set_boot_partition(passive);
     if (err != ESP_OK) {
         LOG_ERROR("Rollback: esp_ota_set_boot_partition(%s) failed: %s", passive->label, esp_err_to_name(err));

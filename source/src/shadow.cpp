@@ -460,10 +460,9 @@ static void _reportInfo(JsonDocument& doc) {
     rep["community_mode"] = globalCommunityMode;
     rep["device_id"] = DEVICE_ID;
 
-    // Rollback target: the passive OTA slot's app_elf_sha256 (its only per-build
-    // identity - the descriptor version is a frozen toolchain constant). Lets the
-    // fleet pick a firmware_rollback command's expected_sha256 from the shadow
-    // without querying the device mid-incident. null when the slot is empty/invalid.
+    // Rollback target fingerprint: lets the fleet pick a firmware_rollback
+    // command's expected_sha256 from the shadow without querying the device
+    // mid-incident. null when the passive slot is empty/invalid.
     char otherSha[SHA256_HEX_BUFFER_SIZE];
     if (getOtherPartitionSha256(otherSha, sizeof(otherSha))) {
         rep["other_partition_sha256"] = otherSha; // mutable buffer: copied

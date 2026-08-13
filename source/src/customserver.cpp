@@ -1664,7 +1664,6 @@ namespace CustomServer
             JsonDocument doc(&allocator);
             
             doc["status"] = Update.isRunning() ? "running" : "idle";
-            doc["canRollback"] = Update.canRollBack();
             
             const esp_partition_t *running = esp_ota_get_running_partition();
             doc["currentPartition"] = running->label;
@@ -1679,11 +1678,15 @@ namespace CustomServer
             doc["currentVersion"] = FIRMWARE_BUILD_VERSION;
             doc["currentMD5"] = ESP.getSketchMD5();
 
-            // Rollback target fingerprint (the only per-build identity a partition
-            // has - the app descriptor's version field is a frozen toolchain
-            // constant). null when the passive slot holds no valid descriptor.
+            // Rollback target fingerprint; null when the passive slot holds no
+            // valid descriptor. Not read mid-upload: Update.write() is streaming
+            // into that very partition (2 s poll would race the flash writes and
+            // report a half-overwritten descriptor), and canRollback derives from
+            // the same read so status and actuator agree on one predicate.
             char otherSha[SHA256_HEX_BUFFER_SIZE];
-            if (getOtherPartitionSha256(otherSha, sizeof(otherSha))) {
+            bool otherShaReadable = !Update.isRunning() && getOtherPartitionSha256(otherSha, sizeof(otherSha));
+            doc["canRollback"] = otherShaReadable;
+            if (otherShaReadable) {
                 doc["otherPartitionSha256"] = otherSha;
             } else {
                 doc["otherPartitionSha256"] = nullptr;
@@ -1715,11 +1718,8 @@ namespace CustomServer
                 case FirmwareRollbackResult::SUCCESS:
                     _sendSuccessResponse(request, "Rollback initiated. Device will restart.");
                     break;
-                case FirmwareRollbackResult::NO_TARGET:
-                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "No firmware in the other partition");
-                    break;
                 case FirmwareRollbackResult::INVALID_IMAGE:
-                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Other partition failed image validation");
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "No valid firmware in the other partition");
                     break;
                 case FirmwareRollbackResult::RESTART_BLOCKED:
                     _sendErrorResponse(request, HTTP_CODE_LOCKED, "Restart currently blocked. Boot partition unchanged");
