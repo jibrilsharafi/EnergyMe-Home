@@ -3,14 +3,16 @@
 ## Purpose
 Transient device actions over AWS IoT Commands (restart, factory_reset, energy_reset, issue_ack): json-request routing only, off-callback processing, anti-fat-finger confirmation, and AWS-pattern reason codes. Jobs remain OTA-only.
 ## Requirements
-### Requirement: Four transient IoT Commands
-The device SHALL support exactly four AWS IoT Commands: `restart` (no payload), `factory_reset` (`{"confirm": "<device_id>"}`), `energy_reset` (selective or full counter reset), and `issue_ack` (acknowledge one or all active device issues). Jobs remain OTA-only.
+### Requirement: Five transient IoT Commands
+The device SHALL support exactly five AWS IoT Commands: `restart` (no payload), `factory_reset` (`{"confirm": "<device_id>"}`), `energy_reset` (selective or full counter reset), `issue_ack` (acknowledge one or all active device issues), and `firmware_rollback` (`{"expected_sha256": "<64 hex>"}` - boot the previous firmware from the passive OTA partition without a download). Jobs remain OTA-only.
 
 `energy_reset`'s `channels` parameter SHALL be a string in one of two forms: the literal `"all"`, or a comma-separated list of channel indices (e.g. `"5"`, `"0,2,5"`) - the only shape AWS IoT Commands can actually deliver, since command parameters are string-typed end-to-end. A JSON array of indices SHALL continue to be accepted for the on-device inject test harness.
 
 Parsing of the comma-separated form SHALL be best-effort per channel: an out-of-range or non-numeric token SHALL log a `WARNING` and be skipped, while valid tokens are still applied - consistent with the JSON-array form's existing per-index validation. If the `channels` string yields no valid channel index at all (empty string, or every token invalid), the device SHALL reject the command with `BAD_CHANNELS` rather than report success for a no-op.
 
 `issue_ack` SHALL accept either `{"all": true}` (acknowledge every currently-unacked issue instance) or `{"code": "<CODE>", "channel": <optional>}` (acknowledge one instance; `channel` omitted addresses the global scope). Because AWS IoT Commands parameters are string-typed end-to-end, `all` SHALL be treated as true when its value is the JSON boolean `true` or the exact string `"true"`, and `channel` SHALL be accepted as either a JSON integer or a digit string. It SHALL delegate to the same `IssueRegistry::ack`/`IssueRegistry::ackAll` functions used by the local REST issue-ack endpoint, applying no separate ack logic. On success it SHALL publish a plain `SUCCEEDED` status (no `reasonCode`/`reasonDescription`), consistent with `restart`/`factory_reset`/`energy_reset`; the acked count SHALL be logged on-device only, with the `issues` shadow's `active_count` serving as the cloud-visible outcome.
+
+`firmware_rollback`'s precondition semantics, reason codes (`MISSING_SHA256`, `NO_ROLLBACK_TARGET`, `TARGET_MISMATCH`, `ROLLBACK_FAILED`), idempotent-redelivery behavior, and state interplay are specified in the `firmware-rollback` capability; this requirement only fixes its place in the command set and its routing through the same dispatch, staleness guard (`created_at`), and off-callback processing as the other four commands.
 
 #### Scenario: restart command reboots the device
 - **WHEN** a valid `restart` command is delivered
@@ -47,6 +49,14 @@ Parsing of the comma-separated form SHALL be best-effort per channel: an out-of-
 #### Scenario: issue_ack rejects a payload with neither code nor all
 - **WHEN** an `issue_ack` command is delivered without `code` and without `all: true`
 - **THEN** the device rejects the command with `MISSING_CODE` and acknowledges nothing
+
+#### Scenario: firmware_rollback routes through the standard command dispatch
+- **WHEN** a valid `firmware_rollback` command is delivered on the `.../request/json` topic
+- **THEN** it is processed in the MQTT task body (not the RX callback), subject to the same `created_at` staleness guard, and its terminal status uses the `[A-Z0-9_-]+` reasonCode convention
+
+#### Scenario: firmware_rollback with a matching precondition boots the previous firmware
+- **WHEN** a `firmware_rollback` command is delivered with `expected_sha256` matching the passive OTA partition's application sha256
+- **THEN** the device switches the boot partition, reports `SUCCEEDED`, and restarts into the previous firmware
 
 ### Requirement: factory_reset requires device-id confirmation
 The device SHALL reject a `factory_reset` whose `confirm` field does not equal the device id. Only a matching `confirm` SHALL trigger the wipe of user NVS (factory NVS preserved).
