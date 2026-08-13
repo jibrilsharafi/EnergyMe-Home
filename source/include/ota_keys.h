@@ -34,7 +34,7 @@ constexpr const char* OTA_SIGNING_PUBLIC_KEY_PEM =
 // it manually, mirroring the CI KMS signing step (tasks.md 1.3/1.4) 1:1.
 constexpr const char* OTA_SIGNING_PUBLIC_KEY_PEM =
 "-----BEGIN PUBLIC KEY-----\n"
-"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEeSjhDGTPxlAWyDgzKZxaiMb2hjgn\n"
-"d2/09ovrcJBIgTxhDpgqklq0ZOpaJGrNcSnsr1K/B3s35T15u9UiE/c1Ww==\n"
+"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEW7gKUMXauKdDy9ULgsHjHh1wkgJN\n"
+"KQhxRFCESqnrnnZiI2OAfWZ/+QMwFh1k61Z/t50C2pd5dr+1y9NbRn78TA==\n"
 "-----END PUBLIC KEY-----\n";
 #endif
