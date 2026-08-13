@@ -123,15 +123,14 @@ namespace Mqtt
     };
     static OtaAttempt _otaAttempt = {};
 
-    // Decoded DER ECDSA signature for the OTA job currently being downloaded, and
-    // the job's `force` flag. Both are written by _handleSingleJobExecution AFTER
-    // the "is a job already in flight" guards (mirrors _otaCurrentUrl/_otaCurrentJobId
-    // - writing shared OTA state before those guards would let a second, concurrent
-    // job execution overwrite a buffer _verifyOtaSignature() is still reading on the
-    // OTA task). Consumed by _verifyOtaSignature() before the boot partition is switched.
+    // Decoded DER ECDSA signature for the OTA job currently being downloaded,
+    // written by _handleSingleJobExecution AFTER the "is a job already in flight"
+    // guards (mirrors _otaCurrentUrl/_otaCurrentJobId - writing shared OTA state
+    // before those guards would let a second, concurrent job execution overwrite a
+    // buffer _verifyOtaSignature() is still reading on the OTA task). Consumed by
+    // _verifyOtaSignature() before the boot partition is switched.
     static uint8_t _otaCurrentSignature[OtaSignature::MAX_DER_SIGNATURE_LEN];
     static size_t _otaCurrentSignatureLen = 0;
-    static bool _otaCurrentForce = false;
 
     // 4 KB scratch buffer for streaming the downloaded OTA partition through
     // SHA-256 in _verifyOtaSignature(), allocated once from PSRAM in begin() -
@@ -1739,33 +1738,14 @@ namespace Mqtt
             return false;
         }
 
-        // The signature only proves these bytes were validly signed at some point -
-        // it says nothing about the version the job document CLAIMED them to be
-        // (that field isn't part of what's hashed/signed). Without this check, a
-        // replayed old-but-validly-signed firmware.bin paired with a forged job
-        // document claiming a fake, higher `firmware.version` would sail past the
-        // unauthenticated version guard in _handleSingleJobExecution and downgrade
-        // the device to a possibly-vulnerable old release. Re-run the same guard
-        // here against the ACTUAL version embedded in the verified bytes instead -
-        // skipped when the job explicitly set `force`, matching that field's
-        // existing "I know what I'm doing" semantics in the version guard.
-        if (!_otaCurrentForce) {
-            esp_app_desc_t new_app_desc;
-            esp_err_t descErr = esp_ota_get_partition_description(update_partition, &new_app_desc);
-            if (descErr != ESP_OK) {
-                LOG_ERROR("Failed to read verified firmware's version: %s", esp_err_to_name(descErr));
-                snprintf(_otaFailureReason, sizeof(_otaFailureReason), "version_read_error");
-                return false;
-            }
-            if (!OtaSignature::isStrictUpgrade(FIRMWARE_BUILD_VERSION, new_app_desc.version)) {
-                LOG_WARNING(
-                    "Signed firmware's actual version '%s' is not newer than running '%s' - rejecting (possible downgrade replay)",
-                    new_app_desc.version, FIRMWARE_BUILD_VERSION);
-                snprintf(_otaFailureReason, sizeof(_otaFailureReason), "signed_firmware_not_newer");
-                return false;
-            }
-        }
-
+        // No embedded-version anti-downgrade re-check here: esp_app_desc_t.version
+        // is a frozen arduino-lib-builder constant on this toolchain (see
+        // lib/rollback_logic/rollback_logic.h), not the semantic firmware version,
+        // so it cannot gate a downgrade. Anti-rollback against a forging attacker
+        // is a Non-Goal of this change (see design.md) and would need the version
+        // bound into the signature (a signed manifest), left as a later change.
+        // Accidental downgrades are still handled pre-download by the existing
+        // job-document version guard in _handleSingleJobExecution.
         LOG_INFO("OTA firmware signature verified successfully (%d bytes)", imageLen);
         return true;
     }
@@ -2265,7 +2245,6 @@ namespace Mqtt
         snprintf(_otaCurrentJobId, sizeof(_otaCurrentJobId), "%s", jobId);
         memcpy(_otaCurrentSignature, decodedSignature, decodedSignatureLen);
         _otaCurrentSignatureLen = decodedSignatureLen;
-        _otaCurrentForce = force;
 
         LOG_DEBUG("Starting OTA task with %d bytes stack", OTA_TASK_STACK_SIZE);
 
