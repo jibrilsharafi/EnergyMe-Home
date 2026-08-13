@@ -109,6 +109,21 @@ namespace Mqtt
     // a single flag on the publish path.
     static std::atomic<bool> _otaDownloadInProgress{false};
 
+    // Download progress, written by the HTTP event handler and read by the OTA
+    // task after the call returns so a failure can report how far it got.
+    static size_t _otaBytesReceived = 0;
+    static size_t _otaContentLength = 0;
+
+    // What one download attempt reports back for the job status details.
+    struct OtaAttemptResult {
+        esp_err_t error;
+        size_t bytesReceived;
+        size_t contentLength;
+        uint32_t freeHeap;
+        uint32_t minFreeHeap;
+        uint32_t maxAlloc;
+    };
+
     // Thread safety
     static SemaphoreHandle_t _configMutex = nullptr;
 
@@ -180,8 +195,9 @@ namespace Mqtt
     static void _handleSingleJobExecution(JsonDocument &doc);
     static void _publishOtaJobDetail(const char* jobId);
     static void _otaTask(void* parameter);
+    static void _probeOtaHost();
     static esp_err_t _otaHttpEventHandler(esp_http_client_event_t *event);
-    static bool _performOtaUpdate();
+    static bool _performOtaUpdate(OtaAttemptResult &attemptResult);
     
     // OTA validation functions (clearOtaPendingState is public, declared in mqtt.h)
     static void _otaValidationTask(void* parameter);
@@ -1479,9 +1495,9 @@ namespace Mqtt
 
     static esp_err_t _otaHttpEventHandler(esp_http_client_event_t *event) {
         static size_t lastProgressBytes = 0;
-        static size_t totalBytesReceived = 0;
-        static size_t contentLength = 0;
-        
+        size_t &totalBytesReceived = _otaBytesReceived;
+        size_t &contentLength = _otaContentLength;
+
         switch (event->event_id) {
             case HTTP_EVENT_ERROR:        LOG_DEBUG("OTA HTTPS Event Error"); break;
             case HTTP_EVENT_ON_CONNECTED: LOG_DEBUG("OTA HTTPS Event On Connected"); break;
@@ -1512,9 +1528,9 @@ namespace Mqtt
         return ESP_OK;
     }
 
-    static bool _performOtaUpdate() {
-        LOG_DEBUG("Starting OTA update from URL: %.100s...", _otaCurrentUrl); // Truncate long URLs in logs
-
+    // Run once per download rather than per attempt: it is only a log-level
+    // diagnostic, and each call opens a socket on the heap the download needs.
+    static void _probeOtaHost() {
         WiFiClient testClient;
         // Extract the DNS to test from the URL
         char host[URL_BUFFER_SIZE]; // Small since we don't have all the presigned stuff
@@ -1528,6 +1544,13 @@ namespace Mqtt
         } else {
             LOG_WARNING("Failed to extract host (URL: %.100s). Could not test DNS resolution.", _otaCurrentUrl);
         }
+    }
+
+    static bool _performOtaUpdate(OtaAttemptResult &attemptResult) {
+        LOG_DEBUG("Starting OTA update from URL: %.100s...", _otaCurrentUrl); // Truncate long URLs in logs
+
+        _otaBytesReceived = 0;
+        _otaContentLength = 0;
 
         esp_http_client_config_t _httpConfig = {
             .url = _otaCurrentUrl,
@@ -1552,19 +1575,86 @@ namespace Mqtt
         // rollback, not by the bootloader.
         esp_err_t result = esp_https_ota(&_otaConfig);
 
+        // Sampled here, not after the retry loop unwinds: by then the heap has
+        // recovered and the figures would describe the wrong moment.
+        attemptResult.error = result;
+        attemptResult.bytesReceived = _otaBytesReceived;
+        attemptResult.contentLength = _otaContentLength;
+        attemptResult.freeHeap = ESP.getFreeHeap();
+        attemptResult.minFreeHeap = ESP.getMinFreeHeap();
+        attemptResult.maxAlloc = ESP.getMaxAllocHeap();
+
         if (result == ESP_OK) {
             LOG_INFO("OTA update downloaded successfully (not yet validated)");
             return true;
-        } else {
-            LOG_ERROR("OTA update failed with error: %s (%d)", esp_err_to_name(result), result);
-            return false;
         }
+
+        LOG_ERROR(
+            "OTA update failed with error: %s (%d) after %zu/%zu bytes "
+            "(free %lu, minFree %lu, maxAlloc %lu)",
+            esp_err_to_name(result), result, attemptResult.bytesReceived, attemptResult.contentLength,
+            attemptResult.freeHeap, attemptResult.minFreeHeap, attemptResult.maxAlloc
+        );
+        return false;
     }
     
+    // Sleeps in slices so a module shutdown is noticed promptly instead of after
+    // a wait that can reach OTA_DOWNLOAD_RETRY_MAX_INTERVAL. Returns false when
+    // the remaining schedule should be abandoned.
+    static bool _waitBeforeOtaRetry(uint64_t delayMs) {
+        uint64_t waited = 0;
+        while (waited < delayMs) {
+            // No MQTT task means the module is being torn down, so there is
+            // nothing left to report a later attempt to.
+            if (_taskHandle == nullptr) {
+                LOG_WARNING("MQTT task gone during OTA backoff - abandoning remaining attempts");
+                return false;
+            }
+
+            uint64_t slice = delayMs - waited;
+            if (slice > OTA_DOWNLOAD_RETRY_SLEEP_SLICE) slice = OTA_DOWNLOAD_RETRY_SLEEP_SLICE;
+            delay(slice);
+            waited += slice;
+        }
+        return true;
+    }
+
     static void _otaTask(void* parameter) {
         LOG_DEBUG("OTA task started");
 
-        bool otaSuccess = _performOtaUpdate();
+        _otaDownloadInProgress.store(true, std::memory_order_relaxed);
+        _probeOtaHost();
+
+        OtaAttemptResult attemptResult = {};
+        bool otaSuccess = false;
+        uint8_t attemptsMade = 0;
+
+        for (uint8_t attempt = 1; attempt <= OTA_DOWNLOAD_MAX_ATTEMPTS; attempt++) {
+            attemptsMade = attempt;
+
+            LOG_INFO("OTA download attempt %u/%u for job %s", attempt, OTA_DOWNLOAD_MAX_ATTEMPTS, _otaCurrentJobId);
+            LOG_DEBUG(
+                "Heap before attempt %u: free %lu, minFree %lu, maxAlloc %lu",
+                attempt, ESP.getFreeHeap(), ESP.getMinFreeHeap(), ESP.getMaxAllocHeap()
+            );
+
+            otaSuccess = _performOtaUpdate(attemptResult);
+            if (otaSuccess || attempt == OTA_DOWNLOAD_MAX_ATTEMPTS) break;
+
+            uint64_t backoffDelay = BackoffSchedule::delayForAttempt(
+                attempt,
+                OTA_DOWNLOAD_RETRY_INITIAL_INTERVAL,
+                OTA_DOWNLOAD_RETRY_MAX_INTERVAL,
+                OTA_DOWNLOAD_RETRY_MULTIPLIER
+            );
+            LOG_WARNING("OTA download attempt %u failed - retrying in %llu ms", attempt, backoffDelay);
+
+            if (!_waitBeforeOtaRetry(backoffDelay)) break;
+        }
+
+        // Cleared on every exit from the loop, success or not: leaving it set
+        // would silence the device's telemetry until the next reboot.
+        _otaDownloadInProgress.store(false, std::memory_order_relaxed);
 
         if (otaSuccess) {
             LOG_INFO("OTA download successful for job %s. Preparing to reboot.", _otaCurrentJobId);

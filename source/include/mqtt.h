@@ -48,6 +48,21 @@
 #define OTA_PRESIGNED_URL_BUFFER_SIZE (4 * 1024) // The presigned S3 URL can be very long
 #define MQTT_OTA_SIZE_REPORT_UPDATE (128 * 1024)
 
+// OTA download retry schedule. The presigned S3 URL is minted when the device
+// picks up the job and lives 60 min, so the whole schedule has to fit inside
+// that from the moment the download starts. Delays are 2, 4, 8 and 15 min
+// (the fourth doubling is clamped), i.e. 29 min of waiting; with the attempts
+// themselves the worst case lands near 44 min, leaving ~15 min of margin.
+// Deliberately no elapsed-time guard: an expired URL just fails the attempt,
+// and that failure now reports an error name identifying it.
+#define OTA_DOWNLOAD_MAX_ATTEMPTS 5
+#define OTA_DOWNLOAD_RETRY_INITIAL_INTERVAL (2 * 60 * 1000)
+#define OTA_DOWNLOAD_RETRY_MAX_INTERVAL (15 * 60 * 1000)
+#define OTA_DOWNLOAD_RETRY_MULTIPLIER 2
+// Backoff waits are slept in slices so a shutdown notification is picked up
+// promptly instead of after a delay that can reach OTA_DOWNLOAD_RETRY_MAX_INTERVAL.
+#define OTA_DOWNLOAD_RETRY_SLEEP_SLICE (1 * 1000)
+
 // OTA validation constants
 #define OTA_VALIDATION_TASK_NAME "ota_validation_task"
 #define OTA_VALIDATION_TASK_STACK_SIZE (6 * 1024)

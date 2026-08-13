@@ -24,14 +24,14 @@ Each numbered group is one commit. Run the applicable tests before committing ea
 
 ## 4. Retry the download on an exponential backoff
 
-- [ ] 4.1 Add constants to `source/include/mqtt.h` for max attempts (5), initial backoff (2 min), max backoff (15 min) and multiplier (2), each with a comment tying the schedule to the 60 minute presigned-URL lifetime
-- [ ] 4.2 Change `_performOtaUpdate` (`source/src/mqtt.cpp:1460`) to report the `esp_err_t` and the byte progress to its caller via an out-parameter struct instead of returning a bare `bool`
-- [ ] 4.3 Capture bytes received and content length from the existing `_otaHttpEventHandler` counters (`source/src/mqtt.cpp:1439-1449`) into that struct so progress survives the failing call
-- [ ] 4.4 Wrap the `_performOtaUpdate` call in `_otaTask` (`source/src/mqtt.cpp:1508`) in a retry loop using `BackoffSchedule`, leaving the DNS probe at `mqtt.cpp:1463-1475` to run once per download rather than once per attempt
-- [ ] 4.5 Set the OTA-in-progress flag before the first attempt and clear it on every exit from the retry loop, including the success path, so the device cannot be left permanently silent
-- [ ] 4.6 Verify the post-download flow (partition read, SHA256, preferences, reboot) and its three early returns at `mqtt.cpp:1516`, `1526` and `1540` are unchanged and sit outside the retry loop
-- [ ] 4.7 Sleep between attempts in a way that still honours the module's existing shutdown notification, so a restart request during a backoff wait is not blocked for up to 15 minutes
-- [ ] 4.8 Run `pio run`
+- [x] 4.1 Add constants to `source/include/mqtt.h` for max attempts (5), initial backoff (2 min), max backoff (15 min) and multiplier (2), each with a comment tying the schedule to the 60 minute presigned-URL lifetime
+- [x] 4.2 Change `_performOtaUpdate` (`source/src/mqtt.cpp:1460`) to report the `esp_err_t` and the byte progress to its caller via an out-parameter struct instead of returning a bare `bool`
+- [x] 4.3 Capture bytes received and content length from the existing `_otaHttpEventHandler` counters (`source/src/mqtt.cpp:1439-1449`) into that struct so progress survives the failing call
+- [x] 4.4 Wrap the `_performOtaUpdate` call in `_otaTask` (`source/src/mqtt.cpp:1508`) in a retry loop using `BackoffSchedule`, leaving the DNS probe at `mqtt.cpp:1463-1475` to run once per download rather than once per attempt
+- [x] 4.5 Set the OTA-in-progress flag before the first attempt and clear it on every exit from the retry loop, including the success path, so the device cannot be left permanently silent
+- [x] 4.6 Verify the post-download flow (partition read, SHA256, preferences, reboot) and its three early returns at `mqtt.cpp:1516`, `1526` and `1540` are unchanged and sit outside the retry loop
+- [x] 4.7 Sleep between attempts in a way that still honours the module's existing shutdown notification, so a restart request during a backoff wait is not blocked for up to 15 minutes
+- [x] 4.8 Run `pio run`
 
 ## 5. Report device-side diagnostics on failure
 
