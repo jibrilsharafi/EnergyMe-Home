@@ -37,5 +37,5 @@
 
 ## 7. Spec sync + PR
 
-- [ ] 7.1 Update spec deltas if implementation diverged; `openspec validate firmware-rollback-command`
-- [ ] 7.2 PR to development with `Closes #237`; code-review agents (adversarial brief on the command path) + simplify agent per repo policy
+- [x] 7.1 Update spec deltas if implementation diverged (pending-OTA record is now preserved, not cleared - premise corrected by the adversarial review); `openspec validate --strict` passes
+- [x] 7.2 PR #240 to development with `Closes #237`; adversarial code review (9 findings triaged: 2 fixed races, 1 spec correction, 2 hardening, 4 dismissed with evidence) + 4-angle simplify round applied
