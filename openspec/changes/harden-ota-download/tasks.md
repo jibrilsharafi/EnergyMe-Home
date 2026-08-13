@@ -57,8 +57,9 @@ Each numbered group is one commit. Run the applicable tests before committing ea
 ## 7. Review and merge
 
 - [ ] 7.1 Firmware version in `source/include/constants.h`: NOT part of this change. Version bumps are Jibril's call and are done manually by him, never as part of implementing a change.
-- [ ] 7.2 Run the code-review agents over the branch diff, with at least one adversarial brief given this touches the OTA and network path, and reproduce each finding before accepting or dismissing it
-- [ ] 7.3 Run the simplification agent
-- [ ] 7.4 Triage every finding, fix or document each with its reason, and re-run `pio run` and `pio test -e native`
-- [ ] 7.5 Open the PR to `development` with `Closes #191` in the body and a label
+- [x] 7.2 Run the code-review agents over the branch diff, with at least one adversarial brief given this touches the OTA and network path, and reproduce each finding before accepting or dismissing it
+- [x] 7.3 Run the simplification agent
+- [x] 7.4 Triage every finding, fix or document each with its reason, and re-run `pio run` and `pio test -e native`
+- [x] 7.5 Open the PR to `development` with `Closes #191` in the body and a label
 - [ ] 7.6 Retitle issue #191, whose current title names the task-suspension mechanism this change evaluated and rejected
+- [ ] 7.7 Follow-up, not this PR: apply the `_finishOtaTask` single-exit pattern to `_otaValidationTask`, which still repeats `handle = nullptr; vTaskDelete(nullptr)` at six exit points
