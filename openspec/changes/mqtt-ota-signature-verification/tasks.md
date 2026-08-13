@@ -79,4 +79,12 @@
 
 - [x] 12.1 Closed the `firmware_rollback` bypass: a fully-downloaded-then-rejected image stayed intact in the passive slot, and the rollback command (sha256 match + structural `esp_image_verify` only) could boot it - added `_scrubRejectedOtaImage()` erasing the image header on any failed download that wrote bytes, scoped by `bytesWritten > 0` so failures that never touched flash preserve the legitimate rollback target. New spec requirement + 2 scenarios added
 - [x] 12.2 Gated `ota_keys.h` by `ENV_PROD`: dev builds embed the bench dev key; prod builds get a deliberately invalid placeholder that fails closed (`pubkey_parse_error`) until the KMS public key is provisioned - keeps CI's esp32s3-prod build green without ever trusting a placeholder
-- [ ] 12.3 Hardware/e2e test (with 6.3-6.5): after a tampered-signature rejection, confirm `firmware_rollback` targeting the rejected image's sha256 is refused
+- [x] 12.3 Hardware/e2e test (with 6.3-6.5): after a tampered-signature rejection, confirmed `firmware_rollback` is refused (`"No valid firmware in the other partition"`, HTTP 400) - both via the dev-inject path and a real AWS IoT job (see group 14)
+
+## 14. Real AWS IoT Jobs end-to-end (dev account, bench device, 2026-08-13)
+
+All prior hardware tests (groups 6, 12, 13) used the `ENV_DEV`-only `inject-job` HTTP endpoint, which exercises the exact same device-side code but not the real AWS wire format or job lifecycle (its synthetic jobId can't transition on AWS - status updates come back `update/rejected`). To close that gap, two real jobs were created directly via `aws iot create-job` against the bench device's thing (`588c81c479f8`), using AWS's own `${aws:iot:s3-presigned-url:...}` placeholder and presign role - matching the exact job-document shape the production release pipeline will use (only `firmware.signature` is new).
+
+- [x] 14.1 Valid signed job (`energyme-home-dev-ota-sigtest-valid-1`): downloaded, `_verifyOtaSignature` succeeded, installed, rebooted, post-reboot validation completed. **AWS job execution status transitioned QUEUED -> IN_PROGRESS ("rebooting") -> SUCCEEDED ("validated after successful boot and stability period")** - confirming the full production job lifecycle, not just the local verification logic
+- [x] 14.2 Tampered signature job (`energyme-home-dev-ota-sigtest-tampered-1`): downloaded in full (2,606,464/2,606,464 bytes), signature verification failed, image scrubbed, not retried. **AWS job execution status shows FAILED with `statusDetails.reason=signature_invalid`, `attempts=1`**, matching device-side logs exactly. `firmware_rollback` afterward refused as in 12.3
+- [x] 14.3 Both test jobs deleted from the dev AWS account after verification (`aws iot delete-job --force`)
