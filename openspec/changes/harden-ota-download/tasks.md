@@ -37,13 +37,26 @@ Each numbered group is one commit. Run the applicable tests before committing ea
 
 ## 6. Verify on hardware
 
-- [ ] 6.1 Flash the bench device and confirm a normal OTA job still succeeds end to end with no regression to job status reporting or the reboot-and-validate flow
-- [ ] 6.2 Confirm over the UDP log that telemetry, logs and shadow updates keep flowing normally for the whole retry schedule, since nothing is suppressed any more
-- [ ] 6.3 Using a dev build, run an OTA job with a deliberately unreachable host to exercise the full retry schedule, then confirm the `FAILED` job execution in AWS carries all eight `statusDetails` keys (reason, espError, httpStatus, progress, heapFreeMinMax, attempts, uptime, rssi) with sensible values
-- [ ] 6.4 Confirm from the same run that `httpStatus` is what separates a server refusal from a transport failure, since `espError` reports bare `ESP_FAIL` for every 4xx/5xx, and that a simulated 4xx breaks the schedule instead of running all five attempts
-- [ ] 6.5 Shorten the backoff constants temporarily if the full 29 minute schedule makes 6.3 impractical, and restore them before committing
-- [ ] 6.6 Confirm the AWS job's `timeoutConfig`, if set, exceeds the worst-case retry window, so an execution cannot flip to `TIMED_OUT` before the device reports
-- [ ] 6.7 Consider subscribing to `jobs/+/update/rejected`: an UpdateJobExecution rejection (pair-count limit, or an execution already TIMED_OUT) is currently discarded silently, so the device would look locally successful while AWS shows nothing
+Bench device `588c81c479f8` at 192.168.1.82, `esp32s3-dev-v5`, dev AWS account.
+Driven through the dev-only `POST /api/v1/ota/inject-job` seam added in group 8
+for the synthetic cases, and through real AWS IoT jobs for the end-to-end ones.
+
+- [x] 6.1 Flash the bench device and confirm a normal OTA job still succeeds end to end with no regression to job status reporting or the reboot-and-validate flow — real AWS job `energyme-home-dev-ota-e2e-retry-20260813-145616` against a genuine presigned S3 URL: downloaded 2.6 MB on attempt 1 in 94 s, rebooted, booted the delivered image, and reported `SUCCEEDED` after the 300 s validation window. Status walked `downloading` → `rebooting` → `SUCCEEDED`
+- [x] 6.2 Confirm telemetry, logs and shadow updates keep flowing normally for the whole retry schedule, since nothing is suppressed any more — the `meter` shadow was 98 s old when checked mid-schedule, during the attempt-4 backoff
+- [x] 6.3 Using a dev build, run an OTA job with a deliberately unreachable host to exercise the full retry schedule, then confirm the `FAILED` job execution in AWS carries all eight `statusDetails` keys with sensible values — real AWS job `energyme-home-dev-ota-fail-diag-20260813-150045` reported `FAILED` with all eight accepted, none rejected or truncated: `attempts 5`, `espError ESP_ERR_HTTP_CONNECT`, `heapFreeMinMax 52644/39028/31732`, `httpStatus 0`, `progress n/a`, `reason download_failed`, `rssi -86`, `uptime 73`. The unreachable-host schedule was also run once at the real constants, taking exactly 29 min across 5 attempts
+- [x] 6.4 Confirm `httpStatus` is what separates a server refusal from a transport failure, and that a 4xx breaks the schedule instead of running all five attempts — an S3 404 reports `ESP_FAIL` + `httpStatus 404` and fails after 1 attempt in 0.65 s; an unresolvable host reports `ESP_ERR_HTTP_CONNECT` + `httpStatus 0` and runs the full schedule. This found a real defect: the status was read in `HTTP_EVENT_ON_HEADER`, which runs before the client assigns it, so every refusal reported `-1` and the break never fired
+- [x] 6.5 Backoff timing verified at the real constants rather than shortened: 120 000, 240 000, 480 000 and 900 000 ms between attempts, the last being the 15 minute clamp. Shortened constants are used only for the throwaway recovery build, which is never committed
+- [x] 6.6 Confirm the AWS job's `timeoutConfig` exceeds the worst-case retry window — the dev jobs set `inProgressTimeoutInMinutes: 60` against a worst case of ~44 min of download plus the ~5 min validation window. It fits, but the margin is ~10 min: raising `OTA_DOWNLOAD_MAX_ATTEMPTS` or the cap without also raising the job timeout would make executions flip to `TIMED_OUT` before the device reports
+- [x] 6.8 Confirm the concurrent-job guard still holds over the widened window — this change stretches the OTA task's life from one download to ~44 min, during which MQTT reconnects re-deliver the still-`IN_PROGRESS` job. A second job injected mid-schedule was dropped before the `Received OTA Job` log line
+- [x] 6.9 Confirm a failed attempt followed by a successful one on the same URL completes the download and proceeds to the post-download flow — real AWS job `energyme-home-dev-ota-recovery-20260813-150046`, with a throwaway build forcing the first two attempts to fail. Attempts 1 and 2 failed at the 5 s and 10 s shortened delays, attempt 3 downloaded the image from the same presigned URL, and the job reported `SUCCEEDED`. This is the one behaviour the change exists for, and it cannot be staged without either forcing the failures or controlling the device's uplink
+- [ ] 6.7 Follow-up, not this PR: subscribe to `jobs/+/update/rejected`. An UpdateJobExecution rejection is still discarded silently, so the device would look locally successful while AWS shows nothing. The specific worry that motivated it is settled — AWS accepted all eight pairs in 6.3 — but the blind spot itself remains
+- [ ] 6.10 Follow-up, not this PR: `minFreeHeap` read 8128 bytes on the fifth attempt of the 29 min run, having been 32048 at the fourth. It is a since-boot watermark over a 31 min window rather than something the diff introduces, and `maxAlloc` recovered to 31732 between attempts throughout, so nothing here ratchets. Worth a look on its own
+
+## 8. Make the download path testable on hardware
+
+- [x] 8.1 Add a dev-only `POST /api/v1/ota/inject-job` that routes a synthetic job document through the same validate-and-handle path the broker RX uses, following the existing `inject-command` / `inject-delta` pattern. Without it the download failure modes could only be reached by minting real AWS jobs
+- [x] 8.2 Stage the injected payload onto the MQTT task rather than handling it inline: the caller is the web server task, and `_handleSingleJobExecution` publishes `IN_PROGRESS` on the shared, unsynchronised `PubSubClient`
+- [x] 8.3 Give it its own pending slot so an injected job and an injected command cannot evict each other
 
 ## 7. Review and merge
 
