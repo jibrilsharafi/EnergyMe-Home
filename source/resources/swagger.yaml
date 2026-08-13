@@ -218,18 +218,33 @@ paths:
                   currentMD5:
                     type: string
                     example: "ad1783afd0b38f856d5010921712e2ed"
+                  otherPartitionSha256:
+                    type: string
+                    nullable: true
+                    description: app_elf_sha256 fingerprint of the firmware in the passive OTA partition (the rollback target), or null when that slot holds no valid image. The device cannot know that firmware's version string; the fingerprint is its only identity.
+                    example: "e88e6af83cb101413dde8cdf267057ae60b23b2c019c7981a3dc8deaae3e60b3"
 
   /api/v1/ota/rollback:
     post:
       summary: Rollback firmware
-      description: Rollback to the previous firmware version
+      description: Switch the boot partition to the passive OTA slot and restart. The passive image is validated at switch time; the response reflects the actual outcome (no optimistic success).
       tags:
         - OTA Updates
       responses:
         '200':
           $ref: '#/components/responses/Success'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          description: No valid firmware in the other partition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '423':
+          description: Restart currently blocked (safe mode); boot partition unchanged
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   # System Management endpoints
   /api/v1/system/info:
