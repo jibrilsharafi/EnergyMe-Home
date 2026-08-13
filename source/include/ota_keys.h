@@ -29,12 +29,13 @@ constexpr const char* OTA_SIGNING_PUBLIC_KEY_PEM =
 "REPLACE_WITH_PRODUCTION_KMS_PUBLIC_KEY_PEM";
 #else
 // DEV/TEST KEY - dev builds only, never reaches a vendor device (those run
-// esp32s3-prod / ENV_PROD). Locally-generated P-256 keypair for bench testing;
-// the matching private key lives outside this repo. Test builds are signed with
-// it manually, mirroring the CI KMS signing step (tasks.md 1.3/1.4) 1:1.
+// esp32s3-prod / ENV_PROD). This is the public half of the dev AWS KMS signing
+// CMK (`alias/energyme-home-dev-ota-signing`); the private half never leaves KMS.
+// Dev releases are signed by the infra pipeline (`ota_release.py sign --env dev`),
+// mirroring the prod KMS signing step 1:1.
 constexpr const char* OTA_SIGNING_PUBLIC_KEY_PEM =
 "-----BEGIN PUBLIC KEY-----\n"
-"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEW7gKUMXauKdDy9ULgsHjHh1wkgJN\n"
-"KQhxRFCESqnrnnZiI2OAfWZ/+QMwFh1k61Z/t50C2pd5dr+1y9NbRn78TA==\n"
+"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEL30m5KjXuHbjc7Q36kt023IgGid7\n"
+"XH1V0oCPXF2ebIUSY+Pm/tIWXEhVA08SE7ROIwHFWdonsXY0lb3BgnOWww==\n"
 "-----END PUBLIC KEY-----\n";
 #endif
