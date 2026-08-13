@@ -145,6 +145,12 @@ namespace Mqtt
     // distinct from a plain download failure.
     static char _otaFailureReason[NAME_BUFFER_SIZE] = "download_failed";
 
+    // False once an attempt fails AFTER the download completed (signature or
+    // activation): those failures are deterministic for the same artifact, so
+    // retrying re-downloads ~4 MB to fail identically. The retry schedule in
+    // _otaTask breaks on it, same as the 4xx case.
+    static bool _otaFailureRetryable = true;
+
     // Thread safety
     static SemaphoreHandle_t _configMutex = nullptr;
 
@@ -1784,6 +1790,7 @@ namespace Mqtt
         // would otherwise inherit the previous attempt's counters.
         _otaAttempt = {};
         snprintf(_otaFailureReason, sizeof(_otaFailureReason), "download_failed"); // Default unless a later step overwrites it
+        _otaFailureRetryable = true;
 
         esp_http_client_config_t _httpConfig = {
             .url = _otaCurrentUrl,
@@ -1836,12 +1843,14 @@ namespace Mqtt
             if (result == ESP_OK && !_verifyOtaSignature(otaHandle)) {
                 // _verifyOtaSignature() has already set _otaFailureReason and logged the cause
                 result = ESP_FAIL;
+                _otaFailureRetryable = false;
                 esp_https_ota_abort(otaHandle);
             } else if (result == ESP_OK) {
                 result = esp_https_ota_finish(otaHandle);
                 if (result != ESP_OK) {
                     LOG_ERROR("OTA finish failed: %s (%d)", esp_err_to_name(result), result);
                     snprintf(_otaFailureReason, sizeof(_otaFailureReason), "finish_failed");
+                    _otaFailureRetryable = false;
                 }
             } else {
                 esp_https_ota_abort(otaHandle);
@@ -1916,6 +1925,14 @@ namespace Mqtt
                     "OTA download refused with HTTP %d - not retryable, abandoning schedule",
                     _otaAttempt.httpStatus
                 );
+                break;
+            }
+
+            // Post-download failures (signature, activation) are deterministic for
+            // the same artifact: the bytes were fully received and still rejected,
+            // so a retry re-downloads ~4 MB to fail the same way.
+            if (!_otaFailureRetryable) {
+                LOG_ERROR("OTA failed after complete download (%s) - not retryable, abandoning schedule", _otaFailureReason);
                 break;
             }
 
