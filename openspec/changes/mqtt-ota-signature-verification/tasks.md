@@ -47,3 +47,9 @@
 - [x] 8.3 Fixed a regression that would have broken every real OTA download: removed the `MAX_LOOP_ITERATIONS` counters added to the `esp_https_ota_perform` loop and the partition-hashing loop - `esp_http_client`'s default 512-byte RX buffer meant the perform loop would hit the 1000-iteration cap at ~500KB, far under this project's ~4.3MB OTA partitions. Both loops are already bounded by a real size variable, which is this project's own documented exemption from that convention.
 - [x] 8.4 Moved the 4KB SHA-256 chunk buffer from the OTA task's stack (~1/3 of `OTA_TASK_STACK_SIZE`) to a PSRAM buffer allocated once in `begin()`, matching the existing `_otaCurrentUrl` pattern.
 - [x] 8.5 Extracted a `parseDerInteger` helper in `lib/ota_signature/ota_signature.cpp` to remove duplicated DER-parsing code between the `r` and `s` integer fields (simplify-agent finding).
+
+## 9. Rebase onto development after #239/#240 (see design.md Decision 10)
+
+- [x] 9.1 Rebased onto development after the OTA download-hardening (#239) and firmware_rollback (#240) merges: re-integrated the granular `esp_https_ota_begin`/`perform`/verify/`finish`-or-`abort` sequence into #239's retry loop and `OtaAttempt` diagnostics (this also delivers #239's noted follow-up of switching off the one-shot call)
+- [x] 9.2 `_otaFailureReason` now rides in the FAILED job status together with #239's diagnostics and attempt count
+- [x] 9.3 Added `_otaFailureRetryable`: signature/activation failures after a complete download break the retry schedule instead of re-downloading the same artifact five times (mirrors #239's non-retryable 4xx handling)

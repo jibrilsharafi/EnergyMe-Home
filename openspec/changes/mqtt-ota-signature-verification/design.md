@@ -50,6 +50,9 @@ Both the `esp_https_ota_perform` loop and the partition-hashing loop initially h
 **9. The 4 KB SHA-256 chunk buffer is allocated once from PSRAM in `begin()`, not on the OTA task's stack - found during adversarial code review.**
 A stack-local buffer of that size would consume roughly a third of `OTA_TASK_STACK_SIZE` (12 KB) on top of `esp_https_ota`'s own TLS/HTTP buffers and the mbedtls contexts in the same call chain. Matches the existing `_otaCurrentUrl` PSRAM-allocation pattern in this same file.
 
+**10. Post-download failures abandon the retry schedule - added when rebasing onto the OTA download-hardening change (#239).**
+Development gained a 5-attempt exponential-backoff retry loop around `_performOtaUpdate` while this change was in review. A signature or activation failure after a complete download is deterministic for the same artifact - the bytes were fully received and still rejected - so retrying re-downloads ~4 MB to fail identically, five times over ~29 minutes. `_otaFailureRetryable` breaks the schedule for those failures, the same way #239's own 4xx check does for a refused URL. Download-phase failures (begin/perform/incomplete) stay retryable. The specific `_otaFailureReason` also rides in the FAILED status alongside #239's diagnostics (`withDiagnostics`/attempt count), so a signature failure and a heap-starved download remain distinguishable in the job status.
+
 ## Risks / Trade-offs
 
 - **[Risk]** KMS private key compromise is existential — no signature check helps if the signing key itself is stolen. → **Mitigation**: CI-only IAM role scoped to `kms:Sign` alone (key material never leaves KMS, unlike a file-based key); CloudTrail logs every signing operation. Key rotation tooling is a follow-up, not required for this change to be safe on day one.
