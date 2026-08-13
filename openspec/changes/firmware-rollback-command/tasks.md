@@ -15,7 +15,7 @@
 ## 3. Cloud command
 
 - [x] 3.1 Add `firmware_rollback` branch to `_handleCommandExecution` in mqtt.cpp: parse `expected_sha256` (string only), map decision outcomes to `MISSING_SHA256` / `NO_ROLLBACK_TARGET` / `TARGET_MISMATCH` (REJECTED), `ROLLBACK_FAILED` (FAILED), plain SUCCEEDED for both PROCEED and NOOP_ALREADY_DONE; publish SUCCEEDED before restart with the same 2 s flush as `restart`
-- [ ] 3.2 Verify via the dev inject harness (`POST /api/v1/shadow/inject-command`): all reject paths + no-op path on the bench device
+- [x] 3.2 Verified via the dev inject harness on bench device 588c81c479f8: MISSING_SHA256 (absent + malformed), TARGET_MISMATCH, ROLLBACK_FAILED vs a genuinely partial image, SUCCEEDED no-op redelivery - all statuses confirmed published in the DEBUG log; AWS echo-rejects for synthetic execution ids correctly ignored (no publish loop)
 
 ## 4. Local endpoint fix + reporting
 
@@ -32,8 +32,8 @@
 ## 6. Verification
 
 - [x] 6.1 `pio run -e esp32s3-dev` clean build; `pio check -e esp32s3-dev` no new findings (18 pre-existing HIGHs are cppcheck failing on vendored ArduinoJson macros); full native suite 510/510
-- [ ] 6.2 Hardware e2e on the bench device (Jibril): real OTA to populate both slots, then (a) local rollback via UI - lands on previous build, honest success; (b) cloud `firmware_rollback` with correct sha - switches; (c) redelivery of same command - SUCCEEDED no-op, no second switch; (d) wrong sha - TARGET_MISMATCH; (e) info shadow and /api/v1/ota/status both show the passive sha before and after; (f) check `uxTaskGetStackHighWaterMark` on the MQTT task after exercising the command (the branch adds ~130 B of buffers + a 256 B esp_app_desc_t frame on a task with ~1 KB headroom)
-- [ ] 6.3 Confirm the abandoned OTA job receives `FAILED` (`sha256_mismatch_firmware_rollback`) after a rollback performed while `ota_pending` was set (stage an OTA, roll back inside the validation window, check the job status after reboot)
+- [x] 6.2 Hardware e2e on bench device 588c81c479f8 (2026-08-13): two distinct builds OTA'd into the slots (A=4994..., B=b793...); (a) local rollback via REST - 200, landed on the other build, response intact; (b) cloud `firmware_rollback` with correct sha - switched app1->app0, SUCCEEDED published pre-reboot; (c) redelivery - SUCCEEDED no-op, no second switch; (d) wrong sha - REJECTED; (e) `otherPartitionSha256` byte-identical to the sha extracted from the release .bin at offset 0xB0, null + canRollback=false mid-upload; (f) MQTT task minimumFreeStack floor 820 B unchanged by the command path, zero crashes across all reboots. Bonus from a naturally failed upload: partial image in the passive slot -> local 400 / cloud ROLLBACK_FAILED (ESP_ERR_OTA_VALIDATE_FAILED), and the 423 early-gate fired within the post-boot uptime window with no ghost restart afterwards. UI click-through not automated (confirm() blocks browser automation); REST path covers the endpoint
+- [x] 6.3 Verified: seeded the pending-OTA record via the dev NVS endpoint (expected sha = running image), rolled back, and after the reboot the validation task published `FAILED` for the job to the real AWS jobs topic; record cleared afterwards
 
 ## 7. Spec sync + PR
 
