@@ -143,7 +143,7 @@ namespace Mqtt
     // the start of every _performOtaUpdate() call, overwritten at specific
     // failure points (e.g. "signature_invalid") so _otaTask can publish a reason
     // distinct from a plain download failure.
-    static char _otaFailureReason[NAME_BUFFER_SIZE] = "download_failed";
+    static char _otaFailureReason[NAME_BUFFER_SIZE] = "";
 
     // False once an attempt fails AFTER the download completed (signature or
     // activation): those failures are deterministic for the same artifact, so
@@ -1601,13 +1601,11 @@ namespace Mqtt
     // arrives, so ON_DATA and ON_FINISH never fire for exactly the case that needs
     // it most.
     //
-    // This is a workaround for the event-based API, not the only way to get the
-    // status: esp_https_ota_get_status_code() exists and can be read once, but only
-    // against the handle from the granular esp_https_ota_begin/perform/finish
-    // sequence - not the one-shot esp_https_ota() this file calls. Switching to
-    // that sequence would let this whole function go away, at the cost of owning
-    // the read loop this file currently delegates. Not done here; the one-shot call
-    // is the form this PR's retry loop was built and hardware-tested against.
+    // esp_https_ota_get_status_code() cannot replace this even though the granular
+    // begin/perform/finish sequence is now in use: a refused response (403/404)
+    // fails esp_https_ota_begin() itself, which explicitly NULLs the handle on
+    // error (per its header docs), so there is no handle left to query for exactly
+    // the failure this status exists to distinguish.
     //
     // Only a positive value is stored: 0 then means "no response was ever parsed"
     // (e.g. the host was never reachable), and later events refresh it, so a
@@ -1691,10 +1689,10 @@ namespace Mqtt
         // bounded by a size variable".
         mbedtls_sha256_context shaCtx;
         mbedtls_sha256_init(&shaCtx);
-        mbedtls_sha256_starts(&shaCtx, 0); // 0 = SHA-256 (not the SHA-224 variant)
+        int shaRet = mbedtls_sha256_starts(&shaCtx, 0); // 0 = SHA-256 (not the SHA-224 variant)
 
         size_t offset = 0;
-        while (offset < (size_t)imageLen) {
+        while (shaRet == 0 && offset < (size_t)imageLen) {
             size_t chunkSize = std::min((size_t)OTA_SIGNATURE_HASH_CHUNK_SIZE, (size_t)imageLen - offset);
             esp_err_t readErr = esp_partition_read(update_partition, offset, _otaHashChunkBuffer, chunkSize);
             if (readErr != ESP_OK) {
@@ -1704,13 +1702,20 @@ namespace Mqtt
                 return false;
             }
 
-            mbedtls_sha256_update(&shaCtx, _otaHashChunkBuffer, chunkSize);
+            shaRet = mbedtls_sha256_update(&shaCtx, _otaHashChunkBuffer, chunkSize);
             offset += chunkSize;
         }
 
         uint8_t digest[32];
-        mbedtls_sha256_finish(&shaCtx, digest);
+        if (shaRet == 0) shaRet = mbedtls_sha256_finish(&shaCtx, digest);
         mbedtls_sha256_free(&shaCtx);
+        if (shaRet != 0) {
+            // A backend fault would fail verification anyway (wrong digest), but
+            // report it as what it is rather than as a bad signature.
+            LOG_ERROR("SHA-256 computation failed: -0x%04X", -shaRet);
+            snprintf(_otaFailureReason, sizeof(_otaFailureReason), "hash_error");
+            return false;
+        }
 
         mbedtls_pk_context pk;
         mbedtls_pk_init(&pk);
@@ -1752,7 +1757,7 @@ namespace Mqtt
                 snprintf(_otaFailureReason, sizeof(_otaFailureReason), "version_read_error");
                 return false;
             }
-            if (compareVersions(FIRMWARE_BUILD_VERSION, new_app_desc.version) >= 0) {
+            if (!OtaSignature::isStrictUpgrade(FIRMWARE_BUILD_VERSION, new_app_desc.version)) {
                 LOG_WARNING(
                     "Signed firmware's actual version '%s' is not newer than running '%s' - rejecting (possible downgrade replay)",
                     new_app_desc.version, FIRMWARE_BUILD_VERSION);
@@ -1789,7 +1794,7 @@ namespace Mqtt
         // Reset per attempt: a retry whose response carries no Content-Length
         // would otherwise inherit the previous attempt's counters.
         _otaAttempt = {};
-        snprintf(_otaFailureReason, sizeof(_otaFailureReason), "download_failed"); // Default unless a later step overwrites it
+        snprintf(_otaFailureReason, sizeof(_otaFailureReason), "download_failed");
         _otaFailureRetryable = true;
 
         esp_http_client_config_t _httpConfig = {
@@ -1834,7 +1839,7 @@ namespace Mqtt
                 result = esp_https_ota_perform(otaHandle);
             } while (result == ESP_ERR_HTTPS_OTA_IN_PROGRESS);
 
-            if (result == ESP_OK && !esp_https_ota_is_complete_data_read(otaHandle)) {
+            if (result == ESP_OK && !esp_https_ota_is_complete_data_received(otaHandle)) {
                 LOG_ERROR("OTA download incomplete (connection closed early)");
                 snprintf(_otaFailureReason, sizeof(_otaFailureReason), "incomplete_download");
                 result = ESP_FAIL;
@@ -1863,6 +1868,12 @@ namespace Mqtt
             LOG_INFO("OTA update downloaded, signature verified, and activated (not yet post-reboot validated)");
             return true;
         }
+
+        // The heap/HTTP diagnostics below explain DOWNLOAD failures (OOM, 403,
+        // truncation). A post-download rejection already logged its specific
+        // cause, and sampling here would report a meaningless "HTTP 200, all
+        // bytes received" plus recovered-heap figures.
+        if (!_otaFailureRetryable) return false;
 
         // Sampled on the failure path only, and before returning rather than
         // after the retry loop unwinds: by then the heap has recovered and the
