@@ -1788,6 +1788,28 @@ namespace Mqtt
         }
     }
 
+    // A rejected image must not remain bootable in the passive slot. Both the
+    // firmware_rollback cloud command and CrashMonitor's crash rollback switch the
+    // boot partition to whatever sits there, gated only by esp_image_verify - a
+    // structural check that a well-formed-but-unsigned image passes. Without this,
+    // an attacker who can forge job documents downloads a malicious image (rejected
+    // by the signature check, but fully written to flash), then issues a
+    // firmware_rollback with that image's sha256 and boots it anyway - a complete
+    // bypass of signature verification. Erasing the first sector destroys the image
+    // magic/header, so any later activation attempt fails validation instead.
+    // Nothing of value is lost: the download already overwrote the previous
+    // firmware that made the slot a legitimate rollback target.
+    static void _scrubRejectedOtaImage() {
+        const esp_partition_t* update_partition = esp_ota_get_next_update_partition(NULL);
+        if (!update_partition) return;
+        esp_err_t err = esp_partition_erase_range(update_partition, 0, OTA_PARTITION_SCRUB_SIZE);
+        if (err != ESP_OK) {
+            LOG_ERROR("Failed to scrub rejected OTA image header: %s", esp_err_to_name(err));
+        } else {
+            LOG_INFO("Scrubbed rejected OTA image header from passive partition");
+        }
+    }
+
     static bool _performOtaUpdate() {
         LOG_DEBUG("Starting OTA update from URL: %.100s...", _otaCurrentUrl); // Truncate long URLs in logs
 
@@ -1839,6 +1861,13 @@ namespace Mqtt
                 result = esp_https_ota_perform(otaHandle);
             } while (result == ESP_ERR_HTTPS_OTA_IN_PROGRESS);
 
+            // Captured while the handle is still valid (abort/finish free it):
+            // decides below whether the passive slot was actually written and so
+            // needs scrubbing on failure. A failure before any byte arrived (DNS,
+            // TLS, 403) leaves the previous firmware intact there - still a
+            // legitimate rollback target that must NOT be destroyed.
+            int bytesWritten = esp_https_ota_get_image_len_read(otaHandle);
+
             if (result == ESP_OK && !esp_https_ota_is_complete_data_received(otaHandle)) {
                 LOG_ERROR("OTA download incomplete (connection closed early)");
                 snprintf(_otaFailureReason, sizeof(_otaFailureReason), "incomplete_download");
@@ -1860,6 +1889,8 @@ namespace Mqtt
             } else {
                 esp_https_ota_abort(otaHandle);
             }
+
+            if (result != ESP_OK && bytesWritten > 0) _scrubRejectedOtaImage();
         }
 
         _otaAttempt.error = result;
