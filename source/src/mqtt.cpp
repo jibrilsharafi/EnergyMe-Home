@@ -1534,7 +1534,11 @@ namespace Mqtt
             .max_http_request_size = 0
         };
 
-        // Perform OTA without validating the partition (allows rollback if new firmware crashes)
+        // Note: there is no bootloader-level rollback protection for the new image.
+        // initArduino() calls esp_ota_mark_app_valid_cancel_rollback() before setup()
+        // runs (no verifyOta/verifyRollbackLater override in this project), so a crash
+        // in setup() or later is covered only by CrashMonitor's application-level
+        // rollback, not by the bootloader.
         esp_err_t result = esp_https_ota(&_otaConfig);
 
         if (result == ESP_OK) {
@@ -2864,7 +2868,10 @@ namespace Mqtt
             return;
         }
 
-        // Monitor for stability period (here we just wait, rollback will occur automatically on failure)
+        // Monitor for stability period. This wait is telemetry-only: the image was
+        // already marked valid by initArduino() before setup(), so no bootloader
+        // rollback fires on failure - a crash during this window is handled by
+        // CrashMonitor's application-level rollback instead.
         while (millis64() - validationStartTime < OTA_VALIDATION_TIMEOUT) {
             char otaRemainingHuman[DURATION_FORMAT_BUFFER_SIZE];
             DurationFormat::humanizeDuration(OTA_VALIDATION_TIMEOUT + validationStartTime - millis64(), otaRemainingHuman, sizeof(otaRemainingHuman));
