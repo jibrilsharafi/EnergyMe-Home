@@ -79,8 +79,11 @@ The LED SHALL support the following patterns, each rendered from the layer's col
 | `blink_fast` | 250 ms on, 250 ms off |
 | `pulse` | Smooth fade up over 1000 ms, fade down over 1000 ms |
 | `double_blink` | 100 ms on, 100 ms off, 100 ms on, then 900 ms off |
+| `disco` | Continuously lit; the colour changes every 120 ms to a pseudo-random choice, ignoring the layer's colour |
 
 A pattern's phase SHALL start when the indication is set on its layer, and SHALL be sampled often enough that no on or off segment of any supported pattern is skipped or visibly mistimed.
+
+The `disco` colour sequence SHALL be a deterministic function of the indication's seed and the elapsed time since it was set, so the same seed always produces the same sequence. Consecutive colour choices SHALL differ from one another, so every step is visible. `disco` SHALL never render dark, and SHALL be reported as lit for its whole duration.
 
 #### Scenario: Pattern phase restarts on set
 
@@ -96,6 +99,31 @@ A pattern's phase SHALL start when the indication is set on its layer, and SHALL
 
 - **WHEN** a fast-blinking indication is displayed
 - **THEN** each on and off segment lasts 250 ms within the sampling tolerance of the renderer, and no segment is skipped
+
+#### Scenario: Disco is reproducible
+
+- **WHEN** two `disco` indications are set with the same seed and sampled at the same elapsed times
+- **THEN** they produce the identical colour sequence
+
+#### Scenario: Different seeds diverge
+
+- **WHEN** two `disco` indications are set with different seeds and sampled at the same elapsed times
+- **THEN** their colour sequences differ
+
+#### Scenario: Disco holds a colour for one step
+
+- **WHEN** a `disco` indication is sampled repeatedly within the same 120 ms step and then in the next step
+- **THEN** the colour is constant within the step and different in the next one
+
+#### Scenario: Disco ignores the requested colour
+
+- **WHEN** a `disco` indication is set with colour `{0, 0, 0}`
+- **THEN** the LED is lit throughout, and never renders dark
+
+#### Scenario: Disco obeys configured brightness
+
+- **WHEN** a `disco` indication is displayed at a configured brightness of 50%
+- **THEN** each colour in the sequence is scaled by 50%, exactly as `solid` would be
 
 ### Requirement: Brightness
 
@@ -137,6 +165,8 @@ An indication on the `critical` or `alert` layer SHALL be rendered at no less th
 
 The device SHALL expose `GET /api/v1/led` returning the currently rendered indication: its pattern, its RGB colour, the name of the owning layer, the remaining duration in milliseconds (or null when indefinite), whether the LED is currently lit, and the configured brightness.
 
+The reported colour SHALL be the colour being shown at that moment, not the colour that was requested. For `disco` this is the colour of the current step.
+
 When no layer is occupied, the response SHALL report pattern `off` and a null owning layer.
 
 If the current indication cannot be determined, the request SHALL fail with HTTP 503. It SHALL NOT report the LED as off, because a caller cannot tell a wrong answer from a real one.
@@ -161,9 +191,20 @@ If the current indication cannot be determined, the request SHALL fail with HTTP
 - **WHEN** `GET /api/v1/led/brightness` is called
 - **THEN** it returns the brightness document, not the LED state document
 
+#### Scenario: Reading disco
+
+- **WHEN** `GET /api/v1/led` is called while disco is running
+- **THEN** the response reports pattern `disco`, layer `user`, a non-null remaining duration, `is_lit` true, and the colour of the current step
+
 ### Requirement: User-controlled LED via API
 
-The device SHALL expose `PUT /api/v1/led/color`, which sets the `user` layer from a JSON body containing `red`, `green` and `blue` (integers 0-255, required), an optional `pattern` (defaulting to `solid`), and an optional `duration_ms` (0 or absent meaning indefinite).
+The device SHALL expose `PUT /api/v1/led/color`, which sets the `user` layer from a JSON body containing `red`, `green` and `blue` (integers 0-255), an optional `pattern` (defaulting to `solid`), an optional `duration_ms` (0 or absent meaning indefinite), and an optional `seed` (integer 0 to 4294967295).
+
+`red`, `green` and `blue` SHALL be required for every pattern except `disco`, which chooses its own colours and SHALL accept a body without them. When they are supplied alongside `disco` they SHALL be ignored.
+
+For `pattern` of `disco`, `duration_ms` SHALL default to 15000 ms when absent or 0, and SHALL be clamped to a maximum of 60000 ms. Disco SHALL NOT run indefinitely. `seed` SHALL select the colour sequence; when absent the device SHALL choose a seed that varies between requests, so repeated calls do not replay the same sequence.
+
+`seed` SHALL be ignored by every other pattern.
 
 The device SHALL expose `DELETE /api/v1/led/color`, which releases the `user` layer.
 
@@ -206,6 +247,26 @@ The `user` layer SHALL NOT be persisted across reboots.
 - **WHEN** a user colour is set and the device restarts
 - **THEN** the `user` layer is unoccupied
 
+#### Scenario: Starting disco with no other fields
+
+- **WHEN** `PUT /api/v1/led/color` is called with `{"pattern": "disco"}`
+- **THEN** the request succeeds and the LED runs disco on the `user` layer for 15000 ms, after which the layer is released
+
+#### Scenario: Disco duration is capped
+
+- **WHEN** `PUT /api/v1/led/color` is called with `{"pattern": "disco", "duration_ms": 600000}`
+- **THEN** the request succeeds and the indication is released after 60000 ms
+
+#### Scenario: Disco is interruptible
+
+- **WHEN** `DELETE /api/v1/led/color` is called while disco is running
+- **THEN** the LED immediately returns to whatever layer is occupied beneath `user`
+
+#### Scenario: Out-of-range seed is rejected
+
+- **WHEN** `PUT /api/v1/led/color` is called with a negative or non-integer `seed`
+- **THEN** the request is rejected with HTTP 400 and the `user` layer is unchanged
+
 ### Requirement: LED endpoint authorisation
 
 `GET /api/v1/led`, `PUT /api/v1/led/color` and `DELETE /api/v1/led/color` SHALL be subject to the same authentication and rate limiting as the existing LED brightness endpoints.
@@ -225,4 +286,29 @@ The shadow's reported `system` object is republished whenever it drifts from the
 
 - **WHEN** the LED changes indication repeatedly while the device is otherwise idle
 - **THEN** no shadow update is published as a result
+
+### Requirement: Disco mode is reachable from the web interface
+
+The web interface SHALL offer a control that starts disco mode on the `user` layer for a fixed 10000 ms, on the same page as the LED brightness control. The browser SHALL NOT send a seed, so repeated activations differ.
+
+While the indication is running the control SHALL indicate that it is running and SHALL NOT be re-triggerable, and it SHALL become available again once the duration has elapsed.
+
+For the same duration, the page SHALL darken and cycle through tinted colours, so the browser reflects what the device is doing. This effect SHALL NOT intercept pointer input, SHALL change colour no more than 3 times per second, and SHALL hold a static tint when the viewer has asked for reduced motion.
+
+A failure to start SHALL be reported to the user and SHALL leave the control available, and SHALL NOT start the page effect.
+
+#### Scenario: Starting disco from the browser
+
+- **WHEN** the user activates the disco control
+- **THEN** the device runs disco for 10000 ms, the page darkens and cycles colours for the same period, and the control is unavailable until it ends
+
+#### Scenario: The page effect does not block the page
+
+- **WHEN** the page effect is running
+- **THEN** every control on the page remains clickable
+
+#### Scenario: Disco control recovers from an error
+
+- **WHEN** the request to start disco fails
+- **THEN** an error is shown, the page effect does not start, and the control is immediately available again
 
