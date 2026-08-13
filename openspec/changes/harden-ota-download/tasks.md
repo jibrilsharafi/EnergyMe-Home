@@ -11,8 +11,8 @@ Each numbered group is one commit. Run the applicable tests before committing ea
 
 ## 2. Remove the dead pause/resume API
 
-- [ ] 2.1 Delete `Ade7953::pauseTasks()` and `Ade7953::resumeTasks()` from `source/src/ade7953.cpp:562-582` and their declarations at `source/include/ade7953.h:619-620`
-- [ ] 2.2 Confirm by grep that no callers remain anywhere under `source/`, then run `pio run`
+- [x] 2.1 Delete `Ade7953::pauseTasks()` and `Ade7953::resumeTasks()` from `source/src/ade7953.cpp:562-582` and their declarations at `source/include/ade7953.h:619-620`
+- [x] 2.2 Confirm by grep that no callers remain anywhere under `source/`, then run `pio run`
 
 ## 3. Suppress non-essential MQTT publishes during the download window
 

@@ -615,10 +615,6 @@ namespace Ade7953
      */
     void writeRegister(uint16_t registerAddress, uint8_t nBits, int32_t data, bool isVerificationRequired = true);
 
-    // Task control
-    void pauseTasks();
-    void resumeTasks();
-
     // Configuration management
     void getConfiguration(Ade7953Configuration &config);
     bool setConfiguration(const Ade7953Configuration &config);

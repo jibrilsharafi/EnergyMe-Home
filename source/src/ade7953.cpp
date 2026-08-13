@@ -556,31 +556,6 @@ namespace Ade7953
         );
     }
 
-    // Task control
-    // ============
-
-    void pauseTasks() {
-        LOG_DEBUG("Pausing ADE7953 tasks...");
-
-        _detachInterruptHandler();
-        if (_meterReadingTaskHandle != NULL) vTaskSuspend(_meterReadingTaskHandle);
-        if (_energySaveTaskHandle != NULL) vTaskSuspend(_energySaveTaskHandle);
-        if (_hourlyCsvSaveTaskHandle != NULL) vTaskSuspend(_hourlyCsvSaveTaskHandle);
-
-        LOG_INFO("ADE7953 tasks suspended");
-    }
-
-    void resumeTasks() {
-        LOG_DEBUG("Resuming ADE7953 tasks...");
-
-        if (_meterReadingTaskHandle != NULL) vTaskResume(_meterReadingTaskHandle);
-        if (_energySaveTaskHandle != NULL) vTaskResume(_energySaveTaskHandle);
-        if (_hourlyCsvSaveTaskHandle != NULL) vTaskResume(_hourlyCsvSaveTaskHandle);
-        _attachInterruptHandler();
-
-        LOG_INFO("ADE7953 tasks resumed");
-    }
-
     // Configuration management
     // ========================
 
