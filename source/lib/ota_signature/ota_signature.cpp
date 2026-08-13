@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "ota_signature.h"
+#include "version_compare.h"
 #include <cstring>
 
 namespace OtaSignature {
@@ -102,6 +103,13 @@ bool decodeAndValidate(const char *base64Signature, uint8_t *outDer, size_t outC
 
     outLen = decodedLen;
     return true;
+}
+
+bool isStrictUpgrade(const char *runningVersion, const char *imageVersion) {
+    // compare() returns >0 if the first argument is newer - the image must be
+    // strictly newer than what is running, so equal (a replayed identical
+    // build) rejects too.
+    return VersionCompare::compare(imageVersion, runningVersion) > 0;
 }
 
 }  // namespace OtaSignature

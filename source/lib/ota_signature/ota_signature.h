@@ -39,4 +39,12 @@ constexpr size_t MAX_BASE64_SIGNATURE_INPUT_LEN = 104;
 // than outCapacity, or doesn't have the shape of a DER ECDSA signature.
 bool decodeAndValidate(const char *base64Signature, uint8_t *outDer, size_t outCapacity, size_t &outLen);
 
+// The downgrade-replay gate applied AFTER cryptographic verification, to the
+// version actually embedded in the verified image (not the job document's
+// unauthenticated claim): true iff imageVersion is strictly newer than
+// runningVersion. Malformed/null versions degrade to "0.0.0" (see
+// lib/version_compare), so a garbage embedded version is rejected, never
+// accepted. The job document's `force` bypasses this at the call site.
+bool isStrictUpgrade(const char *runningVersion, const char *imageVersion);
+
 }  // namespace OtaSignature

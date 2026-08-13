@@ -11,7 +11,6 @@
 // (tasks.md 6.3-6.5), not by these host tests.
 
 #include <unity.h>
-#include <cstring>
 #include "ota_signature.h"
 
 using namespace OtaSignature;
@@ -156,6 +155,40 @@ void test_output_capacity_too_small_rejected(void) {
 }
 
 // ============================================================================
+// isStrictUpgrade - the post-verification downgrade-replay gate. These pin the
+// comparison DIRECTION and argument order (running first, image second): a
+// silent swap in a refactor would turn the anti-replay gate into its opposite.
+// ============================================================================
+
+void test_strict_upgrade_newer_image_allowed(void) {
+    TEST_ASSERT_TRUE(OtaSignature::isStrictUpgrade("2.3.3", "2.4.0"));
+    TEST_ASSERT_TRUE(OtaSignature::isStrictUpgrade("2.3.3", "2.3.4"));
+    TEST_ASSERT_TRUE(OtaSignature::isStrictUpgrade("2.3.3", "3.0.0"));
+}
+
+void test_strict_upgrade_equal_version_rejected(void) {
+    // A replayed identical build is not an upgrade
+    TEST_ASSERT_FALSE(OtaSignature::isStrictUpgrade("2.4.0", "2.4.0"));
+}
+
+void test_strict_upgrade_older_image_rejected(void) {
+    TEST_ASSERT_FALSE(OtaSignature::isStrictUpgrade("2.4.0", "2.3.3"));
+    TEST_ASSERT_FALSE(OtaSignature::isStrictUpgrade("2.4.0", "1.9.9"));
+}
+
+void test_strict_upgrade_malformed_image_version_rejected(void) {
+    // Garbage embedded version degrades to 0.0.0 and must reject, never accept
+    TEST_ASSERT_FALSE(OtaSignature::isStrictUpgrade("2.4.0", "garbage"));
+    TEST_ASSERT_FALSE(OtaSignature::isStrictUpgrade("2.4.0", ""));
+    TEST_ASSERT_FALSE(OtaSignature::isStrictUpgrade("2.4.0", nullptr));
+}
+
+void test_strict_upgrade_v_prefix_handled(void) {
+    TEST_ASSERT_TRUE(OtaSignature::isStrictUpgrade("v2.3.3", "v2.4.0"));
+    TEST_ASSERT_FALSE(OtaSignature::isStrictUpgrade("v2.4.0", "v2.4.0"));
+}
+
+// ============================================================================
 // Runner
 // ============================================================================
 
@@ -180,6 +213,12 @@ int main(int argc, char **argv) {
     RUN_TEST(test_oversized_but_structurally_valid_der_rejected);
 
     RUN_TEST(test_output_capacity_too_small_rejected);
+
+    RUN_TEST(test_strict_upgrade_newer_image_allowed);
+    RUN_TEST(test_strict_upgrade_equal_version_rejected);
+    RUN_TEST(test_strict_upgrade_older_image_rejected);
+    RUN_TEST(test_strict_upgrade_malformed_image_version_rejected);
+    RUN_TEST(test_strict_upgrade_v_prefix_handled);
 
     return UNITY_END();
 }
