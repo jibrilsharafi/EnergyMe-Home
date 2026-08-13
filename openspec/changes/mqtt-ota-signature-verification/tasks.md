@@ -30,7 +30,7 @@
 
 ## 6. Tests
 
-- [x] 6.1 Added native/Unity unit tests (`test/test_ota_signature/`) for the job-document signature field parsing/validation logic (missing/empty/null field, malformed base64, malformed DER shape - wrong tag, truncated/overclaimed length, zero-length integer, missing second integer, oversized-but-well-formed, output-capacity-too-small). Extracted into host-compilable `lib/ota_signature/` (mirrors the existing `lib/version_compare/` pattern). 14/14 pass under `pio test -e native` (verified via WSL).
+- [x] 6.1 Added native/Unity unit tests (`test/test_ota_signature/`) for the job-document signature field parsing/validation logic (missing/empty/null field, malformed base64, malformed DER shape - wrong tag, truncated/overclaimed length, zero-length integer, missing second integer, oversized-but-well-formed, output-capacity-too-small). Extracted into host-compilable `lib/ota_signature/` (mirrors the existing `lib/version_compare/` pattern). Later extended with `isStrictUpgrade` gate tests and `lib/sha256_hex/` tests (see group 11); full native suite passes under `pio test -e native` (verified via WSL).
 - [ ] 6.2 ~~Native/Unity unit tests for the mbedtls verify wrapper~~ **Descoped from native testing**: this codebase has no existing precedent for linking mbedtls into the `native`/host test environment (no lib/test currently depends on it), and `_verifyOtaSignature`'s cryptographic step (`mbedtls_pk_verify`, `esp_partition_read`) is ESP32/ESP-IDF-only code with no host-portable path without adding new native toolchain dependencies untested in this session. Covered instead by the hardware/e2e tests below, consistent with "test later on a dev device."
 - [ ] 6.3 Hardware/e2e test (requires bench device + a real signed test build, using the dev/test key in `ota_keys.h`): confirm a validly-signed OTA job installs and boots normally
 - [ ] 6.4 Hardware/e2e test: confirm a job with a tampered/invalid signature is rejected, the device does not reboot into the new partition, and the running firmware is unaffected
@@ -53,3 +53,17 @@
 - [x] 9.1 Rebased onto development after the OTA download-hardening (#239) and firmware_rollback (#240) merges: re-integrated the granular `esp_https_ota_begin`/`perform`/verify/`finish`-or-`abort` sequence into #239's retry loop and `OtaAttempt` diagnostics (this also delivers #239's noted follow-up of switching off the one-shot call)
 - [x] 9.2 `_otaFailureReason` now rides in the FAILED job status together with #239's diagnostics and attempt count
 - [x] 9.3 Added `_otaFailureRetryable`: signature/activation failures after a complete download break the retry schedule instead of re-downloading the same artifact five times (mirrors #239's non-retryable 4xx handling)
+
+## 10. Final review sweep after the rebase (adversarial + simplify agents, findings reproduced before acceptance)
+
+- [x] 10.1 **Build-breaking typo**: `esp_https_ota_is_complete_data_read` does not exist in ESP-IDF - renamed to `esp_https_ota_is_complete_data_received` (verified against the pinned toolchain header). The branch had never been target-compiled before this sweep; `pio run -e esp32s3-dev` now succeeds
+- [x] 10.2 Rewrote the now-false `_captureOtaHttpStatus` comment (it said the granular API "is not used here"); kept the function itself - `esp_https_ota_get_status_code()` cannot replace it because a 403/404 fails `esp_https_ota_begin()` which NULLs the handle, so there is no handle to query for exactly the case the status distinguishes (verified against the v5.5.1 header/lib)
+- [x] 10.3 Skip the heap/HTTP failure diagnostics for post-download (non-retryable) failures - they describe download failures and would report a meaningless "HTTP 200, all bytes received" for a signature rejection
+- [x] 10.4 Check `mbedtls_sha256_starts/update/finish` return values (`hash_error` reason) instead of discarding them - fails safe either way, but reports a backend fault as what it is rather than as a bad signature
+- [x] 10.5 Dead `"download_failed"` initializer on `_otaFailureReason` (always reset per attempt) and redundant trailing comment removed; unused `<cstring>` include dropped from the signature tests
+- [x] 10.6 Skipped (informational): `_otaHashChunkBuffer` is intentionally never freed in `stop()` - allocated-once pattern, reused across begin/stop cycles
+
+## 11. Host-testable extraction of sha256/version logic (requested after review)
+
+- [x] 11.1 Extracted `sha256BytesToHex` from `utils.cpp` into new `lib/sha256_hex/` (pure, dependency-free); `utils.cpp` keeps a forwarder (same pattern as #239's backoff extraction) plus a `static_assert` tying `SHA256_HEX_BUFFER_SIZE` to `Sha256Hex::BUFFER_SIZE`. 7 new native tests (known vectors, nibble order/lowercase, canary overwrite check, undersized/null rejection)
+- [x] 11.2 Extracted the post-verification downgrade gate into `OtaSignature::isStrictUpgrade(running, image)` - pins the comparison direction and argument order in host tests (5 new: newer/equal/older/malformed-degrades-to-reject/v-prefix). `force` bypass stays at the call site. The mbedtls verify itself remains ESP-only (native env has no mbedtls; unchanged descope, see 6.2)
