@@ -6,31 +6,52 @@ Defines how the firmware behaves once an OTA download has started: what other ne
 
 ### Requirement: Non-essential MQTT publishes are suppressed during the OTA download
 
-While an OTA download is in progress, the system SHALL withhold all non-essential MQTT publishes: meter, grid, energy, system-dynamic, statistics, crash, and the OTA jobs request. The system SHALL keep the AWS IoT MQTT session connected and serviced throughout, and SHALL continue to publish OTA job execution status updates. Suppression SHALL end when the download window ends, whether it succeeded, failed, or was abandoned, and withheld publish requests SHALL be honoured after the window rather than discarded.
+While an OTA download is in progress, the system SHALL withhold every routine MQTT publish: meter, grid, energy, system-dynamic, statistics, crash, the OTA jobs request, queued device logs, and device shadow updates. It SHALL also withhold the periodic checks that decide whether those publishes are due, so that a suppressed publish does not cause its own condition to be re-evaluated, re-logged, and re-queued on every task cycle.
+
+The system SHALL continue, throughout the window, to service the AWS IoT MQTT session so it stays connected and keeps receiving inbound messages, to publish alarms, which are safety-critical, to publish OTA job execution status updates, and to process inbound device commands so an operator can intervene during a long retry schedule.
+
+Suppression SHALL end when the OTA download task terminates, whether the download succeeded, failed, or was abandoned, and SHALL NOT end earlier than the task's own final status publish.
 
 #### Scenario: Meter publish falls due during a download
 
 - **WHEN** the meter publish interval elapses while an OTA download is in progress
-- **THEN** no meter message is published, and the meter publish remains pending
+- **THEN** no meter message is published
 
-#### Scenario: Withheld publishes resume after a failed download
+#### Scenario: Log publishing does not continue during a download
 
-- **WHEN** an OTA download ends in failure and publishes were withheld during it
-- **THEN** the pending publishes are published on the next publish cycle
+- **WHEN** log entries are queued while an OTA download is in progress
+- **THEN** they are not published, and the act of suppressing other publishes does not itself generate further log entries on each task cycle
+
+#### Scenario: Alarm still published while suppressed
+
+- **WHEN** a safety-critical alarm is raised while an OTA download is in progress
+- **THEN** the alarm is published without waiting for the download to end
 
 #### Scenario: Job status still reported while suppressed
 
 - **WHEN** the system reports OTA job execution status while a download is in progress
 - **THEN** the status update is published normally, unaffected by suppression
 
-#### Scenario: Telemetry gap on a successful download
+#### Scenario: Inbound command still processed while suppressed
 
-- **WHEN** an OTA download succeeds and the device reboots to validate the new firmware
-- **THEN** telemetry withheld during the download window is not published, and this gap is bounded by the duration of the download window
+- **WHEN** a device command arrives while an OTA download is in progress
+- **THEN** it is processed rather than deferred until the window ends
+
+#### Scenario: Publishing resumes once the download task ends
+
+- **WHEN** an OTA download ends in failure
+- **THEN** routine publishing resumes, and it does not resume before the task has published its final job status
+
+#### Scenario: Queued telemetry beyond queue capacity is lost, not deferred
+
+- **WHEN** an OTA download window lasts longer than the meter or grid queue can buffer
+- **THEN** the oldest queued points are dropped by those queues rather than published later, and the drop is counted in the existing dropped-point statistics
 
 ### Requirement: Failed OTA downloads are retried on an exponential backoff
 
-The system SHALL attempt the OTA download up to 5 times before reporting the job execution as `FAILED`. Between attempts it SHALL wait an exponentially increasing delay, starting at 2 minutes, doubling each attempt, and capped at 15 minutes, giving delays of 2, 4, 8 and 15 minutes and a cumulative wait of 29 minutes. The system SHALL NOT abandon the download early on a time budget; if the presigned URL expires mid-schedule, the remaining attempts SHALL run and fail normally, reporting the resulting error. A retry SHALL reuse the presigned URL from the job document without requesting a new one. On the first attempt that succeeds, the system SHALL stop retrying and proceed with the existing post-download flow unchanged.
+The system SHALL attempt the OTA download up to 5 times before reporting the job execution as `FAILED`. Between attempts it SHALL wait an exponentially increasing delay, starting at 2 minutes, doubling each attempt, and capped at 15 minutes, giving delays of 2, 4, 8 and 15 minutes and a cumulative wait of 29 minutes. The system SHALL NOT abandon the schedule on an elapsed-time budget. A retry SHALL reuse the presigned URL from the job document without requesting a new one. On the first attempt that succeeds, the system SHALL stop retrying and proceed with the existing post-download flow unchanged.
+
+The system SHALL stop retrying early, and report the failure immediately, when the server refused the request with a 4xx HTTP status, since that outcome cannot change on a later attempt with the same URL. It SHALL also stop retrying when the MQTT module is shutting down. A restart of the MQTT task on its own, such as a cloud-services configuration change, SHALL NOT abandon the schedule.
 
 #### Scenario: First attempt succeeds
 
@@ -49,8 +70,13 @@ The system SHALL attempt the OTA download up to 5 times before reporting the job
 
 #### Scenario: Presigned URL expires partway through the schedule
 
-- **WHEN** the presigned URL expires before the retry schedule is exhausted
-- **THEN** the remaining attempts still run, fail, and the reported error reflects the expiry rather than a heap condition
+- **WHEN** an attempt is refused with a 4xx status because the presigned URL has expired
+- **THEN** the remaining attempts are abandoned and the failure is reported immediately, carrying the HTTP status that identifies the expiry
+
+#### Scenario: MQTT task restarts during a backoff wait
+
+- **WHEN** the MQTT task is stopped and started again, without the module being shut down, while a backoff wait is in progress
+- **THEN** the retry schedule continues rather than being abandoned
 
 #### Scenario: Publishes stay suppressed across the whole retry schedule
 
@@ -59,7 +85,9 @@ The system SHALL attempt the OTA download up to 5 times before reporting the job
 
 ### Requirement: A failed OTA download reports device-side diagnostics
 
-When reporting an OTA job execution as `FAILED` after a download failure, the system SHALL include device-side diagnostics that cannot be derived server-side, as discrete name-value pairs in the job execution status details: the platform error name from the failing download call, download progress in bytes received against total content length, free internal heap, minimum free internal heap, largest contiguous internal allocation, the number of attempts made, device uptime, and WiFi signal strength. Values SHALL be captured at the moment the final attempt fails, not after the retry loop unwinds. The existing `reason` detail SHALL retain its current value so existing consumers are unaffected. The system SHALL NOT include data the job already carries or that is derivable server-side, such as the target firmware version, its checksum, the job identifier, or the device identifier.
+When reporting an OTA job execution as `FAILED` after a download failure, the system SHALL include device-side diagnostics that cannot be derived server-side, as discrete name-value pairs in the job execution status details: the platform error name from the failing download call, the HTTP status of the response, download progress in bytes received against total content length, the internal-heap figures (free, minimum free, and largest contiguous allocation), the number of attempts made, device uptime, and WiFi signal strength. Values SHALL be captured at the moment the final attempt fails, not after the retry loop unwinds. The existing `reason` detail SHALL retain its current value so existing consumers are unaffected. The number of pairs SHALL stay within the job service's limit with headroom. The system SHALL NOT include data the job already carries or that is derivable server-side, such as the target firmware version, its checksum, the job identifier, or the device identifier.
+
+Because the platform's download call reports every 4xx and 5xx response as the same generic error, the HTTP status SHALL be the field that distinguishes a server refusal from a transport or memory failure. Byte progress SHALL be reported only for a response that actually carried firmware; for any other response the system SHALL report progress as unavailable rather than describing the error body's length as a completed download.
 
 #### Scenario: Download fails from internal heap exhaustion
 
@@ -70,6 +98,11 @@ When reporting an OTA job execution as `FAILED` after a download failure, the sy
 
 - **WHEN** the final download attempt fails because the host could not be resolved or connected
 - **THEN** the `FAILED` status details carry a platform error name distinguishing this from a heap failure
+
+#### Scenario: Download refused with an error status
+
+- **WHEN** the download is refused with a 4xx or 5xx response
+- **THEN** the `FAILED` status details carry that HTTP status, and progress is reported as unavailable rather than as a completed transfer
 
 #### Scenario: Existing reason value preserved
 

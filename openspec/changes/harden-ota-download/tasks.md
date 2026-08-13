@@ -51,6 +51,8 @@ Each numbered group is one commit. Run the applicable tests before committing ea
 - [ ] 6.4 Confirm from the same run that `espError` distinguishes the unreachable-host failure from an allocation failure
 - [ ] 6.5 Shorten the backoff constants temporarily if the full 29 minute schedule makes 6.3 impractical, and restore them before committing
 - [ ] 6.6 Confirm the AWS job's `timeoutConfig`, if set, exceeds the worst-case retry window, so an execution cannot flip to `TIMED_OUT` before the device reports
+- [ ] 6.7 Measure `maxAlloc` during a download with and without publish suppression. The per-publish internal-RAM saving may be far smaller than assumed: publish bodies are PSRAM and the only internal allocation on that path is a 256 B BufferingPrint, while the 16-20 KB dip that motivated this was measured on core 3.3.11 with WiFi/LWIP in internal RAM. If the delta is negligible on 55.03.32, reconsider whether suppression earns the telemetry loss
+- [ ] 6.8 Consider subscribing to `jobs/+/update/rejected`: an UpdateJobExecution rejection (pair-count limit, or an execution already TIMED_OUT) is currently discarded silently, so the device would look locally successful while AWS shows nothing
 
 ## 7. Review and merge
 
