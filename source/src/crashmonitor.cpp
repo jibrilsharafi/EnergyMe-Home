@@ -105,6 +105,11 @@ namespace CrashMonitor
         }
     }
 
+    void markRollbackTried() {
+        LOG_DEBUG("Marking rollback as tried (deliberate rollback in progress)");
+        _rollbackTried = true;
+    }
+
     bool isInSafeMode() {
         return _safeModeActive;
     }

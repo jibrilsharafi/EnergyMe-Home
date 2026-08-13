@@ -256,6 +256,12 @@ namespace Mqtt
     void saveTransientLogLevel(int level);   // persist active transient level (no-op if unchanged)
     void clearTransientLogLevel();           // clear the marker (revert / persistent set)
     int  getTransientLogLevel();             // persisted transient level, or -1 if none
+    // Clear the pending-OTA validation record (ota_pending/ota_job_id/ota_sha256).
+    // Called by the firmware rollback paths before restart: a stale record would
+    // otherwise publish a spurious sha256-mismatch FAILED for the unrelated job
+    // after the rollback reboot.
+    void clearOtaPendingState();
+
     bool getSendPowerData();
     void setSendPowerData(bool enabled);     // persisted
     bool getSendGridData();

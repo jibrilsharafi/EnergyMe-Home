@@ -559,6 +559,8 @@ namespace Mqtt
         prefs.end();
     }
 
+    void clearOtaPendingState() { _clearOtaPendingState(); }
+
     int getTransientLogLevel() {
         Preferences prefs;
         if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) return -1;

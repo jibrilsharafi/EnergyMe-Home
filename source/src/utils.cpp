@@ -713,6 +713,79 @@ bool setRestartSystem(const char* reason, bool factoryReset) {
     return true;
 }
 
+// Firmware rollback (#237)
+// -----------------------------
+
+static bool _getPartitionSha256(const esp_partition_t* partition, char* out, size_t outSize) {
+    if (!partition || !out || outSize < SHA256_HEX_BUFFER_SIZE) return false;
+
+    esp_app_desc_t desc;
+    if (esp_ota_get_partition_description(partition, &desc) != ESP_OK) return false;
+
+    for (size_t i = 0; i < sizeof(desc.app_elf_sha256); i++) {
+        snprintf(&out[i * 2], 3, "%02x", desc.app_elf_sha256[i]);
+    }
+    return true;
+}
+
+bool getRunningPartitionSha256(char* out, size_t outSize) {
+    return _getPartitionSha256(esp_ota_get_running_partition(), out, outSize);
+}
+
+bool getOtherPartitionSha256(char* out, size_t outSize) {
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    const esp_partition_t* passive = esp_ota_get_next_update_partition(NULL);
+    if (!passive || passive == running) return false;
+    return _getPartitionSha256(passive, out, outSize);
+}
+
+FirmwareRollbackResult attemptFirmwareRollback(const char* reason) {
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    const esp_partition_t* passive = esp_ota_get_next_update_partition(NULL);
+    if (!passive || passive == running) {
+        LOG_ERROR("Rollback: no passive OTA partition found");
+        return FirmwareRollbackResult::NO_TARGET;
+    }
+
+    esp_app_desc_t desc;
+    if (esp_ota_get_partition_description(passive, &desc) != ESP_OK) {
+        LOG_ERROR("Rollback: passive partition %s has no readable app descriptor", passive->label);
+        return FirmwareRollbackResult::NO_TARGET;
+    }
+
+    // The real gate: esp_ota_set_boot_partition runs full image_validate on the
+    // target and refuses a partial/corrupt image with ESP_ERR_OTA_VALIDATE_FAILED.
+    esp_err_t err = esp_ota_set_boot_partition(passive);
+    if (err != ESP_OK) {
+        LOG_ERROR("Rollback: esp_ota_set_boot_partition(%s) failed: %s", passive->label, esp_err_to_name(err));
+        return FirmwareRollbackResult::INVALID_IMAGE;
+    }
+
+    if (!setRestartSystem(reason)) {
+        // setRestartSystem holds a refused restart rather than cancelling it, so
+        // the switch must be undone or that held restart would silently execute
+        // the rollback after we report failure.
+        esp_err_t restoreErr = esp_ota_set_boot_partition(running);
+        if (restoreErr != ESP_OK) {
+            // Practically unreachable (the running image validated at boot); if it
+            // happens the next reboot boots the passive slot despite the failure report.
+            LOG_FATAL("Rollback: failed to restore boot partition %s: %s", running->label, esp_err_to_name(restoreErr));
+        }
+        LOG_WARNING("Rollback: restart refused, boot partition restored to %s", running->label);
+        return FirmwareRollbackResult::RESTART_BLOCKED;
+    }
+
+    // Restart is scheduled (graceful shutdown in progress). Disarm the crash-driven
+    // auto-rollback so it cannot bounce straight back to the image the operator just
+    // left, and drop the pending-OTA record so its validation task cannot publish a
+    // spurious sha256-mismatch FAILED for an unrelated job after the reboot.
+    CrashMonitor::markRollbackTried();
+    Mqtt::clearOtaPendingState();
+
+    LOG_WARNING("Rollback: boot partition switched to %s, restarting", passive->label);
+    return FirmwareRollbackResult::SUCCESS;
+}
+
 // Print functions
 // -----------------------------
 

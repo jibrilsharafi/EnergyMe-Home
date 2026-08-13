@@ -112,6 +112,7 @@ namespace CrashMonitor {
 
     void clearConsecutiveCrashCount(); // Useful for avoiding crash loops (e.g. during factory reset)
     void clearRollbackTried(); // Re-arm rollback eligibility: call after stable operation, and after every successful OTA flash (new partition contents = new image, deserves its own rollback chance)
+    void markRollbackTried(); // Deliberate (manual/cloud) rollback in progress: prevents the crash-driven auto-rollback from immediately switching back to the image the operator just left. Undo with clearRollbackTried() if the rollback is aborted.
 
     // Safe mode protection
     bool isInSafeMode(); // Returns true if device is in safe mode (rapid restart protection)

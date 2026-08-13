@@ -185,6 +185,33 @@ TaskInfo getMaintenanceTaskInfo();
 
 // System restart and maintenance
 bool setRestartSystem(const char* reason, bool factoryReset = false);
+
+// Firmware rollback: boot the passive OTA partition without a download (#237).
+// esp_app_desc_t.version is a frozen arduino-lib-builder constant on this
+// toolchain, so app_elf_sha256 is the only per-build identity a partition has.
+enum class FirmwareRollbackResult {
+    SUCCESS,         // boot partition switched, restart scheduled
+    NO_TARGET,       // passive slot has no readable app descriptor
+    INVALID_IMAGE,   // esp_ota_set_boot_partition rejected the passive image
+                     // (its internal image_validate failed, e.g. partial download)
+    RESTART_BLOCKED, // switch succeeded but restart refused: boot partition was
+                     // restored to the running slot so the held restart cannot
+                     // silently execute the rollback after a failure report
+};
+
+#define SHA256_HEX_BUFFER_SIZE 65 // 64 hex chars + NUL (app_elf_sha256)
+
+// 64-hex app_elf_sha256 of a slot's app descriptor. Return false when the
+// descriptor is unreadable (erased/partial slot). Buffers must be >= 65 bytes.
+bool getRunningPartitionSha256(char* out, size_t outSize);
+bool getOtherPartitionSha256(char* out, size_t outSize);
+
+// Switch the boot partition to the passive slot and restart. Validation is
+// esp_ota_set_boot_partition's own image_validate - deliberately NOT
+// Update.canRollBack(), whose only check is flash[0] == 0xE9 (true even for a
+// half-downloaded image). On success, marks the crash monitor's rollback-tried
+// state and clears the pending-OTA validation record before the restart.
+FirmwareRollbackResult attemptFirmwareRollback(const char* reason);
 inline const char* getResetReasonString(esp_reset_reason_t reason) {
     switch (reason) {
         case ESP_RST_UNKNOWN: return "Unknown";
