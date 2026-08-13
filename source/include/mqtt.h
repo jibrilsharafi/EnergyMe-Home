@@ -53,17 +53,12 @@
 // that from the moment the download starts. Delays are 2, 4, 8 and 15 min
 // (the fourth doubling is clamped), i.e. 29 min of waiting; with the attempts
 // themselves the worst case lands near 44 min, leaving ~15 min of margin.
-// Deliberately no elapsed-time guard on the total: esp_https_ota() collapses
-// every 4xx/5xx into a bare ESP_FAIL, so the expiry is identified by the HTTP
-// status captured from the response headers instead, and a 4xx breaks out of
-// the schedule rather than spending the remaining attempts on a dead URL.
+// There is deliberately no elapsed-time guard on the total; see _otaTask for
+// how a URL that has expired mid-schedule is detected and cut short instead.
 #define OTA_DOWNLOAD_MAX_ATTEMPTS 5
 #define OTA_DOWNLOAD_RETRY_INITIAL_INTERVAL (2 * 60 * 1000)
 #define OTA_DOWNLOAD_RETRY_MAX_INTERVAL (15 * 60 * 1000)
 #define OTA_DOWNLOAD_RETRY_MULTIPLIER 2
-// Backoff waits are slept in slices so a shutdown notification is picked up
-// promptly instead of after a delay that can reach OTA_DOWNLOAD_RETRY_MAX_INTERVAL.
-#define OTA_DOWNLOAD_RETRY_SLEEP_SLICE (1 * 1000)
 // Widest value is "<bytes>/<bytes>"; AWS caps a statusDetails value at 1024.
 #define OTA_STATUS_DETAIL_VALUE_BUFFER_SIZE 24
 
