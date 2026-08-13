@@ -15,8 +15,10 @@ static_assert(SHA256_HEX_BUFFER_SIZE == RollbackLogic::SHA256_HEX_LEN + 1,
 #include "mqtt_grid_schedule.h"
 #include "mqtt_energy_publish_gate.h"
 #include "crash_archive_policy.h"
+#include "backoff_schedule.h"
 #include "mbedtls/base64.h"
 #include <algorithm>
+#include <atomic>
 
 namespace Mqtt
 {
@@ -101,6 +103,11 @@ namespace Mqtt
     static TaskHandle_t _otaTaskHandle = nullptr;
     static TaskHandle_t _otaValidationTaskHandle = nullptr;
     static bool _otaRebootPending = false;
+
+    // Written by the OTA task, read by the MQTT task on every publish cycle, so
+    // it is atomic rather than a plain bool. A mutex would be the wrong tool for
+    // a single flag on the publish path.
+    static std::atomic<bool> _otaDownloadInProgress{false};
 
     // Thread safety
     static SemaphoreHandle_t _configMutex = nullptr;
@@ -2101,6 +2108,14 @@ namespace Mqtt
     }
 
     static void _checkPublishMqtt() {
+        // An OTA download needs a contiguous internal-RAM block for its own TLS
+        // session while ours is already holding one. Every publish here adds a
+        // transient allocation on that same heap, so they are withheld for the
+        // download window. The request flags stay set, so nothing that fell due
+        // is lost - it fires on the first cycle after the window. OTA job status
+        // is published directly from the OTA task and does not pass through here.
+        if (_otaDownloadInProgress.load(std::memory_order_relaxed)) return;
+
         if (_publishMqtt.meter) {_publishMeter();}
         if (_publishMqtt.grid) {_publishGrid();}
         if (_publishMqtt.energy) {_publishEnergy();}

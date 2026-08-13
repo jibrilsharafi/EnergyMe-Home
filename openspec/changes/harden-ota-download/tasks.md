@@ -16,11 +16,11 @@ Each numbered group is one commit. Run the applicable tests before committing ea
 
 ## 3. Suppress non-essential MQTT publishes during the download window
 
-- [ ] 3.1 Add OTA-in-progress state to the MQTT module as an atomic boolean, safe for the OTA task to write and the MQTT task to read without a mutex
-- [ ] 3.2 Gate the body of `_checkPublishMqtt` (`source/src/mqtt.cpp:2051`) on that flag so meter, grid, energy, systemDynamic, statistics, crash and requestOta are all withheld while it is set, leaving the `_publishMqtt.*` request flags set so withheld publishes fire on the next cycle after the window
-- [ ] 3.3 Confirm `_publishOtaStatus` is unaffected, since it is called directly from `_otaTask` and does not route through `_checkPublishMqtt`
-- [ ] 3.4 Confirm the MQTT task still runs `_clientMqtt.loop()` and stays connected and subscribed while suppressed, so inbound job messages and commands keep flowing
-- [ ] 3.5 Run `pio run`
+- [x] 3.1 Add OTA-in-progress state to the MQTT module as an atomic boolean, safe for the OTA task to write and the MQTT task to read without a mutex
+- [x] 3.2 Gate the body of `_checkPublishMqtt` (`source/src/mqtt.cpp:2051`) on that flag so meter, grid, energy, systemDynamic, statistics, crash and requestOta are all withheld while it is set, leaving the `_publishMqtt.*` request flags set so withheld publishes fire on the next cycle after the window
+- [x] 3.3 Confirm `_publishOtaStatus` is unaffected, since it is called directly from `_otaTask` and does not route through `_checkPublishMqtt`
+- [x] 3.4 Confirm the MQTT task still runs `_clientMqtt.loop()` and stays connected and subscribed while suppressed, so inbound job messages and commands keep flowing
+- [x] 3.5 Run `pio run`
 
 ## 4. Retry the download on an exponential backoff
 
