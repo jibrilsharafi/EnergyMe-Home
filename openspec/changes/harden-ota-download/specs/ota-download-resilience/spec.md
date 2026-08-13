@@ -1,51 +1,8 @@
 ## Purpose
 
-Defines how the firmware behaves once an OTA download has started: what other network traffic the device suppresses to protect the download, how many times and on what schedule a failed download is retried, and what diagnostic detail a failed job execution reports back to AWS IoT.
+Defines how the firmware behaves when an OTA download fails: how many times and on what schedule the download is retried, when retrying is abandoned as pointless, and what diagnostic detail a failed job execution reports back to AWS IoT.
 
 ## ADDED Requirements
-
-### Requirement: Non-essential MQTT publishes are suppressed during the OTA download
-
-While an OTA download is in progress, the system SHALL withhold every routine MQTT publish: meter, grid, energy, system-dynamic, statistics, crash, the OTA jobs request, queued device logs, and device shadow updates. It SHALL also withhold the periodic checks that decide whether those publishes are due, so that a suppressed publish does not cause its own condition to be re-evaluated, re-logged, and re-queued on every task cycle.
-
-The system SHALL continue, throughout the window, to service the AWS IoT MQTT session so it stays connected and keeps receiving inbound messages, to publish alarms, which are safety-critical, to publish OTA job execution status updates, and to process inbound device commands so an operator can intervene during a long retry schedule.
-
-Suppression SHALL end when the OTA download task terminates, whether the download succeeded, failed, or was abandoned, and SHALL NOT end earlier than the task's own final status publish.
-
-#### Scenario: Meter publish falls due during a download
-
-- **WHEN** the meter publish interval elapses while an OTA download is in progress
-- **THEN** no meter message is published
-
-#### Scenario: Log publishing does not continue during a download
-
-- **WHEN** log entries are queued while an OTA download is in progress
-- **THEN** they are not published, and the act of suppressing other publishes does not itself generate further log entries on each task cycle
-
-#### Scenario: Alarm still published while suppressed
-
-- **WHEN** a safety-critical alarm is raised while an OTA download is in progress
-- **THEN** the alarm is published without waiting for the download to end
-
-#### Scenario: Job status still reported while suppressed
-
-- **WHEN** the system reports OTA job execution status while a download is in progress
-- **THEN** the status update is published normally, unaffected by suppression
-
-#### Scenario: Inbound command still processed while suppressed
-
-- **WHEN** a device command arrives while an OTA download is in progress
-- **THEN** it is processed rather than deferred until the window ends
-
-#### Scenario: Publishing resumes once the download task ends
-
-- **WHEN** an OTA download ends in failure
-- **THEN** routine publishing resumes, and it does not resume before the task has published its final job status
-
-#### Scenario: Queued telemetry beyond queue capacity is lost, not deferred
-
-- **WHEN** an OTA download window lasts longer than the meter or grid queue can buffer
-- **THEN** the oldest queued points are dropped by those queues rather than published later, and the drop is counted in the existing dropped-point statistics
 
 ### Requirement: Failed OTA downloads are retried on an exponential backoff
 
@@ -77,11 +34,6 @@ The system SHALL stop retrying early, and report the failure immediately, when t
 
 - **WHEN** the MQTT task is stopped and started again, without the module being shut down, while a backoff wait is in progress
 - **THEN** the retry schedule continues rather than being abandoned
-
-#### Scenario: Publishes stay suppressed across the whole retry schedule
-
-- **WHEN** the system is waiting between download attempts
-- **THEN** non-essential MQTT publishes remain suppressed until the final attempt resolves
 
 ### Requirement: A failed OTA download reports device-side diagnostics
 

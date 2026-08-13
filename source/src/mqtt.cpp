@@ -18,7 +18,6 @@ static_assert(SHA256_HEX_BUFFER_SIZE == RollbackLogic::SHA256_HEX_LEN + 1,
 #include "backoff_schedule.h"
 #include "mbedtls/base64.h"
 #include <algorithm>
-#include <atomic>
 
 namespace Mqtt
 {
@@ -103,11 +102,6 @@ namespace Mqtt
     static TaskHandle_t _otaTaskHandle = nullptr;
     static TaskHandle_t _otaValidationTaskHandle = nullptr;
     static bool _otaRebootPending = false;
-
-    // Written by the OTA task, read by the MQTT task on every publish cycle, so
-    // it is atomic rather than a plain bool. A mutex would be the wrong tool for
-    // a single flag on the publish path.
-    static std::atomic<bool> _otaDownloadInProgress{false};
 
     // One download attempt: the counters the HTTP event handler fills in as it
     // goes, and the outcome stamped on once the call returns. Shared rather than
@@ -1620,14 +1614,9 @@ namespace Mqtt
         return true;
     }
 
-    // Every exit from _otaTask goes through here. vTaskDelete() does not return,
-    // so a scope guard cannot be relied on to clear the suppression flag, and
-    // leaving it set would silence the device's telemetry until the next reboot.
-    // Clearing it here rather than straight after the retry loop also keeps the
-    // MQTT task's queued publish burst from colliding with the OTA task's own
-    // status publish on the shared, unsynchronised PubSubClient.
+    // Single exit for _otaTask, which has five of them. vTaskDelete() does not
+    // return, so a scope guard cannot do this job.
     static void _finishOtaTask() {
-        _otaDownloadInProgress.store(false, std::memory_order_relaxed);
         _otaTaskHandle = nullptr;
         vTaskDelete(nullptr);
     }
@@ -1635,7 +1624,6 @@ namespace Mqtt
     static void _otaTask(void* parameter) {
         LOG_DEBUG("OTA task started");
 
-        _otaDownloadInProgress.store(true, std::memory_order_relaxed);
         _probeOtaHost();
 
         bool otaSuccess = false;
@@ -2818,29 +2806,6 @@ namespace Mqtt
 
         // Process queues and publishing. Alarm goes first, ahead of routine logs.
         _processAlarmQueue();
-
-        // An OTA download needs a contiguous internal-RAM block for its own TLS
-        // session while ours is already holding one, so every routine publish is
-        // withheld for the download window. The gate sits above the whole publish
-        // section rather than inside _checkPublishMqtt(): the log queue publishes
-        // one MQTT message per entry, and the _checkIfPublish*Needed() checks log
-        // (and so publish) on every 100 ms tick for as long as their condition
-        // stays true, which it does while the publishers that clear it are held
-        // off. Gating only the publishers turned a quiet window into a log storm.
-        //
-        // Deliberately still running: _clientMqtt.loop() above, so the session
-        // stays connected and inbound job messages keep flowing; the alarm queue,
-        // which is safety-critical; and _drainPendingCommand() below, so a remote
-        // operator can still intervene during a long retry schedule.
-        //
-        // Note this only holds off *new* publishes. The meter and grid queues keep
-        // filling and are drop-oldest, so a long retry schedule does lose queued
-        // points - see the telemetry-gap trade-off in the change's design.md.
-        if (_otaDownloadInProgress.load(std::memory_order_relaxed)) {
-            _drainPendingCommand();
-            return;
-        }
-
         _processLogQueue();
         _checkIfPublishMeterNeeded();
         _checkIfPublishGridNeeded();

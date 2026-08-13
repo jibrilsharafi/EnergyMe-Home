@@ -14,14 +14,6 @@ Each numbered group is one commit. Run the applicable tests before committing ea
 - [x] 2.1 Delete `Ade7953::pauseTasks()` and `Ade7953::resumeTasks()` from `source/src/ade7953.cpp:562-582` and their declarations at `source/include/ade7953.h:619-620`
 - [x] 2.2 Confirm by grep that no callers remain anywhere under `source/`, then run `pio run`
 
-## 3. Suppress non-essential MQTT publishes during the download window
-
-- [x] 3.1 Add OTA-in-progress state to the MQTT module as an atomic boolean, safe for the OTA task to write and the MQTT task to read without a mutex
-- [x] 3.2 Gate the body of `_checkPublishMqtt` (`source/src/mqtt.cpp:2051`) on that flag so meter, grid, energy, systemDynamic, statistics, crash and requestOta are all withheld while it is set, leaving the `_publishMqtt.*` request flags set so withheld publishes fire on the next cycle after the window
-- [x] 3.3 Confirm `_publishOtaStatus` is unaffected, since it is called directly from `_otaTask` and does not route through `_checkPublishMqtt`
-- [x] 3.4 Confirm the MQTT task still runs `_clientMqtt.loop()` and stays connected and subscribed while suppressed, so inbound job messages and commands keep flowing
-- [x] 3.5 Run `pio run`
-
 ## 4. Retry the download on an exponential backoff
 
 - [x] 4.1 Add constants to `source/include/mqtt.h` for max attempts (5), initial backoff (2 min), max backoff (15 min) and multiplier (2), each with a comment tying the schedule to the 60 minute presigned-URL lifetime
@@ -46,13 +38,12 @@ Each numbered group is one commit. Run the applicable tests before committing ea
 ## 6. Verify on hardware
 
 - [ ] 6.1 Flash the bench device and confirm a normal OTA job still succeeds end to end with no regression to job status reporting or the reboot-and-validate flow
-- [ ] 6.2 Confirm over the UDP log that meter, grid, energy, statistics and crash publishes stop for the download window and resume afterwards, and that the MQTT session stays connected throughout
-- [ ] 6.3 Using a dev build, run an OTA job with a deliberately unreachable host to exercise the full retry schedule, then confirm the `FAILED` job execution in AWS carries all eight `statusDetails` keys with sensible values
-- [ ] 6.4 Confirm from the same run that `espError` distinguishes the unreachable-host failure from an allocation failure
+- [ ] 6.2 Confirm over the UDP log that telemetry, logs and shadow updates keep flowing normally for the whole retry schedule, since nothing is suppressed any more
+- [ ] 6.3 Using a dev build, run an OTA job with a deliberately unreachable host to exercise the full retry schedule, then confirm the `FAILED` job execution in AWS carries all eight `statusDetails` keys (reason, espError, httpStatus, progress, heapFreeMinMax, attempts, uptime, rssi) with sensible values
+- [ ] 6.4 Confirm from the same run that `httpStatus` is what separates a server refusal from a transport failure, since `espError` reports bare `ESP_FAIL` for every 4xx/5xx, and that a simulated 4xx breaks the schedule instead of running all five attempts
 - [ ] 6.5 Shorten the backoff constants temporarily if the full 29 minute schedule makes 6.3 impractical, and restore them before committing
 - [ ] 6.6 Confirm the AWS job's `timeoutConfig`, if set, exceeds the worst-case retry window, so an execution cannot flip to `TIMED_OUT` before the device reports
-- [ ] 6.7 Measure `maxAlloc` during a download with and without publish suppression. The per-publish internal-RAM saving may be far smaller than assumed: publish bodies are PSRAM and the only internal allocation on that path is a 256 B BufferingPrint, while the 16-20 KB dip that motivated this was measured on core 3.3.11 with WiFi/LWIP in internal RAM. If the delta is negligible on 55.03.32, reconsider whether suppression earns the telemetry loss
-- [ ] 6.8 Consider subscribing to `jobs/+/update/rejected`: an UpdateJobExecution rejection (pair-count limit, or an execution already TIMED_OUT) is currently discarded silently, so the device would look locally successful while AWS shows nothing
+- [ ] 6.7 Consider subscribing to `jobs/+/update/rejected`: an UpdateJobExecution rejection (pair-count limit, or an execution already TIMED_OUT) is currently discarded silently, so the device would look locally successful while AWS shows nothing
 
 ## 7. Review and merge
 
