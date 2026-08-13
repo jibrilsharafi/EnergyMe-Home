@@ -62,6 +62,8 @@
 // Backoff waits are slept in slices so a shutdown notification is picked up
 // promptly instead of after a delay that can reach OTA_DOWNLOAD_RETRY_MAX_INTERVAL.
 #define OTA_DOWNLOAD_RETRY_SLEEP_SLICE (1 * 1000)
+// Widest value is "<bytes>/<bytes>"; AWS caps a statusDetails value at 1024.
+#define OTA_STATUS_DETAIL_VALUE_BUFFER_SIZE 24
 
 // OTA validation constants
 #define OTA_VALIDATION_TASK_NAME "ota_validation_task"

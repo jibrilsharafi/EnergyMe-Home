@@ -35,13 +35,13 @@ Each numbered group is one commit. Run the applicable tests before committing ea
 
 ## 5. Report device-side diagnostics on failure
 
-- [ ] 5.1 Extend `_publishOtaStatus` (`source/src/mqtt.cpp:2747`) to accept optional diagnostic details and emit them as sibling keys of `reason` in `statusDetails`, leaving `reason` unchanged and every existing call site working as before
-- [ ] 5.2 Render each value into a small `char` buffer with `snprintf`, since `statusDetails` is a string-to-string map, and keep every key within 128 chars matching `[a-zA-Z0-9:_-]+` and every value within 1024 chars and free of control characters
-- [ ] 5.3 Populate `espError`, `progress`, `freeHeap`, `minFreeHeap`, `maxAlloc`, `attempts`, `uptime` and `rssi` on the download-failure path only
-- [ ] 5.4 Sample the heap figures immediately after the failing `esp_https_ota()` returns inside the retry loop, not after the loop unwinds, so they describe the moment of failure
-- [ ] 5.5 Confirm the other `FAILED` reasons (`partition_error`, `sha256_read_error`, `preferences_error`, `sha256_mismatch_firmware_rollback`) report exactly as before
-- [ ] 5.6 Add a DEBUG log line with the same heap figures before and after each attempt, so the same data is visible over the UDP log without waiting for the job status
-- [ ] 5.7 Run `pio run`
+- [x] 5.1 Extend `_publishOtaStatus` (`source/src/mqtt.cpp:2747`) to accept optional diagnostic details and emit them as sibling keys of `reason` in `statusDetails`, leaving `reason` unchanged and every existing call site working as before
+- [x] 5.2 Render each value into a small `char` buffer with `snprintf`, since `statusDetails` is a string-to-string map, and keep every key within 128 chars matching `[a-zA-Z0-9:_-]+` and every value within 1024 chars and free of control characters
+- [x] 5.3 Populate `espError`, `progress`, `freeHeap`, `minFreeHeap`, `maxAlloc`, `attempts`, `uptime` and `rssi` on the download-failure path only
+- [x] 5.4 Sample the heap figures immediately after the failing `esp_https_ota()` returns inside the retry loop, not after the loop unwinds, so they describe the moment of failure
+- [x] 5.5 Confirm the other `FAILED` reasons (`partition_error`, `sha256_read_error`, `preferences_error`, `sha256_mismatch_firmware_rollback`) report exactly as before
+- [x] 5.6 Add a DEBUG log line with the same heap figures before and after each attempt, so the same data is visible over the UDP log without waiting for the job status
+- [x] 5.7 Run `pio run`
 
 ## 6. Verify on hardware
 

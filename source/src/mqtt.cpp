@@ -202,7 +202,8 @@ namespace Mqtt
     // OTA validation functions (clearOtaPendingState is public, declared in mqtt.h)
     static void _otaValidationTask(void* parameter);
     static void _checkPendingOtaValidation();
-    static void _publishOtaStatus(const char* jobId, const char* status, const char* reason);
+    static void _publishOtaStatus(const char* jobId, const char* status, const char* reason,
+                                  const OtaAttemptResult* diagnostics = nullptr, uint8_t attemptsMade = 0);
 
     // Publishing functions
     static void _publishMeter();
@@ -1611,8 +1612,10 @@ namespace Mqtt
                 return false;
             }
 
-            uint64_t slice = delayMs - waited;
-            if (slice > OTA_DOWNLOAD_RETRY_SLEEP_SLICE) slice = OTA_DOWNLOAD_RETRY_SLEEP_SLICE;
+            uint64_t remaining = delayMs - waited;
+            uint32_t slice = remaining > OTA_DOWNLOAD_RETRY_SLEEP_SLICE
+                                 ? OTA_DOWNLOAD_RETRY_SLEEP_SLICE
+                                 : static_cast<uint32_t>(remaining);
             delay(slice);
             waited += slice;
         }
@@ -1639,6 +1642,13 @@ namespace Mqtt
             );
 
             otaSuccess = _performOtaUpdate(attemptResult);
+
+            LOG_DEBUG(
+                "Heap after attempt %u: free %lu, minFree %lu, maxAlloc %lu (%zu/%zu bytes)",
+                attempt, attemptResult.freeHeap, attemptResult.minFreeHeap, attemptResult.maxAlloc,
+                attemptResult.bytesReceived, attemptResult.contentLength
+            );
+
             if (otaSuccess || attempt == OTA_DOWNLOAD_MAX_ATTEMPTS) break;
 
             uint64_t backoffDelay = BackoffSchedule::delayForAttempt(
@@ -1712,10 +1722,12 @@ namespace Mqtt
 
             setRestartSystem("OTA download complete, rebooting for validation");
         } else {
-            LOG_ERROR("OTA download failed for job %s.", _otaCurrentJobId);
-            
-            // Publish failure status immediately
-            _publishOtaStatus(_otaCurrentJobId, "FAILED", "download_failed");
+            LOG_ERROR("OTA download failed for job %s after %u attempts.", _otaCurrentJobId, attemptsMade);
+
+            // Publish failure status immediately. `reason` keeps its original
+            // value so existing consumers are unaffected; the detail that makes
+            // the failure diagnosable rides alongside it.
+            _publishOtaStatus(_otaCurrentJobId, "FAILED", "download_failed", &attemptResult, attemptsMade);
         }
 
         // Clean up
@@ -2894,7 +2906,8 @@ namespace Mqtt
         prefs.end();
     }
 
-    static void _publishOtaStatus(const char* jobId, const char* status, const char* reason) {
+    static void _publishOtaStatus(const char* jobId, const char* status, const char* reason,
+                                  const OtaAttemptResult* diagnostics, uint8_t attemptsMade) {
         if (!jobId || !status || !reason) return;
 
         char partialTopic[MQTT_TOPIC_BUFFER_SIZE];
@@ -2907,6 +2920,38 @@ namespace Mqtt
         JsonDocument doc(&allocator);
         doc["status"] = status;
         doc["statusDetails"]["reason"] = reason;
+
+        // AWS types statusDetails as a string-to-string map, so every value is
+        // rendered rather than sent as a number. Only what the cloud cannot
+        // already derive goes here: the target version, its checksum, the job id
+        // and the device id are all known server-side and deliberately omitted.
+        if (diagnostics != nullptr) {
+            JsonObject details = doc["statusDetails"];
+            char value[OTA_STATUS_DETAIL_VALUE_BUFFER_SIZE];
+
+            details["espError"] = esp_err_to_name(diagnostics->error);
+
+            snprintf(value, sizeof(value), "%zu/%zu", diagnostics->bytesReceived, diagnostics->contentLength);
+            details["progress"] = value;
+
+            snprintf(value, sizeof(value), "%lu", diagnostics->freeHeap);
+            details["freeHeap"] = value;
+
+            snprintf(value, sizeof(value), "%lu", diagnostics->minFreeHeap);
+            details["minFreeHeap"] = value;
+
+            snprintf(value, sizeof(value), "%lu", diagnostics->maxAlloc);
+            details["maxAlloc"] = value;
+
+            snprintf(value, sizeof(value), "%u", attemptsMade);
+            details["attempts"] = value;
+
+            snprintf(value, sizeof(value), "%llu", millis64() / 1000);
+            details["uptime"] = value;
+
+            snprintf(value, sizeof(value), "%d", WiFi.RSSI());
+            details["rssi"] = value;
+        }
 
         if (_publishJsonStreaming(doc, fullTopic)) {
             LOG_DEBUG("Published OTA status '%s' for job %s", status, jobId);
