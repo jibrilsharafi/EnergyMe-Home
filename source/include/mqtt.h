@@ -53,8 +53,10 @@
 // that from the moment the download starts. Delays are 2, 4, 8 and 15 min
 // (the fourth doubling is clamped), i.e. 29 min of waiting; with the attempts
 // themselves the worst case lands near 44 min, leaving ~15 min of margin.
-// Deliberately no elapsed-time guard: an expired URL just fails the attempt,
-// and that failure now reports an error name identifying it.
+// Deliberately no elapsed-time guard on the total: esp_https_ota() collapses
+// every 4xx/5xx into a bare ESP_FAIL, so the expiry is identified by the HTTP
+// status captured from the response headers instead, and a 4xx breaks out of
+// the schedule rather than spending the remaining attempts on a dead URL.
 #define OTA_DOWNLOAD_MAX_ATTEMPTS 5
 #define OTA_DOWNLOAD_RETRY_INITIAL_INTERVAL (2 * 60 * 1000)
 #define OTA_DOWNLOAD_RETRY_MAX_INTERVAL (15 * 60 * 1000)

@@ -109,14 +109,23 @@ namespace Mqtt
     // a single flag on the publish path.
     static std::atomic<bool> _otaDownloadInProgress{false};
 
+    // Set by stop() to cut a retry schedule short. Distinct from watching
+    // _taskHandle, which goes transiently null on an ordinary MQTT task restart
+    // (setCloudServicesEnabled stops then starts it) and would abandon the
+    // remaining attempts on a mere cloud-services toggle.
+    static std::atomic<bool> _otaAbortRequested{false};
+
     // Download progress, written by the HTTP event handler and read by the OTA
     // task after the call returns so a failure can report how far it got.
     static size_t _otaBytesReceived = 0;
     static size_t _otaContentLength = 0;
+    static size_t _otaLastProgressBytes = 0;
+    static int _otaHttpStatus = 0;
 
     // What one download attempt reports back for the job status details.
     struct OtaAttemptResult {
         esp_err_t error;
+        int httpStatus;
         size_t bytesReceived;
         size_t contentLength;
         uint32_t freeHeap;
@@ -388,8 +397,14 @@ namespace Mqtt
             _awsIotCorePrivateKey = nullptr;
         }
         
-        // Free OTA URL buffer
-        if (_otaCurrentUrl != nullptr) {
+        // Ask a running OTA task to give up rather than sit out its backoff.
+        _otaAbortRequested.store(true, std::memory_order_relaxed);
+
+        // Free OTA URL buffer, unless the OTA task is still alive: it re-reads
+        // this buffer at the top of every retry attempt, and the retry schedule
+        // keeps the task around for far longer than a single download. Leaking
+        // it is the cheap side of that trade - stop() is followed by a reboot.
+        if (_otaCurrentUrl != nullptr && _otaTaskHandle == nullptr) {
             memset(_otaCurrentUrl, 0, OTA_PRESIGNED_URL_BUFFER_SIZE);
             free(_otaCurrentUrl);
             _otaCurrentUrl = nullptr;
@@ -1495,16 +1510,19 @@ namespace Mqtt
     // =================================
 
     static esp_err_t _otaHttpEventHandler(esp_http_client_event_t *event) {
-        static size_t lastProgressBytes = 0;
         size_t &totalBytesReceived = _otaBytesReceived;
         size_t &contentLength = _otaContentLength;
+        size_t &lastProgressBytes = _otaLastProgressBytes;
 
         switch (event->event_id) {
             case HTTP_EVENT_ERROR:        LOG_DEBUG("OTA HTTPS Event Error"); break;
             case HTTP_EVENT_ON_CONNECTED: LOG_DEBUG("OTA HTTPS Event On Connected"); break;
             case HTTP_EVENT_HEADER_SENT:  LOG_DEBUG("OTA HTTPS Event Header Sent"); break;
-            case HTTP_EVENT_ON_HEADER:    
+            case HTTP_EVENT_ON_HEADER:
                 LOG_DEBUG("OTA HTTPS Event On Header, key=%s, value=%s", event->header_key, event->header_value);
+                // Status code is only available once a response is being parsed;
+                // it separates an expired-URL 403 from a genuine transfer failure.
+                _otaHttpStatus = esp_http_client_get_status_code(event->client);
                 // Capture content length from headers
                 if (strcmp(event->header_key, "Content-Length") == 0) {
                     contentLength = atoi(event->header_value);
@@ -1513,7 +1531,7 @@ namespace Mqtt
                     lastProgressBytes = 0;
                 }
                 break;
-            case HTTP_EVENT_ON_DATA:      
+            case HTTP_EVENT_ON_DATA:
                 // Track progress and log periodically
                 totalBytesReceived += event->data_len;
                 if (totalBytesReceived >= lastProgressBytes + MQTT_OTA_SIZE_REPORT_UPDATE || totalBytesReceived == event->data_len) {
@@ -1550,8 +1568,12 @@ namespace Mqtt
     static bool _performOtaUpdate(OtaAttemptResult &attemptResult) {
         LOG_DEBUG("Starting OTA update from URL: %.100s...", _otaCurrentUrl); // Truncate long URLs in logs
 
+        // All four are reset per attempt: a retry whose response carries no
+        // Content-Length would otherwise inherit the previous attempt's counters.
         _otaBytesReceived = 0;
         _otaContentLength = 0;
+        _otaLastProgressBytes = 0;
+        _otaHttpStatus = 0;
 
         esp_http_client_config_t _httpConfig = {
             .url = _otaCurrentUrl,
@@ -1579,6 +1601,7 @@ namespace Mqtt
         // Sampled here, not after the retry loop unwinds: by then the heap has
         // recovered and the figures would describe the wrong moment.
         attemptResult.error = result;
+        attemptResult.httpStatus = _otaHttpStatus;
         attemptResult.bytesReceived = _otaBytesReceived;
         attemptResult.contentLength = _otaContentLength;
         attemptResult.freeHeap = ESP.getFreeHeap();
@@ -1605,10 +1628,8 @@ namespace Mqtt
     static bool _waitBeforeOtaRetry(uint64_t delayMs) {
         uint64_t waited = 0;
         while (waited < delayMs) {
-            // No MQTT task means the module is being torn down, so there is
-            // nothing left to report a later attempt to.
-            if (_taskHandle == nullptr) {
-                LOG_WARNING("MQTT task gone during OTA backoff - abandoning remaining attempts");
+            if (_otaAbortRequested.load(std::memory_order_relaxed)) {
+                LOG_WARNING("MQTT module stopping during OTA backoff - abandoning remaining attempts");
                 return false;
             }
 
@@ -1620,6 +1641,18 @@ namespace Mqtt
             waited += slice;
         }
         return true;
+    }
+
+    // Every exit from _otaTask goes through here. vTaskDelete() does not return,
+    // so a scope guard cannot be relied on to clear the suppression flag, and
+    // leaving it set would silence the device's telemetry until the next reboot.
+    // Clearing it here rather than straight after the retry loop also keeps the
+    // MQTT task's queued publish burst from colliding with the OTA task's own
+    // status publish on the shared, unsynchronised PubSubClient.
+    static void _finishOtaTask() {
+        _otaDownloadInProgress.store(false, std::memory_order_relaxed);
+        _otaTaskHandle = nullptr;
+        vTaskDelete(nullptr);
     }
 
     static void _otaTask(void* parameter) {
@@ -1651,6 +1684,18 @@ namespace Mqtt
 
             if (otaSuccess || attempt == OTA_DOWNLOAD_MAX_ATTEMPTS) break;
 
+            // A 4xx is the server refusing us, not a transient: an expired or
+            // malformed presigned URL answers 403 and will answer 403 for every
+            // remaining attempt. Retrying spends the rest of the schedule, with
+            // telemetry suppressed throughout, on a request that cannot succeed.
+            if (attemptResult.httpStatus >= 400 && attemptResult.httpStatus < 500) {
+                LOG_ERROR(
+                    "OTA download refused with HTTP %d - not retryable, abandoning schedule",
+                    attemptResult.httpStatus
+                );
+                break;
+            }
+
             uint64_t backoffDelay = BackoffSchedule::delayForAttempt(
                 attempt,
                 OTA_DOWNLOAD_RETRY_INITIAL_INTERVAL,
@@ -1662,10 +1707,6 @@ namespace Mqtt
             if (!_waitBeforeOtaRetry(backoffDelay)) break;
         }
 
-        // Cleared on every exit from the loop, success or not: leaving it set
-        // would silence the device's telemetry until the next reboot.
-        _otaDownloadInProgress.store(false, std::memory_order_relaxed);
-
         if (otaSuccess) {
             LOG_INFO("OTA download successful for job %s. Preparing to reboot.", _otaCurrentJobId);
             
@@ -1674,8 +1715,7 @@ namespace Mqtt
             if (!update_partition) {
                 LOG_ERROR("Failed to get update partition");
                 _publishOtaStatus(_otaCurrentJobId, "FAILED", "partition_error");
-                _otaTaskHandle = nullptr;
-                vTaskDelete(nullptr);
+                _finishOtaTask();
                 return;
             }
             
@@ -1685,8 +1725,7 @@ namespace Mqtt
             if (err != ESP_OK) {
                 LOG_ERROR("Failed to get partition description: %s", esp_err_to_name(err));
                 _publishOtaStatus(_otaCurrentJobId, "FAILED", "sha256_read_error");
-                _otaTaskHandle = nullptr;
-                vTaskDelete(nullptr);
+                _finishOtaTask();
                 return;
             }
             
@@ -1699,8 +1738,7 @@ namespace Mqtt
             if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {  
                 LOG_ERROR("Failed to save OTA pending state - aborting OTA");  
                 _publishOtaStatus(_otaCurrentJobId, "FAILED", "preferences_error");  
-                _otaTaskHandle = nullptr;  
-                vTaskDelete(nullptr);  
+                _finishOtaTask();  
                 return;  
             }  
             prefs.putString(MQTT_PREFERENCES_OTA_JOB_ID_KEY, _otaCurrentJobId);
@@ -1731,8 +1769,7 @@ namespace Mqtt
         }
 
         // Clean up
-        _otaTaskHandle = nullptr;
-        vTaskDelete(nullptr);
+        _finishOtaTask();
     }
 
     static bool _validateAwsIotJobMessage(const char* message, const char* topic) {
@@ -2210,14 +2247,6 @@ namespace Mqtt
     }
 
     static void _checkPublishMqtt() {
-        // An OTA download needs a contiguous internal-RAM block for its own TLS
-        // session while ours is already holding one. Every publish here adds a
-        // transient allocation on that same heap, so they are withheld for the
-        // download window. The request flags stay set, so nothing that fell due
-        // is lost - it fires on the first cycle after the window. OTA job status
-        // is published directly from the OTA task and does not pass through here.
-        if (_otaDownloadInProgress.load(std::memory_order_relaxed)) return;
-
         if (_publishMqtt.meter) {_publishMeter();}
         if (_publishMqtt.grid) {_publishGrid();}
         if (_publishMqtt.energy) {_publishEnergy();}
@@ -2826,6 +2855,29 @@ namespace Mqtt
 
         // Process queues and publishing. Alarm goes first, ahead of routine logs.
         _processAlarmQueue();
+
+        // An OTA download needs a contiguous internal-RAM block for its own TLS
+        // session while ours is already holding one, so every routine publish is
+        // withheld for the download window. The gate sits above the whole publish
+        // section rather than inside _checkPublishMqtt(): the log queue publishes
+        // one MQTT message per entry, and the _checkIfPublish*Needed() checks log
+        // (and so publish) on every 100 ms tick for as long as their condition
+        // stays true, which it does while the publishers that clear it are held
+        // off. Gating only the publishers turned a quiet window into a log storm.
+        //
+        // Deliberately still running: _clientMqtt.loop() above, so the session
+        // stays connected and inbound job messages keep flowing; the alarm queue,
+        // which is safety-critical; and _drainPendingCommand() below, so a remote
+        // operator can still intervene during a long retry schedule.
+        //
+        // Note this only holds off *new* publishes. The meter and grid queues keep
+        // filling and are drop-oldest, so a long retry schedule does lose queued
+        // points - see the telemetry-gap trade-off in the change's design.md.
+        if (_otaDownloadInProgress.load(std::memory_order_relaxed)) {
+            _drainPendingCommand();
+            return;
+        }
+
         _processLogQueue();
         _checkIfPublishMeterNeeded();
         _checkIfPublishGridNeeded();
@@ -2925,32 +2977,46 @@ namespace Mqtt
         // rendered rather than sent as a number. Only what the cloud cannot
         // already derive goes here: the target version, its checksum, the job id
         // and the device id are all known server-side and deliberately omitted.
+        //
+        // Every value goes in via JsonString so it is stored by copy: `value` is
+        // one reused stack buffer, and a bare char[] is stored by address, which
+        // would leave all the keys aliasing the last write. Same reason as the
+        // JsonString wrapping on the configuration structs elsewhere.
         if (diagnostics != nullptr) {
             JsonObject details = doc["statusDetails"];
             char value[OTA_STATUS_DETAIL_VALUE_BUFFER_SIZE];
 
-            details["espError"] = esp_err_to_name(diagnostics->error);
+            details["espError"] = JsonString(esp_err_to_name(diagnostics->error));
 
-            snprintf(value, sizeof(value), "%zu/%zu", diagnostics->bytesReceived, diagnostics->contentLength);
-            details["progress"] = value;
+            snprintf(value, sizeof(value), "%d", diagnostics->httpStatus);
+            details["httpStatus"] = JsonString(value);
 
-            snprintf(value, sizeof(value), "%lu", diagnostics->freeHeap);
-            details["freeHeap"] = value;
+            // Only meaningful for a response that actually carried the image; on
+            // an error response the byte counters describe the error body, which
+            // would otherwise read as a completed download.
+            if (diagnostics->httpStatus >= 200 && diagnostics->httpStatus < 300) {
+                snprintf(value, sizeof(value), "%zu/%zu", diagnostics->bytesReceived, diagnostics->contentLength);
+            } else {
+                snprintf(value, sizeof(value), "n/a");
+            }
+            details["progress"] = JsonString(value);
 
-            snprintf(value, sizeof(value), "%lu", diagnostics->minFreeHeap);
-            details["minFreeHeap"] = value;
-
-            snprintf(value, sizeof(value), "%lu", diagnostics->maxAlloc);
-            details["maxAlloc"] = value;
+            // One key rather than three: it is read as a triple anyway, and it
+            // keeps the map well clear of the statusDetails pair limit.
+            snprintf(
+                value, sizeof(value), "%lu/%lu/%lu",
+                diagnostics->freeHeap, diagnostics->minFreeHeap, diagnostics->maxAlloc
+            );
+            details["heapFreeMinMax"] = JsonString(value);
 
             snprintf(value, sizeof(value), "%u", attemptsMade);
-            details["attempts"] = value;
+            details["attempts"] = JsonString(value);
 
             snprintf(value, sizeof(value), "%llu", millis64() / 1000);
-            details["uptime"] = value;
+            details["uptime"] = JsonString(value);
 
             snprintf(value, sizeof(value), "%d", WiFi.RSSI());
-            details["rssi"] = value;
+            details["rssi"] = JsonString(value);
         }
 
         if (_publishJsonStreaming(doc, fullTopic)) {
