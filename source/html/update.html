@@ -527,19 +527,48 @@
         }
 
         async function doRollback() {
+            const button = document.getElementById('updateRollbackButton');
+            const originalLabel = button.innerHTML;
+
+            // The status fetch takes a few seconds, during which the click would
+            // otherwise look ignored until the confirm dialog appears from nowhere.
+            button.disabled = true;
+            button.classList.add('loading');
+            button.innerHTML = '⏳ Loading rollback information...';
+
+            const releaseButton = () => {
+                button.disabled = false;
+                button.classList.remove('loading');
+                button.innerHTML = originalLabel;
+            };
+
             // Best-effort enrichment: the server enforces the real gate (400 when
             // the other slot has no valid image). The device cannot know that
             // slot's version; the sha256 fingerprint is its only identity.
             const status = await energyApi.getOtaStatus().catch(() => null);
             if (status && !status.otherPartitionSha256) {
+                releaseButton();
                 showStatus('No firmware found in the other partition - rollback is not possible on this device.', 'error');
                 return;
             }
-            const targetLine = status ? "\n\nTarget firmware fingerprint (sha256): " + status.otherPartitionSha256.substring(0, 12) + "…" : "";
+
+            // Full digest, split in half: a truncated fingerprint cannot be checked
+            // against the one reported in the shadow, which is the only reason to
+            // show it at all. confirm() renders \n but will not wrap 64 unbroken
+            // characters.
+            const sha = status ? status.otherPartitionSha256 : null;
+            const targetLine = sha
+                ? "\n\nTarget firmware fingerprint (sha256):\n" + sha.substring(0, 32) + "\n" + sha.substring(32)
+                : "";
 
             if (!confirm("Are you sure you want to rollback to the previous firmware version? The device will restart." + targetLine)) {
+                releaseButton();
                 return;
             }
+
+            // Deliberately left disabled from here: the device is about to restart,
+            // and a second rollback request in that window is never wanted.
+            button.innerHTML = '⏳ Rolling back...';
 
             energyApi.rollbackFirmware()
                 .then(data => {
@@ -557,13 +586,16 @@
                 })
                 .catch(error => {
                     console.error('Rollback failed:', error);
+                    // The device is not restarting after all, so the button has to
+                    // come back or the section is dead until a reload.
+                    releaseButton();
                     document.getElementById('loading-overlay').style.display = 'none';
                     const resultMessageBox = document.getElementById('result-message');
                     resultMessageBox.style.display = 'block';
                     resultMessageBox.style.backgroundColor = '#f8d7da';
                     resultMessageBox.style.color = '#721c24';
                     resultMessageBox.innerHTML = 'Rollback failed: ' + error.message;
-                    
+
                     setTimeout(() => {
                         resultMessageBox.style.display = 'none';
                     }, 5000);
