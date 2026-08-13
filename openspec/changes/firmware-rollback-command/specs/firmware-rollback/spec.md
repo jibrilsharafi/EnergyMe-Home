@@ -66,13 +66,13 @@ The device SHALL report the passive OTA partition's `app_elf_sha256` (64 hex cha
 - **WHEN** the passive partition holds no valid application descriptor
 - **THEN** `otherPartitionSha256` is `null`
 
-### Requirement: Rollback disarms crash-driven auto-rollback and pending-OTA state
-Before restarting, both rollback paths SHALL mark the crash monitor's rollback-tried state (so the crash-driven auto-rollback cannot immediately switch back to the known-bad image the operator just left) and SHALL clear any pending-OTA validation state (so a stale pending-validation record cannot publish a spurious sha256-mismatch job failure after the rollback reboot).
+### Requirement: Rollback disarms crash-driven auto-rollback and preserves the pending-OTA record
+Before restarting, both rollback paths SHALL mark the crash monitor's rollback-tried state (so the crash-driven auto-rollback cannot immediately switch back to the known-bad image the operator just left). The pending-OTA validation record SHALL be left intact: it always belongs to the OTA job that flashed the currently running image, so after the rollback reboot the standard post-OTA validation gives that job its correct terminal status (`FAILED` with a sha256-mismatch/rollback reason) instead of leaving it `IN_PROGRESS` in the fleet forever.
 
 #### Scenario: Auto-rollback does not bounce back after a manual rollback
 - **WHEN** a manual rollback boots the previous firmware and that firmware then crashes repeatedly
 - **THEN** the crash monitor does not roll back again to the image the operator deliberately left, and proceeds to its other recovery tiers
 
-#### Scenario: Stale pending-OTA state does not misreport after rollback
-- **WHEN** a rollback restart occurs while a pending-OTA validation record exists
-- **THEN** no `FAILED`/sha256-mismatch status is published for the unrelated OTA job after the reboot
+#### Scenario: Rolling back away from a just-flashed OTA reports that job as failed
+- **WHEN** a rollback restarts the device while the pending-OTA validation record for the just-flashed image exists
+- **THEN** after the reboot the device publishes `FAILED` with a sha256-mismatch/rollback reason for that OTA job, giving it a correct terminal status

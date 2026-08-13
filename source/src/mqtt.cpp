@@ -7,6 +7,9 @@
 #include "shadow.h"
 #include "rollback_logic.h"
 #include "shadow_logic.h"
+
+static_assert(SHA256_HEX_BUFFER_SIZE == RollbackLogic::SHA256_HEX_LEN + 1,
+              "sha256 hex buffers are sized by constants.h but indexed by rollback_logic's length");
 #include "taskprofiler.h"
 #include "duration_format.h"
 #include "mqtt_grid_schedule.h"

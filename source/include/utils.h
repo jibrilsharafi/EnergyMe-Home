@@ -193,9 +193,9 @@ enum class FirmwareRollbackResult {
     SUCCESS,         // boot partition switched, restart scheduled
     INVALID_IMAGE,   // passive slot has no valid bootable image
                      // (esp_ota_set_boot_partition's image_validate failed)
-    RESTART_BLOCKED, // switch succeeded but restart refused: boot partition was
-                     // restored to the running slot so the held restart cannot
-                     // silently execute the rollback after a failure report
+    RESTART_BLOCKED, // restart already scheduled or uptime/safe-mode gate closed:
+                     // refused up front (or undone, in the residual race) so a
+                     // failure report never leaves a pending silent partition switch
 };
 
 void sha256BytesToHex(const uint8_t sha256[32], char* out, size_t outSize); // outSize >= SHA256_HEX_BUFFER_SIZE

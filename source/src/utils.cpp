@@ -752,6 +752,16 @@ bool getOtherPartitionSha256(char* out, size_t outSize) {
 }
 
 FirmwareRollbackResult attemptFirmwareRollback(const char* reason) {
+    // Refuse up front while nothing has been touched. Calling setRestartSystem
+    // and reacting to its false return is not equivalent: its uptime-gate branch
+    // LATCHES the request (a ghost restart would fire minutes after we reported
+    // failure), and its already-scheduled branch would make us restore the boot
+    // partition of an in-flight rollback that was already reported successful.
+    if (_restartTaskHandle != NULL || !CrashMonitor::canRestartNow()) {
+        LOG_WARNING("Rollback: refused, restart already scheduled or blocked");
+        return FirmwareRollbackResult::RESTART_BLOCKED;
+    }
+
     const esp_partition_t* running = esp_ota_get_running_partition();
     const esp_partition_t* passive = _getPassiveOtaPartition();
     if (!passive) {
@@ -767,10 +777,21 @@ FirmwareRollbackResult attemptFirmwareRollback(const char* reason) {
         return FirmwareRollbackResult::INVALID_IMAGE;
     }
 
+    // Disarm the crash-driven auto-rollback BEFORE scheduling the restart: the
+    // restart task can preempt this one, and the device must never reboot with
+    // the flag unset (the crash ladder would bounce straight back to the image
+    // the operator just left). The pending-OTA record is deliberately NOT
+    // cleared: it belongs to the job that flashed the currently running image,
+    // and the post-reboot validation reporting that job FAILED
+    // (sha256_mismatch_firmware_rollback) is its correct terminal status.
+    CrashMonitor::markRollbackTried();
+
     if (!setRestartSystem(reason)) {
+        // Residual race only (both refusal branches were pre-checked above).
         // setRestartSystem holds a refused restart rather than cancelling it, so
-        // the switch must be undone or that held restart would silently execute
-        // the rollback after we report failure.
+        // undo everything or that held restart would silently execute the
+        // rollback after we report failure.
+        CrashMonitor::clearRollbackTried();
         esp_err_t restoreErr = esp_ota_set_boot_partition(running);
         if (restoreErr != ESP_OK) {
             // Practically unreachable (the running image validated at boot); if it
@@ -780,13 +801,6 @@ FirmwareRollbackResult attemptFirmwareRollback(const char* reason) {
         LOG_WARNING("Rollback: restart refused, boot partition restored to %s", running->label);
         return FirmwareRollbackResult::RESTART_BLOCKED;
     }
-
-    // Restart is scheduled (graceful shutdown in progress). Disarm the crash-driven
-    // auto-rollback so it cannot bounce straight back to the image the operator just
-    // left, and drop the pending-OTA record so its validation task cannot publish a
-    // spurious sha256-mismatch FAILED for an unrelated job after the reboot.
-    CrashMonitor::markRollbackTried();
-    Mqtt::clearOtaPendingState();
 
     LOG_WARNING("Rollback: boot partition switched to %s, restarting", passive->label);
     return FirmwareRollbackResult::SUCCESS;

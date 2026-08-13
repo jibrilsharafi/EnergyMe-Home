@@ -33,7 +33,7 @@
 
 - [x] 6.1 `pio run -e esp32s3-dev` clean build; `pio check -e esp32s3-dev` no new findings (18 pre-existing HIGHs are cppcheck failing on vendored ArduinoJson macros); full native suite 510/510
 - [ ] 6.2 Hardware e2e on the bench device (Jibril): real OTA to populate both slots, then (a) local rollback via UI - lands on previous build, honest success; (b) cloud `firmware_rollback` with correct sha - switches; (c) redelivery of same command - SUCCEEDED no-op, no second switch; (d) wrong sha - TARGET_MISMATCH; (e) info shadow and /api/v1/ota/status both show the passive sha before and after; (f) check `uxTaskGetStackHighWaterMark` on the MQTT task after exercising the command (the branch adds ~130 B of buffers + a 256 B esp_app_desc_t frame on a task with ~1 KB headroom)
-- [ ] 6.3 Confirm no `sha256_mismatch` job status is published after a rollback performed while `ota_pending` was set (set it via a staged OTA, then roll back)
+- [ ] 6.3 Confirm the abandoned OTA job receives `FAILED` (`sha256_mismatch_firmware_rollback`) after a rollback performed while `ota_pending` was set (stage an OTA, roll back inside the validation window, check the job status after reboot)
 
 ## 7. Spec sync + PR
 
