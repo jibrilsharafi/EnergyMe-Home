@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "utils.h"
+#include "backoff_schedule.h"
 #include "duration_format.h"
 #include "version_compare.h"
 
@@ -1162,27 +1163,7 @@ void generateHexToken(char* out, size_t outSize) {
 
 
 uint64_t calculateExponentialBackoff(uint64_t attempt, uint64_t initialInterval, uint64_t maxInterval, uint64_t multiplier) {
-    if (attempt == 0) return 0;
-    
-    // Direct calculation using bit shifting for power of 2 multipliers
-    if (multiplier == 2) {
-        // For multiplier=2, use bit shifting: delay = initial * 2^(attempt-1)
-        if (attempt >= 64) return maxInterval; // Prevent overflow
-        uint64_t backoffDelay = initialInterval << (attempt - 1);
-        return min(backoffDelay, maxInterval);
-    }
-    
-    // General case: calculate multiplier^(attempt-1)
-    uint64_t backoffDelay = initialInterval;
-    for (uint64_t i = 1; i < attempt; ++i) {
-        // Check for overflow before multiplication
-        if (backoffDelay > maxInterval / multiplier) {
-            return maxInterval;
-        }
-        backoffDelay *= multiplier;
-    }
-    
-    return min(backoffDelay, maxInterval);
+    return BackoffSchedule::delayForAttempt(attempt, initialInterval, maxInterval, multiplier);
 }
     
 // === LittleFS FILE OPERATIONS ===

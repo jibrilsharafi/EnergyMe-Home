@@ -15,6 +15,7 @@ static_assert(SHA256_HEX_BUFFER_SIZE == RollbackLogic::SHA256_HEX_LEN + 1,
 #include "mqtt_grid_schedule.h"
 #include "mqtt_energy_publish_gate.h"
 #include "crash_archive_policy.h"
+#include "backoff_schedule.h"
 #include "mbedtls/base64.h"
 #include <algorithm>
 
@@ -102,6 +103,21 @@ namespace Mqtt
     static TaskHandle_t _otaValidationTaskHandle = nullptr;
     static bool _otaRebootPending = false;
 
+    // One download attempt: the counters the HTTP event handler fills in as it
+    // goes, and the outcome stamped on once the call returns. Shared rather than
+    // passed because the event handler is a C callback with no context of its own.
+    struct OtaAttempt {
+        esp_err_t error;
+        int httpStatus;
+        size_t bytesReceived;
+        size_t contentLength;
+        size_t lastProgressBytes; // log throttling only, not reported
+        uint32_t freeHeap;
+        uint32_t minFreeHeap;
+        uint32_t maxAlloc;
+    };
+    static OtaAttempt _otaAttempt = {};
+
     // Thread safety
     static SemaphoreHandle_t _configMutex = nullptr;
 
@@ -173,13 +189,15 @@ namespace Mqtt
     static void _handleSingleJobExecution(JsonDocument &doc);
     static void _publishOtaJobDetail(const char* jobId);
     static void _otaTask(void* parameter);
+    static void _probeOtaHost();
     static esp_err_t _otaHttpEventHandler(esp_http_client_event_t *event);
     static bool _performOtaUpdate();
     
     // OTA validation functions (clearOtaPendingState is public, declared in mqtt.h)
     static void _otaValidationTask(void* parameter);
     static void _checkPendingOtaValidation();
-    static void _publishOtaStatus(const char* jobId, const char* status, const char* reason);
+    static void _publishOtaStatus(const char* jobId, const char* status, const char* reason,
+                                  bool withDiagnostics = false, uint8_t attemptsMade = 0);
 
     // Publishing functions
     static void _publishMeter();
@@ -364,8 +382,15 @@ namespace Mqtt
             _awsIotCorePrivateKey = nullptr;
         }
         
-        // Free OTA URL buffer
-        if (_otaCurrentUrl != nullptr) {
+        // Wake a running OTA task out of its backoff so it gives up rather than
+        // sitting out a wait that can reach OTA_DOWNLOAD_RETRY_MAX_INTERVAL.
+        if (_otaTaskHandle != nullptr) xTaskNotifyGive(_otaTaskHandle);
+
+        // Free OTA URL buffer, unless the OTA task is still alive: it re-reads
+        // this buffer at the top of every retry attempt, and the retry schedule
+        // keeps the task around for far longer than a single download. Leaking
+        // it is the cheap side of that trade - stop() is followed by a reboot.
+        if (_otaCurrentUrl != nullptr && _otaTaskHandle == nullptr) {
             memset(_otaCurrentUrl, 0, OTA_PRESIGNED_URL_BUFFER_SIZE);
             free(_otaCurrentUrl);
             _otaCurrentUrl = nullptr;
@@ -1462,6 +1487,54 @@ namespace Mqtt
         _queueCommand(topic, payload);
         LOG_INFO("Injected synthetic command execution %s", executionId);
     }
+
+    // Dev-only synthetic job injection: feeds a full jobs/notify-next payload
+    // through the same validate-and-handle path the broker RX uses, so a fake or
+    // unreachable firmware URL can exercise the download retry schedule without
+    // minting a real job. Staged rather than handled inline for the same reason as
+    // the command inject above: the caller is the web server task, and
+    // _handleSingleJobExecution publishes IN_PROGRESS on the shared, unsynchronised
+    // PubSubClient. Its own slot, so a job and a command cannot evict each other.
+    static char* _pendingJobPayload = nullptr;
+
+    void injectJobExecution(const char* payload) {
+        if (payload == nullptr) return;
+        size_t len = strlen(payload) + 1;
+        char* p = (char*)ps_malloc(len);
+        if (p == nullptr) {
+            LOG_ERROR("Failed to allocate pending job buffer");
+            return;
+        }
+        memcpy(p, payload, len);
+
+        if (acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
+            if (_pendingJobPayload != nullptr) {
+                LOG_WARNING("Overwriting an undrained pending job; previous one dropped");
+                free(_pendingJobPayload);
+            }
+            _pendingJobPayload = p;
+            releaseMutex(&_configMutex);
+            LOG_INFO("Injected synthetic job execution");
+        } else {
+            free(p);
+            LOG_ERROR("Failed to acquire mutex queuing job");
+        }
+    }
+
+    static void _drainPendingJob() {
+        char* p = nullptr;
+        if (acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
+            p = _pendingJobPayload;
+            _pendingJobPayload = nullptr;
+            releaseMutex(&_configMutex);
+        }
+        if (p == nullptr) return;
+
+        char topic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructMqttTopicReservedThings("jobs/notify-next", topic, sizeof(topic));
+        _handleAwsIotJobMessage(p, topic);
+        free(p);
+    }
 #endif
 
     // AWS IoT Jobs OTA functions
@@ -1470,44 +1543,81 @@ namespace Mqtt
     // Custom HTTPS OTA implementation
     // =================================
 
+    // The response status separates an expired-URL 403 from a genuine transport or
+    // memory failure, and it is the only thing that does: esp_https_ota() collapses
+    // every 4xx and 5xx into a bare ESP_FAIL.
+    //
+    // Sampled on three events rather than one because the client only assigns
+    // response->status_code in its on_headers_complete parser callback, and that
+    // runs strictly AFTER every HTTP_EVENT_ON_HEADER dispatch for the response's
+    // headers (verified against the esp_http_client.c parser callbacks) - so a read
+    // at ON_HEADER always sees the -1 initialiser and there is no point calling this
+    // there. ON_DATA, ON_FINISH and ON_DISCONNECTED all fire strictly after
+    // on_headers_complete, so each is a valid read; keeping all three is defensive
+    // against which one actually turns up for a given failure shape, not because
+    // any single one is known to be unreliable. ON_DISCONNECTED matters most: a
+    // refused response (404, 403) makes esp_https_ota abandon before any body
+    // arrives, so ON_DATA and ON_FINISH never fire for exactly the case that needs
+    // it most.
+    //
+    // This is a workaround for the event-based API, not the only way to get the
+    // status: esp_https_ota_get_status_code() exists and can be read once, but only
+    // against the handle from the granular esp_https_ota_begin/perform/finish
+    // sequence - not the one-shot esp_https_ota() this file calls. Switching to
+    // that sequence would let this whole function go away, at the cost of owning
+    // the read loop this file currently delegates. Not done here; the one-shot call
+    // is the form this PR's retry loop was built and hardware-tested against.
+    //
+    // Only a positive value is stored: 0 then means "no response was ever parsed"
+    // (e.g. the host was never reachable), and later events refresh it, so a
+    // redirect chain still reports its final status.
+    static void _captureOtaHttpStatus(esp_http_client_handle_t client) {
+        int status = esp_http_client_get_status_code(client);
+        if (status > 0) _otaAttempt.httpStatus = status;
+    }
+
     static esp_err_t _otaHttpEventHandler(esp_http_client_event_t *event) {
-        static size_t lastProgressBytes = 0;
-        static size_t totalBytesReceived = 0;
-        static size_t contentLength = 0;
-        
         switch (event->event_id) {
             case HTTP_EVENT_ERROR:        LOG_DEBUG("OTA HTTPS Event Error"); break;
             case HTTP_EVENT_ON_CONNECTED: LOG_DEBUG("OTA HTTPS Event On Connected"); break;
             case HTTP_EVENT_HEADER_SENT:  LOG_DEBUG("OTA HTTPS Event Header Sent"); break;
-            case HTTP_EVENT_ON_HEADER:    
+            case HTTP_EVENT_ON_HEADER:
                 LOG_DEBUG("OTA HTTPS Event On Header, key=%s, value=%s", event->header_key, event->header_value);
-                // Capture content length from headers
+                // No _captureOtaHttpStatus() call here - see the comment above it;
+                // this event always fires before the status is assigned.
                 if (strcmp(event->header_key, "Content-Length") == 0) {
-                    contentLength = atoi(event->header_value);
-                    LOG_DEBUG("OTA Content-Length: %zu bytes", contentLength);
-                    totalBytesReceived = 0; // Reset on new download
-                    lastProgressBytes = 0;
+                    _otaAttempt.contentLength = atoi(event->header_value);
+                    LOG_DEBUG("OTA Content-Length: %zu bytes", _otaAttempt.contentLength);
+                    _otaAttempt.bytesReceived = 0; // Reset on new download
+                    _otaAttempt.lastProgressBytes = 0;
                 }
                 break;
-            case HTTP_EVENT_ON_DATA:      
+            case HTTP_EVENT_ON_DATA:
+                _captureOtaHttpStatus(event->client);
                 // Track progress and log periodically
-                totalBytesReceived += event->data_len;
-                if (totalBytesReceived >= lastProgressBytes + MQTT_OTA_SIZE_REPORT_UPDATE || totalBytesReceived == event->data_len) {
-                    float progress = contentLength > 0 ? (float)totalBytesReceived / (float)contentLength * 100.0f : 0.0f;
-                    LOG_DEBUG("OTA MQTT progress: %.1f%% (%zu / %zu bytes)", progress, totalBytesReceived, contentLength);
-                    lastProgressBytes = totalBytesReceived;
+                _otaAttempt.bytesReceived += event->data_len;
+                if (_otaAttempt.bytesReceived >= _otaAttempt.lastProgressBytes + MQTT_OTA_SIZE_REPORT_UPDATE || _otaAttempt.bytesReceived == event->data_len) {
+                    float progress = _otaAttempt.contentLength > 0 ? (float)_otaAttempt.bytesReceived / (float)_otaAttempt.contentLength * 100.0f : 0.0f;
+                    LOG_DEBUG("OTA MQTT progress: %.1f%% (%zu / %zu bytes)", progress, _otaAttempt.bytesReceived, _otaAttempt.contentLength);
+                    _otaAttempt.lastProgressBytes = _otaAttempt.bytesReceived;
                 }
                 break;
-            case HTTP_EVENT_ON_FINISH:    LOG_DEBUG("OTA HTTPS Event On Finish"); break;
-            case HTTP_EVENT_DISCONNECTED: LOG_DEBUG("OTA HTTPS Event Disconnected"); break;
+            case HTTP_EVENT_ON_FINISH:
+                _captureOtaHttpStatus(event->client);
+                LOG_DEBUG("OTA HTTPS Event On Finish");
+                break;
+            case HTTP_EVENT_DISCONNECTED:
+                _captureOtaHttpStatus(event->client);
+                LOG_DEBUG("OTA HTTPS Event Disconnected");
+                break;
             case HTTP_EVENT_REDIRECT:     LOG_DEBUG("OTA HTTPS Event Redirect"); break;
         }
         return ESP_OK;
     }
 
-    static bool _performOtaUpdate() {
-        LOG_DEBUG("Starting OTA update from URL: %.100s...", _otaCurrentUrl); // Truncate long URLs in logs
-
+    // Run once per download rather than per attempt: it is only a log-level
+    // diagnostic, and each call opens a socket on the heap the download needs.
+    static void _probeOtaHost() {
         WiFiClient testClient;
         // Extract the DNS to test from the URL
         char host[URL_BUFFER_SIZE]; // Small since we don't have all the presigned stuff
@@ -1521,6 +1631,14 @@ namespace Mqtt
         } else {
             LOG_WARNING("Failed to extract host (URL: %.100s). Could not test DNS resolution.", _otaCurrentUrl);
         }
+    }
+
+    static bool _performOtaUpdate() {
+        LOG_DEBUG("Starting OTA update from URL: %.100s...", _otaCurrentUrl); // Truncate long URLs in logs
+
+        // Reset per attempt: a retry whose response carries no Content-Length
+        // would otherwise inherit the previous attempt's counters.
+        _otaAttempt = {};
 
         esp_http_client_config_t _httpConfig = {
             .url = _otaCurrentUrl,
@@ -1545,19 +1663,87 @@ namespace Mqtt
         // rollback, not by the bootloader.
         esp_err_t result = esp_https_ota(&_otaConfig);
 
+        _otaAttempt.error = result;
+
         if (result == ESP_OK) {
             LOG_INFO("OTA update downloaded successfully (not yet validated)");
             return true;
-        } else {
-            LOG_ERROR("OTA update failed with error: %s (%d)", esp_err_to_name(result), result);
+        }
+
+        // Sampled on the failure path only, and before returning rather than
+        // after the retry loop unwinds: by then the heap has recovered and the
+        // figures would describe the wrong moment. getMaxAllocHeap() walks the
+        // free-block list, so it is not worth paying for on a successful attempt.
+        _otaAttempt.freeHeap = ESP.getFreeHeap();
+        _otaAttempt.minFreeHeap = ESP.getMinFreeHeap();
+        _otaAttempt.maxAlloc = ESP.getMaxAllocHeap();
+
+        LOG_ERROR(
+            "OTA update failed with error: %s (%d), HTTP %d, after %zu/%zu bytes "
+            "(free %lu, minFree %lu, maxAlloc %lu)",
+            esp_err_to_name(result), result, _otaAttempt.httpStatus,
+            _otaAttempt.bytesReceived, _otaAttempt.contentLength,
+            _otaAttempt.freeHeap, _otaAttempt.minFreeHeap, _otaAttempt.maxAlloc
+        );
+        return false;
+    }
+
+    // Waits out the backoff, returning false if the module asked the OTA task to
+    // stop meanwhile. Uses the same notification mechanism as every other task's
+    // shutdown path (see stopTaskGracefully), so the wait ends immediately on
+    // stop() instead of being polled, and costs no wakeups until then.
+    static bool _waitBeforeOtaRetry(uint64_t delayMs) {
+        if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(delayMs)) > 0) {
+            LOG_WARNING("MQTT module stopping during OTA backoff - abandoning remaining attempts");
             return false;
         }
+        return true;
     }
-    
+
+    // Single exit for _otaTask, which has five of them. vTaskDelete() does not
+    // return, so a scope guard cannot do this job.
+    static void _finishOtaTask() {
+        _otaTaskHandle = nullptr;
+        vTaskDelete(nullptr);
+    }
+
     static void _otaTask(void* parameter) {
         LOG_DEBUG("OTA task started");
 
-        bool otaSuccess = _performOtaUpdate();
+        _probeOtaHost();
+
+        bool otaSuccess = false;
+        uint8_t attempt = 1; // hoisted: also the attempt count once the loop exits
+
+        for (; attempt <= OTA_DOWNLOAD_MAX_ATTEMPTS; attempt++) {
+            LOG_INFO("OTA download attempt %u/%u for job %s", attempt, OTA_DOWNLOAD_MAX_ATTEMPTS, _otaCurrentJobId);
+
+            otaSuccess = _performOtaUpdate();
+            if (otaSuccess || attempt == OTA_DOWNLOAD_MAX_ATTEMPTS) break;
+
+            // A 4xx is the server refusing us, not a transient: an expired or
+            // malformed presigned URL answers 403 and will answer 403 for every
+            // remaining attempt. Retrying would spend the rest of the schedule,
+            // and delay the FAILED report by half an hour, on a request that
+            // cannot succeed.
+            if (_otaAttempt.httpStatus >= 400 && _otaAttempt.httpStatus < 500) {
+                LOG_ERROR(
+                    "OTA download refused with HTTP %d - not retryable, abandoning schedule",
+                    _otaAttempt.httpStatus
+                );
+                break;
+            }
+
+            uint64_t backoffDelay = BackoffSchedule::delayForAttempt(
+                attempt,
+                OTA_DOWNLOAD_RETRY_INITIAL_INTERVAL,
+                OTA_DOWNLOAD_RETRY_MAX_INTERVAL,
+                OTA_DOWNLOAD_RETRY_MULTIPLIER
+            );
+            LOG_WARNING("OTA download attempt %u failed - retrying in %llu ms", attempt, backoffDelay);
+
+            if (!_waitBeforeOtaRetry(backoffDelay)) break;
+        }
 
         if (otaSuccess) {
             LOG_INFO("OTA download successful for job %s. Preparing to reboot.", _otaCurrentJobId);
@@ -1567,8 +1753,7 @@ namespace Mqtt
             if (!update_partition) {
                 LOG_ERROR("Failed to get update partition");
                 _publishOtaStatus(_otaCurrentJobId, "FAILED", "partition_error");
-                _otaTaskHandle = nullptr;
-                vTaskDelete(nullptr);
+                _finishOtaTask();
                 return;
             }
             
@@ -1578,8 +1763,7 @@ namespace Mqtt
             if (err != ESP_OK) {
                 LOG_ERROR("Failed to get partition description: %s", esp_err_to_name(err));
                 _publishOtaStatus(_otaCurrentJobId, "FAILED", "sha256_read_error");
-                _otaTaskHandle = nullptr;
-                vTaskDelete(nullptr);
+                _finishOtaTask();
                 return;
             }
             
@@ -1592,8 +1776,7 @@ namespace Mqtt
             if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, false)) {  
                 LOG_ERROR("Failed to save OTA pending state - aborting OTA");  
                 _publishOtaStatus(_otaCurrentJobId, "FAILED", "preferences_error");  
-                _otaTaskHandle = nullptr;  
-                vTaskDelete(nullptr);  
+                _finishOtaTask();  
                 return;  
             }  
             prefs.putString(MQTT_PREFERENCES_OTA_JOB_ID_KEY, _otaCurrentJobId);
@@ -1615,15 +1798,16 @@ namespace Mqtt
 
             setRestartSystem("OTA download complete, rebooting for validation");
         } else {
-            LOG_ERROR("OTA download failed for job %s.", _otaCurrentJobId);
-            
-            // Publish failure status immediately
-            _publishOtaStatus(_otaCurrentJobId, "FAILED", "download_failed");
+            LOG_ERROR("OTA download failed for job %s after %u attempts.", _otaCurrentJobId, attempt);
+
+            // Publish failure status immediately. `reason` keeps its original
+            // value so existing consumers are unaffected; the detail that makes
+            // the failure diagnosable rides alongside it.
+            _publishOtaStatus(_otaCurrentJobId, "FAILED", "download_failed", true, attempt);
         }
 
         // Clean up
-        _otaTaskHandle = nullptr;
-        vTaskDelete(nullptr);
+        _finishOtaTask();
     }
 
     static bool _validateAwsIotJobMessage(const char* message, const char* topic) {
@@ -2719,6 +2903,9 @@ namespace Mqtt
         _checkPublishMqtt();
         Shadow::checkPublish(); // drain shadow deltas/local-edits/reports (MQTT task body)
         _drainPendingCommand(); // process queued IoT Command (broker RX or dev inject) off the callback
+#ifdef ENV_DEV
+        _drainPendingJob(); // dev-injected synthetic job, same off-the-callback rule
+#endif
     }
 
     // Utilities
@@ -2789,7 +2976,8 @@ namespace Mqtt
         prefs.end();
     }
 
-    static void _publishOtaStatus(const char* jobId, const char* status, const char* reason) {
+    static void _publishOtaStatus(const char* jobId, const char* status, const char* reason,
+                                  bool withDiagnostics, uint8_t attemptsMade) {
         if (!jobId || !status || !reason) return;
 
         char partialTopic[MQTT_TOPIC_BUFFER_SIZE];
@@ -2802,6 +2990,51 @@ namespace Mqtt
         JsonDocument doc(&allocator);
         doc["status"] = status;
         doc["statusDetails"]["reason"] = reason;
+
+        // AWS types statusDetails as a string-to-string map, so every value is
+        // rendered rather than sent as a number. Only what the cloud cannot
+        // already derive goes here: the target version, its checksum, the job id
+        // and the device id are all known server-side and deliberately omitted.
+        //
+        // setDetail renders through one reused buffer and stores by copy, since a
+        // bare char[] is stored by address and every key would alias the last
+        // write. Same reason as the JsonString wrapping on the config structs.
+        if (withDiagnostics) {
+            JsonObject details = doc["statusDetails"];
+            auto setDetail = [&details](const char* key, const char* format, ...) {
+                char value[OTA_STATUS_DETAIL_VALUE_BUFFER_SIZE];
+                va_list args;
+                va_start(args, format);
+                vsnprintf(value, sizeof(value), format, args);
+                va_end(args);
+                details[key] = JsonString(value);
+            };
+
+            // Static storage, so it can be linked rather than copied
+            details["espError"] = JsonString(esp_err_to_name(_otaAttempt.error), true);
+
+            setDetail("httpStatus", "%d", _otaAttempt.httpStatus);
+
+            // Progress is only meaningful for a response that actually carried
+            // the image; on an error response the byte counters describe the
+            // error body, which would otherwise read as a completed download.
+            if (_otaAttempt.httpStatus >= 200 && _otaAttempt.httpStatus < 300) {
+                setDetail("progress", "%zu/%zu", _otaAttempt.bytesReceived, _otaAttempt.contentLength);
+            } else {
+                setDetail("progress", "n/a");
+            }
+
+            // One key rather than three: it is read as a triple anyway, and it
+            // keeps the map well clear of the statusDetails pair limit.
+            setDetail(
+                "heapFreeMinMax", "%lu/%lu/%lu",
+                _otaAttempt.freeHeap, _otaAttempt.minFreeHeap, _otaAttempt.maxAlloc
+            );
+
+            setDetail("attempts", "%u", attemptsMade);
+            setDetail("uptime", "%llu", millis64() / 1000);
+            setDetail("rssi", "%d", WiFi.RSSI());
+        }
 
         if (_publishJsonStreaming(doc, fullTopic)) {
             LOG_DEBUG("Published OTA status '%s' for job %s", status, jobId);

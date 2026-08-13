@@ -48,6 +48,20 @@
 #define OTA_PRESIGNED_URL_BUFFER_SIZE (4 * 1024) // The presigned S3 URL can be very long
 #define MQTT_OTA_SIZE_REPORT_UPDATE (128 * 1024)
 
+// OTA download retry schedule. The presigned S3 URL is minted when the device
+// picks up the job and lives 60 min, so the whole schedule has to fit inside
+// that from the moment the download starts. Delays are 2, 4, 8 and 15 min
+// (the fourth doubling is clamped), i.e. 29 min of waiting; with the attempts
+// themselves the worst case lands near 44 min, leaving ~15 min of margin.
+// There is deliberately no elapsed-time guard on the total; see _otaTask for
+// how a URL that has expired mid-schedule is detected and cut short instead.
+#define OTA_DOWNLOAD_MAX_ATTEMPTS 5
+#define OTA_DOWNLOAD_RETRY_INITIAL_INTERVAL (2 * 60 * 1000)
+#define OTA_DOWNLOAD_RETRY_MAX_INTERVAL (15 * 60 * 1000)
+#define OTA_DOWNLOAD_RETRY_MULTIPLIER 2
+// Widest value is "<bytes>/<bytes>"; AWS caps a statusDetails value at 1024.
+#define OTA_STATUS_DETAIL_VALUE_BUFFER_SIZE 24
+
 // OTA validation constants
 #define OTA_VALIDATION_TASK_NAME "ota_validation_task"
 #define OTA_VALIDATION_TASK_STACK_SIZE (6 * 1024)
@@ -271,5 +285,11 @@ namespace Mqtt
     // Dev-only: inject a synthetic IoT Command execution through the real handler
     // (staged from the caller's task, dispatched on the MQTT task). Never in prod.
     void injectCommandExecution(const char* executionId, const char* payload);
+
+    // Dev-only: inject a synthetic AWS IoT job execution document (as delivered on
+    // jobs/notify-next) through the real validate-and-handle path, so a fake or
+    // unreachable firmware URL can drive the OTA download retry schedule on the
+    // bench without minting a real job. Never in prod.
+    void injectJobExecution(const char* payload);
 #endif
 }

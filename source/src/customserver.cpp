@@ -2445,6 +2445,26 @@ namespace CustomServer
     }
 
 #ifdef ENV_DEV
+    // Shared by the dev-only inject-* endpoints below: re-serializes a JsonVariant
+    // out of the request's SpiRamAllocator document into its own PSRAM buffer, since
+    // each injector hands the payload to a Mqtt/Shadow function that outlives the
+    // request's JsonDocument. Returns nullptr (and has already sent the error
+    // response) on allocation failure, so callers only need to check for that.
+    static char* _jsonVariantToPsramString(AsyncWebServerRequest *request, JsonVariant variant) {
+        SpiRamAllocator allocator;
+        JsonDocument doc(&allocator);
+        doc.set(variant);
+
+        size_t len = measureJson(doc) + 1;
+        char *payload = (char *)ps_malloc(len);
+        if (!payload) {
+            _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Allocation failed");
+            return nullptr;
+        }
+        serializeJson(doc, payload, len);
+        return payload;
+    }
+
     // Dev-only: feed a synthetic shadow delta through the real inbound path
     // (routeMessage -> task drain -> ApplyFn -> ack publish) so the apply logic
     // can be exercised on hardware without a cloud desired-state writer. Never
@@ -2463,17 +2483,8 @@ namespace CustomServer
                     return;
                 }
 
-                SpiRamAllocator allocator;
-                JsonDocument deltaDoc(&allocator);
-                deltaDoc.set(json["doc"]);
-
-                size_t len = measureJson(deltaDoc) + 1;
-                char *payload = (char *)ps_malloc(len);
-                if (!payload) {
-                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Allocation failed");
-                    return;
-                }
-                serializeJson(deltaDoc, payload, len);
+                char *payload = _jsonVariantToPsramString(request, json["doc"]);
+                if (!payload) return;
 
                 bool ok = Shadow::injectDelta(name, payload);
                 free(payload);
@@ -2499,17 +2510,8 @@ namespace CustomServer
                     return;
                 }
 
-                SpiRamAllocator allocator;
-                JsonDocument payloadDoc(&allocator);
-                payloadDoc.set(json["payload"]);
-
-                size_t len = measureJson(payloadDoc) + 1;
-                char *payload = (char *)ps_malloc(len);
-                if (!payload) {
-                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Allocation failed");
-                    return;
-                }
-                serializeJson(payloadDoc, payload, len);
+                char *payload = _jsonVariantToPsramString(request, json["payload"]);
+                if (!payload) return;
 
                 Mqtt::injectCommandExecution(execId, payload);
                 free(payload);
@@ -2517,7 +2519,33 @@ namespace CustomServer
             });
         server.addHandler(injectCommandHandler);
 
-        LOG_DEBUG("Registered dev-only shadow delta + command injection endpoints");
+        // Dev-only: inject a synthetic AWS IoT job execution document so the OTA
+        // download path can be driven with an arbitrary (unreachable, refused, or
+        // real) firmware URL without minting a job. The body IS the notify-next
+        // payload, so the real validator and version guard run unchanged.
+        // Body: {"execution":{"jobId":"dev-1","jobDocument":{"operation":"ota_update",
+        //        "force":true,"firmware":{"url":"https://...","version":"9.9.9"}}}}
+        static AsyncCallbackJsonWebHandler *injectJobHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/ota/inject-job",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (!_validateRequest(request, "POST", HTTP_MAX_CONTENT_LENGTH_ADE7953_CHANNEL_DATA * MAX_CHANNEL_COUNT)) return;
+
+                if (json["execution"].isNull()) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Body requires an 'execution' object");
+                    return;
+                }
+
+                char *payload = _jsonVariantToPsramString(request, json);
+                if (!payload) return;
+
+                Mqtt::injectJobExecution(payload);
+                free(payload);
+                _sendSuccessResponse(request, "Synthetic job execution injected");
+            });
+        server.addHandler(injectJobHandler);
+
+        LOG_DEBUG("Registered dev-only shadow delta + command + job injection endpoints");
     }
 
     static const char* _nvsTypeToString(nvs_type_t type) {
