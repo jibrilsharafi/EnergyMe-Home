@@ -35,6 +35,28 @@ void test_valid_real_signature_decodes(void) {
     TEST_ASSERT_EQUAL_HEX8(0x44, out[1]);  // content length (68) = outLen - 2
 }
 
+void test_valid_real_kms_signature_decodes(void) {
+    // A real signature straight off the DEPLOYED dev pipeline: produced by
+    // `aws kms sign --key-id alias/energyme-home-dev-ota-signing
+    //  --signing-algorithm ECDSA_SHA_256 --message-type DIGEST` over the SHA-256
+    // of an esp32s3-dev firmware.bin, exactly what the OTA job document carries.
+    // KMS emits a 71-byte DER SEQUENCE (0x30 0x45) - a 32-byte r plus a 33-byte s
+    // (leading 0x00 pad) - which this decoder must accept as-is and hand to
+    // mbedtls_pk_verify. Ties the host suite to real pipeline output, not just
+    // openssl-generated fixtures. The full cryptographic verify of this same
+    // vector is proven offline (openssl dgst -verify against the dev public key,
+    // tasks.md 13.6) and on-device (Mqtt::_verifyOtaSignature, tasks.md 13.7).
+    const char *base64Sig =
+        "MEUCIH4qC7fTmUrvKui6RtP3hla26q83G0rjLxA4j9O8ZnXAAiEA+9NxuTNVdy1RPjp991hMJWzuCX5FWXUJSzbVHC/VBlQ=";
+    uint8_t out[MAX_DER_SIGNATURE_LEN];
+    size_t outLen = 0;
+
+    TEST_ASSERT_TRUE(decodeAndValidate(base64Sig, out, sizeof(out), outLen));
+    TEST_ASSERT_EQUAL(71, outLen);
+    TEST_ASSERT_EQUAL_HEX8(0x30, out[0]);  // SEQUENCE tag
+    TEST_ASSERT_EQUAL_HEX8(0x45, out[1]);  // content length (69) = outLen - 2
+}
+
 void test_valid_minimal_der_decodes(void) {
     // 30 06 02 01 05 02 01 07 - smallest well-formed SEQUENCE{INTEGER,INTEGER},
     // exactly at the 8-byte minimum this parser accepts.
@@ -162,6 +184,7 @@ int main(int argc, char **argv) {
     UNITY_BEGIN();
 
     RUN_TEST(test_valid_real_signature_decodes);
+    RUN_TEST(test_valid_real_kms_signature_decodes);
     RUN_TEST(test_valid_minimal_der_decodes);
 
     RUN_TEST(test_null_input_rejected);
