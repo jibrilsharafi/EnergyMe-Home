@@ -18,6 +18,7 @@ static_assert(SHA256_HEX_BUFFER_SIZE == RollbackLogic::SHA256_HEX_LEN + 1,
 #include "backoff_schedule.h"
 #include "ota_keys.h"
 #include "ota_signature.h"
+#include "sha256_hex.h"
 #include "mbedtls/base64.h"
 #include "mbedtls/sha256.h"
 #include "mbedtls/pk.h"
@@ -149,6 +150,13 @@ namespace Mqtt
     // retrying re-downloads ~4 MB to fail identically. The retry schedule in
     // _otaTask breaks on it, same as the 4xx case.
     static bool _otaFailureRetryable = true;
+
+    // Set by _verifyOtaSignature() alongside _otaFailureReason: true only for
+    // causes that are a property of the downloaded artifact/signature itself
+    // (fails identically on retry) or of the fixed embedded key (never
+    // recoverable). Local/transient causes (heap, flash read) leave this false
+    // so a one-off glitch does not get treated as deterministic by the caller.
+    static bool _otaVerifyFailureDeterministic = false;
 
     // Thread safety
     static SemaphoreHandle_t _configMutex = nullptr;
@@ -1660,6 +1668,8 @@ namespace Mqtt
     // new image is never given control before this decision is made (see
     // openspec/changes/mqtt-ota-signature-verification/design.md, Decision 3).
     static bool _verifyOtaSignature(esp_https_ota_handle_t otaHandle) {
+        _otaVerifyFailureDeterministic = false; // overwritten below on the two deterministic causes
+
         if (!_otaHashChunkBuffer) {
             LOG_ERROR("OTA signature hash chunk buffer not allocated");
             snprintf(_otaFailureReason, sizeof(_otaFailureReason), "hash_buffer_unavailable");
@@ -1705,7 +1715,7 @@ namespace Mqtt
             offset += chunkSize;
         }
 
-        uint8_t digest[32];
+        uint8_t digest[Sha256Hex::DIGEST_LEN];
         if (shaRet == 0) shaRet = mbedtls_sha256_finish(&shaCtx, digest);
         mbedtls_sha256_free(&shaCtx);
         if (shaRet != 0) {
@@ -1726,6 +1736,7 @@ namespace Mqtt
             LOG_ERROR("Failed to parse embedded OTA signing public key: -0x%04X", -parseRet);
             mbedtls_pk_free(&pk);
             snprintf(_otaFailureReason, sizeof(_otaFailureReason), "pubkey_parse_error");
+            _otaVerifyFailureDeterministic = true; // constant compiled-in key: retrying never changes this
             return false;
         }
 
@@ -1735,6 +1746,7 @@ namespace Mqtt
         if (verifyRet != 0) {
             LOG_WARNING("OTA firmware signature verification failed: -0x%04X", -verifyRet);
             snprintf(_otaFailureReason, sizeof(_otaFailureReason), "signature_invalid");
+            _otaVerifyFailureDeterministic = true; // same artifact + signature will fail identically on retry
             return false;
         }
 
@@ -1855,11 +1867,15 @@ namespace Mqtt
             }
 
             if (result == ESP_OK && !_verifyOtaSignature(otaHandle)) {
-                // _verifyOtaSignature() has already set _otaFailureReason and logged the cause
+                // _verifyOtaSignature() has already set _otaFailureReason and logged the
+                // cause; only its two artifact/key-deterministic causes (signature_invalid,
+                // pubkey_parse_error) should abandon the retry schedule - a local, transient
+                // cause (heap, flash read) deserves the same retry chance as a download error.
                 result = ESP_FAIL;
-                _otaFailureRetryable = false;
-                esp_https_ota_abort(otaHandle);
-            } else if (result == ESP_OK) {
+                _otaFailureRetryable = !_otaVerifyFailureDeterministic;
+            }
+
+            if (result == ESP_OK) {
                 result = esp_https_ota_finish(otaHandle);
                 if (result != ESP_OK) {
                     LOG_ERROR("OTA finish failed: %s (%d)", esp_err_to_name(result), result);
@@ -1870,7 +1886,16 @@ namespace Mqtt
                 esp_https_ota_abort(otaHandle);
             }
 
-            if (result != ESP_OK && bytesWritten > 0) _scrubRejectedOtaImage();
+            // Scoped to non-retryable failures: those are the only ones where the
+            // written bytes describe a structurally complete-but-rejected image (signature,
+            // pubkey, or finish/esp_ota_end failure) that could pass esp_image_verify's
+            // structural check and so needs its header destroyed to close the
+            // firmware_rollback bypass (see the comment on _scrubRejectedOtaImage). A
+            // retryable failure (network drop mid-transfer, transient flash/heap error)
+            // leaves a truncated image whose tail is stale bytes from the previous
+            // firmware - it already fails esp_image_verify's checksum, so scrubbing it
+            // buys no security and only costs a sector erase on every flaky-network retry.
+            if (result != ESP_OK && bytesWritten > 0 && !_otaFailureRetryable) _scrubRejectedOtaImage();
         }
 
         _otaAttempt.error = result;
