@@ -3,36 +3,22 @@
 
 #pragma once
 
-// MQTT/Cloud OTA Signing Public Key
-// ==================================
-// ECDSA P-256 public key used by Mqtt::_verifyOtaSignature() to verify firmware
-// signatures delivered via the AWS IoT job document's `firmware.signature` field
-// (base64 DER `ECDSA-Sig-Value`, SHA-256 digest) before the OTA boot partition is
-// switched. Compiled in, not NVS-stored: this key cannot be altered by anyone with
-// device/API access short of reflashing new firmware (see
-// openspec/changes/mqtt-ota-signature-verification/design.md, Decision 5).
+// ECDSA P-256 public key used by Mqtt::_verifyOtaSignature() to verify OTA
+// firmware signatures before the boot partition is switched. Compiled in,
+// not NVS-stored, so it cannot be altered without reflashing.
 //
-// Gated per build environment so dev and prod trust different signing keys while
-// exercising the exact same verification mechanism.
+// Public half of an asymmetric KMS signing key; the private half never
+// leaves KMS. Gated per build so dev and prod trust different keys.
 
-#ifdef ENV_PROD
-// PRODUCTION key - NOT YET PROVISIONED. Replace with the public key exported from
-// the production AWS KMS CMK (`aws kms get-public-key`, DER converted to PEM - see
-// openspec tasks.md 1.1/1.2, cross-repo in energyme-infra) BEFORE the first release
-// that ships this feature (2.4.0).
-//
-// The placeholder below is deliberately NOT a valid key: mbedtls_pk_parse_public_key
-// fails on it, so a prod build accidentally made before provisioning FAILS CLOSED -
-// every MQTT OTA is rejected with `pubkey_parse_error` rather than the build trusting
-// a key that never existed. Local web upload remains available as the recovery path.
+#ifndef ENV_DEV
+// Production key.
 constexpr const char* OTA_SIGNING_PUBLIC_KEY_PEM =
-"REPLACE_WITH_PRODUCTION_KMS_PUBLIC_KEY_PEM";
+"-----BEGIN PUBLIC KEY-----\n"
+"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEFtOoSAhpqnoaVbqMTTGsc3t0nMaMp0raYmcJId22\n"
+"bzF37RlPSgXIqXRlwUhxhRWJzwVHhouE/hqUWdL3rmdwMg==\n"
+"-----END PUBLIC KEY-----\n";
 #else
-// DEV/TEST KEY - dev builds only, never reaches a vendor device (those run
-// esp32s3-prod / ENV_PROD). This is the public half of the dev AWS KMS signing
-// CMK (`alias/energyme-home-dev-ota-signing`); the private half never leaves KMS.
-// Dev releases are signed by the infra pipeline (`ota_release.py sign --env dev`),
-// mirroring the prod KMS signing step 1:1.
+// Dev/test key - dev builds only, never reaches a vendor device.
 constexpr const char* OTA_SIGNING_PUBLIC_KEY_PEM =
 "-----BEGIN PUBLIC KEY-----\n"
 "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEL30m5KjXuHbjc7Q36kt023IgGid7\n"
