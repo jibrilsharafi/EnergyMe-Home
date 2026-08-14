@@ -7,14 +7,14 @@ TBD - Update Purpose after archive.
 ## Requirements
 
 ### Requirement: NVS namespaces and keys are inspectable on a dev build
-The system SHALL, only when built with `ENV_DEV`, expose `GET /api/v1/debug/nvs/namespaces` listing every namespace present in the `nvs` partition with its entry count, and `GET /api/v1/debug/nvs/entries?namespace=X` listing that namespace's keys with their NVS type. The system SHALL NOT expose these endpoints in a production (`ENV_PROD`) build.
+The system SHALL, only when built with `ENV_DEV`, expose `GET /api/v1/debug/nvs/namespaces` listing every namespace present in the `nvs` partition with its entry count, and `GET /api/v1/debug/nvs/entries?namespace=X` listing that namespace's keys with their NVS type. The system SHALL NOT expose these endpoints in a production build (i.e. any build not defining `ENV_DEV`).
 
 #### Scenario: Namespace listing reflects the live partition
 - **WHEN** `GET /api/v1/debug/nvs/namespaces` is requested on a dev build
 - **THEN** the response includes every namespace with at least one key in the `nvs` partition, each with its entry count
 
 #### Scenario: Production build has no NVS debug surface
-- **WHEN** the firmware is built with `ENV_PROD`
+- **WHEN** the firmware is built without `ENV_DEV`
 - **THEN** `/api/v1/debug/nvs/*` does not exist as a route
 
 ### Requirement: Certificate and key values are never returned in full

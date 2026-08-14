@@ -4,6 +4,7 @@
 #include "utils.h"
 #include "backoff_schedule.h"
 #include "duration_format.h"
+#include "sha256_hex.h"
 #include "version_compare.h"
 
 #include <esp_random.h>
@@ -717,14 +718,12 @@ bool setRestartSystem(const char* reason, bool factoryReset) {
 // Firmware rollback (#237)
 // -----------------------------
 
+static_assert(SHA256_HEX_BUFFER_SIZE == Sha256Hex::BUFFER_SIZE,
+              "sha256 hex buffers are sized by constants.h but written by lib/sha256_hex");
+
+// Forwarder - the logic lives in lib/sha256_hex so it is host-testable
 void sha256BytesToHex(const uint8_t sha256[32], char* out, size_t outSize) {
-    if (!out || outSize < SHA256_HEX_BUFFER_SIZE) return;
-    static const char hex[] = "0123456789abcdef";
-    for (size_t i = 0; i < 32; i++) {
-        out[i * 2] = hex[sha256[i] >> 4];
-        out[i * 2 + 1] = hex[sha256[i] & 0x0F];
-    }
-    out[64] = '\0';
+    Sha256Hex::bytesToHex(sha256, out, outSize);
 }
 
 static const esp_partition_t* _getPassiveOtaPartition() {

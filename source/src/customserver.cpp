@@ -1339,6 +1339,9 @@ namespace CustomServer
             
             LOG_INFO("OTA update completed successfully");
             LOG_DEBUG("New firmware MD5: %s", Update.md5String().c_str());
+            // Distinct from the MQTT/cloud OTA success log: local uploads have no
+            // cryptographic signature check (see ota-firmware-signature-verification spec)
+            LOG_WARNING("Firmware installed via local web upload - not cryptographically verified");
 
             // Fresh image in the partition - give it its own rollback chance,
             // independent of whatever the previous firmware already consumed

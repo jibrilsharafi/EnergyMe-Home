@@ -25,6 +25,11 @@ manual/         User-facing docs (install, troubleshoot)
 
 Static analysis: `pio check -e esp32s3-dev` (cppcheck + clangtidy).
 
+## On-device logging / debugging
+
+- **NEVER set the log `save` level to DEBUG or VERBOSE.** Saving verbose logs writes every line to LittleFS; during a memory-tight operation (an MQTT/cloud OTA download holds large mbedTLS/TLS internal-RAM buffers) this starves the heap and crashes the log task (`AdvancedLogTask`, Exception/panic). Keep `save` at WARNING or higher. (Bit us on the bench during OTA signature testing, 2026-08-13.)
+- For verbose diagnostics use **UDP logs**, not flash. Use the existing `source/utils/udp_log_listener.py` — do not hand-roll a listener. `python source/utils/udp_log_listener.py -H <this-PC-ip>` configures the device destination and tails logs. Set `print` level to DEBUG (feeds UDP/serial); `save` stays WARNING+.
+
 **Never bump the platform version** (`pioarduino 55.03.32` = Arduino Core 3.3.2 / ESP-IDF v5.5.1). v5.5.4 loses ~50 KB of internal heap and silently breaks networking under load (no crash, just unreachable). Don't change `[common]` platform / memory / flash settings - the `qio_qspi` PSRAM + `qio` flash combo is the only one that works on this SoC.
 
 ## Hardware profile
