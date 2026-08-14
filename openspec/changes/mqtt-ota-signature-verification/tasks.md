@@ -1,13 +1,13 @@
 ## 1. Cross-repo prerequisites (coordinate with energyme-infra / release pipeline — outside this repo)
 
-- [ ] 1.1 Provision an AWS KMS asymmetric CMK (`ECC_NIST_P256`, `SIGN_VERIFY`) via CDK, with a key policy granting `kms:Sign` only to the CI OIDC-federated IAM role
-- [ ] 1.2 Export the CMK's public key (`aws kms get-public-key`) as DER `SubjectPublicKeyInfo` bytes, for embedding in firmware (task 2.1)
-- [ ] 1.3 Add a CI release step: compute `firmware.bin`'s SHA-256 digest, call `kms:Sign` with `MessageType=DIGEST` / `SigningAlgorithm=ECDSA_SHA_256`, base64-encode the returned DER signature
-- [ ] 1.4 Update the IoT job-creation step to include the base64 signature as `firmware.signature` in the job document, alongside existing `firmware.url` / `firmware.version`
+- [x] 1.1 Provision an AWS KMS asymmetric CMK (`ECC_NIST_P256`, `SIGN_VERIFY`) via CDK, with a key policy granting `kms:Sign` only to the CI OIDC-federated IAM role
+- [x] 1.2 Export the CMK's public key (`aws kms get-public-key`) as DER `SubjectPublicKeyInfo` bytes, for embedding in firmware (task 2.1)
+- [x] 1.3 Add a CI release step: compute `firmware.bin`'s SHA-256 digest, call `kms:Sign` with `MessageType=DIGEST` / `SigningAlgorithm=ECDSA_SHA_256`, base64-encode the returned DER signature
+- [x] 1.4 Update the IoT job-creation step to include the base64 signature as `firmware.signature` in the job document, alongside existing `firmware.url` / `firmware.version`
 
 ## 2. Firmware: embed public key
 
-- [x] 2.1 Add `source/include/ota_keys.h` with the public key compiled in as `constexpr const char*` PEM (matches the existing `AWS_IOT_CORE_CA_CERT` convention in `awsconfig.h`, which `mbedtls_pk_parse_public_key` accepts directly - no NVS storage, no runtime configuration path). **Embeds a locally-generated dev/test P-256 keypair, clearly marked in the header; must be swapped for the real KMS-exported public key (task 1.2) before any vendor/production build.**
+- [x] 2.1 Add `source/include/ota_keys.h` with the public key compiled in as `constexpr const char*` PEM (matches the existing `AWS_IOT_CORE_CA_CERT` convention in `awsconfig.h`, which `mbedtls_pk_parse_public_key` accepts directly - no NVS storage, no runtime configuration path). Dev builds embed the dev KMS key; prod builds embed the real production KMS-exported public key (task 1.2, done in energyme-infra).
 
 ## 3. Firmware: job document parsing
 
@@ -82,7 +82,8 @@
 ## 12. Rollback-command bypass and per-environment keys (found by Jibril, see design.md Decisions 11-12)
 
 - [x] 12.1 Closed the `firmware_rollback` bypass: a fully-downloaded-then-rejected image stayed intact in the passive slot, and the rollback command (sha256 match + structural `esp_image_verify` only) could boot it - added `_scrubRejectedOtaImage()` erasing the image header on any failed download that wrote bytes, scoped by `bytesWritten > 0` so failures that never touched flash preserve the legitimate rollback target. New spec requirement + 2 scenarios added
-- [x] 12.2 Gated `ota_keys.h` by `ENV_PROD`: dev builds embed the bench dev key; prod builds get a deliberately invalid placeholder that fails closed (`pubkey_parse_error`) until the KMS public key is provisioned - keeps CI's esp32s3-prod build green without ever trusting a placeholder
+- [x] 12.2 Gated `ota_keys.h` by absence of `ENV_DEV` (the `ENV_PROD` flag was removed as a redundant duplicate - see 12.4): dev builds embed the dev KMS key; prod builds embed the real production KMS-exported public key (1.1-1.4, done in energyme-infra)
+- [x] 12.4 Removed `-DENV_PROD` from `esp32s3-prod`'s build_flags and flipped `ota_keys.h` from `#ifdef ENV_PROD` to `#ifndef ENV_DEV`, matching the `#ifdef ENV_DEV` convention used everywhere else in the codebase; updated `device-provisioning` spec wording (`ENV_PROD` -> "without `ENV_DEV`") accordingly. Also trimmed `ota_keys.h`'s comments (public repo - dropped internal KMS alias names, cross-repo task references, and the now-stale "not yet provisioned" placeholder framing)
 - [x] 12.3 Hardware/e2e test (with 6.3-6.5): after a tampered-signature rejection, confirmed `firmware_rollback` is refused (`"No valid firmware in the other partition"`, HTTP 400) - both via the dev-inject path and a real AWS IoT job (see group 14)
 
 ## 14. Real AWS IoT Jobs end-to-end (dev account, bench device, 2026-08-13)
