@@ -101,14 +101,9 @@ class RebootWait {
         // opaque (status unreadable) either way, but reachability is all this needs - the
         // health endpoint has no failure response to distinguish, only up or unreachable.
         return fetch(`${baseUrl}/api/v1/health`, { signal: controller.signal, cache: 'no-store', mode: 'no-cors' })
-            .then(() => {
-                clearTimeout(timeoutId);
-                return true;
-            })
-            .catch(() => {
-                clearTimeout(timeoutId);
-                return false;
-            });
+            .then(() => true)
+            .catch(() => false)
+            .finally(() => clearTimeout(timeoutId));
     }
 
     _delay(ms) {
