@@ -3,7 +3,7 @@
 - [x] 1.1 Add `source/js/reboot-wait.js`: exposes a function that shows the dimmed modal, polls `/api/v1/health` at a fixed interval, requires one observed failure before treating a success as "back online", caps the wait with a manual fallback, and redirects to a caller-supplied target (default `/`) on success.
 - [x] 1.2 Add the shared trivia fact list (moth bug, planets/Moon, China+USA electricity share, Egyptians/Romans, microwave standby, Watt/electron, octopus hearts, "read the code you're waiting on") and the carousel logic (auto-advance interval, manual prev/next that resets the timer, `prefers-reduced-motion` handling per the earlier mockup).
 - [x] 1.3 Add supporting CSS for the dimmed scrim, modal box, spinner, status line, elapsed timer, and trivia strip (reuse the existing `button-spinner` keyframes from `forms.css` rather than duplicating them).
-- [ ] 1.4 Manually verify the module in isolation against a real device: trigger `POST /api/v1/system/restart` via the browser console, confirm the modal appears, confirm it does not redirect on a health poll that succeeds before the device actually drops (the false-positive race described in design.md), confirm it redirects once the device is truly back.
+- [x] 1.4 Manually verified against the real bench device (192.168.1.82, esp32s3-dev-v5 build): plain restart shows the modal, waits past the "seen a failure first" gate (didn't redirect on an immediate/premature success), and redirects home once actually back.
 
 ## 2. Wire into configuration.html
 
@@ -29,6 +29,6 @@
 
 ## 6. Final pass
 
-- [ ] 6.1 Run `pio check -e esp32s3-dev` to confirm no regressions (this change is web-UI-only, but confirm no firmware files were accidentally touched).
-- [ ] 6.2 Manually exercise every wired-in action against a real device (restart, static IP apply, WiFi switch, rollback, config restore, OTA update) and confirm consistent modal behavior and copy across all of them.
+- [x] 6.1 Run `pio check -e esp32s3-dev` to confirm no regressions (this change is web-UI-only, but confirm no firmware files were accidentally touched). `pio run -e esp32s3-dev` and `pio check -e esp32s3-dev` both pass; 0 HIGH findings, only pre-existing MEDIUM/LOW noise unrelated to this change.
+- [ ] 6.2 Manually exercise every wired-in action against a real device (restart, static IP apply, WiFi switch, rollback, config restore, OTA update) and confirm consistent modal behavior and copy across all of them. Done on the bench device (192.168.1.82): restart, rollback, config restore, and a full browser-driven OTA update (including the upload-ring-to-modal hand-off and shared trivia list) all confirmed working - consistent modal, honest 3-state copy, working trivia, correct redirect target each time. Static IP apply and WiFi credential switch not yet exercised live: both risk moving the device to an address unreachable from this network if something goes wrong, held for explicit go-ahead before attempting on the only bench device available.
 - [ ] 6.3 Code review + simplification pass per this repo's PR checklist before merging to `development`.
