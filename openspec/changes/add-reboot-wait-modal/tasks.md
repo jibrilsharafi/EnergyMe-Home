@@ -17,9 +17,9 @@
 
 ## 4. Wire into update.html (non-OTA actions)
 
-- [ ] 4.1 Replace `doRollback()`'s post-success `setTimeout(() => window.location.reload(), 5000)` with a call into the shared module.
-- [ ] 4.2 Replace `restoreConfigSubmitted()`'s nested `setTimeout` pair with a call into the shared module.
-- [ ] 4.3 Filesystem restore (`restoreFilesystemSubmitted()`) does not currently redirect or restart the device; confirm whether it actually triggers a reboot and only wire it in if it does (otherwise leave as-is).
+- [x] 4.1 Replace `doRollback()`'s post-success `setTimeout(() => window.location.reload(), 5000)` with a call into the shared module.
+- [x] 4.2 Replace `restoreConfigSubmitted()`'s nested `setTimeout` pair with a call into the shared module.
+- [x] 4.3 Filesystem restore (`restoreFilesystemSubmitted()`) does not currently redirect or restart the device. Confirmed against `customserver.cpp`: `/api/v1/restore/filesystem` extracts straight into the live LittleFS and responds success, unlike `/api/v1/restore/configuration` it never calls `setRestartSystem`. Left as-is, not wired in.
 
 ## 5. Wire into update.html (OTA update) and consolidate trivia
 
