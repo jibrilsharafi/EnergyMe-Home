@@ -290,16 +290,11 @@
             return "Please wait, this operation usually takes 10-20 seconds.<br>In the meantime, did you know that...<br><br>" + getRandomFact();
         }
 
+        // Shared with the reboot-wait modal's trivia carousel (js/reboot-wait.js), one fact
+        // list, not two that drift apart.
         function getRandomFact() {
-            var facts = [
-                "The bugs are called bugs because the first computer bug was an actual moth found inside a computer.",
-                "The Egyptians are as far in time from the Romans as the Romans are from us.",
-                "You could fit all the planets in the solar system between the Earth and the Moon.",
-                "China and the USA alone account for almost 50% of the world's electricity consumption."
-            ];
-
-            var fact = facts[Math.floor(Math.random() * facts.length)];
-            return fact;
+            var facts = window.rebootWait.FACTS;
+            return facts[Math.floor(Math.random() * facts.length)];
         }
 
         function updateProgress() {
@@ -398,20 +393,14 @@
                     .then(response => response.json())
                     .then(data => {
                         document.getElementById('loading-overlay').style.display = 'none';
-                        resultMessageBox.style.display = 'block';
 
                         if (data.success || data.message) {
-                            resultMessageBox.style.backgroundColor = '#d4edda';
-                            resultMessageBox.style.color = '#155724';
-                            resultMessageBox.innerHTML = 'Update successful! The device will restart. Redirecting in 5 seconds...';
-
                             document.getElementById("submit").value = "Update successful";
                             document.getElementById("submit").style.backgroundColor = '#28a74550';
 
-                            setTimeout(function () {
-                                window.location.href = '/';
-                            }, 5000);
+                            window.rebootWait.show();
                         } else {
+                            resultMessageBox.style.display = 'block';
                             resultMessageBox.style.backgroundColor = '#f8d7da';
                             resultMessageBox.style.color = '#721c24';
                             resultMessageBox.innerHTML = 'Update failed: ' + (data.error || data.message || 'Unknown error');

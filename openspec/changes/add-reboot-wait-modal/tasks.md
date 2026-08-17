@@ -23,9 +23,9 @@
 
 ## 5. Wire into update.html (OTA update) and consolidate trivia
 
-- [ ] 5.1 Move `getRandomFact()`'s local `facts` array into the shared trivia list from task 1.2; have `getLoadingMessage()` read from the shared list instead of its own copy.
-- [ ] 5.2 After the OTA upload's `fetch('/api/v1/ota/upload', ...)` succeeds and the byte-progress ring completes, hand off to the shared reboot-wait module instead of the current `setTimeout(() => window.location.href = '/', 5000)`.
-- [ ] 5.3 Confirm the upload failure path (non-success response) is unaffected and still shows its existing error messaging without invoking the wait screen.
+- [x] 5.1 Move `getRandomFact()`'s local `facts` array into the shared trivia list from task 1.2; have `getLoadingMessage()` read from the shared list instead of its own copy.
+- [x] 5.2 After the OTA upload's `fetch('/api/v1/ota/upload', ...)` succeeds and the byte-progress ring completes, hand off to the shared reboot-wait module instead of the current `setTimeout(() => window.location.href = '/', 5000)`.
+- [x] 5.3 Confirm the upload failure path (non-success response) is unaffected and still shows its existing error messaging without invoking the wait screen.
 
 ## 6. Final pass
 
