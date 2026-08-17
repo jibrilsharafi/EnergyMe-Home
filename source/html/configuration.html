@@ -13,6 +13,7 @@
     <link rel="stylesheet" type="text/css" href="/css/section.css">
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
     <link rel="stylesheet" type="text/css" href="/css/forms.css">
+    <link rel="stylesheet" type="text/css" href="/css/reboot-wait.css">
 
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 
@@ -418,6 +419,7 @@
     </div>
 
     <script src="/js/api-client.js"></script>
+    <script src="/js/reboot-wait.js"></script>
     <script src="/js/issues.js"></script>
     <script>
         var logLevels = ["Verbose", "Debug", "Info", "Warning", "Error", "Fatal"];
@@ -459,14 +461,8 @@
             restartButton.classList.add('loading');
 
             try {
-                showStatus("Restarting device...", 'info');
-
                 await energyApi.restartSystem();
-
-                showStatus("Device restarting... You will be redirected in 12 seconds.", 'success', 12000);
-                setTimeout(function () {
-                    window.location.href = "/";
-                }, 12000);
+                window.rebootWait.show();
             } catch (error) {
                 showStatus("Error restarting device: " + error.message, 'error');
                 restartButton.disabled = false;
@@ -1081,17 +1077,10 @@
 
                 // After the restart the device may answer at a new address. For a static IP that is
                 // the address the user just entered; for DHCP its mDNS name (energyme.local) follows
-                // it whatever lease it gets. Auto-redirect there once the device is back; if mDNS
-                // isn't supported on this client (e.g. some Android) or a bad static IP fell back to
-                // DHCP, the user can reach it via energyme.local or the router's device list.
-                const REDIRECT_DELAY_MS = 15000;
+                // it whatever lease it gets. Poll and redirect against that new address, not the
+                // one this page was loaded from.
                 const targetUrl = useStaticIp ? ("http://" + ip) : "http://energyme.local";
-                const hint = useStaticIp
-                    ? "If it doesn't load, the static IP may have been rejected - try energyme.local or your router."
-                    : "If it doesn't load, check your router for the device's new address.";
-                showStatus("Configuration saved. Device restarting - redirecting to " + targetUrl +
-                    " in ~15s. " + hint, 'success', REDIRECT_DELAY_MS);
-                setTimeout(function () { window.location.href = targetUrl; }, REDIRECT_DELAY_MS);
+                window.rebootWait.show({ redirectTo: targetUrl, baseUrl: targetUrl });
                 // Don't restore button - the device is restarting
             } catch (error) {
                 button.disabled = false;

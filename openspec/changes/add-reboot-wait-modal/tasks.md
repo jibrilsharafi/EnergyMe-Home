@@ -7,9 +7,9 @@
 
 ## 2. Wire into configuration.html
 
-- [ ] 2.1 Replace the plain `restart()` function's `setTimeout`/`showStatus` pair with a call into the shared module (default redirect target).
-- [ ] 2.2 Replace the network-config-apply flow's `setTimeout` with a call into the shared module, passing the newly configured address as the redirect target.
-- [ ] 2.3 Confirm `factoryReset()` is left untouched (no polling, no redirect, existing reconnection instructions stay).
+- [x] 2.1 Replace the plain `restart()` function's `setTimeout`/`showStatus` pair with a call into the shared module (default redirect target).
+- [x] 2.2 Replace the network-config-apply flow's `setTimeout` with a call into the shared module, passing the newly configured address as the redirect target.
+- [x] 2.3 Confirm `factoryReset()` is left untouched (no polling, no redirect, existing reconnection instructions stay).
 
 ## 3. Wire into wifi-setup.html
 

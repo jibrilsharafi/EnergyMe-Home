@@ -94,10 +94,16 @@ class RebootWait {
     _pollHealth(baseUrl) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), this.POLL_TIMEOUT_MS);
-        return fetch(`${baseUrl}/api/v1/health`, { signal: controller.signal, cache: 'no-store' })
-            .then(response => {
+        // no-cors: the device sends no Access-Control-Allow-Origin header, so a same-origin
+        // restart still works in normal mode but a cross-origin one (static IP / DHCP address
+        // change) would have every poll rejected by the browser's CORS check regardless of
+        // whether the device is actually up. no-cors sidesteps that; the response becomes
+        // opaque (status unreadable) either way, but reachability is all this needs - the
+        // health endpoint has no failure response to distinguish, only up or unreachable.
+        return fetch(`${baseUrl}/api/v1/health`, { signal: controller.signal, cache: 'no-store', mode: 'no-cors' })
+            .then(() => {
                 clearTimeout(timeoutId);
-                return response.ok;
+                return true;
             })
             .catch(() => {
                 clearTimeout(timeoutId);
