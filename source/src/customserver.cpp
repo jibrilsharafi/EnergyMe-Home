@@ -1065,6 +1065,9 @@ namespace CustomServer
         _onOpenDuringSession("/css/typography.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/css", EMBEDDED(typography_css), etag);
         });
+        _onOpenDuringSession("/css/reboot-wait.css", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/css", EMBEDDED(reboot_wait_css), etag);
+        });
 
         // JavaScript files
         _onOpenDuringSession("/js/api-client.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
@@ -1084,6 +1087,9 @@ namespace CustomServer
         });
         _onOpenDuringSession("/js/tooltip.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "application/javascript", EMBEDDED(tooltip_js), etag);
+        });
+        _onOpenDuringSession("/js/reboot-wait.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "application/javascript", EMBEDDED(reboot_wait_js), etag);
         });
 
         // Resources

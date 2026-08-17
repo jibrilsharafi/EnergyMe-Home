@@ -18,6 +18,8 @@ extern const char forms_css[]          asm("_binary_css_forms_css_start");
 extern const char forms_css_end[]      asm("_binary_css_forms_css_end");
 extern const char index_css[]          asm("_binary_css_index_css_start");
 extern const char index_css_end[]      asm("_binary_css_index_css_end");
+extern const char reboot_wait_css[]     asm("_binary_css_reboot_wait_css_start");
+extern const char reboot_wait_css_end[] asm("_binary_css_reboot_wait_css_end");
 extern const char styles_css[]         asm("_binary_css_styles_css_start");
 extern const char styles_css_end[]     asm("_binary_css_styles_css_end");
 extern const char section_css[]        asm("_binary_css_section_css_start");
@@ -38,6 +40,8 @@ extern const char issues_js[]           asm("_binary_js_issues_js_start");
 extern const char issues_js_end[]       asm("_binary_js_issues_js_end");
 extern const char power_flow_js[]       asm("_binary_js_power_flow_js_start");
 extern const char power_flow_js_end[]   asm("_binary_js_power_flow_js_end");
+extern const char reboot_wait_js[]      asm("_binary_js_reboot_wait_js_start");
+extern const char reboot_wait_js_end[]  asm("_binary_js_reboot_wait_js_end");
 extern const char tooltip_js[]          asm("_binary_js_tooltip_js_start");
 extern const char tooltip_js_end[]      asm("_binary_js_tooltip_js_end");
 
