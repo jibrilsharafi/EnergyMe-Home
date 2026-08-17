@@ -1,6 +1,6 @@
 ## Why
 
-`configuration.html`, `update.html`, and `wifi-setup.html` each guess how long a restart takes and hardcode a `setTimeout` before reloading or redirecting (5s, 10s, 12s, 15s, 30s, all different, all wrong some of the time). Each page also has its own inline copy for the wait, so the experience drifts between pages for the same underlying event: the device dropped off the network and hasn't come back yet. We already expose an unauthenticated `/api/v1/health` endpoint that can be polled to know for real when the device is back, so there's no reason to keep guessing.
+`configuration.html` and `update.html` each guess how long a restart takes and hardcode a `setTimeout` before reloading or redirecting (5s, 10s, 12s, 15s, 30s, all different, all wrong some of the time) - or, for `configuration.html`'s WiFi credential switch, don't even redirect, just tell the user to wait and leave the button disabled forever. Each page also has its own inline copy for the wait, so the experience drifts between pages for the same underlying event: the device dropped off the network and hasn't come back yet. We already expose an unauthenticated `/api/v1/health` endpoint that can be polled to know for real when the device is back, so there's no reason to keep guessing.
 
 ## What Changes
 
@@ -11,6 +11,7 @@
 - The "did you know" facts move out of `update.html`'s local array into one shared list both surfaces pull from.
 - Every reboot-triggering action in the web UI switches to this component in place of its own `setTimeout`/`showStatus` combo: plain restart, network config apply, WiFi credential switch, OTA update, firmware rollback, configuration restore, filesystem restore.
 - **Excluded on purpose**: factory reset. It erases the stored WiFi credentials, so the device leaves the current network entirely and comes back only on its own SoftAP at an address the browser has no way to guess. Polling the old address would never succeed, so `configuration.html`'s existing "here's how to reconnect" instructions stay as they are.
+- **Also out of scope**: `wifi-setup.html`'s own unauthenticated provisioning flow (the initial SoftAP setup a factory-fresh or freshly-reset device goes through). It already has bespoke polling suited to that specific transition (the device leaves AP mode entirely, so there's no "session" to keep alive in the way this component assumes) and isn't a hardcoded-delay problem. The WiFi credential switch this change targets is the *authenticated* one in `configuration.html`, for a device that's already provisioned and simply moving to a different network.
 
 ## Capabilities
 
@@ -24,7 +25,6 @@
 ## Impact
 
 - New: `source/js/reboot-wait.js` (poll/detect/redirect logic + trivia carousel), plus supporting CSS.
-- `source/html/configuration.html`: plain restart and network-config-apply flows (the latter needs a configurable redirect target since a static-IP change can move the device to a different address).
-- `source/html/wifi-setup.html`: WiFi credential switch flow.
+- `source/html/configuration.html`: plain restart, network-config-apply, and WiFi-credential-switch flows (the first two need a configurable redirect target since a static-IP or network change can move the device to a different address; WiFi switch has no known target, so it best-effort polls `energyme.local` the same way network-config-apply's DHCP branch does).
 - `source/html/update.html`: OTA update, firmware rollback, configuration restore, filesystem restore flows; existing upload-progress ring stays, hands off to the new modal for the reboot half.
 - No firmware or REST API changes; reuses the existing unauthenticated `/api/v1/health` endpoint as-is.

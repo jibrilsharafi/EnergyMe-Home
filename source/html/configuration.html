@@ -528,14 +528,17 @@
             button.classList.add('loading');
 
             try {
-                showStatus("Switching WiFi network...", 'info');
-
                 await energyApi.setWifiCredentials(ssid, password);
 
-                showStatus("WiFi credentials saved successfully. The device will restart and connect to '" + ssid + "'. Please wait about 15 seconds.", 'success', 15000);
                 // Clear the form
                 document.getElementById("newWifiSsid").value = "";
                 document.getElementById("newWifiPassword").value = "";
+
+                // No way to know the device's new address in advance (unlike the static-IP
+                // case). Best-effort poll energyme.local, same target the DHCP branch of
+                // network-config-apply uses; if the new network doesn't overlap with this
+                // one, the wait screen's own timeout and fallback cover it.
+                window.rebootWait.show({ redirectTo: "http://energyme.local", baseUrl: "http://energyme.local" });
                 // Don't restore button - page will become unreachable after restart
             } catch (error) {
                 button.disabled = false;

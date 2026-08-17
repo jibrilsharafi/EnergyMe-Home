@@ -11,9 +11,9 @@
 - [x] 2.2 Replace the network-config-apply flow's `setTimeout` with a call into the shared module, passing the newly configured address as the redirect target.
 - [x] 2.3 Confirm `factoryReset()` is left untouched (no polling, no redirect, existing reconnection instructions stay).
 
-## 3. Wire into wifi-setup.html
+## 3. Wire into configuration.html's WiFi credential switch
 
-- [ ] 3.1 Replace the WiFi credential switch flow's `setTimeout`/`showStatus` pair with a call into the shared module.
+- [x] 3.1 Replace `switchWifi()`'s "wait ~15 seconds, button stays disabled forever" ending with a call into the shared module, polling `energyme.local` as a best-effort target (corrected from the original task text, which named `wifi-setup.html`: the authenticated WiFi switch actually lives in `configuration.html`'s `switchWifi()`; `wifi-setup.html` only has the unauthenticated initial-provisioning flow, which is out of scope, see proposal.md).
 
 ## 4. Wire into update.html (non-OTA actions)
 
