@@ -3,7 +3,7 @@
 See proposal.md - Why. Relevant existing pieces:
 
 - `GET /api/v1/health` (`customserver.cpp`) already exists, is unauthenticated (`.skipServerMiddlewares()`), and returns `{status, uptime, timestamp}`. No firmware change needed to use it as a poll target.
-- `POST /api/v1/system/restart`, `POST /api/v1/ota/rollback`, `POST /api/v1/restore/configuration`, `POST /api/v1/restore/filesystem`, and the WiFi-switch and static-IP-apply endpoints, all called from `configuration.html` and `update.html`, are the seven call sites this replaces. Each currently disables its trigger button and shows a `showStatus()` toast; most fire a page-specific `setTimeout` before redirecting or reloading, except the WiFi credential switch, which doesn't redirect at all today - it just tells the user to wait and leaves the button disabled. (`wifi-setup.html`'s own WiFi flow is the unauthenticated initial-provisioning one, out of scope - see proposal.md.)
+- `POST /api/v1/system/restart`, `POST /api/v1/ota/rollback`, `POST /api/v1/restore/configuration`, and the WiFi-switch and static-IP-apply endpoints, all called from `configuration.html` and `update.html`, are the six call sites this replaces. Each currently disables its trigger button and shows a `showStatus()` toast; most fire a page-specific `setTimeout` before redirecting or reloading, except the WiFi credential switch, which doesn't redirect at all today - it just tells the user to wait and leaves the button disabled. (`wifi-setup.html`'s own WiFi flow is the unauthenticated initial-provisioning one, out of scope - see proposal.md.) `POST /api/v1/restore/filesystem` is excluded: it extracts straight into the live LittleFS and responds without calling `setRestartSystem()`, so the device never reboots and there's nothing to poll for.
 - `update.html` already has real progress data during the upload phase via `GET /api/v1/ota/status` (`Update.progress()/size()`), polled every `UPDATE_PROGRESS_INTERVAL` (2000ms). That polling loop and its progress ring are unaffected by this change; only what happens after the upload finishes and the device restarts is replaced.
 - The mocked UI (dimmed modal, honest 3-state copy, trivia carousel with manual arrows) was agreed on directly with Jibril before this change was scaffolded; the visual/copy decisions below aren't re-litigated here.
 
@@ -54,8 +54,8 @@ No feature flag or staged rollout needed, this is a client-side-only swap with n
 1. Add the shared `reboot-wait` module (detection + modal + trivia) and its CSS, unused by any page yet.
 2. Wire it into `configuration.html`'s plain restart (simplest call site, no custom redirect target).
 3. Wire it into `configuration.html`'s network-config-apply (introduces the redirect-target parameter).
-4. Wire it into `wifi-setup.html`'s credential switch.
-5. Wire it into `update.html`'s rollback, configuration-restore, and filesystem-restore flows.
+4. Wire it into `configuration.html`'s credential switch.
+5. Wire it into `update.html`'s rollback and configuration-restore flows.
 6. Wire it into `update.html`'s OTA update flow (hand-off from the existing progress ring) and consolidate the trivia list.
 
 Rollback is trivial at any step: each commit only touches one page's JS, reverting it restores that page's previous `setTimeout` behavior without affecting the others.

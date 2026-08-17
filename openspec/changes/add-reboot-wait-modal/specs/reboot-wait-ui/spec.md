@@ -77,7 +77,7 @@ The wait screen SHALL redirect to `/` by default once the device is back online,
 - **THEN** the wait screen polls and redirects to the newly configured address, not the address the page was loaded from
 
 ### Requirement: Every reboot-triggering web UI action uses the shared wait screen
-The following actions SHALL use this wait screen instead of a page-specific hardcoded delay: plain device restart, network configuration apply, WiFi credential switch, OTA firmware update (after the upload completes), firmware rollback, configuration restore, and filesystem restore.
+The following actions SHALL use this wait screen instead of a page-specific hardcoded delay: plain device restart, network configuration apply, WiFi credential switch, OTA firmware update (after the upload completes), firmware rollback, and configuration restore.
 
 #### Scenario: OTA update hands off after upload completes
 - **WHEN** a firmware upload finishes and the device begins its restart
@@ -89,3 +89,10 @@ Because factory reset erases the device's stored WiFi credentials, the device le
 #### Scenario: Factory reset triggered
 - **WHEN** a factory reset is triggered and completes
 - **THEN** the web UI shows reconnection instructions and does not attempt to poll `/api/v1/health` or redirect
+
+### Requirement: Filesystem restore does not use the shared wait screen
+Restoring a filesystem backup extracts directly into the live LittleFS and responds without restarting the device, unlike configuration restore which does trigger a restart. The web UI SHALL NOT poll or redirect after a filesystem restore, since the device never reboots.
+
+#### Scenario: Filesystem restore triggered
+- **WHEN** a filesystem restore completes
+- **THEN** the web UI does not invoke the shared wait screen and does not poll `/api/v1/health`

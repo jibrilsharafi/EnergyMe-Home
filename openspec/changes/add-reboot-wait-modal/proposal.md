@@ -9,8 +9,9 @@
 - Total wait is capped with a manual fallback ("still not back, refresh" style) instead of polling forever.
 - `update.html`'s OTA upload screen keeps its own real byte-progress ring (it has genuine data `/api/v1/ota/status` reports); once the upload finishes and the restart fires, it hands off to this same modal for the reboot half instead of its own `setTimeout`-based redirect.
 - The "did you know" facts move out of `update.html`'s local array into one shared list both surfaces pull from.
-- Every reboot-triggering action in the web UI switches to this component in place of its own `setTimeout`/`showStatus` combo: plain restart, network config apply, WiFi credential switch, OTA update, firmware rollback, configuration restore, filesystem restore.
+- Every reboot-triggering action in the web UI switches to this component in place of its own `setTimeout`/`showStatus` combo: plain restart, network config apply, WiFi credential switch, OTA update, firmware rollback, configuration restore.
 - **Excluded on purpose**: factory reset. It erases the stored WiFi credentials, so the device leaves the current network entirely and comes back only on its own SoftAP at an address the browser has no way to guess. Polling the old address would never succeed, so `configuration.html`'s existing "here's how to reconnect" instructions stay as they are.
+- **Also excluded**: filesystem restore. Unlike configuration restore, it extracts straight into the live LittleFS and responds without restarting the device, so there's nothing to poll for.
 - **Also out of scope**: `wifi-setup.html`'s own unauthenticated provisioning flow (the initial SoftAP setup a factory-fresh or freshly-reset device goes through). It already has bespoke polling suited to that specific transition (the device leaves AP mode entirely, so there's no "session" to keep alive in the way this component assumes) and isn't a hardcoded-delay problem. The WiFi credential switch this change targets is the *authenticated* one in `configuration.html`, for a device that's already provisioned and simply moving to a different network.
 
 ## Capabilities
@@ -26,5 +27,5 @@
 
 - New: `source/js/reboot-wait.js` (poll/detect/redirect logic + trivia carousel), plus supporting CSS.
 - `source/html/configuration.html`: plain restart, network-config-apply, and WiFi-credential-switch flows (the first two need a configurable redirect target since a static-IP or network change can move the device to a different address; WiFi switch has no known target, so it best-effort polls `energyme.local` the same way network-config-apply's DHCP branch does).
-- `source/html/update.html`: OTA update, firmware rollback, configuration restore, filesystem restore flows; existing upload-progress ring stays, hands off to the new modal for the reboot half.
+- `source/html/update.html`: OTA update, firmware rollback, configuration restore flows; existing upload-progress ring stays, hands off to the new modal for the reboot half. Filesystem restore is left untouched since it never restarts the device.
 - No firmware or REST API changes; reuses the existing unauthenticated `/api/v1/health` endpoint as-is.
