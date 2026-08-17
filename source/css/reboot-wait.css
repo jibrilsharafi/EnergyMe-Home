@@ -1,0 +1,125 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* Copyright (C) 2025 Jibril Sharafi */
+
+/* Shared "device is restarting" wait screen. See js/reboot-wait.js. */
+
+.reboot-wait-scrim {
+    position: fixed;
+    inset: 0;
+    background: rgba(20, 22, 26, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+}
+
+.reboot-wait-box {
+    width: 300px;
+    max-width: 90vw;
+    background: white;
+    border-radius: 12px;
+    padding: 26px 22px 20px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
+    box-sizing: border-box;
+}
+
+.reboot-wait-spinner {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 3px solid rgba(33, 150, 243, 0.18);
+    border-top-color: var(--blue);
+    animation: button-spinner 0.9s linear infinite;
+    margin: 0 auto 14px;
+}
+
+.reboot-wait-status {
+    text-align: center;
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: #222;
+    margin: 0 0 4px;
+}
+
+.reboot-wait-elapsed {
+    text-align: center;
+    font-size: 0.75rem;
+    color: #888;
+    margin: 0;
+}
+
+.reboot-wait-trivia {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px dashed #e2e2e2;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.reboot-wait-trivia-arrow {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 1px solid #e2e2e2;
+    background: white;
+    color: #888;
+    font-size: 0.9rem;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.reboot-wait-trivia-arrow:hover {
+    border-color: var(--blue);
+    color: var(--blue);
+}
+
+.reboot-wait-trivia-body {
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+}
+
+.reboot-wait-trivia-label {
+    display: block;
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #79a8d1;
+    margin-bottom: 3px;
+}
+
+.reboot-wait-trivia-text {
+    margin: 0;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    color: #555;
+    min-height: 2.9em;
+}
+
+.reboot-wait-fallback {
+    text-align: center;
+}
+
+.reboot-wait-fallback p {
+    font-size: 0.82rem;
+    color: #555;
+    margin: 0 0 12px;
+}
+
+.reboot-wait-fallback .buttonForm-container {
+    width: 100%;
+    margin-bottom: 0;
+    gap: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .reboot-wait-spinner {
+        animation: none;
+    }
+}

@@ -14,6 +14,7 @@
     <link rel="stylesheet" type="text/css" href="/css/typography.css">
     <link rel="stylesheet" type="text/css" href="/css/forms.css">
     <link rel="stylesheet" type="text/css" href="/css/tooltip.css">
+    <link rel="stylesheet" type="text/css" href="/css/reboot-wait.css">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 
     <title>Update</title>
@@ -278,6 +279,7 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/spark-md5/3.0.2/spark-md5.min.js" integrity="sha512-iWbxiCA4l1WTD0rRctt/BfDEmDC5PiVqFc6c1Rhj/GKjuj6tqrjrikTw3Sypm/eEgMa7jSOS9ydmDlOtxJKlSQ==" crossorigin="anonymous"></script>
     <script src="/js/api-client.js"></script>
+    <script src="/js/reboot-wait.js"></script>
     <script src="/js/issues.js"></script>
     <script src="/js/tooltip.js"></script>
     <script>
@@ -288,16 +290,11 @@
             return "Please wait, this operation usually takes 10-20 seconds.<br>In the meantime, did you know that...<br><br>" + getRandomFact();
         }
 
+        // Shared with the reboot-wait modal's trivia carousel (js/reboot-wait.js), one fact
+        // list, not two that drift apart.
         function getRandomFact() {
-            var facts = [
-                "The bugs are called bugs because the first computer bug was an actual moth found inside a computer.",
-                "The Egyptians are as far in time from the Romans as the Romans are from us.",
-                "You could fit all the planets in the solar system between the Earth and the Moon.",
-                "China and the USA alone account for almost 50% of the world's electricity consumption."
-            ];
-
-            var fact = facts[Math.floor(Math.random() * facts.length)];
-            return fact;
+            var facts = window.rebootWait.FACTS;
+            return facts[Math.floor(Math.random() * facts.length)];
         }
 
         function updateProgress() {
@@ -396,20 +393,14 @@
                     .then(response => response.json())
                     .then(data => {
                         document.getElementById('loading-overlay').style.display = 'none';
-                        resultMessageBox.style.display = 'block';
 
                         if (data.success || data.message) {
-                            resultMessageBox.style.backgroundColor = '#d4edda';
-                            resultMessageBox.style.color = '#155724';
-                            resultMessageBox.innerHTML = 'Update successful! The device will restart. Redirecting in 5 seconds...';
-
                             document.getElementById("submit").value = "Update successful";
                             document.getElementById("submit").style.backgroundColor = '#28a74550';
 
-                            setTimeout(function () {
-                                window.location.href = '/';
-                            }, 5000);
+                            window.rebootWait.show();
                         } else {
+                            resultMessageBox.style.display = 'block';
                             resultMessageBox.style.backgroundColor = '#f8d7da';
                             resultMessageBox.style.color = '#721c24';
                             resultMessageBox.innerHTML = 'Update failed: ' + (data.error || data.message || 'Unknown error');
@@ -578,18 +569,9 @@
             button.innerHTML = '⏳ Rolling back...';
 
             energyApi.rollbackFirmware()
-                .then(data => {
+                .then(() => {
                     document.getElementById('loading-overlay').style.display = 'none';
-                    const resultMessageBox = document.getElementById('result-message');
-                    resultMessageBox.style.display = 'block';
-                    resultMessageBox.style.backgroundColor = '#d4edda';
-                    resultMessageBox.style.color = '#155724';
-                    resultMessageBox.innerHTML = 'Rollback initiated successfully! The device will restart shortly.';
-
-                    // Reload page after delay to see the rollback result
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 5000);
+                    window.rebootWait.show({ redirectTo: window.location.pathname });
                 })
                 .catch(error => {
                     console.error('Rollback failed:', error);
@@ -706,24 +688,10 @@
                 "Restoring configuration...<br>Device will restart when complete.";
 
             try {
-                showStatus('Restoring configuration...', 'info');
-
-                const data = await energyApi.restoreConfiguration(file, force);
+                await energyApi.restoreConfiguration(file, force);
 
                 document.getElementById('loading-overlay').style.display = 'none';
-                resultMessageBox.style.display = 'block';
-                resultMessageBox.style.backgroundColor = '#d4edda';
-                resultMessageBox.style.color = '#155724';
-                resultMessageBox.innerHTML = 'Configuration restore initiated! Device will restart shortly.';
-
-                // Device will restart - show message
-                setTimeout(() => {
-                    resultMessageBox.innerHTML = 'Device is restarting... Page will reload when ready.';
-                    // Try to reload after expected restart time
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 5000);
-                }, 3000);
+                window.rebootWait.show({ redirectTo: window.location.pathname });
             } catch (error) {
                 console.error('Configuration restore failed:', error);
                 document.getElementById('loading-overlay').style.display = 'none';
