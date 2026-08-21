@@ -2174,7 +2174,7 @@ namespace Ade7953
             Mqtt::pushAlarm(alarm);
         }
 
-        LOG_FATAL("Blackout detected: grid power lost (count=%llu, last known voltage=%.1fV)",
+        LOG_ERROR("Blackout detected: grid power lost (count=%llu, last known voltage=%.1fV)",
                   statistics.ade7953ZxtoInterrupts, _meterValues[0].voltage);
     }
 
