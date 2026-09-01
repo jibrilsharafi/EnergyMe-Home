@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "customwifi.h"
+#include "custometh.h"
 #include "taskprofiler.h"
 
 namespace CustomWifi
@@ -692,6 +693,7 @@ namespace CustomWifi
           _disconnectDeadlineMs = 0;
           _connectDeadlineMs = 0;
           _feedProvisioning(WifiProvisioning::Event::STA_CONNECTED);
+          CustomEth::notifyStaState(true); // Interface arbitration (no-op on products without Ethernet)
           statistics.wifiConnection++; // It is here we know the wifi connection went through (and the one which is called on reconnections)
           _lastWifiConnectedMillis = millis64(); // Track connection time for lwIP stabilization
           // Handle successful connection operations safely in task context
@@ -800,6 +802,7 @@ namespace CustomWifi
           LOG_WARNING("WiFi disconnected - auto-reconnect will handle");
           _lastWifiConnectedMillis = 0; // Reset stabilization timer on disconnect
           _feedProvisioning(WifiProvisioning::Event::STA_LOST);
+          CustomEth::notifyStaState(false); // Interface arbitration (no-op on products without Ethernet)
 
           // Give auto-reconnect (enabled by default) a grace window, then evaluate.
           // Arm only when not already armed: re-arming on every disconnect would let a
