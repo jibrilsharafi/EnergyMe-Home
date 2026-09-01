@@ -935,6 +935,11 @@ namespace CustomWifi
     // unreachable even after reconfiguring WiFi through the portal.
     resetConfiguration();
 
+    // Same rule for the wire: this is the "make the device reachable again" hammer,
+    // so every network config goes back to DHCP. A no-op clear on products without
+    // Ethernet (default config, namespace untouched), keeping Home byte-identical.
+    CustomEth::resetConfiguration();
+
     // Erase the credentials the driver stores. This is the same store _hasStoredCredentials()
     // reads, so after this the device boots UNPROVISIONED and raises its SoftAP - the two
     // must agree, or a reset device would still read as provisioned.
