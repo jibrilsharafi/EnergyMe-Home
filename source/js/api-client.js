@@ -472,6 +472,21 @@ class EnergyMeAPI {
     }
 
     /**
+     * Get Ethernet status, or null when the product has no Ethernet (the status
+     * endpoint answers 404, or reports enabled:false). Transient failures still
+     * throw so callers can retry.
+     */
+    async getEthernetStatusIfAvailable() {
+        try {
+            const status = await this.getEthernetStatus();
+            return (status && status.enabled) ? status : null;
+        } catch (error) {
+            if (String(error.message).includes('404')) return null;
+            throw error;
+        }
+    }
+
+    /**
      * Get Ethernet configuration (static IP)
      */
     async getEthernetConfig() {
@@ -838,6 +853,15 @@ class EnergyMeAPI {
 
 // Create global instance
 window.energyApi = new EnergyMeAPI();
+
+/**
+ * Display name for an active network interface reported by the device.
+ * @param {string} name - 'ethernet' | 'wifi' | 'none'
+ */
+function formatInterfaceName(name) {
+    var names = { 'ethernet': 'Ethernet', 'wifi': 'WiFi', 'none': 'None' };
+    return names[name] || 'N/A';
+}
 
 /**
  * Show a toast notification.
