@@ -360,6 +360,18 @@ namespace CustomEth
 
     bool resetConfiguration()
     {
+        // Nothing to reset while eth_ns has never been written - and writing here
+        // would CREATE it, breaking the "no namespace on Home" contract (the button
+        // network reset calls this unconditionally on every product).
+        {
+            Preferences probe;
+            if (!probe.begin(PREFERENCES_NAMESPACE_ETH, true)) {
+                LOG_DEBUG("No Ethernet configuration stored - nothing to reset");
+                return true;
+            }
+            probe.end();
+        }
+
         LOG_DEBUG("Resetting Ethernet configuration to default");
         EthConfiguration defaultConfig;
         if (!setConfiguration(defaultConfig)) {
