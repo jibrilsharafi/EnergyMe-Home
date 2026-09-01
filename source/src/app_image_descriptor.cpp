@@ -63,14 +63,16 @@ ImageDescriptor::DeviceIdentity deviceIdentity() {
 }
 
 ImageDescriptor::Verdict validatePartition(const esp_partition_t* partition, bool rejectDevOnProd) {
+    // A missing partition or failed flash read is a hard reject, never the
+    // legacy-image allowance: "cannot read the staged image" is not evidence
+    // it is a pre-descriptor release.
     uint8_t buf[ImageDescriptor::IMAGE_OFFSET + sizeof(ImageDescriptor::Descriptor)];
-    ImageDescriptor::Descriptor desc;
-    const ImageDescriptor::Descriptor* descPtr = nullptr;
-    if (partition != nullptr &&
-        esp_partition_read(partition, 0, buf, sizeof(buf)) == ESP_OK &&
-        ImageDescriptor::parseFromImageStart(buf, sizeof(buf), desc)) {
-        descPtr = &desc;
+    if (partition == nullptr || esp_partition_read(partition, 0, buf, sizeof(buf)) != ESP_OK) {
+        return ImageDescriptor::Verdict::REJECT_NO_DESCRIPTOR;
     }
+    ImageDescriptor::Descriptor desc;
+    const ImageDescriptor::Descriptor* descPtr =
+        ImageDescriptor::parseFromImageStart(buf, sizeof(buf), desc) ? &desc : nullptr;
     return ImageDescriptor::validate(descPtr, deviceIdentity(), rejectDevOnProd);
 }
 

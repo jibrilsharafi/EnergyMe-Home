@@ -1624,12 +1624,25 @@ namespace CustomServer
         // back off the passive partition before Update.end(true) activates it.
         // A wrong-PSRAM image fails PSRAM init before any application code runs,
         // so nothing post-boot can recover from activating one.
-        ImageDescriptor::Verdict verdict =
-            AppImageDescriptor::validatePartition(esp_ota_get_next_update_partition(NULL), false);
+        const esp_partition_t* stagedPartition = esp_ota_get_next_update_partition(NULL);
+        ImageDescriptor::Verdict verdict = AppImageDescriptor::validatePartition(stagedPartition, false);
         if (!ImageDescriptor::accepts(verdict)) {
             LOG_ERROR("Staged firmware image rejected: %s", ImageDescriptor::verdictToString(verdict));
             _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Firmware image is not compatible with this device");
             Update.abort();
+            // The rejected image is complete and structurally valid in the passive
+            // slot; Update.abort() does not touch flash. Scrub its header (as the
+            // cloud path does) or the rollback consumers - the API/MQTT
+            // firmware_rollback and the crash ladder, none of which are
+            // descriptor-gated - could later activate it and brick the device.
+            // (Not done on the first-chunk reject: nothing was written there and
+            // the passive slot still holds a legitimate rollback target.)
+            if (stagedPartition != nullptr) {
+                esp_err_t scrubErr = esp_partition_erase_range(stagedPartition, 0, OTA_PARTITION_SCRUB_SIZE);
+                if (scrubErr != ESP_OK) {
+                    LOG_ERROR("Failed to scrub rejected OTA image header: %s", esp_err_to_name(scrubErr));
+                }
+            }
             _stopOtaTimeoutTask();
             return;
         }
