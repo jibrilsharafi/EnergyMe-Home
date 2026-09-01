@@ -15,6 +15,7 @@
 #include "constants.h"
 #include "customtime.h"
 #include "customwifi.h"
+#include "customnet.h"
 #include "globals.h"
 #include "utils.h"
 #include "structs.h"
@@ -83,6 +84,10 @@ namespace CustomMqtt
     // Lifecycle management
     void begin();
     void stop();
+
+    // Drops the local MQTT session on the next task loop so it reconnects over
+    // the current default interface (see Mqtt::requestReconnect). Safe from any task.
+    void requestReconnect();
 
     // Configuration management - direct struct operations
     bool getConfiguration(CustomMqttConfiguration &config);
