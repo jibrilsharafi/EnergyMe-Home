@@ -1456,6 +1456,19 @@ namespace CustomServer
             _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "File must be in .bin format");
             return false;
         }
+
+        // Cross-product gate: a wrong-product image fails PSRAM init at boot (quad vs
+        // octal, fixed at compile time). A positive token mismatch is rejected before
+        // any flash write; a name with no token (self-built image) passes as today.
+        ProductLine artifactProduct;
+        if (productFromArtifactName(filename.c_str(), artifactProduct) &&
+            artifactProduct != globalHwProfile->product) {
+            LOG_ERROR("Firmware artifact %s is built for %s but this device is %s - rejected",
+                      filename.c_str(), productLineToString(artifactProduct),
+                      productLineToString(globalHwProfile->product));
+            _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Firmware image is built for a different product");
+            return false;
+        }
         
         // Get content length from header
         size_t contentLength = request->header("Content-Length").toInt();
@@ -1793,9 +1806,14 @@ namespace CustomServer
         const char* changelog = release["html_url"].as<const char*>();
         const char* downloadUrl = nullptr;
 
+        // Releases carry one .bin per product: pick the asset whose token matches the
+        // running product, never simply the first match (the Home token is a substring
+        // of the Pro token, so productFromArtifactName resolves Pro first).
         for (JsonObject asset : release["assets"].as<JsonArray>()) {
             const char* name = asset["name"].as<const char*>();
-            if (name && strstr(name, ".bin") != nullptr && strstr(name, "energyme_home") != nullptr) {
+            if (name == nullptr || strstr(name, ".bin") == nullptr) continue;
+            ProductLine assetProduct;
+            if (productFromArtifactName(name, assetProduct) && assetProduct == globalHwProfile->product) {
                 downloadUrl = asset["browser_download_url"].as<const char*>();
                 break;
             }
