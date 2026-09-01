@@ -58,6 +58,13 @@ namespace Mqtt
     static uint32_t _mqttConnectionAttempt = 0;
     static uint64_t _nextMqttConnectionAttemptMillis = 0;
 
+    // Set from other tasks on interface failover; consumed by _handleConnectedState.
+    static volatile bool _reconnectRequested = false;
+
+    void requestReconnect() {
+        _reconnectRequested = true;
+    }
+
     // Connection state fact for the issue registry, updated once per task loop
     // (the registry tick must not call _clientMqtt.connected() cross-task)
     static volatile bool _lastConnectedState = false;
@@ -1054,7 +1061,7 @@ namespace Mqtt
             TASK_HEARTBEAT(_mqttHeartbeat);
 
             bool connectedNow = false;
-            if (CustomWifi::isFullyConnected()) {
+            if (CustomNet::isFullyConnected()) {
                 if (_clientMqtt.connected()) {
                     connectedNow = true;
                     _handleConnectedState();
@@ -2813,7 +2820,7 @@ namespace Mqtt
             return false;
         }
 
-        if (!CustomWifi::isFullyConnected()) { // No need to check for internet since connected() will do it anyway
+        if (!CustomNet::isFullyConnected()) { // No need to check for internet since connected() will do it anyway
             LOG_WARNING("WiFi not connected. Skipping streaming publish on %s", topic);
             statistics.mqttMessagesPublishedError++;
             return false;
@@ -2866,7 +2873,7 @@ namespace Mqtt
         LogEntry entry;
         uint32_t loops = 0;
         while (xQueueReceive(_logQueue, &entry, 0) == pdTRUE && loops < MAX_LOOP_ITERATIONS) { // Time to wait should be 0 so we don't block the publisher
-            if (CustomWifi::isFullyConnected() && _clientMqtt.connected()) {
+            if (CustomNet::isFullyConnected() && _clientMqtt.connected()) {
                 _publishLog(entry);
             } else {
                 // If not connected, put it back in the queue if there's space
@@ -2885,7 +2892,7 @@ namespace Mqtt
         uint32_t loops = 0;
         while (xQueueReceive(_alarmQueue, &entry, 0) == pdTRUE && loops < MAX_LOOP_ITERATIONS) {
             loops++;
-            if (CustomWifi::isFullyConnected() && _clientMqtt.connected()) {
+            if (CustomNet::isFullyConnected() && _clientMqtt.connected()) {
                 _publishAlarm(entry);
             } else {
                 xQueueSendToFront(_alarmQueue, &entry, 0);
@@ -2908,7 +2915,7 @@ namespace Mqtt
             _sendPowerDataEnabled && // Send only if the send power data flag is enabled (to save on data)
             _initializeMeterQueue() && 
             // Ensure connectivity again!
-            CustomWifi::isFullyConnected() &&  // Fail fast
+            CustomNet::isFullyConnected() &&  // Fail fast
             _clientMqtt.connected()
         ) {
             PayloadMeter payloadMeter;
@@ -3140,14 +3147,21 @@ namespace Mqtt
         if (millis64() >= _nextMqttConnectionAttemptMillis) {
             // Small delay to allow LWIP/SNTP operations to complete
             delay(100);
-            if (CustomWifi::isFullyConnected(true)) _connectMqtt();
+            if (CustomNet::isFullyConnected(true)) _connectMqtt();
         }
     }
 
     static void _handleConnectedState() {
+        if (_reconnectRequested) {
+            _reconnectRequested = false;
+            LOG_INFO("Interface change - dropping MQTT session to reconnect on the new route");
+            _clientMqtt.disconnect();
+            return; // State machine reconnects on the next loop
+        }
+
         // MQTT connection check is sufficient - if TCP to AWS fails, we'll detect it here
         // Use vars explicitly here so later in the logs they have the same exact values
-        bool wifiOk = CustomWifi::isFullyConnected();
+        bool wifiOk = CustomNet::isFullyConnected();
         bool mqttConnected = _clientMqtt.connected();
         bool mqttLoopOk = _clientMqtt.loop(); // Also process incoming messages with loop()
 
