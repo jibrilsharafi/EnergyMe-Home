@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "customserver.h"
+#include "app_image_descriptor.h"
 #include "custometh.h"
 #include "modbustcp.h" // Local integrations are started/stopped to follow the STA link
 #include "taskprofiler.h"
@@ -1441,6 +1442,22 @@ namespace CustomServer
                 return;
             }
             otaInitialized = true;
+
+            // Fail fast when the first chunk already covers the descriptor
+            // region (it normally does): a wrong-hardware image is rejected
+            // before a single byte is written. The authoritative re-check in
+            // _finalizeOtaUpload() covers a first chunk too small for this.
+            if (ImageDescriptor::coversDescriptor(len)) {
+                ImageDescriptor::Verdict verdict = AppImageDescriptor::validateImageBuffer(data, len, false);
+                if (!ImageDescriptor::accepts(verdict)) {
+                    LOG_ERROR("Firmware image rejected on first chunk: %s", ImageDescriptor::verdictToString(verdict));
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Firmware image is not compatible with this device");
+                    Update.abort();
+                    _stopOtaTimeoutTask();
+                    otaInitialized = false;
+                    return;
+                }
+            }
         }
         
         // Write chunk to flash
@@ -1601,6 +1618,25 @@ namespace CustomServer
             Update.abort();
             _stopOtaTimeoutTask(); // Stop timeout task on failure
             return;
+        }
+
+        // Authoritative compatibility gate: read the staged image's descriptor
+        // back off the passive partition before Update.end(true) activates it.
+        // A wrong-PSRAM image fails PSRAM init before any application code runs,
+        // so nothing post-boot can recover from activating one.
+        ImageDescriptor::Verdict verdict =
+            AppImageDescriptor::validatePartition(esp_ota_get_next_update_partition(NULL), false);
+        if (!ImageDescriptor::accepts(verdict)) {
+            LOG_ERROR("Staged firmware image rejected: %s", ImageDescriptor::verdictToString(verdict));
+            _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Firmware image is not compatible with this device");
+            Update.abort();
+            _stopOtaTimeoutTask();
+            return;
+        }
+        if (verdict == ImageDescriptor::Verdict::ACCEPT_DEV_ON_PROD) {
+            LOG_WARNING("Accepting a dev-built image on a prod device via manual upload");
+        } else if (verdict == ImageDescriptor::Verdict::ACCEPT_LEGACY_NO_DESCRIPTOR) {
+            LOG_WARNING("Staged image carries no descriptor (pre-2.4 release or self-built) - accepted on Home");
         }
 
         // Reset watchdog before flash verification and finalization
