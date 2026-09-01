@@ -32,6 +32,23 @@ enum class ProductLine : uint8_t {
 
 const char* productLineToString(ProductLine product);
 
+// Parse a product string ("home" / "home_pro") into the enum.
+// Returns false for any unknown value, leaving productOut untouched.
+bool parseProductLineString(const char* s, ProductLine& productOut);
+
+// Firmware artifact name tokens. Home and Pro binaries are NOT interchangeable
+// (quad vs octal PSRAM, fixed at compile time), so every delivery path checks
+// the artifact against the running product before flashing.
+#define FIRMWARE_ARTIFACT_TOKEN_HOME     "energyme_home"
+#define FIRMWARE_ARTIFACT_TOKEN_HOME_PRO "energyme_home_pro"
+
+// Identify the product a firmware artifact name was built for. The Home token is
+// a substring of the Pro token, so the Pro token is matched FIRST - a plain
+// substring check on the Home token alone would accept Pro images on Home.
+// Returns false when the name carries no recognizable token (e.g. a self-built
+// community image), which callers treat as "unknown", not as a mismatch.
+bool productFromArtifactName(const char* name, ProductLine& productOut);
+
 // Hardware profile for a specific (product, PCB version) pair.
 // Add a new entry to PCB_PROFILES[] in hardware_profile.cpp to support a new version.
 struct HardwareProfile {

@@ -236,9 +236,20 @@ const char* productLineToString(ProductLine product) {
     return PRODUCT_LINE_HOME_STR;
 }
 
-// Parse a product_line string ("home" / "home_pro") into the enum.
-// Returns true on success; false for any unknown value.
-static bool parseProductLine(const char* s, ProductLine& productOut) {
+bool productFromArtifactName(const char* name, ProductLine& productOut) {
+    if (name == nullptr) return false;
+    if (strstr(name, FIRMWARE_ARTIFACT_TOKEN_HOME_PRO) != nullptr) {
+        productOut = ProductLine::HOME_PRO;
+        return true;
+    }
+    if (strstr(name, FIRMWARE_ARTIFACT_TOKEN_HOME) != nullptr) {
+        productOut = ProductLine::HOME;
+        return true;
+    }
+    return false;
+}
+
+bool parseProductLineString(const char* s, ProductLine& productOut) {
     if (s == nullptr) return false;
     if (strcmp(s, PRODUCT_LINE_HOME_STR) == 0) {
         productOut = ProductLine::HOME;
@@ -338,7 +349,7 @@ void initHardwareProfile() {
     // Absent product_line means Home: the deployed fleet predates the key and is
     // never backfilled (factory NVS stays write-once at manufacturing).
     ProductLine product = ProductLine::HOME;
-    if (productLineStr.length() > 0 && !parseProductLine(productLineStr.c_str(), product)) {
+    if (productLineStr.length() > 0 && !parseProductLineString(productLineStr.c_str(), product)) {
         globalCommunityMode = true;
         globalHwProfile = pickCommunityFallback();
         LOG_WARNING("Unknown product_line \"%s\" in factory NVS - running in community mode",
