@@ -602,7 +602,14 @@ namespace CustomWifi
 
     // Seed the provisioning state machine from what the driver actually has stored.
     // Owned by this task from here on.
-    bool hasCredentials = _hasStoredCredentials();
+    //
+    // An Ethernet-commissioned Pro counts as provisioned even with no WiFi
+    // credentials: UNPROVISIONED arms the AP auth carve-out, and an in-service
+    // wired device whose cable is pulled months later must raise its recovery AP
+    // in AP_ASSIST (full auth), not hand open provisioning to anyone in radio
+    // range. The marker is written by custometh on first Ethernet serviceability
+    // and cleared by factory reset; permanently false on products without Ethernet.
+    bool hasCredentials = _hasStoredCredentials() || CustomEth::isCommissioned();
     WifiProvisioning::init(_provisioning, hasCredentials, millis64());
     _publishedState = _provisioning.state;
     LOG_INFO("Provisioning init: %s credentials, state %s",
@@ -1013,7 +1020,22 @@ namespace CustomWifi
     return _setupMdns();
   }
 
+  // Serializes the responder rebuild: the WiFi task calls _setupMdns on GOT_IP and
+  // the eth task calls it via ensureMdnsStarted - a dual-connected Pro boot can do
+  // both at once, and MDNS.end()/begin() interleaved from two tasks is a crash.
+  static SemaphoreHandle_t _mdnsMutex = NULL;
+  static bool _setupMdnsLocked();
+
   bool _setupMdns()
+  {
+    if (!createMutexIfNeeded(&_mdnsMutex)) return false;
+    if (!acquireMutex(&_mdnsMutex)) return false;
+    bool result = _setupMdnsLocked();
+    releaseMutex(&_mdnsMutex);
+    return result;
+  }
+
+  static bool _setupMdnsLocked()
   {
     // Skip rebuild if responder is already running for the current IP. ESP-IDF mDNS
     // does periodic unsolicited re-announces (~120 s, RFC 6762) on its own, so peers
