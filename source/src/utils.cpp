@@ -760,6 +760,17 @@ bool getOtherPartitionSha256(char* out, size_t outSize) {
     return _getPartitionSha256(_getPassiveOtaPartition(), out, outSize);
 }
 
+bool scrubOtaImageHeader(const esp_partition_t* partition) {
+    if (partition == nullptr) return false;
+    esp_err_t err = esp_partition_erase_range(partition, 0, OTA_PARTITION_SCRUB_SIZE);
+    if (err != ESP_OK) {
+        LOG_ERROR("Failed to scrub rejected OTA image header: %s", esp_err_to_name(err));
+        return false;
+    }
+    LOG_INFO("Scrubbed rejected OTA image header from passive partition");
+    return true;
+}
+
 FirmwareRollbackResult attemptFirmwareRollback(const char* reason) {
     // Refuse up front while nothing has been touched. Calling setRestartSystem
     // and reacting to its false return is not equivalent: its uptime-gate branch

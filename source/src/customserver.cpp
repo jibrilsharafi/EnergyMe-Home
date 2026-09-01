@@ -1631,18 +1631,12 @@ namespace CustomServer
             _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Firmware image is not compatible with this device");
             Update.abort();
             // The rejected image is complete and structurally valid in the passive
-            // slot; Update.abort() does not touch flash. Scrub its header (as the
-            // cloud path does) or the rollback consumers - the API/MQTT
-            // firmware_rollback and the crash ladder, none of which are
-            // descriptor-gated - could later activate it and brick the device.
-            // (Not done on the first-chunk reject: nothing was written there and
-            // the passive slot still holds a legitimate rollback target.)
-            if (stagedPartition != nullptr) {
-                esp_err_t scrubErr = esp_partition_erase_range(stagedPartition, 0, OTA_PARTITION_SCRUB_SIZE);
-                if (scrubErr != ESP_OK) {
-                    LOG_ERROR("Failed to scrub rejected OTA image header: %s", esp_err_to_name(scrubErr));
-                }
-            }
+            // slot; Update.abort() does not touch flash. Scrub it or the rollback
+            // consumers - none of which are descriptor-gated - could later activate
+            // it and brick the device. (Not done on the first-chunk reject: nothing
+            // was written there and the passive slot still holds a legitimate
+            // rollback target.)
+            scrubOtaImageHeader(stagedPartition);
             _stopOtaTimeoutTask();
             return;
         }
