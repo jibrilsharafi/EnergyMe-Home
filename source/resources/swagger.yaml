@@ -1508,6 +1508,189 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /api/v1/network/ethernet/status:
+    get:
+      summary: Get Ethernet status
+      description: |
+        Live Ethernet state: link, active interface and the addresses in use.
+        Only available on products with Ethernet (Home Pro); other products answer 404.
+        When `enabled` is false only `enabled` and `activeInterface` are present.
+      tags:
+        - Network
+      responses:
+        '200':
+          description: Current Ethernet status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                    description: Ethernet hardware is present and initialized
+                  activeInterface:
+                    type: string
+                    enum: [none, ethernet, wifi]
+                    description: Interface currently serving as the default route
+                  linkUp: { type: boolean }
+                  serviceable: { type: boolean }
+                  staticApplied:
+                    type: boolean
+                    description: The stored static IP configuration is applied (false means DHCP)
+                  ip: { type: string, example: "192.168.1.51" }
+                  gateway: { type: string, example: "192.168.1.1" }
+                  subnet: { type: string, example: "255.255.255.0" }
+                  dns1: { type: string, example: "192.168.1.1" }
+                  dns2: { type: string, example: "" }
+                  mac: { type: string, example: "DE:AD:BE:EF:FE:ED" }
+        '404':
+          description: Ethernet is not available on this product
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/network/ethernet/config:
+    get:
+      summary: Get Ethernet configuration
+      description: |
+        Retrieve the current Ethernet configuration (static IP).
+        Only available on products with Ethernet (Home Pro); other products answer 404.
+      tags:
+        - Network
+      responses:
+        '200':
+          description: Current Ethernet configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EthernetConfiguration'
+        '404':
+          description: Ethernet is not available on this product
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      summary: Update Ethernet configuration (full update)
+      description: |
+        Replace the full Ethernet configuration. All fields are required.
+        The device restarts to apply the new settings, so it will be temporarily unavailable.
+        Only available on products with Ethernet (Home Pro); other products answer 404.
+
+        **Warning:** A misconfigured static IP can make the device unreachable over Ethernet.
+        Recover over WiFi or with the network reset button gesture.
+      tags:
+        - Network
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EthernetConfiguration'
+            examples:
+              static_ip:
+                summary: Static IP
+                value:
+                  useStaticIp: true
+                  ip: "192.168.1.51"
+                  gateway: "192.168.1.1"
+                  subnet: "255.255.255.0"
+                  dns1: "8.8.8.8"
+                  dns2: "1.1.1.1"
+              dhcp:
+                summary: DHCP (default)
+                value:
+                  useStaticIp: false
+                  ip: ""
+                  gateway: ""
+                  subnet: ""
+                  dns1: ""
+                  dns2: ""
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          description: Invalid Ethernet configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Ethernet is not available on this product
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      summary: Update Ethernet configuration (partial update)
+      description: |
+        Update one or more Ethernet configuration fields. At least one valid field is required.
+        Cross-field rules still apply (enabling static IP requires valid ip/gateway/subnet).
+        The device restarts to apply the new settings.
+        Only available on products with Ethernet (Home Pro); other products answer 404.
+      tags:
+        - Network
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EthernetConfiguration'
+            examples:
+              enable_static_ip:
+                summary: Switch to a static IP
+                value:
+                  useStaticIp: true
+                  ip: "192.168.1.51"
+                  gateway: "192.168.1.1"
+                  subnet: "255.255.255.0"
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          description: Invalid Ethernet configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Ethernet is not available on this product
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/network/ethernet/config/reset:
+    post:
+      summary: Reset Ethernet configuration
+      description: |
+        Reset the Ethernet configuration to defaults (DHCP). The device restarts to apply.
+        Only available on products with Ethernet (Home Pro); other products answer 404.
+      tags:
+        - Network
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '404':
+          description: Ethernet is not available on this product
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   # Crash Monitor endpoints
   /api/v1/crash/info:
     get:
@@ -3605,6 +3788,46 @@ components:
             static-IP boots the device ignores the static IP at startup and comes up on DHCP, so a
             bad static IP can never permanently lock you out. Recommended to keep enabled.
           example: true
+
+    EthernetConfiguration:
+      type: object
+      required:
+        - useStaticIp
+        - ip
+        - gateway
+        - subnet
+        - dns1
+        - dns2
+      properties:
+        useStaticIp:
+          type: boolean
+          description: Use a static IP address instead of DHCP
+          example: false
+        ip:
+          type: string
+          description: Static IPv4 address (required when useStaticIp is true)
+          example: "192.168.1.51"
+          maxLength: 15
+        gateway:
+          type: string
+          description: Default gateway IPv4 address (required when useStaticIp is true)
+          example: "192.168.1.1"
+          maxLength: 15
+        subnet:
+          type: string
+          description: Subnet mask (required when useStaticIp is true)
+          example: "255.255.255.0"
+          maxLength: 15
+        dns1:
+          type: string
+          description: Primary DNS server (optional). When empty, defaults to the gateway address.
+          example: "8.8.8.8"
+          maxLength: 15
+        dns2:
+          type: string
+          description: Secondary DNS server (optional, empty string to omit)
+          example: "1.1.1.1"
+          maxLength: 15
 
     InfluxDbConfiguration:
       type: object
