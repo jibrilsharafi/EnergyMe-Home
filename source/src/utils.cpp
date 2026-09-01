@@ -1155,6 +1155,14 @@ void clearAllPreferences() {
     LOG_WARNING("Cleared %ld preferences (factory/device-specific data preserved)", clearedCount);
 }
 
+bool probeTcp(const char* host, uint16_t port, uint32_t timeoutMs) {
+    WiFiClient client;
+    client.setTimeout(timeoutMs);
+    if (!client.connect(host, port)) return false;
+    client.stop();
+    return true;
+}
+
 void getDeviceId(char* deviceId, size_t maxLength) {
     uint8_t mac[6];
     esp_efuse_mac_get_default(mac);

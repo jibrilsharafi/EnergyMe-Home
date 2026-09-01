@@ -125,7 +125,7 @@ namespace CustomWifi
   static void _reconcileApWithState();
   static bool _raiseAp();
   static void _tearDownAp();
-  static void _serviceDns();
+  static void _serviceDns(bool ethServiceable);
   static void _readStoredSsid(char *out, size_t outSize);
   static void _handleSuccessfulConnection();
   static bool _setupMdns();
@@ -151,7 +151,6 @@ namespace CustomWifi
   static void _applyNetworkConfiguration();
   static bool _validateJsonConfiguration(JsonDocument &jsonDocument, bool partial);
   static bool _validateConfiguration(const WifiConfiguration &config);
-  static bool _isValidIpv4(const char* str, bool allowZero);
   static void _serviceStaticIpHealth(bool internetReachable);
   static uint8_t _getStaticBootFails();
   static void _setStaticBootFails(uint8_t count);
@@ -603,17 +602,18 @@ namespace CustomWifi
     // Seed the provisioning state machine from what the driver actually has stored.
     // Owned by this task from here on.
     //
-    // An Ethernet-commissioned Pro counts as provisioned even with no WiFi
-    // credentials: UNPROVISIONED arms the AP auth carve-out, and an in-service
-    // wired device whose cable is pulled months later must raise its recovery AP
-    // in AP_ASSIST (full auth), not hand open provisioning to anyone in radio
-    // range. The marker is written by custometh on first Ethernet serviceability
-    // and cleared by factory reset; permanently false on products without Ethernet.
-    bool hasCredentials = _hasStoredCredentials() || CustomEth::isCommissioned();
-    WifiProvisioning::init(_provisioning, hasCredentials, millis64());
+    // The commissioning marker is written by custometh on first Ethernet
+    // serviceability and cleared by factory reset; permanently false on products
+    // without Ethernet. The FSM treats a commissioned device as provisioned (see
+    // Context.commissioned), so a later recovery-AP raise is AP_ASSIST, not the
+    // UNPROVISIONED carve-out.
+    bool hasCredentials = _hasStoredCredentials();
+    bool commissioned = CustomEth::isCommissioned();
+    WifiProvisioning::init(_provisioning, hasCredentials, millis64(), commissioned);
     _publishedState = _provisioning.state;
-    LOG_INFO("Provisioning init: %s credentials, state %s",
-             hasCredentials ? "found" : "no", WifiProvisioning::stateName(_provisioning.state));
+    LOG_INFO("Provisioning init: %s credentials, %scommissioned, state %s",
+             hasCredentials ? "found" : "no", commissioned ? "" : "not ",
+             WifiProvisioning::stateName(_provisioning.state));
     _taskShouldRun = true;
 
     Led::pulseBlue(Led::PRIO_MEDIUM);
@@ -1144,20 +1144,14 @@ namespace CustomWifi
 
     // Simple TCP connect to Google Public DNS (8.8.8.8:53) - lightweight internet connectivity test
     // Uses IP address to avoid DNS lookup, port 53 is rarely blocked by firewalls
-    WiFiClient client;
-    client.setTimeout(CONNECTIVITY_TEST_TIMEOUT_MS);
-    
-    if (!client.connect(CONNECTIVITY_TEST_IP, CONNECTIVITY_TEST_PORT)) {
+    if (!probeTcp(CONNECTIVITY_TEST_IP, CONNECTIVITY_TEST_PORT, CONNECTIVITY_TEST_TIMEOUT_MS)) {
       // Here we only log a debug since the internet connectivity is not a must-have
       // While before we used LOG_WARNING since the issue is WiFi related (critical)
-      LOG_DEBUG("Connectivity test failed: cannot reach %s:%d (no internet)", 
+      LOG_DEBUG("Connectivity test failed: cannot reach %s:%d (no internet)",
                   CONNECTIVITY_TEST_IP, CONNECTIVITY_TEST_PORT);
       return false;
     }
-    
-    // Connection successful - internet is reachable
-    client.stop();
-    
+
     // Use char buffers to avoid dynamic string allocation in logs and potential crashes
     char gatewayStr[IP_ADDRESS_BUFFER_SIZE];
     snprintf(gatewayStr, sizeof(gatewayStr), "%d.%d.%d.%d", gateway[0], gateway[1], gateway[2], gateway[3]);
@@ -1474,11 +1468,11 @@ namespace CustomWifi
   // The catch-all DNS responder binds INADDR_ANY:53 and answers every name with a fixed
   // address regardless of arrival interface, so leaving it up once STA is connected makes
   // the device an open resolver on the customer's LAN. Bound to AP-up-and-STA-down (D4).
-  static void _serviceDns()
+  static void _serviceDns(bool ethServiceable)
   {
     // A serviceable ETH interface counts as "station-side up" here: the responder
     // must never answer LAN DNS queries on a device reachable over the wire.
-    bool wanted = _apRaised && WifiProvisioning::isDnsAllowed(_provisioning, WiFi.isConnected() || CustomEth::isServiceable());
+    bool wanted = _apRaised && WifiProvisioning::isDnsAllowed(_provisioning, WiFi.isConnected() || ethServiceable);
 
     if (wanted && !_dnsRunning) {
       // Always the three-argument form: the no-arg start() only sets the resolved address
@@ -1526,22 +1520,17 @@ namespace CustomWifi
   {
     uint64_t nowMs = millis64();
 
-    // A serviceable Ethernet interface satisfies "the device is reachable" the same
-    // way an STA association does: it suppresses a raise and tears an AP down. This
-    // also covers an ETH lease that overlaps the AP subnet - wire-reachable means
-    // the AP comes down before the ambiguous routing can matter. Permanently false
-    // on products without Ethernet, so the Home evaluation is bit-identical.
+    // The wired inputs feed the host-tested FSM predicates; permanently false on
+    // products without Ethernet, so the Home evaluation is bit-identical. The
+    // link query is only paid while the boot DHCP grace window can still matter.
     bool ethServiceable = CustomEth::isServiceable();
+    bool ethLinkUp = (!ethServiceable && nowMs < WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS)
+                         ? CustomEth::isLinkUp() : false;
 
-    // Zero-touch first boot: with the cable in and DHCP still negotiating, hold the
-    // raise back briefly so a normally-leasing network never sees an AP blip.
-    bool ethLeasePending = CustomEth::isLinkUp() && !ethServiceable && nowMs < ETH_LINK_DHCP_GRACE_MS;
-
-    if (_provisioning.apRaised &&
-        (ethServiceable || WifiProvisioning::shouldTearDownAp(_provisioning, nowMs))) {
+    if (WifiProvisioning::shouldTearDownAp(_provisioning, nowMs, ethServiceable)) {
       WifiProvisioning::tearDownAp(_provisioning, nowMs);
       _publishedState = _provisioning.state;
-    } else if (!ethServiceable && !ethLeasePending && WifiProvisioning::shouldRaiseAp(_provisioning, nowMs)) {
+    } else if (WifiProvisioning::shouldRaiseAp(_provisioning, nowMs, ethServiceable, ethLinkUp)) {
       // Covers both the first raise and any later one: if the AP is somehow down while the
       // device still cannot associate, this puts it back rather than leaving it dark.
       WifiProvisioning::raiseAp(_provisioning, nowMs);
@@ -1549,7 +1538,7 @@ namespace CustomWifi
     }
 
     _reconcileApWithState();
-    _serviceDns();
+    _serviceDns(ethServiceable);
   }
 
   // Evaluates a disconnect grace window once it expires. This is the non-blocking
@@ -1743,15 +1732,6 @@ namespace CustomWifi
   // Network configuration (static IP)
   // ============================================================================
 
-  static bool _isValidIpv4(const char* str, bool allowZero)
-  {
-    if (str == nullptr || str[0] == '\0') return false;
-    IPAddress addr;
-    if (!addr.fromString(str)) return false;
-    if (!allowZero && addr == IPAddress(0, 0, 0, 0)) return false;
-    return true;
-  }
-
   bool getConfiguration(WifiConfiguration &config)
   {
     if (!acquireMutex(&_configMutex)) {
@@ -1889,11 +1869,11 @@ namespace CustomWifi
   {
     if (config.useStaticIp) {
       // IP, gateway and subnet are mandatory and must be non-zero; DNS servers are optional
-      if (!_isValidIpv4(config.ip, false))      { LOG_WARNING("Static IP enabled but 'ip' is invalid"); return false; }
-      if (!_isValidIpv4(config.gateway, false)) { LOG_WARNING("Static IP enabled but 'gateway' is invalid"); return false; }
-      if (!_isValidIpv4(config.subnet, false))  { LOG_WARNING("Static IP enabled but 'subnet' is invalid"); return false; }
-      if (config.dns1[0] != '\0' && !_isValidIpv4(config.dns1, true)) { LOG_WARNING("Invalid 'dns1' address"); return false; }
-      if (config.dns2[0] != '\0' && !_isValidIpv4(config.dns2, true)) { LOG_WARNING("Invalid 'dns2' address"); return false; }
+      if (!isValidIpv4(config.ip, false))      { LOG_WARNING("Static IP enabled but 'ip' is invalid"); return false; }
+      if (!isValidIpv4(config.gateway, false)) { LOG_WARNING("Static IP enabled but 'gateway' is invalid"); return false; }
+      if (!isValidIpv4(config.subnet, false))  { LOG_WARNING("Static IP enabled but 'subnet' is invalid"); return false; }
+      if (config.dns1[0] != '\0' && !isValidIpv4(config.dns1, true)) { LOG_WARNING("Invalid 'dns1' address"); return false; }
+      if (config.dns2[0] != '\0' && !isValidIpv4(config.dns2, true)) { LOG_WARNING("Invalid 'dns2' address"); return false; }
     }
 
     return true;
