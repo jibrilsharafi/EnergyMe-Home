@@ -220,6 +220,16 @@ void sha256BytesToHex(const uint8_t sha256[32], char* out, size_t outSize); // o
 bool getRunningPartitionSha256(char* out, size_t outSize);
 bool getOtherPartitionSha256(char* out, size_t outSize);
 
+// One flash sector: erasing the image header is enough to make a rejected
+// image fail esp_image_verify, so it can never become a rollback target.
+#define OTA_PARTITION_SCRUB_SIZE 4096
+
+// Erase the header of a complete-but-rejected staged OTA image. Both OTA
+// write paths call this on a post-download rejection (signature or image
+// descriptor); the rollback consumers are not descriptor-gated, so a rejected
+// image left intact could be activated later and brick the device.
+bool scrubOtaImageHeader(const esp_partition_t* partition);
+
 // Switch the boot partition to the passive slot and restart. Validation is
 // esp_ota_set_boot_partition's own image_validate - deliberately NOT
 // Update.canRollBack(), whose only check is flash[0] == 0xE9 (true even for a

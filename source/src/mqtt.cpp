@@ -1800,14 +1800,7 @@ namespace Mqtt
     // Nothing of value is lost: the download already overwrote the previous
     // firmware that made the slot a legitimate rollback target.
     static void _scrubRejectedOtaImage() {
-        const esp_partition_t* update_partition = esp_ota_get_next_update_partition(NULL);
-        if (!update_partition) return;
-        esp_err_t err = esp_partition_erase_range(update_partition, 0, OTA_PARTITION_SCRUB_SIZE);
-        if (err != ESP_OK) {
-            LOG_ERROR("Failed to scrub rejected OTA image header: %s", esp_err_to_name(err));
-        } else {
-            LOG_INFO("Scrubbed rejected OTA image header from passive partition");
-        }
+        scrubOtaImageHeader(esp_ota_get_next_update_partition(NULL));
     }
 
     static bool _performOtaUpdate() {
