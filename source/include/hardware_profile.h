@@ -98,6 +98,17 @@ struct HardwareProfile {
     //
     // Only the first muxChannelCount entries are valid. Array sized to HW_PROFILE_MAX_MUX_CHANNELS.
     uint8_t muxChannelMap[HW_PROFILE_MAX_MUX_CHANNELS];
+
+    // Ethernet controller (W5500 on a dedicated SPI bus, separate from the ADE7953 bus).
+    // Declared last so profiles without Ethernet simply omit these fields
+    // (designated-initializer omission -> value-initialized: hasEthernet=false, pins 0).
+    bool hasEthernet;
+    uint8_t ethCsPin;
+    uint8_t ethIrqPin;  // W5500 INTn (event-driven driver)
+    uint8_t ethRstPin;  // W5500 RSTn
+    uint8_t ethSckPin;
+    uint8_t ethMisoPin;
+    uint8_t ethMosiPin;
 };
 
 // Active hardware profile, set once by initHardwareProfile(). Always valid after that call.
