@@ -334,7 +334,7 @@ namespace InfluxDbClient
             TASK_HEARTBEAT(_heartbeat);
             getConfiguration(config);
             if (config.enabled) { // We have the InfluxDB enabled
-                if (CustomWifi::isFullyConnected() && CustomTime::isTimeSynched()) { // We are connected and time is synched (needed as InfluxDB requires timestamps)
+                if (CustomNet::isFullyConnected() && CustomTime::isTimeSynched()) { // We are connected and time is synched (needed as InfluxDB requires timestamps)
                     uint64_t currentTime = millis64();
                     if ((currentTime - lastSendTime) >= (config.frequencySeconds * 1000)) { // Enough time has passed since last send
                         if (currentTime >= _nextSendAttemptMillis) { // Enough time has passed since last attempt (in case of failures)

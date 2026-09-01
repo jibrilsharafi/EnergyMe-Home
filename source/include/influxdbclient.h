@@ -13,6 +13,7 @@
 #include "globals.h"
 #include "customtime.h"
 #include "customwifi.h"
+#include "customnet.h"
 #include "utils.h"
 
 // Default configuration values
