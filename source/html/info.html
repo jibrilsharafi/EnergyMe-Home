@@ -419,6 +419,10 @@
                     <span class="info-label"><span class="emoji">📅</span>Manufactured</span>
                     <span class="info-value" id="manufacturingDate">Loading...</span>
                 </div>
+                <div class="info-item">
+                    <span class="info-label"><span class="emoji">📦</span>Product</span>
+                    <span class="info-value" id="productLine">Loading...</span>
+                </div>
             </div>
 
             <!-- Memory Information Card -->
@@ -837,6 +841,11 @@
             document.getElementById('manufacturingDate').textContent = mfgTs > 0
                 ? new Date(mfgTs * 1000).toLocaleDateString()
                 : 'Unknown';
+            const productNames = { 'home': 'Home', 'home_pro': 'Home Pro' };
+            const productLabel = productNames[factory.productLine] || factory.productLine || 'Unknown';
+            document.getElementById('productLine').textContent = factory.pcbRevision
+                ? `${productLabel} (PCB ${factory.pcbRevision}${factory.communityMode ? ', community' : ''})`
+                : productLabel;
 
             // Memory Information
             displayMemoryInfo(data.dynamic.memory);
