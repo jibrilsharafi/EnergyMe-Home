@@ -11,6 +11,7 @@
 // Device identity / configuration
 #define FACTORY_KEY_SERIAL_NUMBER "serial_number"
 #define FACTORY_KEY_PCB_REVISION  "pcb_revision"
+#define FACTORY_KEY_PRODUCT_LINE  "product_line" // "home" | "home_pro"; absent on the pre-Pro fleet -> home
 #define FACTORY_KEY_MFG_TS        "mfg_ts"
 #define FACTORY_KEY_AP_PASSWORD   "ap_password"
 
