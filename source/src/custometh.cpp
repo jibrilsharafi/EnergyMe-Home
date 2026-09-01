@@ -9,6 +9,7 @@
 #include <WiFi.h>
 #include <lwip/dns.h>
 
+#include "customwifi.h"
 #include "wifi_provisioning.h"
 
 namespace CustomEth
@@ -221,12 +222,24 @@ namespace CustomEth
         (void)parameter;
         LOG_DEBUG("Ethernet task started");
 
+        bool mdnsEnsured = false;
         uint32_t loops = 0;
         while (!_stopRequested && loops < MAX_LOOP_ITERATIONS * 1000000UL) {
             loops++;
             TASK_HEARTBEAT(_heartbeat);
 
             _evaluateArbitration();
+
+            // An Ethernet-only device (no WiFi credentials) never runs the WiFi
+            // connect path that starts mDNS - kick it here on the serviceable
+            // rising edge. Idempotent on devices where WiFi already started it.
+            if (isServiceable()) {
+                if (!mdnsEnsured) {
+                    mdnsEnsured = CustomWifi::ensureMdnsStarted();
+                }
+            } else {
+                mdnsEnsured = false;
+            }
 
             // Backstop clear: the static config has held the interface serviceable
             // past the crash/misconfig window, so it is not a boot-loop offender.

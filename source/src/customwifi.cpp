@@ -1003,6 +1003,11 @@ namespace CustomWifi
     return true;
   }
 
+  bool ensureMdnsStarted()
+  {
+    return _setupMdns();
+  }
+
   bool _setupMdns()
   {
     // Skip rebuild if responder is already running for the current IP. ESP-IDF mDNS
