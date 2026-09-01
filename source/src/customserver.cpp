@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "customserver.h"
+#include "custometh.h"
 #include "modbustcp.h" // Local integrations are started/stopped to follow the STA link
 #include "taskprofiler.h"
 #include "duration_format.h"
@@ -2326,6 +2327,76 @@ namespace CustomServer
                 setRestartSystem("Restart to apply network configuration reset");
             } else {
                 _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to reset network configuration");
+            }
+        });
+
+        // === Ethernet (Home Pro) ===
+        // Mirrors the wifi config surface. On products without Ethernet every route
+        // answers 4xx and touches no NVS - the feature does not exist there.
+
+        server.on("/api/v1/network/ethernet/status", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            if (!globalHwProfile->hasEthernet) {
+                _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "Ethernet is not available on this product");
+                return;
+            }
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            CustomEth::getStatusAsJson(doc);
+            _sendJsonResponse(request, doc);
+        });
+
+        server.on("/api/v1/network/ethernet/config", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            if (!globalHwProfile->hasEthernet) {
+                _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "Ethernet is not available on this product");
+                return;
+            }
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            if (CustomEth::getConfigurationAsJson(doc)) _sendJsonResponse(request, doc);
+            else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to get Ethernet configuration");
+        });
+
+        // Set Ethernet configuration (full PUT or partial PATCH). The device restarts to apply.
+        static AsyncCallbackJsonWebHandler *setEthConfigHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/network/ethernet/config",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (!globalHwProfile->hasEthernet) {
+                    _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "Ethernet is not available on this product");
+                    return;
+                }
+                bool isPartialUpdate = _isPartialUpdate(request);
+                if (!_validateRequest(request, isPartialUpdate ? "PATCH" : "PUT", HTTP_MAX_CONTENT_LENGTH_NETWORK)) return;
+
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
+                doc.set(json);
+
+                if (CustomEth::setConfigurationFromJson(doc, isPartialUpdate)) {
+                    LOG_INFO("Ethernet configuration %s via API", isPartialUpdate ? "partially updated" : "updated");
+                    _sendSuccessResponse(request, "Ethernet configuration updated successfully. The device will restart to apply the new settings.");
+                    setRestartSystem("Restart to apply new Ethernet configuration");
+                } else {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid Ethernet configuration");
+                }
+            });
+        server.addHandler(setEthConfigHandler);
+
+        server.on("/api/v1/network/ethernet/config/reset", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
+            if (!globalHwProfile->hasEthernet) {
+                _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "Ethernet is not available on this product");
+                return;
+            }
+            if (!_validateRequest(request, "POST")) return;
+
+            if (CustomEth::resetConfiguration()) {
+                _sendSuccessResponse(request, "Ethernet configuration reset successfully. The device will restart to apply the defaults.");
+                setRestartSystem("Restart to apply Ethernet configuration reset");
+            } else {
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to reset Ethernet configuration");
             }
         });
     }
