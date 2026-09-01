@@ -22,7 +22,7 @@ namespace CustomEth
     static EthConfiguration _configuration;
 
     // Arbitration state. Written from the Network event task (ETH events), the
-    // WiFi task (notifyStaState) and the eth task (applySwitch): every access
+    // WiFi task (notifyStaState) and the eth task (evaluateAndApply): every access
     // copies under the mutex and acts on the copy, per the FreeRTOS rules.
     static SemaphoreHandle_t _ctxMutex = NULL;
     static InterfaceArbitration::Context _arbCtx;
@@ -34,10 +34,10 @@ namespace CustomEth
     // that boot's increment. _staticApplied then records the actual apply outcome.
     static bool _staticIntent = false;     // Static config will be attempted this boot (not skipped by backstop)
     static bool _staticApplied = false;    // Static config actually applied this boot
-    static volatile bool _bootFailCounted = false;        // Backstop counter incremented this boot (at first link-up)
-    static volatile bool _bootFailIncrementPending = false; // Event task requests the increment; eth task performs the NVS write
-    static bool _backstopCleared = false;  // Counter cleared this boot after the stable window
-    static uint64_t _serviceableSinceMs = 0; // For the lwIP settle delay and the backstop stable window; 0 while not serviceable
+    static uint8_t _bootFailsAtBoot = 0;   // Backstop counter as read at the intent latch (avoids NVS re-opens)
+    // Set by the Network event task at first link-up; the eth task performs the
+    // NVS increment (a flash GC pause must never stall network event delivery).
+    static volatile bool _bootFailCounted = false;
 
     #define ETH_MAX_INTERFACE_CALLBACKS 6
     static InterfaceChangeCallback _callbacks[ETH_MAX_INTERFACE_CALLBACKS] = {};
@@ -45,7 +45,6 @@ namespace CustomEth
 
     static SPIClass* _spi = nullptr;
 
-    // Private helpers
     static void _onNetworkEvent(arduino_event_id_t event);
     static void _ethTask(void *parameter);
     static void _loadConfiguration();
@@ -53,7 +52,6 @@ namespace CustomEth
     static void _applyStaticConfiguration();
     static bool _validateJsonConfiguration(JsonDocument &jsonDocument, bool partial);
     static bool _validateConfiguration(const EthConfiguration &config);
-    static bool _isValidIpv4(const char* str, bool allowZero);
     static uint8_t _getStaticBootFails();
     static void _setStaticBootFails(uint8_t count);
     static void _updateEthState(bool linkUp, bool hasAddress);
@@ -75,7 +73,7 @@ namespace CustomEth
         LOG_DEBUG("Starting Ethernet (W5500)...");
 
         if (!createMutexIfNeeded(&_ctxMutex)) return false;
-        InterfaceArbitration::init(_arbCtx, millis64());
+        InterfaceArbitration::init(_arbCtx);
 
         _loadConfiguration();
 
@@ -85,8 +83,8 @@ namespace CustomEth
         Network.onEvent(_onNetworkEvent);
 
         // Same hostname as the WiFi interface: one device, one name in the DHCP lease table.
-        char hostname[64];
-        snprintf(hostname, sizeof(hostname), "%s-%s", "energyme-home", DEVICE_ID);
+        char hostname[WIFI_SSID_BUFFER_SIZE];
+        snprintf(hostname, sizeof(hostname), "%s-%s", WIFI_HOSTNAME_PREFIX, DEVICE_ID);
         ETH.setHostname(hostname);
 
         // Latch static intent before the driver starts so the first link-up event
@@ -94,8 +92,9 @@ namespace CustomEth
         // backstop attempt correctly.
         {
             EthConfiguration config;
+            _bootFailsAtBoot = _getStaticBootFails();
             _staticIntent = getConfiguration(config) && config.useStaticIp &&
-                            _getStaticBootFails() < ETH_STATIC_MAX_BOOT_FAILS;
+                            _bootFailsAtBoot < ETH_STATIC_MAX_BOOT_FAILS;
         }
 
         // Dedicated SPI bus (the ADE7953 owns the default SPI): no bus sharing,
@@ -149,42 +148,52 @@ namespace CustomEth
         return cached;
     }
 
+    // One mutex hold for everything readers need; every predicate derives from it.
+    struct Snapshot {
+        InterfaceArbitration::Interface active;
+        bool linkUp;
+        bool serviceable;           // link + address + lwIP settle time elapsed
+        uint64_t serviceableSinceMs;
+    };
+
+    static Snapshot _snapshot()
+    {
+        Snapshot snap = {InterfaceArbitration::Interface::NONE, false, false, 0};
+        if (_ctxMutex == NULL || !acquireMutex(&_ctxMutex)) return snap;
+        snap.active = _arbCtx.active;
+        snap.linkUp = _arbCtx.ethLinkUp;
+        snap.serviceableSinceMs = _arbCtx.ethServiceableSinceMs;
+        bool raw = InterfaceArbitration::isEthServiceable(_arbCtx);
+        releaseMutex(&_ctxMutex);
+        // Same reasoning as WIFI_LWIP_STABILIZATION_DELAY: give lwIP a moment
+        // after the address appears before services pile onto the netif.
+        snap.serviceable = raw && snap.serviceableSinceMs != 0 &&
+                           (millis64() - snap.serviceableSinceMs) >= ETH_LWIP_STABILIZATION_DELAY;
+        return snap;
+    }
+
     bool isLinkUp()
     {
         if (!_enabled) return false;
-        if (!acquireMutex(&_ctxMutex)) return false;
-        bool up = _arbCtx.ethLinkUp;
-        releaseMutex(&_ctxMutex);
-        return up;
+        return _snapshot().linkUp;
     }
 
     bool isServiceable()
     {
         if (!_enabled) return false;
-        if (!acquireMutex(&_ctxMutex)) return false;
-        bool serviceable = InterfaceArbitration::isEthServiceable(_arbCtx);
-        uint64_t since = _serviceableSinceMs;
-        releaseMutex(&_ctxMutex);
-        if (!serviceable) return false;
-        // Same reasoning as WIFI_LWIP_STABILIZATION_DELAY: give lwIP a moment
-        // after the address appears before services pile onto the netif.
-        return since != 0 && (millis64() - since) >= ETH_LWIP_STABILIZATION_DELAY;
+        return _snapshot().serviceable;
     }
 
     InterfaceArbitration::Interface activeInterface()
     {
-        if (_ctxMutex == NULL) return InterfaceArbitration::Interface::NONE;
-        if (!acquireMutex(&_ctxMutex)) return InterfaceArbitration::Interface::NONE;
-        InterfaceArbitration::Interface active = _arbCtx.active;
-        releaseMutex(&_ctxMutex);
-        return active;
+        return _snapshot().active;
     }
 
     void notifyStaState(bool connected)
     {
         if (_ctxMutex == NULL) return; // Home, or before begin(): nothing to arbitrate
         if (!acquireMutex(&_ctxMutex)) return;
-        InterfaceArbitration::onStaState(_arbCtx, connected, millis64());
+        InterfaceArbitration::onStaState(_arbCtx, connected);
         releaseMutex(&_ctxMutex);
         _notifyEthTask();
     }
@@ -210,10 +219,7 @@ namespace CustomEth
                 // NVS write happens in the eth task - never here, in the shared
                 // Network event task, where a flash GC pause would stall every
                 // network event (same rule as _onWiFiEvent).
-                if (_staticIntent && !_bootFailCounted) {
-                    _bootFailCounted = true;
-                    _bootFailIncrementPending = true;
-                }
+                if (_staticIntent) _bootFailCounted = true;
                 _updateEthState(true, ETH.hasIP());
                 break;
             case ARDUINO_EVENT_ETH_GOT_IP:
@@ -234,11 +240,7 @@ namespace CustomEth
     static void _updateEthState(bool linkUp, bool hasAddress)
     {
         if (!acquireMutex(&_ctxMutex)) return;
-        bool wasServiceable = InterfaceArbitration::isEthServiceable(_arbCtx);
         InterfaceArbitration::onEthState(_arbCtx, linkUp, hasAddress, millis64());
-        bool nowServiceable = InterfaceArbitration::isEthServiceable(_arbCtx);
-        if (nowServiceable && !wasServiceable) _serviceableSinceMs = millis64();
-        else if (!nowServiceable) _serviceableSinceMs = 0;
         releaseMutex(&_ctxMutex);
         _notifyEthTask();
     }
@@ -254,21 +256,25 @@ namespace CustomEth
         LOG_DEBUG("Ethernet task started");
 
         bool mdnsEnsured = false;
-        while (!_stopRequested) { // Task loop - unbounded by convention, like every other task
+        bool bootFailPersisted = false;
+        bool backstopCleared = false;
+        bool commissionAttempted = false;
+        while (!_stopRequested) {
             TASK_HEARTBEAT(_heartbeat);
 
             // Deferred from the Network event task (see ARDUINO_EVENT_ETH_CONNECTED).
-            if (_bootFailIncrementPending) {
-                _bootFailIncrementPending = false;
-                _setStaticBootFails((uint8_t)(_getStaticBootFails() + 1));
+            if (_bootFailCounted && !bootFailPersisted) {
+                bootFailPersisted = true;
+                _setStaticBootFails((uint8_t)(_bootFailsAtBoot + 1));
             }
 
             _evaluateArbitration();
 
-            // An Ethernet-only device (no WiFi credentials) never runs the WiFi
-            // connect path that starts mDNS - kick it here on the serviceable
-            // rising edge. Idempotent on devices where WiFi already started it.
-            if (isServiceable()) {
+            Snapshot snap = _snapshot();
+            if (snap.serviceable) {
+                // An Ethernet-only device (no WiFi credentials) never runs the WiFi
+                // connect path that starts mDNS - kick it here on the serviceable
+                // rising edge. Idempotent on devices where WiFi already started it.
                 if (!mdnsEnsured) {
                     mdnsEnsured = CustomWifi::ensureMdnsStarted();
                 }
@@ -279,7 +285,9 @@ namespace CustomEth
                 // must not re-arm on a recovery-AP raise months into service).
                 // Takes effect from the next provisioning init; within THIS first
                 // boot the carve-out window matches today's unprovisioned window.
-                if (!isCommissioned()) {
+                // One attempt per boot even on write failure - no per-tick NVS churn.
+                if (!commissionAttempted && !isCommissioned()) {
+                    commissionAttempted = true;
                     Preferences prefs;
                     if (prefs.begin(PREFERENCES_NAMESPACE_ETH, false)) {
                         prefs.putBool(ETH_COMMISSIONED_KEY, true);
@@ -287,22 +295,17 @@ namespace CustomEth
                         LOG_INFO("Device commissioned over Ethernet - marker persisted");
                     }
                 }
+
+                // Backstop clear: the static config has held the interface serviceable
+                // past the crash/misconfig window, so it is not a boot-loop offender.
+                if (_staticApplied && !backstopCleared &&
+                    (millis64() - snap.serviceableSinceMs) >= ETH_STATIC_STABLE_CLEAR_MS) {
+                    _setStaticBootFails(0);
+                    backstopCleared = true;
+                    LOG_INFO("Static Ethernet IP stable - boot-fail backstop counter cleared");
+                }
             } else {
                 mdnsEnsured = false;
-            }
-
-            // Backstop clear: the static config has held the interface serviceable
-            // past the crash/misconfig window, so it is not a boot-loop offender.
-            if (_staticApplied && !_backstopCleared) {
-                if (acquireMutex(&_ctxMutex)) {
-                    uint64_t since = _serviceableSinceMs;
-                    releaseMutex(&_ctxMutex);
-                    if (since != 0 && (millis64() - since) >= ETH_STATIC_STABLE_CLEAR_MS) {
-                        _setStaticBootFails(0);
-                        _backstopCleared = true;
-                        LOG_INFO("Static Ethernet IP stable - boot-fail backstop counter cleared");
-                    }
-                }
             }
 
             // Event-driven with a tick fallback: events poke us immediately, the
@@ -318,9 +321,8 @@ namespace CustomEth
     static void _evaluateArbitration()
     {
         if (!acquireMutex(&_ctxMutex)) return;
-        InterfaceArbitration::Decision decision = InterfaceArbitration::evaluate(_arbCtx, millis64());
         InterfaceArbitration::Interface previous = _arbCtx.active;
-        if (decision.switchRequired) InterfaceArbitration::applySwitch(_arbCtx, decision.preferred);
+        InterfaceArbitration::Decision decision = InterfaceArbitration::evaluateAndApply(_arbCtx, millis64());
         releaseMutex(&_ctxMutex);
 
         if (!decision.switchRequired) return;
@@ -505,7 +507,7 @@ namespace CustomEth
     {
         LOG_DEBUG("Loading Ethernet configuration from Preferences...");
 
-        EthConfiguration config; // Constructor sets defaults (DHCP)
+        EthConfiguration config;
 
         // Read-only open fails when eth_ns does not exist yet: that is the lazy-
         // creation contract (the namespace is only ever created by a write), so
@@ -558,21 +560,22 @@ namespace CustomEth
 
     static void _applyStaticConfiguration()
     {
-        EthConfiguration config;
-        if (!getConfiguration(config)) return;
-
         _staticApplied = false;
 
-        if (!config.useStaticIp) {
-            LOG_DEBUG("Using DHCP for Ethernet IP configuration");
+        // _staticIntent already folds in useStaticIp and the backstop (latched in
+        // begin(), the single owner of that rule this boot).
+        if (!_staticIntent) {
+            EthConfiguration config;
+            if (getConfiguration(config) && config.useStaticIp) {
+                LOG_WARNING("Static Ethernet IP disabled after %u failed boots - using DHCP (config kept, save again to retry)", _bootFailsAtBoot);
+            } else {
+                LOG_DEBUG("Using DHCP for Ethernet IP configuration");
+            }
             return;
         }
 
-        uint8_t bootFails = _getStaticBootFails();
-        if (bootFails >= ETH_STATIC_MAX_BOOT_FAILS) {
-            LOG_WARNING("Static Ethernet IP disabled after %u failed boots - using DHCP (config kept, save again to retry)", bootFails);
-            return;
-        }
+        EthConfiguration config;
+        if (!getConfiguration(config)) return;
 
         IPAddress ip, gateway, subnet, dns1, dns2;
         if (!(ip.fromString(config.ip) && gateway.fromString(config.gateway) && subnet.fromString(config.subnet))) {
@@ -584,7 +587,7 @@ namespace CustomEth
 
         if (ETH.config(ip, gateway, subnet, dns1, dns2)) {
             _staticApplied = true;
-            LOG_INFO("Static Ethernet IP configured: %s (gateway: %s, attempt %u)", config.ip, config.gateway, bootFails + 1);
+            LOG_INFO("Static Ethernet IP configured: %s (gateway: %s, attempt %u)", config.ip, config.gateway, _bootFailsAtBoot + 1);
         } else {
             LOG_ERROR("Failed to apply static Ethernet IP configuration - falling back to DHCP");
         }
@@ -621,11 +624,11 @@ namespace CustomEth
     {
         if (!config.useStaticIp) return true;
 
-        if (!_isValidIpv4(config.ip, false))      { LOG_WARNING("Static IP enabled but 'ip' is invalid"); return false; }
-        if (!_isValidIpv4(config.gateway, false)) { LOG_WARNING("Static IP enabled but 'gateway' is invalid"); return false; }
-        if (!_isValidIpv4(config.subnet, false))  { LOG_WARNING("Static IP enabled but 'subnet' is invalid"); return false; }
-        if (config.dns1[0] != '\0' && !_isValidIpv4(config.dns1, true)) { LOG_WARNING("Invalid 'dns1' address"); return false; }
-        if (config.dns2[0] != '\0' && !_isValidIpv4(config.dns2, true)) { LOG_WARNING("Invalid 'dns2' address"); return false; }
+        if (!isValidIpv4(config.ip, false))      { LOG_WARNING("Static IP enabled but 'ip' is invalid"); return false; }
+        if (!isValidIpv4(config.gateway, false)) { LOG_WARNING("Static IP enabled but 'gateway' is invalid"); return false; }
+        if (!isValidIpv4(config.subnet, false))  { LOG_WARNING("Static IP enabled but 'subnet' is invalid"); return false; }
+        if (config.dns1[0] != '\0' && !isValidIpv4(config.dns1, true)) { LOG_WARNING("Invalid 'dns1' address"); return false; }
+        if (config.dns2[0] != '\0' && !isValidIpv4(config.dns2, true)) { LOG_WARNING("Invalid 'dns2' address"); return false; }
 
         // A static address inside the recovery SoftAP's default subnet would route
         // ambiguously exactly when the AP is most needed. Only the default candidate
@@ -640,15 +643,6 @@ namespace CustomEth
             return false;
         }
 
-        return true;
-    }
-
-    static bool _isValidIpv4(const char* str, bool allowZero)
-    {
-        if (str == nullptr || str[0] == '\0') return false;
-        IPAddress addr;
-        if (!addr.fromString(str)) return false;
-        if (!allowZero && addr == IPAddress(0, 0, 0, 0)) return false;
         return true;
     }
 

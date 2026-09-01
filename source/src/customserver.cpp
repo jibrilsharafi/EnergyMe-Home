@@ -148,6 +148,7 @@ namespace CustomServer
     
     // HTTP method validation helper
     static bool _validateRequest(AsyncWebServerRequest *request, const char *expectedMethod, size_t maxContentLength = 0);
+    static bool _requireEthernet(AsyncWebServerRequest *request);
     static bool _isPartialUpdate(AsyncWebServerRequest *request);
     
     // ETag validation helper
@@ -542,6 +543,16 @@ namespace CustomServer
     // Helper function to validate HTTP method
     // We cannot do setMethod since it makes all PUT requests fail (404) for some weird reason
     // It is not too bad anyway since like this we have full control over the response
+    // 404 for the Ethernet surface on products without the hardware. Runs after
+    // the middleware chain, so auth still comes first - an unauthenticated scanner
+    // cannot fingerprint the product.
+    static bool _requireEthernet(AsyncWebServerRequest *request)
+    {
+        if (globalHwProfile->hasEthernet) return true;
+        _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "Ethernet is not available on this product");
+        return false;
+    }
+
     static bool _validateRequest(AsyncWebServerRequest *request, const char *expectedMethod, size_t maxContentLength)
     {
         if (maxContentLength > 0 && request->contentLength() > maxContentLength)
@@ -2336,10 +2347,7 @@ namespace CustomServer
 
         server.on("/api/v1/network/ethernet/status", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            if (!globalHwProfile->hasEthernet) {
-                _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "Ethernet is not available on this product");
-                return;
-            }
+            if (!_requireEthernet(request)) return;
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
             CustomEth::getStatusAsJson(doc);
@@ -2348,10 +2356,7 @@ namespace CustomServer
 
         server.on("/api/v1/network/ethernet/config", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
-            if (!globalHwProfile->hasEthernet) {
-                _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "Ethernet is not available on this product");
-                return;
-            }
+            if (!_requireEthernet(request)) return;
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
             if (CustomEth::getConfigurationAsJson(doc)) _sendJsonResponse(request, doc);
@@ -2386,10 +2391,7 @@ namespace CustomServer
 
         server.on("/api/v1/network/ethernet/config/reset", HTTP_POST, [](AsyncWebServerRequest *request)
                   {
-            if (!globalHwProfile->hasEthernet) {
-                _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "Ethernet is not available on this product");
-                return;
-            }
+            if (!_requireEthernet(request)) return;
             if (!_validateRequest(request, "POST")) return;
 
             if (CustomEth::resetConfiguration()) {
