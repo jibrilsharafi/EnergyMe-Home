@@ -705,7 +705,7 @@ namespace CustomServer
         // COUNTERS_RESET_TIMEOUT so the consecutive-reset counter never clears. About
         // 25 minutes of that reaches MAX_RESET_COUNT, which rolls the firmware back
         // and wipes the user's NVS.
-        if (!CustomWifi::isNetworkServiceable())
+        if (!CustomNet::isNetworkServiceable())
         {
             LOG_DEBUG("Health check: no serviceable network interface");
             return false;
@@ -715,7 +715,7 @@ namespace CustomServer
         // the periodic health-check task rather than from the WiFi task so customwifi keeps
         // no knowledge of the services layered on top of it. Idempotent, so the worst case
         // is Modbus appearing up to one check interval after STA comes up.
-        ModbusTcp::syncWithNetwork(CustomWifi::isFullyConnected(), CustomWifi::isApServing());
+        ModbusTcp::syncWithNetwork(CustomNet::isFullyConnected(), CustomWifi::isApServing());
 
         // Perform a simple HTTP self-request to verify server responsiveness
         WiFiClient client;
@@ -1740,7 +1740,7 @@ namespace CustomServer
     static bool _fetchGitHubReleaseInfo(JsonDocument &doc)
     {
         // Check internet connectivity before attempting API call
-        if (!CustomWifi::isFullyConnected(true)) {
+        if (!CustomNet::isFullyConnected(true)) {
             LOG_DEBUG("Cannot fetch GitHub release info: no internet connectivity");
             return false;
         }
@@ -1833,7 +1833,7 @@ namespace CustomServer
 
             // In non-community mode, we assume updates are handled via app/cloud, so we consider it always up to date            
             if (!globalCommunityMode) doc["isLatest"] = true; 
-            else if (CustomWifi::isFullyConnected(true)) { // Check internet connectivity before checking anything            
+            else if (CustomNet::isFullyConnected(true)) { // Check internet connectivity before checking anything            
                 // Fetch from GitHub API in community mode
                 bool githubInfoFetched = _fetchGitHubReleaseInfo(doc);
                 

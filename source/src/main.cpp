@@ -154,6 +154,14 @@ void setup()
   if (CustomEth::begin()) LOG_INFO("Ethernet setup done");
   else LOG_ERROR("Ethernet initialization failed! Continuing on WiFi only");
 
+  // On failover the established TLS/TCP sessions are bound to the dead
+  // interface's address: drop them so they reconnect on the new route, and
+  // resync NTP against a server reachable through it. Registration is harmless
+  // on Home (the callbacks never fire without an Ethernet interface).
+  CustomEth::onInterfaceChange([](InterfaceArbitration::Interface) { Mqtt::requestReconnect(); });
+  CustomEth::onInterfaceChange([](InterfaceArbitration::Interface) { CustomMqtt::requestReconnect(); });
+  CustomEth::onInterfaceChange([](InterfaceArbitration::Interface) { CustomTime::requestResync(); });
+
   // Wait until the device is reachable by SOMETHING: STA connected, or the SoftAP raised
   // and serving. Waiting on isFullyConnected() here would spin forever on a device with no
   // valid credentials, so CustomServer::begin() below would never run and provisioning
@@ -208,7 +216,7 @@ void setup()
   // interface, so starting it on an AP-only boot would serve meter data to anyone in radio
   // range of the provisioning SoftAP. The health-check task starts it when STA comes up.
   LOG_DEBUG("Setting up Modbus TCP...");
-  ModbusTcp::syncWithNetwork(CustomWifi::isFullyConnected(), CustomWifi::isApServing());
+  ModbusTcp::syncWithNetwork(CustomNet::isFullyConnected(), CustomWifi::isApServing());
   LOG_INFO("Modbus TCP setup done");
 
   if (!globalCommunityMode) {
