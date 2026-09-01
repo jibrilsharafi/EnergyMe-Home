@@ -493,6 +493,44 @@ void test_every_candidate_blocked_fails_closed(void) {
     TEST_ASSERT_FALSE(selectApSubnet(true, ip(10, 0, 0, 0), 8, true, ip(128, 0, 0, 0), 1, chosen));
 }
 
+void test_avoiding_four_networks_finds_the_free_candidate(void) {
+    // The Pro shape: live STA, WiFi static, live ETH lease, ETH static - four
+    // occupied networks blocking the first three candidates.
+    Subnet occupied[4] = {
+        {ip(172, 31, 42, 10), 24},  // live STA
+        {ip(172, 31, 43, 9), 24},   // WiFi static
+        {ip(10, 42, 42, 7), 24},    // live ETH lease
+        {ip(192, 168, 1, 5), 24},   // ETH static (does not collide with any candidate)
+    };
+    Subnet chosen{};
+    TEST_ASSERT_TRUE(selectApSubnetAvoiding(occupied, 4, chosen));
+    TEST_ASSERT_EQUAL_UINT32(ip(192, 168, 242, 1), chosen.address);
+}
+
+void test_avoiding_with_no_networks_picks_the_default(void) {
+    Subnet chosen{};
+    TEST_ASSERT_TRUE(selectApSubnetAvoiding(nullptr, 0, chosen));
+    TEST_ASSERT_EQUAL_UINT32(ip(172, 31, 42, 1), chosen.address);
+}
+
+void test_avoiding_all_candidates_fails_closed(void) {
+    Subnet occupied[2] = {
+        {ip(10, 0, 0, 0), 8},
+        {ip(128, 0, 0, 0), 1},
+    };
+    Subnet chosen{};
+    TEST_ASSERT_FALSE(selectApSubnetAvoiding(occupied, 2, chosen));
+}
+
+void test_avoiding_skips_malformed_comparison_prefixes(void) {
+    // A cidr of 0 is not a usable comparison network and must be ignored, not
+    // treated as "overlaps everything".
+    Subnet occupied[1] = {{ip(172, 31, 42, 10), 0}};
+    Subnet chosen{};
+    TEST_ASSERT_TRUE(selectApSubnetAvoiding(occupied, 1, chosen));
+    TEST_ASSERT_EQUAL_UINT32(ip(172, 31, 42, 1), chosen.address);
+}
+
 void test_candidates_all_sit_in_the_supported_cidr_range(void) {
     for (size_t i = 0; i < candidateSubnetCount(); i++) {
         Subnet candidate = candidateSubnet(i);
@@ -650,6 +688,10 @@ int main(int, char **) {
     RUN_TEST(test_static_ip_and_live_lease_are_both_avoided);
     RUN_TEST(test_lan_wider_than_a_slash_24_is_not_ignored);
     RUN_TEST(test_every_candidate_blocked_fails_closed);
+    RUN_TEST(test_avoiding_four_networks_finds_the_free_candidate);
+    RUN_TEST(test_avoiding_with_no_networks_picks_the_default);
+    RUN_TEST(test_avoiding_all_candidates_fails_closed);
+    RUN_TEST(test_avoiding_skips_malformed_comparison_prefixes);
     RUN_TEST(test_candidates_all_sit_in_the_supported_cidr_range);
     RUN_TEST(test_out_of_range_index_returns_empty_subnet);
 
