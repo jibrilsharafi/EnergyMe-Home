@@ -465,6 +465,35 @@ class EnergyMeAPI {
     }
 
     /**
+     * Get Ethernet status (Home Pro only; 404 on products without Ethernet)
+     */
+    async getEthernetStatus() {
+        return this.get('network/ethernet/status');
+    }
+
+    /**
+     * Get Ethernet configuration (static IP)
+     */
+    async getEthernetConfig() {
+        return this.get('network/ethernet/config');
+    }
+
+    /**
+     * Set Ethernet configuration (full update). The device restarts to apply.
+     * @param {object} config - { useStaticIp, ip, gateway, subnet, dns1, dns2 }
+     */
+    async setEthernetConfig(config) {
+        return this.put('network/ethernet/config', config);
+    }
+
+    /**
+     * Reset Ethernet configuration to defaults. The device restarts to apply.
+     */
+    async resetEthernetConfig() {
+        return this.post('network/ethernet/config/reset');
+    }
+
+    /**
      * Get health status
      */
     async getHealth() {

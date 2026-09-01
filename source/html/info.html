@@ -513,6 +513,29 @@
                     <span class="info-label"><span class="emoji">🚪</span>Gateway</span>
                     <span class="info-value" id="wifiGateway">Loading...</span>
                 </div>
+                <!-- Ethernet (Home Pro only) - stays hidden unless the status endpoint reports Ethernet is available -->
+                <div id="ethernetInfo" style="display: none;">
+                    <div class="info-item">
+                        <span class="info-label"><span class="emoji">🔀</span>Active Interface</span>
+                        <span class="info-value" id="ethActiveInterface">Loading...</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label"><span class="emoji">🔌</span>Ethernet Link</span>
+                        <span class="info-value status-indicator" id="ethLink">Loading...</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label"><span class="emoji">🌐</span>Ethernet IP</span>
+                        <span class="info-value" id="ethIp">Loading...</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label"><span class="emoji">🔗</span>Ethernet MAC</span>
+                        <span class="info-value" id="ethMac">Loading...</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label"><span class="emoji">⚙️</span>Ethernet Mode</span>
+                        <span class="info-value" id="ethMode">Loading...</span>
+                    </div>
+                </div>
             </div>
 
             <!-- CPU Load Card -->
@@ -785,6 +808,7 @@
                 systemInfo = systemInfoData;
                 displaySystemInfo(systemInfo);
                 displayStatistics(statisticsData);
+                fetchEthernetStatus();
             } catch (error) {
                 console.error('Failed to fetch system info:', error);
                 // Show error state in UI
@@ -1017,6 +1041,46 @@
             
             document.getElementById('wifiMacAddress').textContent = network.wifiMacAddress || 'N/A';
             document.getElementById('wifiGateway').textContent = network.wifiGatewayIp || 'N/A';
+        }
+
+        // Ethernet (Home Pro only). The status endpoint answers 404 on non-Ethernet
+        // products; the first failed (or enabled:false) fetch latches the section hidden
+        // so the periodic refresh does not keep hitting a route that cannot exist.
+        let ethernetAvailable = null;
+
+        async function fetchEthernetStatus() {
+            if (ethernetAvailable === false) return;
+            try {
+                const status = await energyApi.getEthernetStatus();
+                if (!status || !status.enabled) {
+                    ethernetAvailable = false;
+                    return;
+                }
+                ethernetAvailable = true;
+                document.getElementById('ethernetInfo').style.display = 'block';
+
+                const activeNames = { 'ethernet': 'Ethernet', 'wifi': 'WiFi', 'none': 'None' };
+                document.getElementById('ethActiveInterface').textContent = activeNames[status.activeInterface] || 'N/A';
+
+                const ethLinkElement = document.getElementById('ethLink');
+                if (status.linkUp) {
+                    ethLinkElement.textContent = 'Up';
+                    ethLinkElement.className = 'info-value status-indicator status-excellent';
+                } else {
+                    ethLinkElement.textContent = 'Down';
+                    ethLinkElement.className = 'info-value status-indicator status-critical';
+                }
+
+                document.getElementById('ethIp').textContent = status.ip || 'N/A';
+                document.getElementById('ethMac').textContent = status.mac || 'N/A';
+                document.getElementById('ethMode').textContent = status.staticApplied ? 'Static IP' : 'DHCP';
+            } catch (error) {
+                // Only a 404 proves the product has no Ethernet; a transient failure retries.
+                if (String(error.message).includes('404')) {
+                    ethernetAvailable = false;
+                    console.log('Ethernet not available on this device:', error.message);
+                }
+            }
         }
 
         function formatUptime(milliseconds) {

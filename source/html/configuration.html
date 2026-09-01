@@ -358,6 +358,68 @@
         <button class="buttonForm" onclick="setNetworkConfiguration()" id="setNetworkConfigButton">🌐 Apply & restart</button>
     </div>
 
+    <!-- Ethernet (Home Pro only) - stays hidden unless the status endpoint reports Ethernet is available -->
+    <div class="section-box" id="ethernetSection" style="display: none;">
+        <h2>Ethernet Configuration</h2>
+        <p><i>Wired network settings. By default the device uses DHCP. Changing these requires a restart to take effect.</i></p>
+
+        <!-- Current Ethernet state (live, read-only) so the user knows the starting point -->
+        <div id="currentEthernetBox"
+            style="background-color: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px 15px; margin: 12px 0;">
+            <div style="font-weight: 600; margin-bottom: 8px;">Current Ethernet</div>
+            <div style="display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; font-size: 0.9em;">
+                <span style="color: #666;">Link</span><span id="curEthLink">Loading...</span>
+                <span style="color: #666;">Active interface</span><span id="curEthActiveInterface">-</span>
+                <span style="color: #666;">Mode</span><span id="curEthMode">-</span>
+                <span style="color: #666;">IP address</span><span id="curEthIp">-</span>
+                <span style="color: #666;">Gateway</span><span id="curEthGateway">-</span>
+                <span style="color: #666;">Subnet mask</span><span id="curEthSubnet">-</span>
+                <span style="color: #666;">DNS</span><span id="curEthDns">-</span>
+                <span style="color: #666;">MAC address</span><span id="curEthMac">-</span>
+            </div>
+        </div>
+
+        <!-- Explicit either/or choice: DHCP vs Static IP -->
+        <fieldset style="border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px 15px 10px; margin: 12px 0;">
+            <legend style="padding: 0 6px; font-weight: 600;">IP address mode</legend>
+            <label style="display: block; padding: 6px 0; cursor: pointer;">
+                <input type="radio" name="ethIpMode" value="dhcp" onchange="onEthIpModeChange()" checked>
+                Automatic (DHCP) - recommended
+            </label>
+            <label style="display: block; padding: 6px 0; cursor: pointer;">
+                <input type="radio" name="ethIpMode" value="static" onchange="onEthIpModeChange()">
+                Static IP - set the address manually
+            </label>
+        </fieldset>
+
+        <div id="ethStaticIpFields" style="display: none; flex-direction: column; gap: 10px; margin: 15px 0;">
+            <div>
+                <label for="ethStaticIp">IP Address:</label>
+                <input type="text" id="ethStaticIp" class="config-input" inputmode="decimal" placeholder="e.g. 192.168.1.51" maxlength="15" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+            </div>
+            <div>
+                <label for="ethStaticGateway">Gateway (your router):</label>
+                <input type="text" id="ethStaticGateway" class="config-input" inputmode="decimal" placeholder="e.g. 192.168.1.1" maxlength="15" onblur="prefillEthDnsFromGateway()" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+            </div>
+            <div>
+                <label for="ethStaticSubnet">Subnet Mask:</label>
+                <input type="text" id="ethStaticSubnet" class="config-input" inputmode="decimal" placeholder="e.g. 255.255.255.0" maxlength="15" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+            </div>
+            <div>
+                <label for="ethStaticDns1">Primary DNS:</label>
+                <input type="text" id="ethStaticDns1" class="config-input" inputmode="decimal" placeholder="defaults to your gateway" maxlength="15" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+                <small style="color: #666;">Leave blank to use your gateway, or set a specific server (e.g. 8.8.8.8).</small>
+            </div>
+            <div>
+                <label for="ethStaticDns2">Secondary DNS (optional):</label>
+                <input type="text" id="ethStaticDns2" class="config-input" inputmode="decimal" placeholder="e.g. 1.1.1.1" maxlength="15" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+            </div>
+        </div>
+
+        <button class="buttonForm" onclick="setEthernetConfiguration()" id="setEthConfigButton">🔌 Apply & restart</button>
+        <button class="buttonForm" onclick="resetEthernetConfiguration()" id="resetEthConfigButton">↩️ Reset to DHCP & restart</button>
+    </div>
+
     <div class="section-box">
         <h2>Switch WiFi Network</h2>
         <p><i>Enter new WiFi credentials to switch to a different network. The device will save the credentials and restart to connect to the new network.</i></p>
@@ -1092,6 +1154,159 @@
             }
         }
 
+        // Ethernet (Home Pro only). Live status snapshot, used to prefill static fields
+        // with the working values; null while the section is hidden.
+        var currentEthernet = null;
+
+        function getSelectedEthIpMode() {
+            var checked = document.querySelector('input[name="ethIpMode"]:checked');
+            return checked ? checked.value : "dhcp";
+        }
+
+        function setSelectedEthIpMode(mode) {
+            var radio = document.querySelector('input[name="ethIpMode"][value="' + mode + '"]');
+            if (radio) radio.checked = true;
+        }
+
+        function prefillEthDnsFromGateway() {
+            var gateway = document.getElementById("ethStaticGateway").value.trim();
+            var dns1 = document.getElementById("ethStaticDns1");
+            if (gateway && !dns1.value.trim()) dns1.value = gateway;
+        }
+
+        // When switching to static with empty fields, seed them from the current working
+        // addresses so "static" becomes "pin my current address" - the safe, common case.
+        function prefillEthStaticFromCurrent() {
+            if (!currentEthernet || !currentEthernet.linkUp) return;
+            var ip = document.getElementById("ethStaticIp");
+            var gw = document.getElementById("ethStaticGateway");
+            var sn = document.getElementById("ethStaticSubnet");
+            var d1 = document.getElementById("ethStaticDns1");
+            var valid = function (v) { return v && v !== "0.0.0.0"; };
+            if (!ip.value.trim() && valid(currentEthernet.ip)) ip.value = currentEthernet.ip;
+            if (!gw.value.trim() && valid(currentEthernet.gateway)) gw.value = currentEthernet.gateway;
+            if (!sn.value.trim() && valid(currentEthernet.subnet)) sn.value = currentEthernet.subnet;
+            if (!d1.value.trim() && valid(currentEthernet.dns1)) d1.value = currentEthernet.dns1;
+        }
+
+        function onEthIpModeChange() {
+            var isStatic = getSelectedEthIpMode() === "static";
+            document.getElementById("ethStaticIpFields").style.display = isStatic ? "flex" : "none";
+            if (isStatic) prefillEthStaticFromCurrent();
+        }
+
+        // Reveals the Ethernet section only when the device actually has Ethernet:
+        // the status endpoint answers 404 on non-Ethernet products (the catch keeps
+        // the section hidden), and enabled:false means the same thing.
+        async function loadEthernet() {
+            try {
+                var status = await energyApi.getEthernetStatus();
+                if (!status || !status.enabled) return;
+                currentEthernet = status;
+
+                document.getElementById("ethernetSection").style.display = "block";
+
+                var set = function (id, val) { document.getElementById(id).textContent = val || "N/A"; };
+                var link = document.getElementById("curEthLink");
+                link.textContent = status.linkUp ? "Up" : "Down";
+                link.style.color = status.linkUp ? "var(--green, #2e7d32)" : "#c62828";
+                set("curEthActiveInterface", status.activeInterface === "ethernet" ? "Ethernet"
+                    : status.activeInterface === "wifi" ? "WiFi" : "None");
+                set("curEthIp", status.ip);
+                set("curEthGateway", status.gateway);
+                set("curEthSubnet", status.subnet);
+                set("curEthDns", status.dns1);
+                set("curEthMac", status.mac);
+
+                var config = await energyApi.getEthernetConfig();
+                setSelectedEthIpMode(config.useStaticIp ? "static" : "dhcp");
+                document.getElementById("curEthMode").textContent = config.useStaticIp ? "Static IP" : "DHCP (automatic)";
+                document.getElementById("ethStaticIp").value = config.ip || "";
+                document.getElementById("ethStaticGateway").value = config.gateway || "";
+                document.getElementById("ethStaticSubnet").value = config.subnet || "";
+                document.getElementById("ethStaticDns1").value = config.dns1 || "";
+                document.getElementById("ethStaticDns2").value = config.dns2 || "";
+                onEthIpModeChange();
+            } catch (error) {
+                console.log("Ethernet not available on this device. Response: " + error.message);
+            }
+        }
+
+        async function setEthernetConfiguration() {
+            const useStaticIp = getSelectedEthIpMode() === "static";
+            const ip = document.getElementById("ethStaticIp").value.trim();
+            const gateway = document.getElementById("ethStaticGateway").value.trim();
+            const subnet = document.getElementById("ethStaticSubnet").value.trim();
+            // Primary DNS must never be empty for a static config (empty DNS breaks name resolution),
+            // so default it to the gateway when the user leaves it blank.
+            const dns1 = document.getElementById("ethStaticDns1").value.trim() || gateway;
+            const dns2 = document.getElementById("ethStaticDns2").value.trim();
+
+            if (useStaticIp) {
+                if (!isValidIpv4(ip)) { showStatus('Please enter a valid IP address.', 'error'); return; }
+                if (!isValidIpv4(gateway)) { showStatus('Please enter a valid gateway address.', 'error'); return; }
+                if (!isValidIpv4(subnet)) { showStatus('Please enter a valid subnet mask.', 'error'); return; }
+                if (!isValidIpv4(dns1)) { showStatus('Primary DNS is not a valid IP address.', 'error'); return; }
+                if (dns2 && !isValidIpv4(dns2)) { showStatus('Secondary DNS is not a valid IP address.', 'error'); return; }
+            }
+
+            const userConfirmed = window.confirm("Apply Ethernet configuration? The device will restart and may be reachable at a different address.");
+            if (!userConfirmed) return;
+
+            const button = document.getElementById("setEthConfigButton");
+            button.disabled = true;
+            button.classList.add('loading');
+
+            try {
+                showStatus("Applying Ethernet configuration...", 'info');
+
+                await energyApi.setEthernetConfig({
+                    useStaticIp: useStaticIp,
+                    ip: ip,
+                    gateway: gateway,
+                    subnet: subnet,
+                    dns1: dns1,
+                    dns2: dns2
+                });
+
+                // After the restart the device may answer at a new address. For a static IP that is
+                // the address the user just entered; for DHCP its mDNS name (energyme.local) follows
+                // it whatever lease it gets. Poll and redirect against that new address, not the
+                // one this page was loaded from.
+                const targetUrl = useStaticIp ? ("http://" + ip) : "http://energyme.local";
+                window.rebootWait.show({ redirectTo: targetUrl, baseUrl: targetUrl });
+                // Don't restore button - the device is restarting
+            } catch (error) {
+                button.disabled = false;
+                button.classList.remove('loading');
+                showStatus("Error setting Ethernet configuration: " + error.message, 'error');
+            }
+        }
+
+        async function resetEthernetConfiguration() {
+            const userConfirmed = window.confirm("Reset Ethernet configuration to DHCP? The device will restart and may be reachable at a different address.");
+            if (!userConfirmed) return;
+
+            const button = document.getElementById("resetEthConfigButton");
+            button.disabled = true;
+            button.classList.add('loading');
+
+            try {
+                showStatus("Resetting Ethernet configuration...", 'info');
+
+                await energyApi.resetEthernetConfig();
+
+                // Back on DHCP after the restart, so poll the mDNS name rather than
+                // whatever static address this page may have been loaded from.
+                window.rebootWait.show({ redirectTo: "http://energyme.local", baseUrl: "http://energyme.local" });
+                // Don't restore button - the device is restarting
+            } catch (error) {
+                button.disabled = false;
+                button.classList.remove('loading');
+                showStatus("Error resetting Ethernet configuration: " + error.message, 'error');
+            }
+        }
+
         function checkHasSecrets() {
             energyApi.getSystemSecrets()
                 .then(response => {
@@ -1151,6 +1366,9 @@
                 await delay(DELAY_BETWEEN_REQUESTS);
 
                 await getNetworkConfiguration();
+                await delay(DELAY_BETWEEN_REQUESTS);
+
+                await loadEthernet();
                 await delay(DELAY_BETWEEN_REQUESTS);
 
                 await checkHasSecrets();
