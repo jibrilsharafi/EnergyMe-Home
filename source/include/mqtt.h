@@ -19,6 +19,7 @@
 #include "factory_keys.h"
 #include "customtime.h"
 #include "customwifi.h"
+#include "customnet.h"
 #include "customlog.h"
 #include "globals.h"
 #include "structs.h"
@@ -231,6 +232,12 @@ namespace Mqtt
 {
     void begin();
     void stop();
+
+    // Drops the MQTT session on the next task loop so it reconnects over the
+    // current default interface. Called on interface failover: the established
+    // TLS socket is bound to the old interface's address and would otherwise
+    // stay wedged until keepalive times out. Safe from any task (sets a flag).
+    void requestReconnect();
 
     // Cloud services methods
     void setCloudServicesEnabled(bool enabled);
