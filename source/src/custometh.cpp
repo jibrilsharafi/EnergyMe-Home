@@ -28,8 +28,14 @@ namespace CustomEth
     static InterfaceArbitration::Context _arbCtx;
 
     static bool _enabled = false;          // Profile has Ethernet and begin() ran
-    static bool _staticApplied = false;    // Static config actually applied this boot (not skipped by backstop)
-    static bool _bootFailCounted = false;  // Backstop counter incremented this boot (at first link-up)
+    // _staticIntent is latched from the loaded config BEFORE ETH.begin() starts the
+    // driver: ARDUINO_EVENT_ETH_CONNECTED can fire before _applyStaticConfiguration()
+    // runs (fast PHY renegotiation on warm reboot), and the backstop must not miss
+    // that boot's increment. _staticApplied then records the actual apply outcome.
+    static bool _staticIntent = false;     // Static config will be attempted this boot (not skipped by backstop)
+    static bool _staticApplied = false;    // Static config actually applied this boot
+    static volatile bool _bootFailCounted = false;        // Backstop counter incremented this boot (at first link-up)
+    static volatile bool _bootFailIncrementPending = false; // Event task requests the increment; eth task performs the NVS write
     static bool _backstopCleared = false;  // Counter cleared this boot after the stable window
     static uint64_t _serviceableSinceMs = 0; // For the lwIP settle delay and the backstop stable window; 0 while not serviceable
 
@@ -83,6 +89,15 @@ namespace CustomEth
         snprintf(hostname, sizeof(hostname), "%s-%s", "energyme-home", DEVICE_ID);
         ETH.setHostname(hostname);
 
+        // Latch static intent before the driver starts so the first link-up event
+        // (which can beat _applyStaticConfiguration on a warm reboot) counts the
+        // backstop attempt correctly.
+        {
+            EthConfiguration config;
+            _staticIntent = getConfiguration(config) && config.useStaticIp &&
+                            _getStaticBootFails() < ETH_STATIC_MAX_BOOT_FAILS;
+        }
+
         // Dedicated SPI bus (the ADE7953 owns the default SPI): no bus sharing,
         // no cross-task SPI arbitration needed.
         _spi = new SPIClass(HSPI);
@@ -120,6 +135,19 @@ namespace CustomEth
     }
 
     bool isEnabled() { return _enabled; }
+
+    bool isCommissioned()
+    {
+        // Monotonic cache: once commissioned, always commissioned this boot.
+        // Only a factory reset clears the marker, and that path restarts.
+        static bool cached = false;
+        if (cached) return true;
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_ETH, true)) return false; // eth_ns never written (Home, or factory-fresh Pro)
+        cached = prefs.getBool(ETH_COMMISSIONED_KEY, false);
+        prefs.end();
+        return cached;
+    }
 
     bool isLinkUp()
     {
@@ -178,10 +206,13 @@ namespace CustomEth
             case ARDUINO_EVENT_ETH_CONNECTED:
                 // Backstop accounting: count the attempt at first link-up, so a
                 // crash caused by the static config still accumulates, while a
-                // cable-out boot (no link ever) stays neutral per the spec.
-                if (_staticApplied && !_bootFailCounted) {
+                // cable-out boot (no link ever) stays neutral per the spec. The
+                // NVS write happens in the eth task - never here, in the shared
+                // Network event task, where a flash GC pause would stall every
+                // network event (same rule as _onWiFiEvent).
+                if (_staticIntent && !_bootFailCounted) {
                     _bootFailCounted = true;
-                    _setStaticBootFails((uint8_t)(_getStaticBootFails() + 1));
+                    _bootFailIncrementPending = true;
                 }
                 _updateEthState(true, ETH.hasIP());
                 break;
@@ -223,10 +254,14 @@ namespace CustomEth
         LOG_DEBUG("Ethernet task started");
 
         bool mdnsEnsured = false;
-        uint32_t loops = 0;
-        while (!_stopRequested && loops < MAX_LOOP_ITERATIONS * 1000000UL) {
-            loops++;
+        while (!_stopRequested) { // Task loop - unbounded by convention, like every other task
             TASK_HEARTBEAT(_heartbeat);
+
+            // Deferred from the Network event task (see ARDUINO_EVENT_ETH_CONNECTED).
+            if (_bootFailIncrementPending) {
+                _bootFailIncrementPending = false;
+                _setStaticBootFails((uint8_t)(_getStaticBootFails() + 1));
+            }
 
             _evaluateArbitration();
 
@@ -236,6 +271,21 @@ namespace CustomEth
             if (isServiceable()) {
                 if (!mdnsEnsured) {
                     mdnsEnsured = CustomWifi::ensureMdnsStarted();
+                }
+
+                // First proof of being in service on the wire: persist the
+                // commissioning marker so the provisioning state machine never
+                // treats this device as UNPROVISIONED again (the auth carve-out
+                // must not re-arm on a recovery-AP raise months into service).
+                // Takes effect from the next provisioning init; within THIS first
+                // boot the carve-out window matches today's unprovisioned window.
+                if (!isCommissioned()) {
+                    Preferences prefs;
+                    if (prefs.begin(PREFERENCES_NAMESPACE_ETH, false)) {
+                        prefs.putBool(ETH_COMMISSIONED_KEY, true);
+                        prefs.end();
+                        LOG_INFO("Device commissioned over Ethernet - marker persisted");
+                    }
                 }
             } else {
                 mdnsEnsured = false;
@@ -313,9 +363,7 @@ namespace CustomEth
         for (int i = 0; i < 2; i++) {
             IPAddress dns = (i == 0) ? dns1 : dns2;
             if (dns == IPAddress(0, 0, 0, 0)) continue;
-            ip_addr_t addr;
-            addr.type = IPADDR_TYPE_V4;
-            addr.u_addr.ip4.addr = (uint32_t)dns;
+            ip_addr_t addr = IPADDR4_INIT((uint32_t)dns); // Fully initialized - no garbage union bytes
             dns_setserver((u8_t)i, &addr);
         }
         LOG_DEBUG("DNS reapplied for %s: %s / %s", InterfaceArbitration::interfaceName(active),
