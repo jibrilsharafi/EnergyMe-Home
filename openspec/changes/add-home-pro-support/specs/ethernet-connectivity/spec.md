@@ -8,21 +8,26 @@ Wired networking for Home Pro: W5500 SPI Ethernet bring-up, zero-touch DHCP comm
 
 ### Requirement: A cabled Pro device commissions itself with zero touch
 
-On a product whose profile declares Ethernet, the system SHALL bring up the Ethernet interface at boot and acquire a DHCP lease when a link is present. A device with a link and a lease SHALL be fully operational (web UI, cloud, local integrations) without any provisioning step and without raising the SoftAP.
+On a product whose profile declares Ethernet, the system SHALL bring up the Ethernet interface at boot and acquire a DHCP lease when a link is present. A device with a link and an address SHALL be network-commissioned without any provisioning step and without raising the SoftAP: every service starts on the Ethernet interface, subject only to the existing first-run web password change (web-authentication spec). Waiting for a lease SHALL NOT extend the existing bounded boot network wait: boot proceeds and the lease is picked up whenever it arrives.
 
 #### Scenario: First boot with cable and DHCP
 
 - **WHEN** a factory-fresh Home Pro boots with an Ethernet cable on a DHCP network
-- **THEN** it obtains a lease, all services start on the Ethernet interface, and no SoftAP is raised
+- **THEN** it obtains a lease, services start on the Ethernet interface, the first web visit performs the mandatory password change, and no SoftAP is raised
 
 #### Scenario: First boot with no cable and no WiFi credentials
 
 - **WHEN** a factory-fresh Home Pro boots with no Ethernet link and no stored STA credentials
 - **THEN** the SoftAP recovery channel is raised, per the wifi-provisioning raise conditions
 
+#### Scenario: Link up but no DHCP server
+
+- **WHEN** the cable is connected but no lease (or applied static address) is obtained
+- **THEN** the interface counts as not serviceable: the SoftAP raise conditions treat the device as unreachable, on the same lifecycle cadence as a failing STA
+
 ### Requirement: Ethernet IP configuration is persistent, safe, and recoverable without a UI
 
-The system SHALL support static IP configuration for Ethernet (address, gateway, subnet, DNS) set via the web interface, persisted independently of the WiFi configuration, and applied at boot. A static configuration that prevents the device from coming up SHALL be abandoned for DHCP after a bounded number of failed boots. A long press of the device button SHALL reset network configuration to DHCP.
+The system SHALL support static IP configuration for Ethernet (address, gateway, subnet, DNS) set via the web interface, persisted independently of the WiFi configuration, and applied at boot. Validation SHALL reject a static address inside the SoftAP subnet. A static configuration that prevents the device from coming up SHALL be abandoned for DHCP after a bounded number of failed boots - counting only boots where the link was up; a cable-out boot proves nothing about the config and SHALL NOT count. A long press of the device button SHALL reset network configuration to DHCP.
 
 #### Scenario: Static IP applied after restart
 
@@ -31,8 +36,18 @@ The system SHALL support static IP configuration for Ethernet (address, gateway,
 
 #### Scenario: Unbootable static configuration
 
-- **WHEN** a stored static Ethernet configuration fails a bounded number of consecutive boots
+- **WHEN** a stored static Ethernet configuration fails a bounded number of consecutive boots with the link up
 - **THEN** the device ignores it and boots on DHCP, so a bad static IP can never permanently strand a headless device
+
+#### Scenario: Cable-out boots do not burn the backstop
+
+- **WHEN** the device boots several times with no Ethernet link and a static configuration stored
+- **THEN** the backstop counter does not advance, and the static configuration is still honoured on the next cabled boot
+
+#### Scenario: Static address colliding with the recovery AP
+
+- **WHEN** the user submits a static Ethernet address inside the SoftAP subnet
+- **THEN** the configuration is rejected with an explanatory error
 
 #### Scenario: Button network reset
 
@@ -48,7 +63,7 @@ When both interfaces are available, Ethernet SHALL carry the default route. On E
 #### Scenario: Cable pulled with WiFi configured
 
 - **WHEN** the Ethernet link drops on a device with associated STA
-- **THEN** traffic (MQTT, NTP, telemetry) continues over WiFi without a restart, and cloud sessions re-establish rather than staying wedged
+- **THEN** the established MQTT/InfluxDB connections are actively dropped and reconnect over WiFi, rather than waiting out TCP keepalive on a dead path
 
 #### Scenario: Cable restored
 
@@ -59,6 +74,11 @@ When both interfaces are available, Ethernet SHALL carry the default route. On E
 
 - **WHEN** the Ethernet link bounces repeatedly within the hold-down period
 - **THEN** the default route does not thrash: it stays on the stable interface until the link holds
+
+#### Scenario: DNS and NTP follow the active interface
+
+- **WHEN** the default route moves between interfaces
+- **THEN** DNS resolution uses the new interface's DNS servers and NTP resynchronizes against a server reachable through it - neither keeps stale per-interface addresses (the resolver list and the gateway-derived NTP server are global state, not per-interface)
 
 ### Requirement: All network consumers are interface-agnostic
 
@@ -90,7 +110,21 @@ On a product whose profile declares no Ethernet, the system SHALL NOT initialize
 #### Scenario: Home device on shared firmware
 
 - **WHEN** a Home device runs a firmware build containing Ethernet support
-- **THEN** no SPI bus, task, web page, or API field related to Ethernet is active, and heap/boot behavior is unchanged
+- **THEN** no Ethernet SPI bus, driver object, task, NVS namespace, web page, or API surface is created, and the post-boot free-heap differs from the previous release only within noise
+
+### Requirement: mDNS advertises the device on its active interface
+
+The mDNS responder SHALL answer with the address of the interface currently carrying the default route, and SHALL re-announce when that address changes on failover. Advertised service metadata that depends on the hardware (such as the channel count) SHALL reflect the selected profile.
+
+#### Scenario: Discovery after failover
+
+- **WHEN** the default route moves from Ethernet to WiFi (or back)
+- **THEN** resolving the device's mDNS name yields the active interface's address after the re-announcement
+
+#### Scenario: Advertised channel count on Pro
+
+- **WHEN** a Home Pro device advertises its services over mDNS
+- **THEN** the advertised channel count is 12, from the profile, not a hard-coded value
 
 ### Requirement: Ethernet status is observable
 
