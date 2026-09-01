@@ -27,7 +27,7 @@ namespace InterfaceArbitration {
 enum class Interface : uint8_t {
     NONE,
     ETHERNET,
-    WIFI_STA,
+    WIFI_STATION,
 };
 
 // Wire/log name for an interface. Falls back to "none".

@@ -47,7 +47,7 @@ void test_eth_taken_immediately_at_boot(void) {
 void test_sta_taken_when_no_eth(void) {
     onStaState(ctx, true, 1000);
     Decision d = evaluateAndApply(1001);
-    TEST_ASSERT_EQUAL(Interface::WIFI_STA, (Interface)d.preferred);
+    TEST_ASSERT_EQUAL(Interface::WIFI_STATION, (Interface)d.preferred);
 }
 
 void test_eth_wins_when_both_come_up_at_boot(void) {
@@ -96,7 +96,7 @@ void test_cable_pull_fails_over_to_sta(void) {
 
     onEthState(ctx, false, false, 60000);
     Decision d = evaluateAndApply(60001);
-    TEST_ASSERT_EQUAL(Interface::WIFI_STA, (Interface)d.preferred);
+    TEST_ASSERT_EQUAL(Interface::WIFI_STATION, (Interface)d.preferred);
     TEST_ASSERT_TRUE(d.switchRequired);
 }
 
@@ -119,7 +119,7 @@ void test_cable_return_does_not_preempt_sta_before_holddown(void) {
 
     onEthState(ctx, true, true, 10000);
     Decision d = evaluate(ctx, 10000 + HOLDDOWN - 1);
-    TEST_ASSERT_EQUAL(Interface::WIFI_STA, (Interface)d.preferred);
+    TEST_ASSERT_EQUAL(Interface::WIFI_STATION, (Interface)d.preferred);
     TEST_ASSERT_FALSE(d.switchRequired);
 }
 
@@ -158,11 +158,11 @@ void test_flapping_link_never_steals_the_route(void) {
     for (int i = 0; i < 30; i++) {
         onEthState(ctx, true, true, t);
         Decision d = evaluateAndApply(t + 1000);
-        TEST_ASSERT_EQUAL(Interface::WIFI_STA, (Interface)d.preferred);
+        TEST_ASSERT_EQUAL(Interface::WIFI_STATION, (Interface)d.preferred);
         onEthState(ctx, false, false, t + 2000);
         t += 2000;
     }
-    TEST_ASSERT_EQUAL(Interface::WIFI_STA, (Interface)ctx.active);
+    TEST_ASSERT_EQUAL(Interface::WIFI_STATION, (Interface)ctx.active);
 }
 
 void test_flap_then_stable_link_takes_over(void) {
@@ -173,7 +173,7 @@ void test_flap_then_stable_link_takes_over(void) {
     onEthState(ctx, false, false, 12000);
     onEthState(ctx, true, true, 14000); // stable from here
 
-    TEST_ASSERT_EQUAL(Interface::WIFI_STA, (Interface)evaluateAndApply(14000 + HOLDDOWN - 1).preferred);
+    TEST_ASSERT_EQUAL(Interface::WIFI_STATION, (Interface)evaluateAndApply(14000 + HOLDDOWN - 1).preferred);
     TEST_ASSERT_EQUAL(Interface::ETHERNET, (Interface)evaluateAndApply(14000 + HOLDDOWN).preferred);
 }
 
@@ -185,7 +185,7 @@ void test_home_sta_connect_then_drop(void) {
     // Ethernet callbacks never fire on Home; the outputs must reduce to the
     // existing behavior: STA when connected, nothing otherwise.
     onStaState(ctx, true, 1000);
-    TEST_ASSERT_EQUAL(Interface::WIFI_STA, (Interface)evaluateAndApply(1001).preferred);
+    TEST_ASSERT_EQUAL(Interface::WIFI_STATION, (Interface)evaluateAndApply(1001).preferred);
     TEST_ASSERT_TRUE(anyInterfaceServiceable(ctx));
 
     onStaState(ctx, false, 2000);
@@ -224,7 +224,7 @@ void test_boot_time_zero_still_counts_as_serviceable(void) {
 void test_interface_names(void) {
     TEST_ASSERT_EQUAL_STRING("none", interfaceName(Interface::NONE));
     TEST_ASSERT_EQUAL_STRING("ethernet", interfaceName(Interface::ETHERNET));
-    TEST_ASSERT_EQUAL_STRING("wifi", interfaceName(Interface::WIFI_STA));
+    TEST_ASSERT_EQUAL_STRING("wifi", interfaceName(Interface::WIFI_STATION));
 }
 
 int main(int argc, char **argv) {

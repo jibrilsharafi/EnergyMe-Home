@@ -9,7 +9,7 @@ const char *interfaceName(Interface iface) {
     switch (iface) {
         case Interface::NONE:     return "none";
         case Interface::ETHERNET: return "ethernet";
-        case Interface::WIFI_STA: return "wifi";
+        case Interface::WIFI_STATION: return "wifi";
     }
     return "none";
 }
@@ -55,18 +55,18 @@ Decision evaluate(const Context &context, uint64_t nowMs) {
     if (isEthServiceable(context)) {
         if (context.active == Interface::ETHERNET) {
             preferred = Interface::ETHERNET;
-        } else if (context.active == Interface::WIFI_STA && context.staConnected) {
+        } else if (context.active == Interface::WIFI_STATION && context.staConnected) {
             // A working fallback is only abandoned for an ETH that has proven
             // itself stable for the whole hold-down window.
             uint64_t since = context.ethServiceableSinceMs;
             bool heldLongEnough = since != 0 && (nowMs - since) >= INTERFACE_ARBITRATION_ETH_HOLDDOWN_MS;
-            preferred = heldLongEnough ? Interface::ETHERNET : Interface::WIFI_STA;
+            preferred = heldLongEnough ? Interface::ETHERNET : Interface::WIFI_STATION;
         } else {
             // Nothing else is carrying traffic: take the wire immediately.
             preferred = Interface::ETHERNET;
         }
     } else {
-        preferred = context.staConnected ? Interface::WIFI_STA : Interface::NONE;
+        preferred = context.staConnected ? Interface::WIFI_STATION : Interface::NONE;
     }
 
     Decision decision;
