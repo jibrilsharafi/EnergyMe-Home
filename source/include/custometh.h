@@ -56,6 +56,7 @@
 #define ETH_CONFIG_DNS1_KEY "dns1"
 #define ETH_CONFIG_DNS2_KEY "dns2"
 #define ETH_CONFIG_STATIC_FAILS_KEY "staticFails"
+#define ETH_COMMISSIONED_KEY "commissioned"
 
 #define PREFERENCES_NAMESPACE_ETH "eth_ns"
 
@@ -87,6 +88,14 @@ namespace CustomEth
 
     // Profile says this product has Ethernet and begin() brought it up.
     bool isEnabled();
+
+    // The device has been network-commissioned over Ethernet at least once (an
+    // ETH lease/address is proof it is in service). Persisted in eth_ns, cleared
+    // by factory reset. The provisioning state machine treats a commissioned
+    // device as provisioned, so a later recovery-AP raise requires full auth
+    // instead of re-arming the UNPROVISIONED carve-out. Safe to call before
+    // begin() and on any product (false when eth_ns does not exist).
+    bool isCommissioned();
 
     bool isLinkUp();
 
