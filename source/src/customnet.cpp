@@ -3,16 +3,36 @@
 
 #include "customnet.h"
 
+#include <WiFi.h>
+
 namespace CustomNet
 {
+    // Plain TCP connect over whatever interface holds the default route. The
+    // CustomWifi probe cannot be reused when Ethernet carries the traffic: it
+    // fails early on WiFi-specific pre-checks (STA association, WiFi gateway and
+    // DNS) that are all legitimately absent on an Ethernet-only device.
+    static bool _testConnectivityOverDefaultRoute()
+    {
+        WiFiClient client;
+        client.setTimeout(CONNECTIVITY_TEST_TIMEOUT_MS);
+        if (!client.connect(CONNECTIVITY_TEST_IP, CONNECTIVITY_TEST_PORT)) {
+            LOG_DEBUG("Connectivity test failed: cannot reach %s:%d over the default route",
+                      CONNECTIVITY_TEST_IP, CONNECTIVITY_TEST_PORT);
+            return false;
+        }
+        client.stop();
+        return true;
+    }
+
     bool isFullyConnected(bool requireInternet)
     {
-        bool stationUp = CustomEth::isServiceable() || CustomWifi::isFullyConnected(false);
-        if (!stationUp) return false;
-        // The connectivity probe is a plain TCP connect over the default route,
-        // so it tests whichever interface is actually carrying traffic.
-        if (requireInternet) return CustomWifi::testConnectivity();
-        return true;
+        bool ethUp = CustomEth::isServiceable();
+        bool wifiUp = CustomWifi::isFullyConnected(false);
+        if (!ethUp && !wifiUp) return false;
+        if (!requireInternet) return true;
+        // WiFi-only: keep the richer WiFi probe (gateway/DNS diagnostics) exactly
+        // as before this change. With Ethernet up, probe the default route directly.
+        return ethUp ? _testConnectivityOverDefaultRoute() : CustomWifi::testConnectivity();
     }
 
     bool isNetworkServiceable()
