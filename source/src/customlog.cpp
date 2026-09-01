@@ -259,7 +259,7 @@ namespace CustomLog
             }
 
             // If not connected or UDP not initialized, requeue to front and wait
-            if (!_isUdpInitialized || !CustomWifi::isFullyConnected()) {
+            if (!_isUdpInitialized || !CustomNet::isFullyConnected()) {
                 xQueueSendToFront(_udpLogQueue, &entry, 0);
                 delay(DELAY_SEND_UDP);
                 continue;
