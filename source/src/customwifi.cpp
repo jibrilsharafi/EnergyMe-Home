@@ -1042,7 +1042,10 @@ namespace CustomWifi
       MDNS.addServiceTxt("modbus", "tcp", "vendor", COMPANY_NAME);
       MDNS.addServiceTxt("modbus", "tcp", "model", PRODUCT_NAME);
       MDNS.addServiceTxt("modbus", "tcp", "version", FIRMWARE_BUILD_VERSION);
-      MDNS.addServiceTxt("modbus", "tcp", "channels", "16"); // Cannot use constant since that is a number, not a string
+      char channelCountStr[4];
+      snprintf(channelCountStr, sizeof(channelCountStr), "%u", globalHwProfile->totalChannelCount);
+      MDNS.addServiceTxt("modbus", "tcp", "channels", static_cast<const char *>(channelCountStr));
+      MDNS.addServiceTxt("modbus", "tcp", "product", productLineToString(globalHwProfile->product));
 
       _lastMdnsIp = currentIp;
       _mdnsInitialized = true;
