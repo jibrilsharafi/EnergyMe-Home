@@ -46,33 +46,26 @@ struct Decision {
     bool switchRequired;   // preferred != active: caller must apply the transition
 };
 
-void init(Context &context, uint64_t nowMs);
+void init(Context &context);
 
 // Feed state changes. Link drop or address loss clears the serviceability clock,
 // so every link bounce restarts the hold-down from zero.
 void onEthState(Context &context, bool linkUp, bool hasAddress, uint64_t nowMs);
-void onStaState(Context &context, bool connected, uint64_t nowMs);
+void onStaState(Context &context, bool connected);
 
 // Serviceable = the interface could carry traffic now. Link without an address
 // (cable in, no DHCP server) is NOT serviceable: the device is unreachable on it.
 bool isEthServiceable(const Context &context);
 
-// Evaluate the preferred default route. Pure; call on every event and tick.
+// Evaluate the preferred default route and record it as active when it changed.
+// Call on every event and tick; the returned decision tells the caller whether
+// a transition must be applied (Network.setDefaultInterface, session drops).
 // Rules:
 //   - ETH serviceable and active: stay.
 //   - ETH serviceable, STA active and working: move to ETH only after the
 //     hold-down has elapsed (flap filter).
 //   - ETH serviceable, nothing else working: take ETH immediately.
 //   - ETH not serviceable: STA if connected, else NONE.
-Decision evaluate(const Context &context, uint64_t nowMs);
-
-// Record that the caller has applied a switch (default route now on newActive).
-void applySwitch(Context &context, Interface newActive);
-
-// True when at least one station-side interface is serviceable. Feeds the AP
-// raise conditions (a device reachable over the wire must not raise the AP)
-// and the health check. The SoftAP is accounted separately by the caller, as
-// today (WifiProvisioning::isNetworkServiceable).
-bool anyInterfaceServiceable(const Context &context);
+Decision evaluateAndApply(Context &context, uint64_t nowMs);
 
 }  // namespace InterfaceArbitration
