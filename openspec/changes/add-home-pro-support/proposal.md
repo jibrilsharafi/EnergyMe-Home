@@ -2,7 +2,7 @@
 
 ## Why
 
-EnergyMe Home Pro is a new hardware variant: same ESP32-S3 platform but with a WROOM-1U module (external antenna), a W5500 SPI Ethernet controller on its own SPI bus, and 12 measurement channels instead of 16. The board is designed and about to be built; the firmware must support it from the same codebase and the same binary, so both products share one OTA stream, one release process, and one open-source repo.
+EnergyMe Home Pro is a new hardware variant: same ESP32-S3 platform but with a WROOM-1U-N16R8 module (external antenna, 8 MB octal PSRAM), a W5500 SPI Ethernet controller on its own SPI bus, and 12 measurement channels instead of 16. The board is designed and about to be built; the firmware must support it from the same codebase, one release process, and one open-source repo. The octal-vs-quad PSRAM difference forces per-product binaries (PSRAM mode is compile-time), so releases build two artifacts at the same version and OTA delivery is product-targeted.
 
 ## What Changes
 
@@ -32,7 +32,7 @@ EnergyMe Home Pro is a new hardware variant: same ESP32-S3 platform but with a W
 ## Impact
 
 - Firmware: `hardware_profile.{h,cpp}`, `factory_keys.h`, new `custometh.{h,cpp}`, `customwifi.{h,cpp}` (predicates + AP raise conditions), `main.cpp` boot sequence, `modbustcp`, `mqtt`/`custommqtt`/`influxdbclient`/`customtime`/`customlog` gates, web UI pages + REST endpoints, `buttonhandler` (network reset).
-- Build: one shared binary for both products; only a new bench env (`esp32s3-dev-pro` with product/version fallback defines) in `platformio.ini`. No new lib_deps (core `ETH.h`).
+- Build: one codebase, two binaries. New `esp32s3-pro-dev`/`esp32s3-pro-prod` envs in `platformio.ini` with `qio_opi` memory type for the N16R8 module (Home envs untouched). No new lib_deps (core `ETH.h`). Manual OTA upload filename check and cloud job targeting become product-aware so a wrong-product image cannot be flashed.
 - Manufacturing (coordinated, other repo): pydantic payload adds mandatory `product_line`; label gains Ethernet MAC; EOL test adds W5500 link test and external-antenna RF check.
-- Cloud (other repo): `product` thing attribute/group at provisioning for fleet queries and staged OTA rollout; no OTA pipeline change (single binary).
+- Cloud (other repo): `product` thing attribute/group at provisioning is now required for OTA job targeting (per-product binaries); release pipeline builds and signs both artifacts at the same version.
 - Tests: new host-testable interface-arbitration logic in `lib/` + Unity tests; dual-netif heap soak on hardware during OTA/TLS is a mandatory bring-up gate (STA fallback in v1 keeps both stacks live).

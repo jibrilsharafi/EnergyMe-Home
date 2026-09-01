@@ -6,13 +6,13 @@
 - [ ] 1.2 Read `product_line` in `initHardwareProfile()`: absent → home; unknown value → community mode on latest Home, warning logged
 - [ ] 1.3 Add `product` field to `HardwareProfile`; key lookup by (product, version); fallback search filters to Home
 - [ ] 1.4 Add `PRODUCT_FALLBACK` build define alongside `PCB_VERSION_FALLBACK`; honour both in community fallback
-- [ ] 1.5 Add `esp32s3-dev-pro` env to `platformio.ini` (extends dev, pins product home_pro + version 10)
+- [ ] 1.5 Add `esp32s3-pro-dev` and `esp32s3-pro-prod` envs to `platformio.ini`: `qio_opi` memory type for N16R8 (octal PSRAM), product/version fallback defines in dev; Home envs and `[common]` untouched
 - [ ] 1.6 Expose product line in device info (REST + info page), so support dumps identify the product
 
 ## 2. Home Pro hardware profile
 
 - [ ] 2.1 Extend `HardwareProfile` with Ethernet fields (hasEthernet, CS/INT/RST pins, dedicated SPI bus pins) - Home entries all zero/false
-- [ ] 2.2 Add Home Pro v1.0 profile entry: 74HC4067 with 11 wired channels + direct = 12 channels, placeholder pins clearly marked (BLOCKED on pinout: fill real GPIOs, mux map, voltage divider values when board data arrives)
+- [ ] 2.2 Add Home Pro v1.0 profile entry with real pinout (design.md "Home Pro v1.0 pinout"): ADE7953 SPI identical to v6.x, mux S0=21/S1=47/S2=48/S3=38, LED 40/41/39, button 0, W5500 CS=16/SCLK=15/MISO=7/MOSI=6/IRQ=5/RST=4, mux map [15,14,13,12,11,2,8,1,9,0,10], dividers 153000/180
 - [ ] 2.3 Verify all channel-count consumers iterate the profile value with a Pro profile active (grep audit + build)
 
 ## 3. Interface arbitration logic (host-testable)
@@ -52,6 +52,7 @@
 - [ ] 8.2 Web UI: ETH status on info page, ETH settings on configuration page, active-interface indicator; hidden on Home
 - [ ] 8.3 Button SINGLE_LONG becomes network reset: clear WiFi credentials + WiFi static + eth_ns static (unconditional; no-op clears on Home), leaving calibration/web password/cloud credentials intact
 - [ ] 8.4 swagger.yaml for new endpoints (mind CRLF staging)
+- [ ] 8.5 Product-aware manual OTA upload check: expected artifact name per product (extend the existing `energyme_home` filename gate), reject mismatches before flash write
 
 ## 9. Hardware bring-up (BLOCKED on Pro board)
 
