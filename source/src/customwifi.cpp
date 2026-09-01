@@ -1340,9 +1340,35 @@ namespace CustomWifi
       }
     }
 
+    // On products with Ethernet the wire's networks count too: live lease and
+    // configured static, for the same restored-backup reason as the WiFi static.
+    WifiProvisioning::Subnet occupied[4];
+    size_t occupiedCount = 0;
+    if (staValid)    occupied[occupiedCount++] = {staAddr, staCidr};
+    if (staticValid) occupied[occupiedCount++] = {staticAddr, staticCidr};
+    if (CustomEth::isEnabled()) {
+      IPAddress ethIp = ETH.localIP();
+      if (ethIp != IPAddress(0, 0, 0, 0)) {
+        uint8_t ethCidr = WifiProvisioning::cidrFromNetmask(_toHostOrder(ETH.subnetMask()));
+        occupied[occupiedCount++] = {_toHostOrder(ethIp), (uint8_t)(ethCidr != 0 ? ethCidr : 24)};
+      }
+      EthConfiguration ethConfig;
+      if (CustomEth::getConfiguration(ethConfig) && ethConfig.useStaticIp && ethConfig.ip[0] != '\0') {
+        IPAddress parsed;
+        if (parsed.fromString(ethConfig.ip)) {
+          uint8_t ethStaticCidr = 24;
+          IPAddress parsedMask;
+          if (ethConfig.subnet[0] != '\0' && parsedMask.fromString(ethConfig.subnet)) {
+            uint8_t derived = WifiProvisioning::cidrFromNetmask(_toHostOrder(parsedMask));
+            if (derived != 0) ethStaticCidr = derived;
+          }
+          occupied[occupiedCount++] = {_toHostOrder(parsed), ethStaticCidr};
+        }
+      }
+    }
+
     WifiProvisioning::Subnet chosen;
-    if (!WifiProvisioning::selectApSubnet(staValid, staAddr, staCidr,
-                                          staticValid, staticAddr, staticCidr, chosen)) {
+    if (!WifiProvisioning::selectApSubnetAvoiding(occupied, occupiedCount, chosen)) {
       LOG_ERROR("No non-overlapping SoftAP subnet available - not raising the AP");
       return false;
     }
@@ -1418,7 +1444,9 @@ namespace CustomWifi
   // the device an open resolver on the customer's LAN. Bound to AP-up-and-STA-down (D4).
   static void _serviceDns()
   {
-    bool wanted = _apRaised && WifiProvisioning::isDnsAllowed(_provisioning, WiFi.isConnected());
+    // A serviceable ETH interface counts as "station-side up" here: the responder
+    // must never answer LAN DNS queries on a device reachable over the wire.
+    bool wanted = _apRaised && WifiProvisioning::isDnsAllowed(_provisioning, WiFi.isConnected() || CustomEth::isServiceable());
 
     if (wanted && !_dnsRunning) {
       // Always the three-argument form: the no-arg start() only sets the resolved address
@@ -1466,10 +1494,22 @@ namespace CustomWifi
   {
     uint64_t nowMs = millis64();
 
-    if (_provisioning.apRaised && WifiProvisioning::shouldTearDownAp(_provisioning, nowMs)) {
+    // A serviceable Ethernet interface satisfies "the device is reachable" the same
+    // way an STA association does: it suppresses a raise and tears an AP down. This
+    // also covers an ETH lease that overlaps the AP subnet - wire-reachable means
+    // the AP comes down before the ambiguous routing can matter. Permanently false
+    // on products without Ethernet, so the Home evaluation is bit-identical.
+    bool ethServiceable = CustomEth::isServiceable();
+
+    // Zero-touch first boot: with the cable in and DHCP still negotiating, hold the
+    // raise back briefly so a normally-leasing network never sees an AP blip.
+    bool ethLeasePending = CustomEth::isLinkUp() && !ethServiceable && nowMs < ETH_LINK_DHCP_GRACE_MS;
+
+    if (_provisioning.apRaised &&
+        (ethServiceable || WifiProvisioning::shouldTearDownAp(_provisioning, nowMs))) {
       WifiProvisioning::tearDownAp(_provisioning, nowMs);
       _publishedState = _provisioning.state;
-    } else if (WifiProvisioning::shouldRaiseAp(_provisioning, nowMs)) {
+    } else if (!ethServiceable && !ethLeasePending && WifiProvisioning::shouldRaiseAp(_provisioning, nowMs)) {
       // Covers both the first raise and any later one: if the AP is somehow down while the
       // device still cannot associate, this puts it back rather than leaving it dark.
       WifiProvisioning::raiseAp(_provisioning, nowMs);
