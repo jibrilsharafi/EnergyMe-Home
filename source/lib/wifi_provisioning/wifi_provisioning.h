@@ -144,13 +144,19 @@ struct Subnet {
 // LAN-destined traffic out of the AP.
 bool subnetsOverlap(uint32_t addressA, uint8_t cidrA, uint32_t addressB, uint8_t cidrB);
 
-// Picks the first candidate AP subnet that collides with neither the live STA
-// subnet nor a configured static IP. The static IP matters on its own: a
-// configuration backup restored from a different LAN carries a foreign address
-// that is applied before the AP is raised.
+// Picks the first candidate AP subnet that collides with none of the occupied
+// networks (live STA subnet, configured WiFi static IP, and on products with
+// Ethernet the live ETH subnet and configured ETH static IP). Configured-but-
+// not-live addresses matter on their own: a configuration backup restored from
+// a different LAN carries a foreign address that is applied before the AP is
+// raised.
 //
 // Returns false when every candidate collides, which the caller must treat as
 // "do not raise the AP" rather than falling back to a colliding default.
+bool selectApSubnetAvoiding(const Subnet *occupied, size_t occupiedCount, Subnet &out);
+
+// Two-network convenience wrapper (live STA + WiFi static), kept for the
+// pre-Ethernet call shape and its tests.
 bool selectApSubnet(
     bool staValid, uint32_t staAddress, uint8_t staCidr,
     bool staticValid, uint32_t staticAddress, uint8_t staticCidr,

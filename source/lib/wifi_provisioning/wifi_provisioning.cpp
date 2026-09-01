@@ -240,30 +240,38 @@ bool subnetsOverlap(uint32_t addressA, uint8_t cidrA, uint32_t addressB, uint8_t
     return (addressA & mask) == (addressB & mask);
 }
 
-bool selectApSubnet(
-    bool staValid, uint32_t staAddress, uint8_t staCidr,
-    bool staticValid, uint32_t staticAddress, uint8_t staticCidr,
-    Subnet &out) {
+bool selectApSubnetAvoiding(const Subnet *occupied, size_t occupiedCount, Subnet &out) {
     for (size_t i = 0; i < kCandidateCount; i++) {
         const Subnet &candidate = kCandidates[i];
 
         if (!candidateCidrIsUsable(candidate.cidr)) continue;
 
-        if (staValid && comparisonCidrIsUsable(staCidr) &&
-            subnetsOverlap(candidate.address, candidate.cidr, staAddress, staCidr)) {
-            continue;
+        bool collides = false;
+        for (size_t j = 0; j < occupiedCount; j++) {
+            if (!comparisonCidrIsUsable(occupied[j].cidr)) continue;
+            if (subnetsOverlap(candidate.address, candidate.cidr, occupied[j].address, occupied[j].cidr)) {
+                collides = true;
+                break;
+            }
         }
-
-        if (staticValid && comparisonCidrIsUsable(staticCidr) &&
-            subnetsOverlap(candidate.address, candidate.cidr, staticAddress, staticCidr)) {
-            continue;
-        }
+        if (collides) continue;
 
         out = candidate;
         return true;
     }
 
     return false;
+}
+
+bool selectApSubnet(
+    bool staValid, uint32_t staAddress, uint8_t staCidr,
+    bool staticValid, uint32_t staticAddress, uint8_t staticCidr,
+    Subnet &out) {
+    Subnet occupied[2];
+    size_t count = 0;
+    if (staValid)    occupied[count++] = {staAddress, staCidr};
+    if (staticValid) occupied[count++] = {staticAddress, staticCidr};
+    return selectApSubnetAvoiding(occupied, count, out);
 }
 
 size_t candidateSubnetCount() {
