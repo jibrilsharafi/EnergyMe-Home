@@ -57,9 +57,9 @@
 ## 8. Configuration surface + OTA product safety
 
 - [x] 8.1 REST endpoints for ETH config (get/set/reset) + status (link, mode, IP, gateway, DNS, MAC) mirroring the wifi endpoint pattern; 4xx on products without Ethernet, no NVS side effects
-- [ ] 8.2 Web UI: ETH status on info page, ETH settings on configuration page, active-interface indicator; hidden on Home
+- [x] 8.2 Web UI: ETH status on info page, ETH settings on configuration page, active-interface indicator; hidden on Home
 - [x] 8.3 Button SINGLE_LONG becomes network reset: clear WiFi credentials + WiFi static + eth_ns static (unconditional; no-op clears on Home), leaving calibration/web password/cloud credentials intact
-- [ ] 8.4 swagger.yaml for new endpoints (mind CRLF staging)
+- [x] 8.4 swagger.yaml for new endpoints (mind CRLF staging)
 - [x] 8.5 Product-aware manual OTA upload gate in `_initializeOtaUpload`: filename must match the running product's artifact token, checked unambiguously (Pro token checked before the Home token, since `energyme_home` is a substring of `energyme_home_pro`); reject before any flash write
 - [x] 8.6 GitHub release asset picker (`_fetchGitHubReleaseInfo`) becomes product-aware with the same unambiguous matching
 - [x] 8.7 Cloud OTA job document gains a `product` field verified on-device before download starts (absent field = home for fleet compatibility); coordinate the job-creation side in the infra repo
