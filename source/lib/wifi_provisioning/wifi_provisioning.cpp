@@ -52,15 +52,21 @@ const char *stateName(State state) {
     return STATE_NAMES[(uint8_t)state];
 }
 
-void init(Context &context, bool hasCredentials, uint64_t nowMs) {
+void init(Context &context, bool hasCredentials, uint64_t nowMs, bool commissioned) {
     context.hasCredentials = hasCredentials;
+    context.commissioned = commissioned;
     context.staRetryAttempts = 0;
     context.apRaiseTriggers = 0;
     context.apRaised = false;
     context.apRaisedAtMs = 0;
     context.graceStartedAtMs = 0;
 
-    if (hasCredentials) {
+    // A commissioned device (Ethernet has proven it in service at least once) is
+    // provisioned even with no WiFi credentials: UNPROVISIONED arms the AP auth
+    // carve-out, and an in-service device has plenty to protect. With nothing to
+    // associate to, the STA attempts fail and settle into AP_ASSIST - recovery AP
+    // up, full authentication - exactly the wire-loss behavior the Pro needs.
+    if (hasCredentials || commissioned) {
         context.state = State::STA_CONNECTING;
     } else {
         context.state = State::UNPROVISIONED;
@@ -120,7 +126,7 @@ State onEvent(Context &context, Event event, uint64_t nowMs) {
             // Retries driven by the periodic timer bump staRetryAttempts alone.
             context.apRaiseTriggers++;
 
-            if (!context.hasCredentials) {
+            if (!context.hasCredentials && !context.commissioned) {
                 // Still being provisioned: keep the AP up and let the user try
                 // again rather than demanding the web password mid-setup.
                 context.state = State::UNPROVISIONED;
@@ -172,7 +178,10 @@ State onEvent(Context &context, Event event, uint64_t nowMs) {
             context.staRetryAttempts = 0;
             context.apRaiseTriggers = 0;
             context.graceStartedAtMs = 0;
-            context.state = State::UNPROVISIONED;
+            // Commissioning survives a WiFi reset: the device is still in service,
+            // so the recovery AP comes up authenticated (AP_ASSIST), not with the
+            // carve-out open. Only a factory reset decommissions.
+            context.state = context.commissioned ? State::AP_ASSIST : State::UNPROVISIONED;
             if (!context.apRaised) raiseAp(context, nowMs);
             break;
 
@@ -190,8 +199,13 @@ State onEvent(Context &context, Event event, uint64_t nowMs) {
     return context.state;
 }
 
-bool shouldTearDownAp(const Context &context, uint64_t nowMs) {
+bool shouldTearDownAp(const Context &context, uint64_t nowMs, bool wiredReachable) {
     if (!context.apRaised) return false;
+
+    // A serviceable wired interface satisfies "reachable" the same way an STA
+    // association does - including when the wire's subnet would collide with the
+    // AP's (wire-reachable means the AP comes down before ambiguity matters).
+    if (wiredReachable) return true;
 
     // The only timed teardown. Everywhere else the AP is up because the device cannot
     // be reached without it, and the cure is associating, not waiting.
@@ -199,10 +213,16 @@ bool shouldTearDownAp(const Context &context, uint64_t nowMs) {
            elapsedSince(context.graceStartedAtMs, nowMs) >= WIFI_PROVISIONING_GRACE_MS;
 }
 
-bool shouldRaiseAp(const Context &context, uint64_t nowMs) {
-    (void)nowMs;
-
+bool shouldRaiseAp(const Context &context, uint64_t nowMs, bool wiredReachable, bool wiredLinkUp) {
     if (context.apRaised) return false;
+
+    // Wire-reachable is reachable: no AP.
+    if (wiredReachable) return false;
+
+    // Zero-touch first boot: cable in, DHCP still negotiating. Hold the raise back
+    // briefly (boot-relative window) so a normally-leasing network never sees an AP
+    // blip; after the window, link-without-address counts as unreachable.
+    if (wiredLinkUp && nowMs < WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS) return false;
 
     // Both states mean "unreachable over the network": UNPROVISIONED has nothing to
     // connect to, AP_ASSIST has credentials that do not work. Neither is time-limited,
@@ -261,17 +281,6 @@ bool selectApSubnetAvoiding(const Subnet *occupied, size_t occupiedCount, Subnet
     }
 
     return false;
-}
-
-bool selectApSubnet(
-    bool staValid, uint32_t staAddress, uint8_t staCidr,
-    bool staticValid, uint32_t staticAddress, uint8_t staticCidr,
-    Subnet &out) {
-    Subnet occupied[2];
-    size_t count = 0;
-    if (staValid)    occupied[count++] = {staAddress, staCidr};
-    if (staticValid) occupied[count++] = {staticAddress, staticCidr};
-    return selectApSubnetAvoiding(occupied, count, out);
 }
 
 size_t candidateSubnetCount() {
