@@ -2213,11 +2213,15 @@ namespace Mqtt
         // keeps working unchanged.
         JsonVariant productVariant = doc["execution"]["jobDocument"]["firmware"]["product"];
         ProductLine jobProduct = ProductLine::HOME;
-        if (productVariant.is<const char*>() &&
-            !parseProductLineString(productVariant.as<const char*>(), jobProduct)) {
-            LOG_WARNING("Job '%s' declares unknown product '%s', rejecting.", jobId, productVariant.as<const char*>());
-            _publishOtaStatus(jobId, "REJECTED", "unknown_product");
-            return;
+        if (!productVariant.isNull()) {
+            // Same type-confusion defense as `force` above: a non-string product
+            // (number, object) must reject, not silently coerce to home.
+            if (!productVariant.is<const char*>() ||
+                !parseProductLineString(productVariant.as<const char*>(), jobProduct)) {
+                LOG_WARNING("Job '%s' declares an unknown or non-string product, rejecting.", jobId);
+                _publishOtaStatus(jobId, "REJECTED", "unknown_product");
+                return;
+            }
         }
         if (jobProduct != globalHwProfile->product) {
             LOG_WARNING("Job '%s' targets product '%s' but this device is '%s', rejecting before download.",
@@ -3157,6 +3161,11 @@ namespace Mqtt
     // ===================
 
     static void _handleConnecting() {
+        // Already disconnected: a pending interface-change request has nothing to
+        // drop, and leaving it set would kill the FIRST session established over
+        // the new route for no reason.
+        _reconnectRequested = false;
+
         // Wait for time sync before attempting connection to avoid LWIP lock conflicts
         if (!CustomTime::isTimeSynched()) {
             delay(5000);
