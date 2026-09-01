@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Determines at boot which product the firmware is running on (Home or Home Pro) from factory NVS, and selects the matching hardware profile so one firmware binary serves every product and PCB revision.
+Determines at boot which product the firmware is running on (Home or Home Pro) from factory NVS, and selects the matching hardware profile so one firmware codebase serves every product and PCB revision.
 
 ## ADDED Requirements
 
@@ -61,3 +61,17 @@ All channel-dependent behavior (measurement iteration, REST/MQTT/Modbus payload 
 
 - **WHEN** a Home Pro v1.0 device serves channel data over any integration
 - **THEN** exactly 12 channels (indices 0-11) exist, and no artifact of the 16-channel layout is visible
+
+### Requirement: Firmware images are product-specific and protected against cross-product installation
+
+Firmware binaries are built per product (the products use different PSRAM silicon, fixed at compile time). The system SHALL identify its own product's firmware artifacts and SHALL reject a manual firmware upload whose artifact does not match the running product. Cloud OTA delivery SHALL be targeted per product.
+
+#### Scenario: Wrong-product image uploaded manually
+
+- **WHEN** a Home firmware artifact is uploaded through the web OTA endpoint of a Home Pro device (or vice versa)
+- **THEN** the upload is rejected before any flash write, with an error identifying the product mismatch
+
+#### Scenario: Matching image uploaded manually
+
+- **WHEN** a firmware artifact built for the running product is uploaded
+- **THEN** the update proceeds under the existing OTA rules (authentication, signature policy, rollback)
