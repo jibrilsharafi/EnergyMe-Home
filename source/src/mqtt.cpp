@@ -2206,6 +2206,26 @@ namespace Mqtt
             return;
         }
 
+        // Cross-product gate: the signature proves authenticity, not product, and a
+        // wrong-product image fails PSRAM init at boot (quad vs octal). Job targeting
+        // by thing attribute is cloud-side; this is the device-side defense. A job
+        // with no product declaration is treated as home so the pre-Pro job pipeline
+        // keeps working unchanged.
+        JsonVariant productVariant = doc["execution"]["jobDocument"]["firmware"]["product"];
+        ProductLine jobProduct = ProductLine::HOME;
+        if (productVariant.is<const char*>() &&
+            !parseProductLineString(productVariant.as<const char*>(), jobProduct)) {
+            LOG_WARNING("Job '%s' declares unknown product '%s', rejecting.", jobId, productVariant.as<const char*>());
+            _publishOtaStatus(jobId, "REJECTED", "unknown_product");
+            return;
+        }
+        if (jobProduct != globalHwProfile->product) {
+            LOG_WARNING("Job '%s' targets product '%s' but this device is '%s', rejecting before download.",
+                        jobId, productLineToString(jobProduct), productLineToString(globalHwProfile->product));
+            _publishOtaStatus(jobId, "REJECTED", "product_mismatch");
+            return;
+        }
+
         // Signature format/presence is validated here (cheap, no shared-state write)
         // so a malformed job is rejected before any download starts; the DECODED
         // bytes are written to shared state further below, only after the
