@@ -21,6 +21,13 @@ namespace CustomMqtt
     static uint32_t _currentMqttConnectionAttempt = 0;
     static uint64_t _nextMqttConnectionAttemptMillis = 0;
 
+    // Set from other tasks on interface failover; consumed by the task loop.
+    static volatile bool _reconnectRequested = false;
+
+    void requestReconnect() {
+        _reconnectRequested = true;
+    }
+
     // Connection state fact for the issue registry, updated once per task loop
     // (the registry tick must not call _mqttClient.connected() cross-task)
     static volatile bool _lastConnectedState = false;
@@ -290,8 +297,15 @@ namespace CustomMqtt
             TASK_HEARTBEAT(_heartbeat);
             getConfiguration(config);
             bool connectedNow = false;
+            if (_reconnectRequested) {
+                _reconnectRequested = false;
+                if (_mqttClient.connected()) {
+                    LOG_INFO("Interface change - dropping custom MQTT session to reconnect on the new route");
+                    _mqttClient.disconnect();
+                }
+            }
             if (config.enabled) { // We have the custom MQTT enabled (atomic operation, no race condition)
-                if (CustomWifi::isFullyConnected()) { // We are connected (no need to check if time is synched)
+                if (CustomNet::isFullyConnected()) { // We are connected (no need to check if time is synched)
                     if (_mqttClient.connected()) { // We are connected to MQTT
                         connectedNow = true;
                         if (_currentMqttConnectionAttempt > 0) { // If we were having problems, reset the attempt counter since we are now connected
