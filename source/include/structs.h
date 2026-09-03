@@ -145,6 +145,30 @@ struct SystemStaticInfo {
     char pcbRevision[NAME_BUFFER_SIZE];  // e.g. "v6.1", from the selected profile
     bool communityMode;
 
+    // Running image's own descriptor (see lib/image_descriptor) - always present,
+    // compiled into this binary.
+    uint32_t imgDescPsramMb;
+    char imgDescFwVersion[VERSION_BUFFER_SIZE];
+    char imgDescBuildEnv[NAME_BUFFER_SIZE];
+    char imgDescGitRev[NAME_BUFFER_SIZE];
+    uint16_t imgDescMinPcbVersion;
+    uint16_t imgDescMaxPcbVersion;
+    uint32_t imgDescPartitionLayoutId;
+
+    // Passive/"other" OTA partition's descriptor - what would activate on the
+    // next rollback or a completed-but-not-yet-rebooted OTA. Present is false
+    // when the slot is empty, erased, or holds a legacy pre-2.4 image with no
+    // valid descriptor; the other* fields are then meaningless.
+    bool otherImgDescPresent;
+    char otherImgDescProduct[NAME_BUFFER_SIZE];
+    uint32_t otherImgDescPsramMb;
+    char otherImgDescFwVersion[VERSION_BUFFER_SIZE];
+    char otherImgDescBuildEnv[NAME_BUFFER_SIZE];
+    char otherImgDescGitRev[NAME_BUFFER_SIZE];
+    uint16_t otherImgDescMinPcbVersion;
+    uint16_t otherImgDescMaxPcbVersion;
+    uint32_t otherImgDescPartitionLayoutId;
+
     SystemStaticInfo() {
         // Initialize with safe defaults
         memset(this, 0, sizeof(*this));

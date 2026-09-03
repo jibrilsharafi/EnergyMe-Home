@@ -8,6 +8,7 @@
 #include <esp_timer.h>
 
 #include "ade7953.h"
+#include "app_image_descriptor.h"
 #include "awsconfig.h"
 #include "customwifi.h"
 #include "factory_keys.h"
@@ -468,6 +469,31 @@ static void _reportInfo(JsonDocument& doc) {
         rep["other_partition_sha256"] = otherSha; // mutable buffer: copied
     } else {
         rep["other_partition_sha256"] = nullptr;
+    }
+
+    // Running image's own descriptor: fleet-wide PSRAM/build inventory without
+    // per-device polling.
+    rep["image_psram_mb"] = ENERGYME_APP_DESC.psramMb;
+    rep["image_build_env"] = ENERGYME_APP_DESC.buildEnv;
+    rep["image_git_rev"] = ENERGYME_APP_DESC.gitRev;
+    rep["image_partition_layout_id"] = ENERGYME_APP_DESC.partitionLayoutId;
+
+    // Passive/"other" partition's descriptor: what firmware_rollback or the
+    // crash ladder would actually activate. null when the slot holds no valid
+    // descriptor (empty, erased, or a legacy pre-2.4 image).
+    ImageDescriptor::Descriptor otherDesc;
+    if (getOtherPartitionImageDescriptor(otherDesc)) {
+        char otherProduct[NAME_BUFFER_SIZE];
+        snprintf(otherProduct, sizeof(otherProduct), "%s", otherDesc.product);
+        rep["other_image_product"] = otherProduct; // mutable buffer: copied
+        rep["other_image_psram_mb"] = otherDesc.psramMb;
+        char otherFwVersion[VERSION_BUFFER_SIZE];
+        snprintf(otherFwVersion, sizeof(otherFwVersion), "%s", otherDesc.fwVersion);
+        rep["other_image_fw_version"] = otherFwVersion; // mutable buffer: copied
+    } else {
+        rep["other_image_product"] = nullptr;
+        rep["other_image_psram_mb"] = nullptr;
+        rep["other_image_fw_version"] = nullptr;
     }
 
     char serial[NAME_BUFFER_SIZE] = {0};
