@@ -47,3 +47,7 @@ Cloud OTA jobs are produced by release tooling; a `dev` image in a job targeting
 ## D7: Pure validation logic, host-tested
 
 Parse + policy live in `lib/image_descriptor` (no ESP headers): fixed-offset extraction from an image-start buffer, defensive string termination, and a single `validate()` returning a typed verdict (accept / accept-legacy / seven reject reasons). Firmware-side code only reads flash bytes and builds the `DeviceIdentity`. Unity tests cover every verdict, the append-only layout rule, bounds, and short-buffer behavior.
+
+## D8: No force/bypass path
+
+Every rejection (both write paths, every reject verdict) is unconditional - there is no API flag, MQTT job field, or build option to force acceptance. This is deliberate, not an oversight: for the failure mode this mechanism exists to prevent - PSRAM mismatch - the crash happens in ROM/IDF PSRAM init, before `app_main()` or any project code (including a hypothetical override check) ever runs. A force flag would therefore be unreachable in exactly the case it would be invoked for, while remaining a live foot-gun for the checks that *are* survivable (PCB range, partition layout, dev-on-prod). Any legitimate need to run an "incompatible" image (e.g. bench-testing a Home build on Pro hardware) is served by building that image with the correct descriptor, not by bypassing the check.
