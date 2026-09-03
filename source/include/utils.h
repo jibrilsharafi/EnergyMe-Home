@@ -28,6 +28,7 @@
 #include "buttonhandler.h"
 #include "constants.h"
 #include "factory_keys.h"
+#include "image_descriptor.h"
 #include "customlog.h"
 #include "customtime.h"
 #include "customwifi.h"
@@ -219,6 +220,11 @@ void sha256BytesToHex(const uint8_t sha256[32], char* out, size_t outSize); // o
 // descriptor is unreadable (erased/partial slot). Buffers must be >= 65 bytes.
 bool getRunningPartitionSha256(char* out, size_t outSize);
 bool getOtherPartitionSha256(char* out, size_t outSize);
+
+// Reads the passive/"other" OTA partition's image descriptor without executing
+// it. False when unreadable or the image carries no valid descriptor (legacy
+// pre-2.4 image, erased/partial slot).
+bool getOtherPartitionImageDescriptor(ImageDescriptor::Descriptor& out);
 
 // One flash sector: erasing the image header is enough to make a rejected
 // image fail esp_image_verify, so it can never become a rollback target.
