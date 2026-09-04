@@ -16,6 +16,7 @@ static_assert(SHA256_HEX_BUFFER_SIZE == RollbackLogic::SHA256_HEX_LEN + 1,
 #include "mqtt_energy_publish_gate.h"
 #include "crash_archive_policy.h"
 #include "backoff_schedule.h"
+#include "app_image_descriptor.h"
 #include "ota_keys.h"
 #include "ota_signature.h"
 #include "sha256_hex.h"
@@ -1799,14 +1800,7 @@ namespace Mqtt
     // Nothing of value is lost: the download already overwrote the previous
     // firmware that made the slot a legitimate rollback target.
     static void _scrubRejectedOtaImage() {
-        const esp_partition_t* update_partition = esp_ota_get_next_update_partition(NULL);
-        if (!update_partition) return;
-        esp_err_t err = esp_partition_erase_range(update_partition, 0, OTA_PARTITION_SCRUB_SIZE);
-        if (err != ESP_OK) {
-            LOG_ERROR("Failed to scrub rejected OTA image header: %s", esp_err_to_name(err));
-        } else {
-            LOG_INFO("Scrubbed rejected OTA image header from passive partition");
-        }
+        scrubOtaImageHeader(esp_ota_get_next_update_partition(NULL));
     }
 
     static bool _performOtaUpdate() {
@@ -1880,6 +1874,27 @@ namespace Mqtt
                 // cause (heap, flash read) deserves the same retry chance as a download error.
                 result = ESP_FAIL;
                 _otaFailureRetryable = !_otaVerifyFailureDeterministic;
+            }
+
+            if (result == ESP_OK) {
+                // Hardware-compatibility gate: the signature proves the image came
+                // from us, not that this device can boot it. Read the staged image's
+                // own descriptor off the passive partition and reject before
+                // esp_https_ota_finish() can switch the boot partition - a
+                // wrong-PSRAM image fails PSRAM init before any application code
+                // runs, beyond the reach of every post-boot recovery mechanism.
+                // Deterministic for a given artifact, like a bad signature: no retry.
+                ImageDescriptor::Verdict verdict = AppImageDescriptor::validatePartition(
+                    esp_ota_get_next_update_partition(NULL), true);
+                if (!ImageDescriptor::accepts(verdict)) {
+                    LOG_ERROR("Staged OTA image rejected: %s", ImageDescriptor::verdictToString(verdict));
+                    snprintf(_otaFailureReason, sizeof(_otaFailureReason), "image_incompatible:%s",
+                             ImageDescriptor::verdictToString(verdict));
+                    result = ESP_FAIL;
+                    _otaFailureRetryable = false;
+                } else if (verdict == ImageDescriptor::Verdict::ACCEPT_LEGACY_NO_DESCRIPTOR) {
+                    LOG_WARNING("Staged OTA image carries no descriptor (pre-2.4 release) - accepted on Home");
+                }
             }
 
             if (result == ESP_OK) {

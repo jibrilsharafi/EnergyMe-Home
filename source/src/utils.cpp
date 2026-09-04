@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "utils.h"
+#include "app_image_descriptor.h"
 #include "backoff_schedule.h"
 #include "duration_format.h"
 #include "sha256_hex.h"
@@ -113,6 +114,29 @@ void populateSystemStaticInfo(SystemStaticInfo& info) {
     snprintf(info.pcbRevision, sizeof(info.pcbRevision), "v%u.%u",
              (unsigned)(globalHwProfile->version / 10), (unsigned)(globalHwProfile->version % 10));
     info.communityMode = globalCommunityMode;
+
+    // Running image's own descriptor
+    info.imgDescPsramMb = ENERGYME_APP_DESC.psramMb;
+    snprintf(info.imgDescFwVersion, sizeof(info.imgDescFwVersion), "%s", ENERGYME_APP_DESC.fwVersion);
+    snprintf(info.imgDescBuildEnv, sizeof(info.imgDescBuildEnv), "%s", ENERGYME_APP_DESC.buildEnv);
+    snprintf(info.imgDescGitRev, sizeof(info.imgDescGitRev), "%s", ENERGYME_APP_DESC.gitRev);
+    info.imgDescMinPcbVersion = ENERGYME_APP_DESC.minPcbVersion;
+    info.imgDescMaxPcbVersion = ENERGYME_APP_DESC.maxPcbVersion;
+    info.imgDescPartitionLayoutId = ENERGYME_APP_DESC.partitionLayoutId;
+
+    // Passive/"other" OTA partition's descriptor, if it has a valid one
+    ImageDescriptor::Descriptor otherDesc;
+    info.otherImgDescPresent = getOtherPartitionImageDescriptor(otherDesc);
+    if (info.otherImgDescPresent) {
+        snprintf(info.otherImgDescProduct, sizeof(info.otherImgDescProduct), "%s", otherDesc.product);
+        info.otherImgDescPsramMb = otherDesc.psramMb;
+        snprintf(info.otherImgDescFwVersion, sizeof(info.otherImgDescFwVersion), "%s", otherDesc.fwVersion);
+        snprintf(info.otherImgDescBuildEnv, sizeof(info.otherImgDescBuildEnv), "%s", otherDesc.buildEnv);
+        snprintf(info.otherImgDescGitRev, sizeof(info.otherImgDescGitRev), "%s", otherDesc.gitRev);
+        info.otherImgDescMinPcbVersion = otherDesc.minPcbVersion;
+        info.otherImgDescMaxPcbVersion = otherDesc.maxPcbVersion;
+        info.otherImgDescPartitionLayoutId = otherDesc.partitionLayoutId;
+    }
 
     LOG_DEBUG("Static system info populated");
 }
@@ -297,6 +321,27 @@ void systemStaticInfoToJson(SystemStaticInfo& info, JsonDocument &doc) {
     doc["factory"]["productLine"] = info.productLine;
     doc["factory"]["pcbRevision"] = info.pcbRevision;
     doc["factory"]["communityMode"] = info.communityMode;
+
+    // Image descriptor (see lib/image_descriptor)
+    doc["imageDescriptor"]["running"]["psramMb"] = info.imgDescPsramMb;
+    doc["imageDescriptor"]["running"]["fwVersion"] = info.imgDescFwVersion;
+    doc["imageDescriptor"]["running"]["buildEnv"] = info.imgDescBuildEnv;
+    doc["imageDescriptor"]["running"]["gitRev"] = info.imgDescGitRev;
+    doc["imageDescriptor"]["running"]["minPcbVersion"] = info.imgDescMinPcbVersion;
+    doc["imageDescriptor"]["running"]["maxPcbVersion"] = info.imgDescMaxPcbVersion;
+    doc["imageDescriptor"]["running"]["partitionLayoutId"] = info.imgDescPartitionLayoutId;
+
+    doc["imageDescriptor"]["other"]["present"] = info.otherImgDescPresent;
+    if (info.otherImgDescPresent) {
+        doc["imageDescriptor"]["other"]["product"] = info.otherImgDescProduct;
+        doc["imageDescriptor"]["other"]["psramMb"] = info.otherImgDescPsramMb;
+        doc["imageDescriptor"]["other"]["fwVersion"] = info.otherImgDescFwVersion;
+        doc["imageDescriptor"]["other"]["buildEnv"] = info.otherImgDescBuildEnv;
+        doc["imageDescriptor"]["other"]["gitRev"] = info.otherImgDescGitRev;
+        doc["imageDescriptor"]["other"]["minPcbVersion"] = info.otherImgDescMinPcbVersion;
+        doc["imageDescriptor"]["other"]["maxPcbVersion"] = info.otherImgDescMaxPcbVersion;
+        doc["imageDescriptor"]["other"]["partitionLayoutId"] = info.otherImgDescPartitionLayoutId;
+    }
 
     LOG_DEBUG("Static system info converted to JSON");
 }
@@ -758,6 +803,27 @@ bool getRunningPartitionSha256(char* out, size_t outSize) {
 
 bool getOtherPartitionSha256(char* out, size_t outSize) {
     return _getPartitionSha256(_getPassiveOtaPartition(), out, outSize);
+}
+
+bool getOtherPartitionImageDescriptor(ImageDescriptor::Descriptor& out) {
+    const esp_partition_t* partition = _getPassiveOtaPartition();
+    if (!partition) return false;
+
+    uint8_t buf[ImageDescriptor::IMAGE_OFFSET + sizeof(ImageDescriptor::Descriptor)];
+    if (esp_partition_read(partition, 0, buf, sizeof(buf)) != ESP_OK) return false;
+
+    return ImageDescriptor::parseFromImageStart(buf, sizeof(buf), out);
+}
+
+bool scrubOtaImageHeader(const esp_partition_t* partition) {
+    if (partition == nullptr) return false;
+    esp_err_t err = esp_partition_erase_range(partition, 0, OTA_PARTITION_SCRUB_SIZE);
+    if (err != ESP_OK) {
+        LOG_ERROR("Failed to scrub rejected OTA image header: %s", esp_err_to_name(err));
+        return false;
+    }
+    LOG_INFO("Scrubbed rejected OTA image header from passive partition");
+    return true;
 }
 
 FirmwareRollbackResult attemptFirmwareRollback(const char* reason) {
