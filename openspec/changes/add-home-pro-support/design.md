@@ -58,6 +58,11 @@ New `eth_ns` + `EthConfiguration` struct (DHCP/static, ip/gw/subnet/dns1/dns2), 
 ### D7: mDNS - same name, interface-aware
 `energyme.local` for both products; discovery relies on mDNS plus the clearly-presented IP during commissioning. The known two-devices-on-one-LAN ambiguity is accepted. What does change: mDNS advertises the active interface's address and re-announces on failover (the current implementation is keyed to a single cached IP from the WiFi lifecycle), and the modbus TXT record's `channels` value comes from the profile instead of the hard-coded "16".
 
+### D8: Device identity stays the efuse base MAC, not either interface's live MAC
+`DEVICE_ID` (`getDeviceId()`, `utils.cpp`) is `esp_efuse_mac_get_default()` - the factory-burned base MAC - not `WiFi.macAddress()` or `ETH.macAddress()`. This already holds for Pro with no code change: WiFi and Ethernet MACs are both *derived* from that same base (standard Espressif per-interface offset scheme - WiFi STA = base, Ethernet = base+3), so they differ from each other by design, but `DEVICE_ID` is independent of both and stable across interface switches, reboots with only one interface cabled/associated, and the ETH/STA failover in D5.
+Consequence: nothing that identifies a device (MQTT client ID, AWS topics, InfluxDB `device_id` tag, mDNS, hostname, config backup ownership check) may ever be keyed off a live interface's `.macAddress()` call - only off `DEVICE_ID`. Audited on 2026-09-04: the only place a live interface MAC is read at all is `shadow.cpp`'s `wifi` shadow, which reports `WiFi.macAddress()` purely as a diagnostic field, never as identity.
+*Why this matters for Pro specifically*: a Home device only ever has one live interface (WiFi), so this distinction was latent and unexercised. Pro is the first product where a device's two interfaces provably have different MAC addresses, so an identity scheme that accidentally read the live interface would make the same physical device look like two different devices depending on which interface came up first - undetectable on Home, silently wrong on Pro.
+
 ## Home Pro v1.0 pinout (extracted from PCB netlist, 2026-09-01)
 
 From `energyme-home-pro-pcb` Main-board EasyEDA netlist (U2 = ESP32-S3-WROOM-1U-N16R8, U3 = 74HC4067, U6 = W5500):
