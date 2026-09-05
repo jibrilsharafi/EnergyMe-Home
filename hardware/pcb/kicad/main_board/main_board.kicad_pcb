@@ -109,6 +109,7 @@
 		(property "Value" "100nF"
 			(at -0.2541 -5.9944 180)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "84fa22e0-1ad7-4d1f-b731-c8b5be5a463c")
 			(effects
 				(font
@@ -343,6 +344,7 @@
 		(property "Value" "100nF"
 			(at 0.0003 -3.4547 180)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "53ae0ec3-d1de-4fb0-9cdc-805b9d79a5a3")
 			(effects
 				(font
@@ -669,6 +671,7 @@
 		(property "Value" "1kΩ"
 			(at 0.5082 -5.1056 90)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "a8985382-13bb-480a-8c4f-2e17366da4d4")
 			(effects
 				(font
@@ -1051,6 +1054,7 @@
 		(property "Value" "10uF"
 			(at -0.0003 -3.4544 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "1404c7a5-8a17-4f9a-9712-4d2b96378719")
 			(effects
 				(font
@@ -1377,6 +1381,7 @@
 		(property "Value" "100nF"
 			(at -0.0003 -3.4544 180)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "5a63a710-016f-426e-8979-197838e11216")
 			(effects
 				(font
@@ -1703,6 +1708,7 @@
 		(property "Value" "PZ254V-12-8P"
 			(at -0.254 -5.4864 90)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "a3a9f787-0d1d-4f13-a250-b3d843927969")
 			(effects
 				(font
@@ -2223,6 +2229,7 @@
 		(property "Value" "PM254V-11-04-H85"
 			(at 0.0001 -4.2164 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "27a2b8f7-a9a2-48de-a0a6-9ced65aa5ec7")
 			(effects
 				(font
@@ -2576,6 +2583,7 @@
 		(property "Value" "DB301V-5.0-2P"
 			(at 12.7459 -6.651 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "281605a3-fa95-4610-a258-c0ca86e0df65")
 			(effects
 				(font
@@ -3152,6 +3160,7 @@
 		(property "Value" "3300uF"
 			(at 0 -6.7564 90)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "c1f2337c-26e9-4db3-95de-301e66908e48")
 			(effects
 				(font
@@ -3507,6 +3516,7 @@
 		(property "Value" "ZX-QC66-7.5TP"
 			(at -0.2542 -6.2123 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "b78a3730-0bc8-45b2-a1dd-203b8a3385bc")
 			(effects
 				(font
@@ -4031,6 +4041,7 @@
 		(property "Value" "1kΩ"
 			(at 0.5082 -6.5023 180)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "2fefb7ad-440d-4991-8adf-4d86093862ad")
 			(effects
 				(font
@@ -4413,6 +4424,7 @@
 		(property "Value" "10uF"
 			(at 0 -3.4545 180)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "06257c49-015b-4fd8-862e-7bcf273ce64e")
 			(effects
 				(font
@@ -4739,6 +4751,7 @@
 		(property "Value" "PJ-3200"
 			(at -1.7221 -6.2488 270)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "8c7c8093-9939-4ce6-bd32-109d682d63d8")
 			(effects
 				(font
@@ -5167,6 +5180,7 @@
 		(property "Value" "PJ-3200"
 			(at -1.7221 -6.2488 270)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "0fdff905-61bc-46dc-9b7f-e43317672aa6")
 			(effects
 				(font
@@ -5595,6 +5609,7 @@
 		(property "Value" "180Ω"
 			(at 0.2543 -5.1052 180)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "54f974e4-60d9-4b84-86ff-7774f30d2bf8")
 			(effects
 				(font
@@ -6026,6 +6041,7 @@
 		(property "Value" "1kΩ"
 			(at 0.2541 -6.5023 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "2fe0b0f6-cde7-4186-8bd8-705390381316")
 			(effects
 				(font
@@ -6470,6 +6486,7 @@
 		(property "Value" "1kΩ"
 			(at 0.254 -6.5024 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "000d962b-e98a-427d-90ec-5c47c8e44e40")
 			(effects
 				(font
@@ -6852,6 +6869,7 @@
 		(property "Value" "10kΩ"
 			(at 0.7622 -6.5023 90)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "abb869cf-d661-49f6-a0dc-faf7b3f88d65")
 			(effects
 				(font
@@ -7258,6 +7276,7 @@
 		(property "Value" "10uF"
 			(at 0 -3.4544 180)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "e3596262-fd50-45a3-aeef-afb8252569b1")
 			(effects
 				(font
@@ -7584,6 +7603,7 @@
 		(property "Value" "1MΩ"
 			(at 0.508 -5.1054 270)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "7e2e5eb1-c2c5-4495-a192-cc39eb454102")
 			(effects
 				(font
@@ -7967,6 +7987,7 @@
 		(property "Value" "PJ-3200"
 			(at -1.7219 -6.248 90)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "2d981d8d-afa5-4b81-9465-ae3ac1263da0")
 			(effects
 				(font
@@ -8395,6 +8416,7 @@
 		(property "Value" "100nF"
 			(at -0.0003 -3.4544 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "e0268c61-90d7-4e2e-96e5-03a32354713d")
 			(effects
 				(font
@@ -8721,6 +8743,7 @@
 		(property "Value" "10kΩ"
 			(at 0.7621 -6.5025 270)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "77d90c00-b13a-4d97-96e6-0bce3d0ce78c")
 			(effects
 				(font
@@ -9127,6 +9150,7 @@
 		(property "Value" "ZMPT107-1"
 			(at -0.061 -8.0271 90)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "e034ae45-c07f-4ded-8715-4f6fe4562b7c")
 			(effects
 				(font
@@ -9695,6 +9719,7 @@
 		(property "Value" "100nF"
 			(at 0 -3.4544 180)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "7f880993-9b3f-4a72-af27-7ea468d143c0")
 			(effects
 				(font
@@ -10021,6 +10046,7 @@
 		(property "Value" "100nF"
 			(at -0.0003 -3.4544 180)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "8eac8324-dbf1-4f10-8d0f-198d76e23f98")
 			(effects
 				(font
@@ -10347,6 +10373,7 @@
 		(property "Value" "PJ-3200"
 			(at -1.7219 -6.248 90)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "b39ae119-5d44-4652-bc8e-7c082dca7a84")
 			(effects
 				(font
@@ -10837,6 +10864,7 @@
 		(property "Value" "PJ-3200"
 			(at -1.7219 -6.2483 90)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "94ea117f-8dcc-4446-b43a-e6beb48a5b34")
 			(effects
 				(font
@@ -11265,6 +11293,7 @@
 		(property "Value" "100nF"
 			(at -0.0002 -3.4541 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "14158c0b-ab19-48d0-9d07-c317ec4f276b")
 			(effects
 				(font
@@ -11653,6 +11682,7 @@
 		(property "Value" "10uF"
 			(at 0 -3.4541 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "01655c32-b65c-4391-ab35-2266f400c25f")
 			(effects
 				(font
@@ -12041,6 +12071,7 @@
 		(property "Value" "ADE7953ACPZ-RL"
 			(at -0.225 -5.8386 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "6868f66d-f505-4231-a6d8-068be59dc88b")
 			(effects
 				(font
@@ -13358,6 +13389,7 @@
 		(property "Value" "1nF"
 			(at 0 -4.9784 270)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "9ef79bb9-d39d-48b3-afa0-c16335357f8c")
 			(effects
 				(font
@@ -13786,6 +13818,7 @@
 		(property "Value" "51kΩ"
 			(at 0.0003 -5.8672 270)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "5766d9b5-b767-43c7-bdae-181a8154de19")
 			(effects
 				(font
@@ -14318,6 +14351,7 @@
 		(property "Value" "1kΩ"
 			(at 0.254 -6.5024 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "a6075025-373b-4a3f-9fce-6230df145f48")
 			(effects
 				(font
@@ -14762,6 +14796,7 @@
 		(property "Value" "1MΩ"
 			(at 0.762 -5.1054 270)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "ef565019-d383-41cb-96b6-e42e580c5bdc")
 			(effects
 				(font
@@ -15145,6 +15180,7 @@
 		(property "Value" "PJ-3200"
 			(at -1.7219 -6.248 90)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "ca787cf9-2a97-462d-8c96-b0a6cf027e2e")
 			(effects
 				(font
@@ -15573,6 +15609,7 @@
 		(property "Value" "1MΩ"
 			(at 0.508 -5.1054 270)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "9518dd9e-b8f9-49b5-9296-bd66a480bc62")
 			(effects
 				(font
@@ -15956,6 +15993,7 @@
 		(property "Value" "PM254V-12-08-H85_C2834799"
 			(at 0.0001 -5.4865 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "c9b208c5-0194-42e4-9cf9-663fa9d18268")
 			(effects
 				(font
@@ -16580,6 +16618,7 @@
 		(property "Value" "100nF"
 			(at 0 -3.4544 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "30e020c8-c64c-45fd-aa61-030caa3b5154")
 			(effects
 				(font
@@ -16906,6 +16945,7 @@
 		(property "Value" "1kΩ"
 			(at 0.5081 -6.5023 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "c52ee383-4d8f-4cdc-a8db-a6e43c16f727")
 			(effects
 				(font
@@ -17350,6 +17390,7 @@
 		(property "Value" "PJ-3200"
 			(at -1.7219 -6.248 90)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "0509e17c-1a8e-4e8b-967b-3ea7c5f00613")
 			(effects
 				(font
@@ -17778,6 +17819,7 @@
 		(property "Value" "33nF"
 			(at -0.0001 -3.4548 90)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "6007fcce-f05f-4a0c-83eb-a87405994d3e")
 			(effects
 				(font
@@ -18104,6 +18146,7 @@
 		(property "Value" "33nF"
 			(at -0.0001 -3.4543 180)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "3301aa93-a977-464d-b62a-3d818d8fb02f")
 			(effects
 				(font
@@ -18430,6 +18473,7 @@
 		(property "Value" "HLK-PM03"
 			(at 8.2685 -12.7947 90)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "b6dc385f-e537-42bb-956e-4227fb6665f4")
 			(effects
 				(font
@@ -18710,6 +18754,7 @@
 		(property "Value" "10uF"
 			(at -0.0003 -3.4547 180)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "8db8665a-65af-42be-80fa-762a5f37d830")
 			(effects
 				(font
@@ -19036,6 +19081,7 @@
 		(property "Value" "33nF"
 			(at -0.0001 -3.4545 180)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "d1981b43-325f-464f-8d5c-a54411571b3f")
 			(effects
 				(font
@@ -19486,6 +19532,7 @@
 		(property "Value" "ZX-QC66-7.5TP"
 			(at -0.2542 -6.2122 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "2cb74948-2c02-47fc-928e-4130085d6474")
 			(effects
 				(font
@@ -20010,6 +20057,7 @@
 		(property "Value" "33nF"
 			(at -0.0001 -3.4548 180)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "9e1668a6-2469-4b80-ba86-7b697baeb681")
 			(effects
 				(font
@@ -20336,6 +20384,7 @@
 		(property "Value" "3.579545MHz"
 			(at -0.365 -4.8367 180)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "39eed73f-2b4a-45a8-8aee-fbca9268a4af")
 			(effects
 				(font
@@ -20703,6 +20752,7 @@
 		(property "Value" "10kΩ"
 			(at 0.7623 -6.5024 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "51e4816e-cef6-477b-822d-905c1dd4b0c2")
 			(effects
 				(font
@@ -21170,6 +21220,7 @@
 		(property "Value" "51kΩ"
 			(at 0.0003 -5.8671 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "bf5a7d3c-2774-4de6-a26f-185336639e04")
 			(effects
 				(font
@@ -21640,6 +21691,7 @@
 		(property "Value" "1kΩ"
 			(at 0.5079 -6.5028 180)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "8740528d-371c-4428-a25b-a9f65ca3b354")
 			(effects
 				(font
@@ -22084,6 +22136,7 @@
 		(property "Value" "TC5050RGBF08-3CJH-AF53A"
 			(at -0.2542 -5.7403 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "e76b063b-0e5f-495a-aee7-51dcf48d3914")
 			(effects
 				(font
@@ -24644,6 +24697,7 @@
 		(property "Value" "10uF"
 			(at -0.0002 -3.4542 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "fdb758db-d947-49d0-b7b9-1d1308eb68f4")
 			(effects
 				(font
@@ -24970,6 +25024,7 @@
 		(property "Value" "100nF"
 			(at 0.0001 -3.4545 270)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "5a0c1c01-eac6-4468-959a-e6b7a9c2a52f")
 			(effects
 				(font
@@ -25296,6 +25351,7 @@
 		(property "Value" "33nF"
 			(at -0.0001 -3.4543 90)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "55f97a9f-2ec2-4cac-8949-b35c9f7f5448")
 			(effects
 				(font
@@ -25622,6 +25678,7 @@
 		(property "Value" "10uF"
 			(at -0.0003 -3.4544 180)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "d35d6d2e-6971-41ac-945f-8a7e490ac2ee")
 			(effects
 				(font
@@ -25948,6 +26005,7 @@
 		(property "Value" "JFC2410-0500TS"
 			(at 0 -4.9784 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "95ad22ba-de13-4e61-99b5-723a2d0e94f5")
 			(effects
 				(font
@@ -26252,6 +26310,7 @@
 		(property "Value" "74HC4067PW,118"
 			(at -0.3811 -6.8835 180)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "f3a0b54d-85c3-4bf5-91b1-fe245607a04d")
 			(effects
 				(font
@@ -28094,6 +28153,7 @@
 		(property "Value" "1kΩ"
 			(at 0.5081 -6.5021 270)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "dcc2ae39-0a97-4c04-986a-f3e1616767ae")
 			(effects
 				(font
@@ -28538,6 +28598,7 @@
 		(property "Value" "33nF"
 			(at -0.0001 -3.4548 180)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "0951c349-55e9-485b-aae4-d7c65a582221")
 			(effects
 				(font
@@ -28926,6 +28987,7 @@
 		(property "Value" "561KD10"
 			(at -0.2532 -5.7409 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "38e222e1-42cd-4fe0-9939-ed31a30a8886")
 			(effects
 				(font
@@ -29160,6 +29222,7 @@
 		(property "Value" "10kΩ"
 			(at -0.1524 -5.5877 90)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "cbc2fd54-bdc9-453c-9fb4-e633e35cb6ac")
 			(effects
 				(font
@@ -29566,6 +29629,7 @@
 		(property "Value" "PJ-3200"
 			(at -1.7219 -6.2483 90)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "e8540e03-5626-45e1-aede-07a8ecd67632")
 			(effects
 				(font
@@ -29994,6 +30058,7 @@
 		(property "Value" "1kΩ"
 			(at 0.2541 -6.5023 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "4bf59e39-9de2-450a-a065-24ac4cd4542b")
 			(effects
 				(font
@@ -30376,6 +30441,7 @@
 		(property "Value" "100nF"
 			(at 0 -3.4541 0)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "03fda705-9b59-4d01-b0fc-eccee6eecc54")
 			(effects
 				(font
@@ -30702,6 +30768,7 @@
 		(property "Value" "51kΩ"
 			(at -0.2538 -5.8671 90)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "df6933c8-8517-402a-9e73-4544cb4dcb23")
 			(effects
 				(font
@@ -31172,6 +31239,7 @@
 		(property "Value" "ESP32-S3-WROOM-1(N16R2)"
 			(at -0.7631 -19.4615 90)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "3a76b29e-1aeb-4081-b229-cad785879fb1")
 			(effects
 				(font

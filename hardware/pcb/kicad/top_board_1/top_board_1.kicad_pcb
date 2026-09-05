@@ -107,6 +107,7 @@
 		(property "Value" "PJ-3200"
 			(at -1.7221 -6.2485 270)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "be2ad88e-e393-4833-81ec-e2fac40c3446")
 			(effects
 				(font
@@ -535,6 +536,7 @@
 		(property "Value" "PJ-3200"
 			(at -1.7221 -6.2485 270)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "413d2873-9c15-4de6-8f89-d5042815864b")
 			(effects
 				(font
@@ -963,6 +965,7 @@
 		(property "Value" "PZ254V-11-04P_C2691448"
 			(at -0.254 -4.2164 180)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "eab14628-0985-4906-986d-440651920ff5")
 			(effects
 				(font

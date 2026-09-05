@@ -107,6 +107,7 @@
 		(property "Value" "PZ254V-12-8P"
 			(at -0.254 -5.4864 180)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "ced2ef06-caee-48e1-9ae0-bb75c17b23c9")
 			(effects
 				(font
@@ -627,6 +628,7 @@
 		(property "Value" "PJ-3200"
 			(at -1.7219 -6.2483 90)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "2a1f67fb-bc9f-4dd2-9a9c-e8a9dd346d20")
 			(effects
 				(font
@@ -1055,6 +1057,7 @@
 		(property "Value" "PJ-3200"
 			(at -1.7219 -6.2483 90)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "488f59f9-70b8-4c34-a7f6-067e32be0861")
 			(effects
 				(font
@@ -1483,6 +1486,7 @@
 		(property "Value" "PJ-3200"
 			(at -1.7219 -6.2483 90)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "c92b274a-2739-4456-a1c1-bb5810ba64e5")
 			(effects
 				(font
@@ -1911,6 +1915,7 @@
 		(property "Value" "PJ-3200"
 			(at -1.7219 -6.2483 90)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "cf8ada59-48dc-4e45-ab8d-905c5505c034")
 			(effects
 				(font
@@ -2339,6 +2344,7 @@
 		(property "Value" "PJ-3200"
 			(at -1.7219 -6.2483 90)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "accf85f0-1df6-4fee-b645-000172fb6b7d")
 			(effects
 				(font
@@ -2767,6 +2773,7 @@
 		(property "Value" "PJ-3200"
 			(at -1.7219 -6.2483 90)
 			(layer "F.SilkS")
+			(hide yes)
 			(uuid "bef67be4-9530-4a6f-9535-7b4c4bbcf41a")
 			(effects
 				(font
