@@ -36,6 +36,11 @@ namespace WifiProvisioning {
 #define WIFI_PROVISIONING_MIN_CIDR 24
 #define WIFI_PROVISIONING_MAX_CIDR 28
 
+// Boot-relative grace for a wired link that has not obtained an address yet
+// (cable in, DHCP negotiating): the recovery AP raise is held back this long so
+// a normally-leasing network never sees an AP blip on a zero-touch first boot.
+#define WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS (15UL * 1000UL)
+
 enum class State : uint8_t {
     UNPROVISIONED,   // No stored credentials. AP up, DNS on, auth carve-out active.
     STA_CONNECTING,  // Association in progress or being retried.
@@ -79,29 +84,39 @@ struct Context {
     uint32_t staRetryAttempts;
     uint32_t apRaiseTriggers;
 
+    // The device has been network-commissioned over a wired interface at least
+    // once (set from the persisted Ethernet marker at init). A commissioned
+    // device is provisioned regardless of WiFi credentials: its recovery AP is
+    // AP_ASSIST (full auth), never UNPROVISIONED with the carve-out open. Only
+    // a factory reset clears the marker. Always false on WiFi-only products.
+    bool commissioned;
+
     bool apRaised;
     uint64_t apRaisedAtMs;   // Diagnostics only; the AP is not lifetime-bounded
     uint64_t graceStartedAtMs;
 };
 
 // Sets the initial state from what NVS holds. `nowMs` seeds the AP timers when the
-// device comes up with nothing to connect to.
-void init(Context &context, bool hasCredentials, uint64_t nowMs);
+// device comes up with nothing to connect to. `commissioned` marks a device the
+// wire has already proven in service (see Context.commissioned).
+void init(Context &context, bool hasCredentials, uint64_t nowMs, bool commissioned = false);
 
 // Applies an event and returns the resulting state. Pure apart from `context`.
 State onEvent(Context &context, Event event, uint64_t nowMs);
 
 // Timer evaluation, safe to call as often as the caller likes. Returns true when
-// the caller should tear the AP down. Only a finished grace window does that: every
-// other reason to lower the AP is a state change, not the passage of time.
-bool shouldTearDownAp(const Context &context, uint64_t nowMs);
+// the caller should tear the AP down: a finished grace window, or a serviceable
+// wired interface (the device is reachable over the wire). Every other reason to
+// lower the AP is a state change, not the passage of time.
+bool shouldTearDownAp(const Context &context, uint64_t nowMs, bool wiredReachable = false);
 
 // True when the device cannot be reached over its own network and has no AP up yet.
 // Holds for UNPROVISIONED (nothing to connect to) and for AP_ASSIST (credentials that
-// do not work), and keeps holding until STA associates. Nothing expires it, so a
-// device that loses its network stays reachable by walking up to it rather than going
-// dark until someone power-cycles it.
-bool shouldRaiseAp(const Context &context, uint64_t nowMs);
+// do not work), and keeps holding until STA associates or the wire becomes
+// serviceable. `wiredLinkUp` with no address holds the raise back for the boot
+// DHCP grace window only. Nothing expires the raise itself, so a device that loses
+// its network stays reachable by walking up to it rather than going dark.
+bool shouldRaiseAp(const Context &context, uint64_t nowMs, bool wiredReachable = false, bool wiredLinkUp = false);
 
 // Applies the teardown, including the settle to STA_ONLY when a grace window ends.
 // Every path that lowers the AP goes through here, so no caller can leave the state
@@ -144,17 +159,16 @@ struct Subnet {
 // LAN-destined traffic out of the AP.
 bool subnetsOverlap(uint32_t addressA, uint8_t cidrA, uint32_t addressB, uint8_t cidrB);
 
-// Picks the first candidate AP subnet that collides with neither the live STA
-// subnet nor a configured static IP. The static IP matters on its own: a
-// configuration backup restored from a different LAN carries a foreign address
-// that is applied before the AP is raised.
+// Picks the first candidate AP subnet that collides with none of the occupied
+// networks (live STA subnet, configured WiFi static IP, and on products with
+// Ethernet the live ETH subnet and configured ETH static IP). Configured-but-
+// not-live addresses matter on their own: a configuration backup restored from
+// a different LAN carries a foreign address that is applied before the AP is
+// raised.
 //
 // Returns false when every candidate collides, which the caller must treat as
 // "do not raise the AP" rather than falling back to a colliding default.
-bool selectApSubnet(
-    bool staValid, uint32_t staAddress, uint8_t staCidr,
-    bool staticValid, uint32_t staticAddress, uint8_t staticCidr,
-    Subnet &out);
+bool selectApSubnetAvoiding(const Subnet *occupied, size_t occupiedCount, Subnet &out);
 
 // Candidate list, exposed for tests and for logging.
 size_t candidateSubnetCount();

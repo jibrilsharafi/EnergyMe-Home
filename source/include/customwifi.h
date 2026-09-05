@@ -169,6 +169,12 @@ namespace CustomWifi
     bool testConnectivity(); // Test actual network connectivity (check gateway and DNS)
     void forceReconnect();   // Force immediate WiFi reconnection
 
+    // Starts the mDNS responder if it is not already running. The WiFi connect path
+    // does this itself; an Ethernet-only device (Pro with no credentials) has no
+    // such path, so custometh calls this when the wire becomes serviceable. The
+    // ESP-IDF responder answers on every netif once running, ETH included.
+    bool ensureMdnsStarted();
+
     void resetWifi();
     bool setCredentials(const char* ssid, const char* password); // Set new WiFi credentials and trigger reconnection
 

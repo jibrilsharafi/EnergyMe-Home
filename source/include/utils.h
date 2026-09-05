@@ -113,6 +113,16 @@ inline bool isStringLengthValid(const char* str, size_t minLength, size_t maxLen
     return len >= minLength && len <= maxLength;
 }
 
+// Dotted-quad IPv4 validation. allowZero accepts "0.0.0.0" (an optional field
+// left unset); without it 0.0.0.0 is rejected like any other non-address.
+inline bool isValidIpv4(const char* str, bool allowZero) {
+    if (str == nullptr || str[0] == '\0') return false;
+    IPAddress addr;
+    if (!addr.fromString(str)) return false;
+    if (!allowZero && addr == IPAddress(0, 0, 0, 0)) return false;
+    return true;
+}
+
 // Numeric range validation utilities
 inline bool isValueInRange(float value, float min, float max) {
     return value >= min && value <= max;
@@ -137,6 +147,11 @@ inline double roundToDecimals(double value, uint8_t decimals = 3) {
 
 // Device identification
 void getDeviceId(char* deviceId, size_t maxLength);
+
+// Plain TCP connect-and-close over the default route: the lightweight internet
+// probe every connectivity check ends with. Interface-agnostic - the socket
+// follows whichever interface holds the default route (WiFi or Ethernet).
+bool probeTcp(const char* host, uint16_t port, uint32_t timeoutMs);
 
 // Fills out with a 16-char lowercase-hex random token (e.g. for an event/correlation
 // id) plus null terminator; outSize must be >= 17, else out is left untouched.

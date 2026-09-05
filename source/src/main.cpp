@@ -16,6 +16,8 @@
 #include "buttonhandler.h"
 #include "crashmonitor.h"
 #include "customwifi.h"
+#include "custometh.h"
+#include "customnet.h"
 #include "customserver.h"
 #include "led.h"
 #include "modbustcp.h"
@@ -145,6 +147,22 @@ void setup()
   CustomWifi::begin();
   LOG_INFO("WiFi setup done");
 
+  // No-op on products without Ethernet. On Pro this brings up the W5500 and the
+  // interface arbitration; a cabled device typically has a lease before the WiFi
+  // association finishes, so the wait below clears on the wire.
+  // Registered BEFORE begin() so the callback array is complete before the eth
+  // task exists - no writer/iterator race. On failover the established TLS/TCP
+  // sessions are bound to the dead interface's address: drop them so they
+  // reconnect on the new route, and resync NTP against a server reachable
+  // through it. Harmless on Home (the callbacks never fire without Ethernet).
+  CustomEth::onInterfaceChange([](InterfaceArbitration::Interface) { Mqtt::requestReconnect(); });
+  CustomEth::onInterfaceChange([](InterfaceArbitration::Interface) { CustomMqtt::requestReconnect(); });
+  CustomEth::onInterfaceChange([](InterfaceArbitration::Interface) { CustomTime::requestResync(); });
+
+  LOG_DEBUG("Setting up Ethernet...");
+  if (CustomEth::begin()) LOG_INFO("Ethernet setup done");
+  else LOG_ERROR("Ethernet initialization failed! Continuing on WiFi only");
+
   // Wait until the device is reachable by SOMETHING: STA connected, or the SoftAP raised
   // and serving. Waiting on isFullyConnected() here would spin forever on a device with no
   // valid credentials, so CustomServer::begin() below would never run and provisioning
@@ -159,17 +177,17 @@ void setup()
   // downstream service gates on isFullyConnected() by itself, and starting the server anyway
   // means it is already listening the moment any interface appears.
   uint64_t networkWaitStartMs = millis64();
-  while (!CustomWifi::isNetworkServiceable() &&
+  while (!CustomNet::isNetworkServiceable() &&
          (millis64() - networkWaitStartMs) < SETUP_NETWORK_WAIT_TIMEOUT_MS)
   {
-    LOG_DEBUG("Waiting for WiFi connection or SoftAP...");
+    LOG_DEBUG("Waiting for a network interface or SoftAP...");
     delay(1000);
   }
 
-  if (!CustomWifi::isNetworkServiceable())
+  if (!CustomNet::isNetworkServiceable())
   {
-    LOG_ERROR("No STA link and no SoftAP after %llu s - continuing boot anyway. The device is "
-              "unreachable until one of them comes up; the WiFi task keeps retrying both",
+    LOG_ERROR("No station-side link and no SoftAP after %llu s - continuing boot anyway. The device is "
+              "unreachable until one of them comes up; the network tasks keep retrying",
               (uint64_t)(SETUP_NETWORK_WAIT_TIMEOUT_MS / 1000ULL));
   }
 
@@ -199,7 +217,7 @@ void setup()
   // interface, so starting it on an AP-only boot would serve meter data to anyone in radio
   // range of the provisioning SoftAP. The health-check task starts it when STA comes up.
   LOG_DEBUG("Setting up Modbus TCP...");
-  ModbusTcp::syncWithNetwork(CustomWifi::isFullyConnected(), CustomWifi::isApServing());
+  ModbusTcp::syncWithNetwork(CustomNet::isFullyConnected(), CustomWifi::isApServing());
   LOG_INFO("Modbus TCP setup done");
 
   if (!globalCommunityMode) {

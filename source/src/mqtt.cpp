@@ -58,6 +58,13 @@ namespace Mqtt
     static uint32_t _mqttConnectionAttempt = 0;
     static uint64_t _nextMqttConnectionAttemptMillis = 0;
 
+    // Set from other tasks on interface failover; consumed by _handleConnectedState.
+    static volatile bool _reconnectRequested = false;
+
+    void requestReconnect() {
+        _reconnectRequested = true;
+    }
+
     // Connection state fact for the issue registry, updated once per task loop
     // (the registry tick must not call _clientMqtt.connected() cross-task)
     static volatile bool _lastConnectedState = false;
@@ -1054,7 +1061,7 @@ namespace Mqtt
             TASK_HEARTBEAT(_mqttHeartbeat);
 
             bool connectedNow = false;
-            if (CustomWifi::isFullyConnected()) {
+            if (CustomNet::isFullyConnected()) {
                 if (_clientMqtt.connected()) {
                     connectedNow = true;
                     _handleConnectedState();
@@ -2199,6 +2206,30 @@ namespace Mqtt
             return;
         }
 
+        // Cross-product gate: the signature proves authenticity, not product, and a
+        // wrong-product image fails PSRAM init at boot (quad vs octal). Job targeting
+        // by thing attribute is cloud-side; this is the device-side defense. A job
+        // with no product declaration is treated as home so the pre-Pro job pipeline
+        // keeps working unchanged.
+        JsonVariant productVariant = doc["execution"]["jobDocument"]["firmware"]["product"];
+        ProductLine jobProduct = ProductLine::HOME;
+        if (!productVariant.isNull()) {
+            // Same type-confusion defense as `force` above: a non-string product
+            // (number, object) must reject, not silently coerce to home.
+            if (!productVariant.is<const char*>() ||
+                !parseProductLineString(productVariant.as<const char*>(), jobProduct)) {
+                LOG_WARNING("Job '%s' declares an unknown or non-string product, rejecting.", jobId);
+                _publishOtaStatus(jobId, "REJECTED", "unknown_product");
+                return;
+            }
+        }
+        if (jobProduct != globalHwProfile->product) {
+            LOG_WARNING("Job '%s' targets product '%s' but this device is '%s', rejecting before download.",
+                        jobId, productLineToString(jobProduct), productLineToString(globalHwProfile->product));
+            _publishOtaStatus(jobId, "REJECTED", "product_mismatch");
+            return;
+        }
+
         // Signature format/presence is validated here (cheap, no shared-state write)
         // so a malformed job is rejected before any download starts; the DECODED
         // bytes are written to shared state further below, only after the
@@ -2813,7 +2844,7 @@ namespace Mqtt
             return false;
         }
 
-        if (!CustomWifi::isFullyConnected()) { // No need to check for internet since connected() will do it anyway
+        if (!CustomNet::isFullyConnected()) { // No need to check for internet since connected() will do it anyway
             LOG_WARNING("WiFi not connected. Skipping streaming publish on %s", topic);
             statistics.mqttMessagesPublishedError++;
             return false;
@@ -2866,7 +2897,7 @@ namespace Mqtt
         LogEntry entry;
         uint32_t loops = 0;
         while (xQueueReceive(_logQueue, &entry, 0) == pdTRUE && loops < MAX_LOOP_ITERATIONS) { // Time to wait should be 0 so we don't block the publisher
-            if (CustomWifi::isFullyConnected() && _clientMqtt.connected()) {
+            if (CustomNet::isFullyConnected() && _clientMqtt.connected()) {
                 _publishLog(entry);
             } else {
                 // If not connected, put it back in the queue if there's space
@@ -2885,7 +2916,7 @@ namespace Mqtt
         uint32_t loops = 0;
         while (xQueueReceive(_alarmQueue, &entry, 0) == pdTRUE && loops < MAX_LOOP_ITERATIONS) {
             loops++;
-            if (CustomWifi::isFullyConnected() && _clientMqtt.connected()) {
+            if (CustomNet::isFullyConnected() && _clientMqtt.connected()) {
                 _publishAlarm(entry);
             } else {
                 xQueueSendToFront(_alarmQueue, &entry, 0);
@@ -2908,7 +2939,7 @@ namespace Mqtt
             _sendPowerDataEnabled && // Send only if the send power data flag is enabled (to save on data)
             _initializeMeterQueue() && 
             // Ensure connectivity again!
-            CustomWifi::isFullyConnected() &&  // Fail fast
+            CustomNet::isFullyConnected() &&  // Fail fast
             _clientMqtt.connected()
         ) {
             PayloadMeter payloadMeter;
@@ -3130,6 +3161,11 @@ namespace Mqtt
     // ===================
 
     static void _handleConnecting() {
+        // Already disconnected: a pending interface-change request has nothing to
+        // drop, and leaving it set would kill the FIRST session established over
+        // the new route for no reason.
+        _reconnectRequested = false;
+
         // Wait for time sync before attempting connection to avoid LWIP lock conflicts
         if (!CustomTime::isTimeSynched()) {
             delay(5000);
@@ -3140,14 +3176,21 @@ namespace Mqtt
         if (millis64() >= _nextMqttConnectionAttemptMillis) {
             // Small delay to allow LWIP/SNTP operations to complete
             delay(100);
-            if (CustomWifi::isFullyConnected(true)) _connectMqtt();
+            if (CustomNet::isFullyConnected(true)) _connectMqtt();
         }
     }
 
     static void _handleConnectedState() {
+        if (_reconnectRequested) {
+            _reconnectRequested = false;
+            LOG_INFO("Interface change - dropping MQTT session to reconnect on the new route");
+            _clientMqtt.disconnect();
+            return; // State machine reconnects on the next loop
+        }
+
         // MQTT connection check is sufficient - if TCP to AWS fails, we'll detect it here
         // Use vars explicitly here so later in the logs they have the same exact values
-        bool wifiOk = CustomWifi::isFullyConnected();
+        bool wifiOk = CustomNet::isFullyConnected();
         bool mqttConnected = _clientMqtt.connected();
         bool mqttLoopOk = _clientMqtt.loop(); // Also process incoming messages with loop()
 

@@ -48,4 +48,8 @@ namespace CustomTime {
 
     // Manual time sync for devices without internet connectivity
     bool setUnixTime(uint64_t unixSeconds);
+
+    // Forces the next sync check to run immediately. Called on interface failover:
+    // the gateway-derived NTP server belongs to the old interface until then.
+    void requestResync();
 }

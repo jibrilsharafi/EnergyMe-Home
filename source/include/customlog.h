@@ -12,6 +12,7 @@
 // Project includes
 #include "mqtt.h"
 #include "customwifi.h"
+#include "customnet.h"
 #include "structs.h"
 #include "constants.h"
 #include "utils.h"

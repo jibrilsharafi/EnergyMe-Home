@@ -465,6 +465,50 @@ class EnergyMeAPI {
     }
 
     /**
+     * Get Ethernet status (Home Pro only; 404 on products without Ethernet)
+     */
+    async getEthernetStatus() {
+        return this.get('network/ethernet/status');
+    }
+
+    /**
+     * Get Ethernet status, or null when the product has no Ethernet (the status
+     * endpoint answers 404, or reports enabled:false). Transient failures still
+     * throw so callers can retry.
+     */
+    async getEthernetStatusIfAvailable() {
+        try {
+            const status = await this.getEthernetStatus();
+            return (status && status.enabled) ? status : null;
+        } catch (error) {
+            if (String(error.message).includes('404')) return null;
+            throw error;
+        }
+    }
+
+    /**
+     * Get Ethernet configuration (static IP)
+     */
+    async getEthernetConfig() {
+        return this.get('network/ethernet/config');
+    }
+
+    /**
+     * Set Ethernet configuration (full update). The device restarts to apply.
+     * @param {object} config - { useStaticIp, ip, gateway, subnet, dns1, dns2 }
+     */
+    async setEthernetConfig(config) {
+        return this.put('network/ethernet/config', config);
+    }
+
+    /**
+     * Reset Ethernet configuration to defaults. The device restarts to apply.
+     */
+    async resetEthernetConfig() {
+        return this.post('network/ethernet/config/reset');
+    }
+
+    /**
      * Get health status
      */
     async getHealth() {
@@ -809,6 +853,15 @@ class EnergyMeAPI {
 
 // Create global instance
 window.energyApi = new EnergyMeAPI();
+
+/**
+ * Display name for an active network interface reported by the device.
+ * @param {string} name - 'ethernet' | 'wifi' | 'none'
+ */
+function formatInterfaceName(name) {
+    var names = { 'ethernet': 'Ethernet', 'wifi': 'WiFi', 'none': 'None' };
+    return names[name] || 'N/A';
+}
 
 /**
  * Show a toast notification.

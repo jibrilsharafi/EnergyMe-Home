@@ -108,6 +108,12 @@ void populateSystemStaticInfo(SystemStaticInfo& info) {
         factoryPrefs.end();
     }
 
+    // Selected hardware profile (authoritative post-selection, works in community mode too)
+    snprintf(info.productLine, sizeof(info.productLine), "%s", productLineToString(globalHwProfile->product));
+    snprintf(info.pcbRevision, sizeof(info.pcbRevision), "v%u.%u",
+             (unsigned)(globalHwProfile->version / 10), (unsigned)(globalHwProfile->version % 10));
+    info.communityMode = globalCommunityMode;
+
     LOG_DEBUG("Static system info populated");
 }
 
@@ -288,6 +294,9 @@ void systemStaticInfoToJson(SystemStaticInfo& info, JsonDocument &doc) {
     // Factory provisioning (Unknown / 0 when the device was not factory-provisioned)
     doc["factory"]["serialNumber"] = info.serialNumber;
     doc["factory"]["manufacturingUnixTs"] = info.manufacturingUnixTs;
+    doc["factory"]["productLine"] = info.productLine;
+    doc["factory"]["pcbRevision"] = info.pcbRevision;
+    doc["factory"]["communityMode"] = info.communityMode;
 
     LOG_DEBUG("Static system info converted to JSON");
 }
@@ -1144,6 +1153,14 @@ void clearAllPreferences() {
     }
 
     LOG_WARNING("Cleared %ld preferences (factory/device-specific data preserved)", clearedCount);
+}
+
+bool probeTcp(const char* host, uint16_t port, uint32_t timeoutMs) {
+    WiFiClient client;
+    client.setTimeout(timeoutMs);
+    if (!client.connect(host, port)) return false;
+    client.stop();
+    return true;
 }
 
 void getDeviceId(char* deviceId, size_t maxLength) {

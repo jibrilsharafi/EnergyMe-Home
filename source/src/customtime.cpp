@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "customtime.h"
+#include "customnet.h"
 #include "duration_format.h"
 
 namespace CustomTime {
@@ -236,10 +237,13 @@ namespace CustomTime {
 
     // Gateway first (many routers answer NTP on their own LAN IP), then the two
     // compiled-in public fallbacks. Reads the gateway fresh every call so a DHCP
-    // renewal, static IP change, or reconnect to a different network is picked up
-    // with no stale state.
+    // renewal, static IP change, interface failover (ETH<->STA on Pro), or
+    // reconnect to a different network is picked up with no stale state.
     static void _configureNtpServers() {
-        snprintf(_gatewayNtpServer, sizeof(_gatewayNtpServer), "%s", WiFi.gatewayIP().toString().c_str());
+        IPAddress gateway = (CustomEth::activeInterface() == InterfaceArbitration::Interface::ETHERNET)
+                                ? ETH.gatewayIP()
+                                : WiFi.gatewayIP();
+        snprintf(_gatewayNtpServer, sizeof(_gatewayNtpServer), "%s", gateway.toString().c_str());
         configTime(0, 0, _gatewayNtpServer, NTP_SERVER_1, NTP_SERVER_2);
     }
 
@@ -262,6 +266,10 @@ namespace CustomTime {
         return true;
     }
 
+    void requestResync() {
+        _lastSyncAttempt = 0;
+    }
+
     static void _checkAndSyncTime() {
         uint64_t currentTime = millis64();
 
@@ -270,8 +278,8 @@ namespace CustomTime {
         bool needToRetry = !_isTimeSynched && (currentTime - _lastSyncAttempt >= (uint64_t)TIME_SYNC_RETRY_IF_NOT_SYNCHED);
 
         if (isTimeToSync || needToRetry) {
-            if (!CustomWifi::isFullyConnected(true)) {
-                LOG_DEBUG("Skipping time sync - WiFi not connected");
+            if (!CustomNet::isFullyConnected(true)) {
+                LOG_DEBUG("Skipping time sync - no network connectivity");
                 return;
             }
             _lastSyncAttempt = currentTime;

@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "customserver.h"
+#include "custometh.h"
 #include "modbustcp.h" // Local integrations are started/stopped to follow the STA link
 #include "taskprofiler.h"
 #include "duration_format.h"
@@ -147,6 +148,7 @@ namespace CustomServer
     
     // HTTP method validation helper
     static bool _validateRequest(AsyncWebServerRequest *request, const char *expectedMethod, size_t maxContentLength = 0);
+    static bool _requireEthernet(AsyncWebServerRequest *request);
     static bool _isPartialUpdate(AsyncWebServerRequest *request);
     
     // ETag validation helper
@@ -541,6 +543,16 @@ namespace CustomServer
     // Helper function to validate HTTP method
     // We cannot do setMethod since it makes all PUT requests fail (404) for some weird reason
     // It is not too bad anyway since like this we have full control over the response
+    // 404 for the Ethernet surface on products without the hardware. Runs after
+    // the middleware chain, so auth still comes first - an unauthenticated scanner
+    // cannot fingerprint the product.
+    static bool _requireEthernet(AsyncWebServerRequest *request)
+    {
+        if (globalHwProfile->hasEthernet) return true;
+        _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "Ethernet is not available on this product");
+        return false;
+    }
+
     static bool _validateRequest(AsyncWebServerRequest *request, const char *expectedMethod, size_t maxContentLength)
     {
         if (maxContentLength > 0 && request->contentLength() > maxContentLength)
@@ -705,7 +717,7 @@ namespace CustomServer
         // COUNTERS_RESET_TIMEOUT so the consecutive-reset counter never clears. About
         // 25 minutes of that reaches MAX_RESET_COUNT, which rolls the firmware back
         // and wipes the user's NVS.
-        if (!CustomWifi::isNetworkServiceable())
+        if (!CustomNet::isNetworkServiceable())
         {
             LOG_DEBUG("Health check: no serviceable network interface");
             return false;
@@ -715,7 +727,7 @@ namespace CustomServer
         // the periodic health-check task rather than from the WiFi task so customwifi keeps
         // no knowledge of the services layered on top of it. Idempotent, so the worst case
         // is Modbus appearing up to one check interval after STA comes up.
-        ModbusTcp::syncWithNetwork(CustomWifi::isFullyConnected(), CustomWifi::isApServing());
+        ModbusTcp::syncWithNetwork(CustomNet::isFullyConnected(), CustomWifi::isApServing());
 
         // Perform a simple HTTP self-request to verify server responsiveness
         WiFiClient client;
@@ -1456,6 +1468,19 @@ namespace CustomServer
             _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "File must be in .bin format");
             return false;
         }
+
+        // Cross-product gate: a wrong-product image fails PSRAM init at boot (quad vs
+        // octal, fixed at compile time). A positive token mismatch is rejected before
+        // any flash write; a name with no token (self-built image) passes as today.
+        ProductLine artifactProduct;
+        if (productFromArtifactName(filename.c_str(), artifactProduct) &&
+            artifactProduct != globalHwProfile->product) {
+            LOG_ERROR("Firmware artifact %s is built for %s but this device is %s - rejected",
+                      filename.c_str(), productLineToString(artifactProduct),
+                      productLineToString(globalHwProfile->product));
+            _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Firmware image is built for a different product");
+            return false;
+        }
         
         // Get content length from header
         size_t contentLength = request->header("Content-Length").toInt();
@@ -1740,7 +1765,7 @@ namespace CustomServer
     static bool _fetchGitHubReleaseInfo(JsonDocument &doc)
     {
         // Check internet connectivity before attempting API call
-        if (!CustomWifi::isFullyConnected(true)) {
+        if (!CustomNet::isFullyConnected(true)) {
             LOG_DEBUG("Cannot fetch GitHub release info: no internet connectivity");
             return false;
         }
@@ -1793,9 +1818,14 @@ namespace CustomServer
         const char* changelog = release["html_url"].as<const char*>();
         const char* downloadUrl = nullptr;
 
+        // Releases carry one .bin per product: pick the asset whose token matches the
+        // running product, never simply the first match (the Home token is a substring
+        // of the Pro token, so productFromArtifactName resolves Pro first).
         for (JsonObject asset : release["assets"].as<JsonArray>()) {
             const char* name = asset["name"].as<const char*>();
-            if (name && strstr(name, ".bin") != nullptr && strstr(name, "energyme_home") != nullptr) {
+            if (name == nullptr || strstr(name, ".bin") == nullptr) continue;
+            ProductLine assetProduct;
+            if (productFromArtifactName(name, assetProduct) && assetProduct == globalHwProfile->product) {
                 downloadUrl = asset["browser_download_url"].as<const char*>();
                 break;
             }
@@ -1833,7 +1863,7 @@ namespace CustomServer
 
             // In non-community mode, we assume updates are handled via app/cloud, so we consider it always up to date            
             if (!globalCommunityMode) doc["isLatest"] = true; 
-            else if (CustomWifi::isFullyConnected(true)) { // Check internet connectivity before checking anything            
+            else if (CustomNet::isFullyConnected(true)) { // Check internet connectivity before checking anything            
                 // Fetch from GitHub API in community mode
                 bool githubInfoFetched = _fetchGitHubReleaseInfo(doc);
                 
@@ -2308,6 +2338,67 @@ namespace CustomServer
                 setRestartSystem("Restart to apply network configuration reset");
             } else {
                 _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to reset network configuration");
+            }
+        });
+
+        // === Ethernet (Home Pro) ===
+        // Mirrors the wifi config surface. On products without Ethernet every route
+        // answers 4xx and touches no NVS - the feature does not exist there.
+
+        server.on("/api/v1/network/ethernet/status", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            if (!_requireEthernet(request)) return;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            CustomEth::getStatusAsJson(doc);
+            _sendJsonResponse(request, doc);
+        });
+
+        server.on("/api/v1/network/ethernet/config", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            if (!_requireEthernet(request)) return;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            if (CustomEth::getConfigurationAsJson(doc)) _sendJsonResponse(request, doc);
+            else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to get Ethernet configuration");
+        });
+
+        // Set Ethernet configuration (full PUT or partial PATCH). The device restarts to apply.
+        static AsyncCallbackJsonWebHandler *setEthConfigHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/network/ethernet/config",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (!globalHwProfile->hasEthernet) {
+                    _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "Ethernet is not available on this product");
+                    return;
+                }
+                bool isPartialUpdate = _isPartialUpdate(request);
+                if (!_validateRequest(request, isPartialUpdate ? "PATCH" : "PUT", HTTP_MAX_CONTENT_LENGTH_NETWORK)) return;
+
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
+                doc.set(json);
+
+                if (CustomEth::setConfigurationFromJson(doc, isPartialUpdate)) {
+                    LOG_INFO("Ethernet configuration %s via API", isPartialUpdate ? "partially updated" : "updated");
+                    _sendSuccessResponse(request, "Ethernet configuration updated successfully. The device will restart to apply the new settings.");
+                    setRestartSystem("Restart to apply new Ethernet configuration");
+                } else {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid Ethernet configuration");
+                }
+            });
+        server.addHandler(setEthConfigHandler);
+
+        server.on("/api/v1/network/ethernet/config/reset", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
+            if (!_requireEthernet(request)) return;
+            if (!_validateRequest(request, "POST")) return;
+
+            if (CustomEth::resetConfiguration()) {
+                _sendSuccessResponse(request, "Ethernet configuration reset successfully. The device will restart to apply the defaults.");
+                setRestartSystem("Restart to apply Ethernet configuration reset");
+            } else {
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to reset Ethernet configuration");
             }
         });
     }

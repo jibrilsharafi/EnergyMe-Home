@@ -18,10 +18,42 @@
 // For runtime iteration use globalHwProfile->totalChannelCount.
 #define MAX_CHANNEL_COUNT (HW_PROFILE_MAX_MUX_CHANNELS + 1)
 
-// Hardware profile for a specific PCB version.
+// Product line, read from factory NVS (factory_ns::product_line) at boot.
+// Absent key -> HOME, permanently: the deployed fleet predates the key.
+// PCB versions are numbered independently per product (Home Pro restarts at v1.0),
+// so profile lookup is always keyed by (product, version), never version alone.
+enum class ProductLine : uint8_t {
+    HOME = 0,
+    HOME_PRO = 1,
+};
+
+#define PRODUCT_LINE_HOME_STR     "home"
+#define PRODUCT_LINE_HOME_PRO_STR "home_pro"
+
+const char* productLineToString(ProductLine product);
+
+// Parse a product string ("home" / "home_pro") into the enum.
+// Returns false for any unknown value, leaving productOut untouched.
+bool parseProductLineString(const char* s, ProductLine& productOut);
+
+// Firmware artifact name tokens. Home and Pro binaries are NOT interchangeable
+// (quad vs octal PSRAM, fixed at compile time), so every delivery path checks
+// the artifact against the running product before flashing.
+#define FIRMWARE_ARTIFACT_TOKEN_HOME     "energyme_home"
+#define FIRMWARE_ARTIFACT_TOKEN_HOME_PRO "energyme_home_pro"
+
+// Identify the product a firmware artifact name was built for. The Home token is
+// a substring of the Pro token, so the Pro token is matched FIRST - a plain
+// substring check on the Home token alone would accept Pro images on Home.
+// Returns false when the name carries no recognizable token (e.g. a self-built
+// community image), which callers treat as "unknown", not as a mismatch.
+bool productFromArtifactName(const char* name, ProductLine& productOut);
+
+// Hardware profile for a specific (product, PCB version) pair.
 // Add a new entry to PCB_PROFILES[] in hardware_profile.cpp to support a new version.
 struct HardwareProfile {
-    uint8_t version; // PCB version number (e.g. 61 for v6.1)
+    ProductLine product; // Product line this PCB belongs to
+    uint8_t version;     // PCB version number within the product line (e.g. 61 for v6.1, 10 for Pro v1.0)
 
     // RGB LED pins
     uint8_t ledRedPin;
@@ -83,6 +115,17 @@ struct HardwareProfile {
     //
     // Only the first muxChannelCount entries are valid. Array sized to HW_PROFILE_MAX_MUX_CHANNELS.
     uint8_t muxChannelMap[HW_PROFILE_MAX_MUX_CHANNELS];
+
+    // Ethernet controller (W5500 on a dedicated SPI bus, separate from the ADE7953 bus).
+    // Declared last so profiles without Ethernet simply omit these fields
+    // (designated-initializer omission -> value-initialized: hasEthernet=false, pins 0).
+    bool hasEthernet;
+    uint8_t ethCsPin;
+    uint8_t ethIrqPin;  // W5500 INTn (event-driven driver)
+    uint8_t ethRstPin;  // W5500 RSTn
+    uint8_t ethSckPin;
+    uint8_t ethMisoPin;
+    uint8_t ethMosiPin;
 };
 
 // Active hardware profile, set once by initHardwareProfile(). Always valid after that call.
@@ -92,14 +135,17 @@ extern const HardwareProfile* globalHwProfile;
 // In community mode, cloud (MQTT / AWS) is disabled. All local integrations still work.
 extern bool globalCommunityMode;
 
-// Read pcb_revision from NVS factory namespace, select the matching hardware profile,
-// and set globalHwProfile and globalCommunityMode. Must be called before any hardware
-// initialization in setup().
+// Read product_line and pcb_revision from NVS factory namespace, select the matching
+// hardware profile, and set globalHwProfile and globalCommunityMode. Must be called
+// before any hardware initialization in setup().
 //
 // Selection order:
-//   1. NVS factory_ns::pcb_revision parses to a known profile -> use it (provisioned).
-//   2. NVS missing / malformed / unknown version:
-//      - if PCB_VERSION_FALLBACK is defined at build time and matches a profile -> use it
-//      - else -> PCB_PROFILES[0] (latest).
-//      In both sub-cases globalCommunityMode is set to true.
+//   1. NVS factory_ns::product_line (absent -> HOME) + pcb_revision parse to a known
+//      (product, version) profile -> use it (provisioned).
+//   2. NVS missing / malformed / unknown product or version -> community mode:
+//      - fallback product = PRODUCT_FALLBACK if defined at build time, else HOME.
+//        Every Pro build env pins PRODUCT_FALLBACK so a Pro binary never falls back
+//        to a Home pinout (different mux order, no Ethernet).
+//      - within that product: PCB_VERSION_FALLBACK if defined and matching, else the
+//        product's latest profile.
 void initHardwareProfile();
