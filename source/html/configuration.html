@@ -1498,8 +1498,14 @@
                 if (!isUsableIpv4(subnet)) { showStatus('Please enter a valid subnet mask.', 'error'); return; }
                 if (!isValidIpv4(dns1)) { showStatus('Primary DNS is not a valid IP address.', 'error'); return; }
                 if (dns2 && !isValidIpv4(dns2)) { showStatus('Secondary DNS is not a valid IP address.', 'error'); return; }
-                // Same rule as the firmware: that range belongs to the recovery access point.
+                // Same rules as the firmware. A wrong static address is not caught at run time
+                // (the link alone makes it "up"), so catch what can be caught here.
                 if (ip.indexOf("172.31.42.") === 0) { showStatus('172.31.42.x is reserved for the recovery access point. Please pick another address.', 'error'); return; }
+                var toInt = function (a) { return a.split(".").reduce(function (acc, part) { return acc * 256 + parseInt(part, 10); }, 0); };
+                var mask = toInt(subnet);
+                var inverted = 4294967295 - mask; // A valid mask is ones then zeros, so its inverse is 2^n - 1
+                if ((inverted & (inverted + 1)) !== 0) { showStatus('The subnet mask is not valid (example: 255.255.255.0).', 'error'); return; }
+                if (((toInt(ip) & mask) >>> 0) !== ((toInt(gateway) & mask) >>> 0)) { showStatus('The gateway must be inside the same network as the IP address.', 'error'); return; }
             }
 
             // For a static IP the new address is the one the user just entered; for DHCP

@@ -755,10 +755,28 @@ namespace CustomEth
         // ambiguously exactly when the AP is most needed. Only the default candidate
         // is rejected outright: the AP subnet selection avoids the other candidates
         // dynamically (it accounts for the ETH subnet like it does for STA).
-        IPAddress ip;
-        ip.fromString(config.ip);
+        auto toHostOrder = [](const char *text) {
+            IPAddress address;
+            address.fromString(text);
+            return ((uint32_t)address[0] << 24) | ((uint32_t)address[1] << 16) | ((uint32_t)address[2] << 8) | (uint32_t)address[3];
+        };
+        uint32_t ipHost = toHostOrder(config.ip);
+        uint32_t gatewayHost = toHostOrder(config.gateway);
+        uint32_t maskHost = toHostOrder(config.subnet);
+
+        // A static address is "serviceable" the moment the link is up, so nothing at run
+        // time catches a wrong one: no access point is raised and the device just sits
+        // unreachable. Refuse the mistakes that can be told apart from a working config.
+        if (WifiProvisioning::cidrFromNetmask(maskHost) == 0) {
+            LOG_WARNING("Subnet mask %s is not a valid mask - rejected", config.subnet);
+            return false;
+        }
+        if ((ipHost & maskHost) != (gatewayHost & maskHost)) {
+            LOG_WARNING("Gateway %s is outside the network of %s/%s - rejected", config.gateway, config.ip, config.subnet);
+            return false;
+        }
+
         WifiProvisioning::Subnet apDefault = WifiProvisioning::candidateSubnet(0);
-        uint32_t ipHost = ((uint32_t)ip[0] << 24) | ((uint32_t)ip[1] << 16) | ((uint32_t)ip[2] << 8) | (uint32_t)ip[3];
         if (WifiProvisioning::subnetsOverlap(ipHost, apDefault.cidr, apDefault.address, apDefault.cidr)) {
             LOG_WARNING("Static IP %s overlaps the recovery access point subnet - rejected", config.ip);
             return false;
