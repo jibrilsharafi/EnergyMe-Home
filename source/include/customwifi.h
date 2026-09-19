@@ -27,7 +27,10 @@
 #define WIFI_TASK_PRIORITY 5
 
 #define WIFI_CONFIG_PORTAL_SSID "EnergyMe"
-#define WIFI_HOSTNAME_PREFIX "energyme-home"
+#define WIFI_HOSTNAME_PREFIX PRODUCT_SLUG // DHCP hostname on WiFi and Ethernet: <slug>-<device id>
+#define WIFI_HOSTNAME_DEVICE_ID_LENGTH 12 // The device id is a MAC as hex; bounding it keeps the longest slug inside the 32-byte netif hostname
+#define WIFI_HOSTNAME_BUFFER_SIZE 32
+static_assert(sizeof(WIFI_HOSTNAME_PREFIX) + 1 + WIFI_HOSTNAME_DEVICE_ID_LENGTH <= WIFI_HOSTNAME_BUFFER_SIZE, "hostname does not fit the netif limit");
 
 #define WIFI_CONNECT_TIMEOUT_SECONDS 10
 #define WIFI_CONNECT_TIMEOUT_POWER_RESET_SECONDS (5 * 60)  // Extended timeout for the FIRST attempt after a power reset only (router likely rebooting)

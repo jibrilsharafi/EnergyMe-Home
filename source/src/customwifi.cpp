@@ -177,8 +177,8 @@ namespace CustomWifi
     LOG_DEBUG("Starting WiFi...");
 
     // This has to be before everything else to ensure the hostname is actually set
-    char hostname[WIFI_SSID_BUFFER_SIZE];
-    snprintf(hostname, sizeof(hostname), "%s-%s", WIFI_HOSTNAME_PREFIX, DEVICE_ID);
+    char hostname[WIFI_HOSTNAME_BUFFER_SIZE];
+    snprintf(hostname, sizeof(hostname), "%s-%.*s", WIFI_HOSTNAME_PREFIX, WIFI_HOSTNAME_DEVICE_ID_LENGTH, DEVICE_ID);
     WiFi.setHostname(hostname); // Allow for easier identification in the router/network client list
 
     // This loop owns the connect path, so Arduino must not also drive one. With

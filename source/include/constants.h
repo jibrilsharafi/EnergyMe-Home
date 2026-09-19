@@ -16,9 +16,21 @@
 
 // Product info
 #define COMPANY_NAME "EnergyMe"
+// Compile-time on purpose: every Pro env pins PRODUCT_FALLBACK=1 and the image descriptor keeps a
+// Pro binary off Home hardware (and vice versa), so the build's product is the running product.
+// PRODUCT_SLUG names things the user sees on their own network/servers (DHCP hostname, InfluxDB
+// defaults). Cloud-facing identifiers (MQTT topics, rule names) are NOT derived from it.
+#if defined(PRODUCT_FALLBACK) && PRODUCT_FALLBACK == 1
+#define PRODUCT_NAME "Home Pro"
+#define FULL_PRODUCT_NAME "EnergyMe - Home Pro"
+#define PRODUCT_SLUG "energyme-home-pro"
+#define PRODUCT_DESCRIPTION "An open-source energy monitoring system with Ethernet, capable of monitoring up to 12 circuits."
+#else
 #define PRODUCT_NAME "Home"
 #define FULL_PRODUCT_NAME "EnergyMe - Home"
+#define PRODUCT_SLUG "energyme-home"
 #define PRODUCT_DESCRIPTION "An open-source energy monitoring system for home use, capable of monitoring up to 16 circuits."
+#endif
 #define GITHUB_URL "https://github.com/jibrilsharafi/EnergyMe-Home"
 #define GITHUB_API_LATEST_RELEASE_URL "https://api.github.com/repos/jibrilsharafi/EnergyMe-Home/releases/latest"
 #define AUTHOR "Jibril Sharafi"
