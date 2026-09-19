@@ -859,6 +859,16 @@ FirmwareRollbackResult attemptFirmwareRollback(const char* reason) {
         return FirmwareRollbackResult::INVALID_IMAGE;
     }
 
+    // image_validate below only proves the image is well formed, not that it can run here.
+    // A complete image of the other product can sit in the passive slot (an update refused
+    // late enough to have been fully written), and booting it fails at PSRAM init, before
+    // any code that could recover.
+    ImageDescriptor::Verdict verdict = AppImageDescriptor::validatePartition(passive, false);
+    if (!ImageDescriptor::accepts(verdict)) {
+        LOG_ERROR("Rollback: image in %s is not compatible with this device (%s)", passive->label, ImageDescriptor::verdictToString(verdict));
+        return FirmwareRollbackResult::INVALID_IMAGE;
+    }
+
     // The real gate: esp_ota_set_boot_partition runs full image_validate on the
     // target and refuses an erased/partial/corrupt image with ESP_ERR_OTA_VALIDATE_FAILED.
     esp_err_t err = esp_ota_set_boot_partition(passive);
