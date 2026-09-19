@@ -1085,14 +1085,15 @@
     // ============================================================================
     document.addEventListener('DOMContentLoaded', async () => {
         ChartHelpers.initSparkline();
-        
-        await initializePage();
-        await fetchFirmwareUpdateInfo();
 
-        // Not awaited: the product label is cosmetic and must not delay the meter data.
+        // First, so a Pro does not read "Home" for the whole init; not awaited, because the
+        // label is cosmetic and must not delay the meter data.
         energyApi.getAuthStatus().then(status => {
             if (status && status.productName) document.getElementById('productSubheader').textContent = status.productName;
         }).catch(() => {});
+
+        await initializePage();
+        await fetchFirmwareUpdateInfo();
 
         PowerFlowHelpers.setupSparklineHovers(PowerFlowState.flowHistory, PowerFlowState.loadHistory, PowerFlowConfig.NODE_COLORS);
         
