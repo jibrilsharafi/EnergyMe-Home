@@ -181,7 +181,6 @@ void printDeviceStatusDynamic();
 void stopTaskGracefully(TaskHandle_t* taskHandle, const char* taskName);
 void startMaintenanceTask();
 void stopMaintenanceTask();
-size_t getLogFileSize();
 
 // Task information utilities
 inline TaskInfo getTaskInfoSafely(TaskHandle_t taskHandle, uint32_t stackSize, const TaskHeartbeat* heartbeat = nullptr)
