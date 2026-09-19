@@ -266,45 +266,6 @@ bool insideWiredBootWindows(const Context &context, uint64_t nowMs) {
     return elapsedSince(context.initAtMs, nowMs) < WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS;
 }
 
-bool shouldHoldStaAtBoot(const Context &context, uint64_t nowMs, bool wiredPresent, bool wiredLinkUp,
-                         bool wiredReachable) {
-    // No wire to wait for: the station starts at once, as it always has.
-    if (!wiredPresent) return false;
-
-    // The wire serves, so there is nothing left to wait for. The station stays down from
-    // here because the arbitration does not want it, which is not this predicate's call.
-    if (wiredReachable) return false;
-
-    // Same clock and same first window as shouldRaiseAp(): until the first PHY poll "link
-    // down" only means "not known yet", and starting the station on a guess is how a cabled
-    // device ends up with two addresses. A clock that went backwards reads as no time
-    // passed, so it holds: the error is bounded by the clock moving forward again, while
-    // the opposite error would be a second address on the LAN.
-    uint64_t sinceInitMs = elapsedSince(context.initAtMs, nowMs);
-    if (sinceInitMs < WIFI_PROVISIONING_WIRED_LINK_DETECT_MS) return true;
-
-    // Link without an address: DHCP is negotiating, or the switch port is still in its
-    // spanning-tree forward delay. Past the window a link that never leased counts as
-    // unusable and the stored credentials get their turn. No link at all is "no cable".
-    return wiredLinkUp && sinceInitMs < WIFI_PROVISIONING_STA_HOLD_DHCP_MS;
-}
-
-void onStaSuspended(Context &context) {
-    // Failures counted during the outage that ended with the wire taking over. Left in
-    // place they would carry into the next cable pull, where the first failed attempt (or
-    // one of very few) would cross the threshold and raise the AP on a device whose
-    // credentials have had no real chance yet.
-    context.staRetryAttempts = 0;
-    context.apRaiseTriggers = 0;
-
-    // A stale AP_ASSIST is worse: shouldRaiseAp() covers it, so the AP would come up the
-    // instant the wire goes, before the station made a single attempt. Only with proven
-    // credentials, though. Without them nothing is going to associate, AP_ASSIST is the one
-    // state that keeps the device reachable after a wire loss, and STA_CONNECTING would be
-    // a state nothing leaves (see STA_ATTEMPT_FAILED in onEvent()).
-    if (context.state == State::AP_ASSIST && context.hasCredentials) context.state = State::STA_CONNECTING;
-}
-
 bool isNetworkServiceable(bool staConnected, bool apServing) {
     return staConnected || apServing;
 }

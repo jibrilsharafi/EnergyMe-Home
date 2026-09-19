@@ -24,12 +24,6 @@ namespace InterfaceArbitration {
 // interface that comes up is taken immediately.
 #define INTERFACE_ARBITRATION_ETH_HOLDDOWN_MS (10UL * 1000UL)
 
-// An engaged WiFi station is kept this much longer than the hold-down once the
-// wire is back. The default route moves to Ethernet at the hold-down; the linger
-// gives the sessions that were riding WiFi time to reconnect over the wire before
-// the station (and its address) goes away, so the release never races the switch.
-#define INTERFACE_ARBITRATION_STA_RELEASE_LINGER_MS (5UL * 1000UL)
-
 enum class Interface : uint8_t {
     NONE,
     ETHERNET,
@@ -45,7 +39,6 @@ struct Context {
     bool ethHasAddress;             // DHCP lease obtained or static config applied
     bool staConnected;
     uint64_t ethServiceableSinceMs; // When ETH last became serviceable; 0 while it is not
-    bool staEngaged;                // The station was needed or in use: a returning wire must outlast the release window
 };
 
 struct Decision {
@@ -56,10 +49,7 @@ struct Decision {
 void init(Context &context);
 
 // Feed state changes. Link drop or address loss clears the serviceability clock,
-// so every link bounce restarts the hold-down from zero. Losing a serviceable wire
-// also engages the station, as does a station that connects: from then on a
-// returning wire has to outlast the release window before the station is let go.
-// A station attempt that never connected does not engage it.
+// so every link bounce restarts the hold-down from zero.
 void onEthState(Context &context, bool linkUp, bool hasAddress, uint64_t nowMs);
 void onStaState(Context &context, bool connected);
 
@@ -76,19 +66,6 @@ bool isEthServiceable(const Context &context);
 //     hold-down has elapsed (flap filter).
 //   - ETH serviceable, nothing else working: take ETH immediately.
 //   - ETH not serviceable: STA if connected, else NONE.
-// Also disengages the station once the wire has held for the whole release window.
 Decision evaluateAndApply(Context &context, uint64_t nowMs);
-
-// Whether the WiFi station should be running at all (one station-side interface at
-// a time). Independent of which interface holds the default route:
-//   - ETH not serviceable: always wanted. This is every moment on Home, and the
-//     time before the wire comes up on a wired product (the caller's boot hold
-//     covers that window).
-//   - ETH serviceable, station never engaged (wired boot): not wanted.
-//   - ETH serviceable, station engaged: wanted until the wire has held for
-//     hold-down + linger, so the route switch always precedes the release and a
-//     flapping link never releases the station.
-// A clock that went backwards reads as "no time has passed": the station is kept.
-bool isStaWanted(const Context &context, uint64_t nowMs);
 
 }  // namespace InterfaceArbitration
