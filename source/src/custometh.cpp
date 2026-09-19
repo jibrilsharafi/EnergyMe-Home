@@ -39,6 +39,12 @@ namespace CustomEth
     // NVS increment (a flash GC pause must never stall network event delivery).
     static volatile bool _bootFailCounted = false;
 
+    // See isCommissioned(). Set by the eth task the moment the wire proves the device in
+    // service, whether or not flash accepted the marker: closing the auth carve-out for
+    // THIS boot must not depend on NVS.
+    static volatile bool _commissioned = false;
+    static volatile bool _commissionedNvsChecked = false;
+
     #define ETH_MAX_INTERFACE_CALLBACKS 6
     static InterfaceChangeCallback _callbacks[ETH_MAX_INTERFACE_CALLBACKS] = {};
     static size_t _callbackCount = 0;
@@ -140,15 +146,18 @@ namespace CustomEth
 
     bool isCommissioned()
     {
-        // Monotonic cache: once commissioned, always commissioned this boot.
-        // Only a factory reset clears the marker, and that path restarts.
-        static bool cached = false;
-        if (cached) return true;
+        // Monotonic: once commissioned, always commissioned this boot (only a factory reset
+        // clears the marker, and that path restarts). NVS is read once; after that the eth
+        // task is the only source of change and it publishes through _commissioned, so
+        // callers can poll this from any task at the cost of a bool load.
+        if (_commissioned) return true;
+        if (_commissionedNvsChecked) return false;
+        _commissionedNvsChecked = true;
         Preferences prefs;
         if (!prefs.begin(PREFERENCES_NAMESPACE_ETH, true)) return false; // eth_ns never written (Home, or factory-fresh Pro)
-        cached = prefs.getBool(ETH_COMMISSIONED_KEY, false);
+        if (prefs.getBool(ETH_COMMISSIONED_KEY, false)) _commissioned = true;
         prefs.end();
-        return cached;
+        return _commissioned;
     }
 
     // One mutex hold for everything readers need; every predicate derives from it.
@@ -291,17 +300,21 @@ namespace CustomEth
                 // commissioning marker so the provisioning state machine never
                 // treats this device as UNPROVISIONED again (the auth carve-out
                 // must not re-arm on a recovery-AP raise months into service).
-                // Written BEFORE the WiFi task is woken below: that task reads the
-                // marker on the wake-up and closes the carve-out for this boot too.
-                // One attempt per boot even on write failure - no per-tick NVS churn.
+                // Published BEFORE the WiFi task is woken below: that task polls
+                // isCommissioned() and closes the carve-out for this boot too.
+                // One attempt per boot even on write failure - no per-tick NVS churn;
+                // a failed write only costs the NEXT boot its head start.
                 if (!commissionAttempted && !isCommissioned()) {
                     commissionAttempted = true;
                     Preferences prefs;
+                    bool persisted = false;
                     if (prefs.begin(PREFERENCES_NAMESPACE_ETH, false)) {
-                        prefs.putBool(ETH_COMMISSIONED_KEY, true);
+                        persisted = prefs.putBool(ETH_COMMISSIONED_KEY, true) > 0;
                         prefs.end();
-                        LOG_INFO("Device commissioned over Ethernet - marker persisted");
                     }
+                    _commissioned = true;
+                    if (persisted) LOG_INFO("Device commissioned over Ethernet - marker persisted");
+                    else LOG_WARNING("Device commissioned over Ethernet for this boot, but the marker could not be persisted");
                 }
 
                 if (!serviceableAnnounced) {

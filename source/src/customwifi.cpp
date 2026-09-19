@@ -1588,10 +1588,11 @@ namespace CustomWifi
     bool ethLinkUp = (!ethServiceable && WifiProvisioning::insideWiredBootWindows(_provisioning, nowMs))
                          ? CustomEth::isLinkUp() : false;
 
-    // custometh persists the commissioning marker before it wakes this task on the first
-    // serviceable edge; apply it to this boot too (see Event::WIRED_COMMISSIONED). Only
-    // asked while the wire serves, so a Pro that never sees a cable pays no NVS read here.
-    if (ethServiceable && !_provisioning.commissioned && CustomEth::isCommissioned()) {
+    // custometh publishes "commissioned" before it wakes this task on the first serviceable
+    // edge; apply it to this boot too (see Event::WIRED_COMMISSIONED). Level-triggered on
+    // purpose: gating it on the wire still serving would miss a cable pulled (or a link
+    // blip) between the publish and this wake-up, which is exactly the case it is for.
+    if (!_provisioning.commissioned && CustomEth::isCommissioned()) {
       _feedProvisioning(WifiProvisioning::Event::WIRED_COMMISSIONED);
     }
 
