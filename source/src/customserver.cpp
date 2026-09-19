@@ -2565,7 +2565,10 @@ namespace CustomServer
                   {
             if (!_validateRequest(request, "POST")) return;
 
-            AdvancedLogger::clearLog();
+            if (!AdvancedLogger::clearLog()) {
+                _sendErrorResponse(request, HTTP_CODE_SERVICE_UNAVAILABLE, "Log file is busy (rotation in progress), retry in a few seconds");
+                return;
+            }
             _sendSuccessResponse(request, "Logs cleared successfully");
             LOG_INFO("Logs cleared via API");
         });
