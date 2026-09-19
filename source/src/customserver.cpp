@@ -487,12 +487,14 @@ namespace CustomServer
     // Helper functions for common response patterns
     // The stream buffer starts at 1460 bytes of internal RAM and is re-created one size up on
     // every write that does not fit, so a multi-KB document churned internal RAM on every
-    // request. Size it once from the document instead, and never below the PSRAM malloc
-    // threshold, so the buffer is a single PSRAM allocation.
+    // request. Size it once from the document instead, and always above the PSRAM malloc
+    // threshold (malloc() keeps sizes up to and INCLUDING the threshold internal), so the
+    // buffer is a single PSRAM allocation.
     static AsyncResponseStream *_beginJsonResponseStream(AsyncWebServerRequest *request, const JsonDocument &doc)
     {
+        const size_t minPsramSize = (size_t)CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL + 1;
         size_t size = measureJson(doc);
-        if (size < CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL) size = CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL;
+        if (size < minPsramSize) size = minPsramSize;
         return request->beginResponseStream("application/json", size);
     }
 
