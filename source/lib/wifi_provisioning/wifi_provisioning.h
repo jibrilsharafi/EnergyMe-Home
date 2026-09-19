@@ -70,6 +70,7 @@ enum class Event : uint8_t {
     CREDENTIALS_SUBMITTED,
     CREDENTIALS_CLEARED,    // The stored credentials were erased (WiFi reset)
     AP_LAST_CLIENT_LEFT,    // No stations remain associated to the SoftAP
+    WIRED_COMMISSIONED,     // The wire proved the device in service during this boot
     TICK                    // Time passed; re-evaluate the timers
 };
 
@@ -92,7 +93,8 @@ struct Context {
     uint32_t apRaiseTriggers;
 
     // The device has been network-commissioned over a wired interface at least
-    // once (set from the persisted Ethernet marker at init). A commissioned
+    // once (set from the persisted Ethernet marker at init, or by
+    // WIRED_COMMISSIONED the moment that marker is first written). A commissioned
     // device is provisioned regardless of WiFi credentials: its recovery AP is
     // AP_ASSIST (full auth), never UNPROVISIONED with the carve-out open. Only
     // a factory reset clears the marker. Always false on WiFi-only products.

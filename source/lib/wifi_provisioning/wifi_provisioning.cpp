@@ -209,6 +209,16 @@ State onEvent(Context &context, Event event, uint64_t nowMs) {
             if (context.state == State::GRACE) tearDownAp(context, nowMs);
             break;
 
+        case Event::WIRED_COMMISSIONED:
+            // Applied now rather than at the next init(): otherwise a factory-fresh wired
+            // device stays UNPROVISIONED for its whole first boot, and losing the cable
+            // before the first restart raises the AP with the auth carve-out open on a
+            // device that is already in service. The AP itself is left to shouldRaiseAp()
+            // / shouldTearDownAp(), which see the wire.
+            context.commissioned = true;
+            if (context.state == State::UNPROVISIONED) context.state = State::AP_ASSIST;
+            break;
+
         case Event::TICK:
             break;
     }
