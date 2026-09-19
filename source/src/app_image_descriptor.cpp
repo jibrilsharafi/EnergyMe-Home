@@ -28,10 +28,11 @@
 #define ENERGYME_IMAGE_PSRAM_MB 2
 #endif
 
-#ifdef ENV_PROD
-#define ENERGYME_IMAGE_ENV "prod"
-#else
+// Only ENV_DEV exists as a build flag (platformio.ini); everything else is prod.
+#ifdef ENV_DEV
 #define ENERGYME_IMAGE_ENV "dev"
+#else
+#define ENERGYME_IMAGE_ENV "prod"
 #endif
 
 __attribute__((section(".rodata_custom_desc"), used))
