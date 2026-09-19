@@ -4,6 +4,7 @@
 #include "utils.h"
 #include "app_image_descriptor.h"
 #include "backoff_schedule.h"
+#include "custometh.h"
 #include "duration_format.h"
 #include "sha256_hex.h"
 #include "version_compare.h"
@@ -239,6 +240,26 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
     }
     snprintf(info.wifiMacAddress, sizeof(info.wifiMacAddress), "%s", WiFi.macAddress().c_str()); // MAC is available even when disconnected
 
+    // Ethernet. Every field is written on every path: printDeviceStatusDynamic() hands in a
+    // raw ps_malloc() block, so the struct constructor never ran. Arbitration never runs on
+    // products without Ethernet, so the active interface is derived from the WiFi state there.
+    info.ethEnabled = CustomEth::isEnabled();
+    info.ethLinkUp = info.ethEnabled && CustomEth::isLinkUp();
+    info.ethLinkSpeedMbps = info.ethLinkUp ? ETH.linkSpeed() : 0;
+    info.ethFullDuplex = info.ethLinkUp && ETH.fullDuplex();
+    if (info.ethEnabled) {
+        snprintf(info.ethLocalIp, sizeof(info.ethLocalIp), "%s", ETH.localIP().toString().c_str());
+        snprintf(info.ethMacAddress, sizeof(info.ethMacAddress), "%s", ETH.macAddress().c_str());
+        snprintf(info.activeInterface, sizeof(info.activeInterface), "%s",
+                 InterfaceArbitration::interfaceName(CustomEth::activeInterface()));
+    } else {
+        snprintf(info.ethLocalIp, sizeof(info.ethLocalIp), "0.0.0.0");
+        snprintf(info.ethMacAddress, sizeof(info.ethMacAddress), "00:00:00:00:00:00");
+        snprintf(info.activeInterface, sizeof(info.activeInterface), "%s",
+                 InterfaceArbitration::interfaceName(info.wifiConnected ? InterfaceArbitration::Interface::WIFI_STATION
+                                                                        : InterfaceArbitration::Interface::NONE));
+    }
+
     // Tasks
     if (!globalCommunityMode) {
         info.mqttTaskInfo = Mqtt::getMqttTaskInfo();
@@ -415,6 +436,15 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument &doc) {
     doc["network"]["wifiDnsIp"] = JsonString(info.wifiDnsIp); // Ensure it is not a dangling pointer
     doc["network"]["wifiBssid"] = JsonString(info.wifiBssid); // Ensure it is not a dangling pointer
     doc["network"]["wifiRssi"] = info.wifiRssi;
+    doc["network"]["activeInterface"] = JsonString(info.activeInterface); // Ensure it is not a dangling pointer
+    doc["network"]["ethEnabled"] = info.ethEnabled;
+    if (info.ethEnabled) {
+        doc["network"]["ethLinkUp"] = info.ethLinkUp;
+        doc["network"]["ethLocalIp"] = JsonString(info.ethLocalIp); // Ensure it is not a dangling pointer
+        doc["network"]["ethMacAddress"] = JsonString(info.ethMacAddress); // Ensure it is not a dangling pointer
+        doc["network"]["ethLinkSpeedMbps"] = info.ethLinkSpeedMbps;
+        doc["network"]["ethFullDuplex"] = info.ethFullDuplex;
+    }
 
     // Tasks
     uint64_t nowMs = millis64();
@@ -895,7 +925,8 @@ void printDeviceStatusStatic()
     populateSystemStaticInfo(*info);
 
     LOG_DEBUG("--- Static System Info ---");
-    LOG_DEBUG("Product: %s (%s)", info->fullProductName, info->productName);
+    LOG_DEBUG("Product: %s (%s) | Line: %s | PCB: %s%s", info->fullProductName, info->productName,
+              info->productLine, info->pcbRevision, info->communityMode ? " | community mode" : "");
     LOG_DEBUG("Company: %s | Author: %s", info->companyName, info->author);
     LOG_DEBUG("Firmware: %s | Build: %s %s", info->buildVersion, info->buildDate, info->buildTime);
     LOG_DEBUG("Sketch MD5: %s | Partition app name: %s", info->sketchMD5, info->partitionAppName);
@@ -957,6 +988,15 @@ void printDeviceStatusDynamic()
     } else {
         LOG_DEBUG("WiFi: Disconnected | MAC %s", info->wifiMacAddress);
     }
+    if (info->ethEnabled) {
+        if (info->ethLinkUp) {
+            LOG_DEBUG("Ethernet: Link up %u Mbps %s duplex | IP %s | MAC %s", (unsigned)info->ethLinkSpeedMbps,
+                      info->ethFullDuplex ? "full" : "half", info->ethLocalIp, info->ethMacAddress);
+        } else {
+            LOG_DEBUG("Ethernet: Link down | MAC %s", info->ethMacAddress);
+        }
+    }
+    LOG_DEBUG("Active interface: %s", info->activeInterface);
 
     free(info);
     LOG_DEBUG("-------------------------");
