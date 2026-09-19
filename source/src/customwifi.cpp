@@ -88,6 +88,13 @@ namespace CustomWifi
   static WifiConfiguration _configuration;
   static SemaphoreHandle_t _configMutex = nullptr;
 
+  // Serializes the responder rebuild: the WiFi task calls _setupMdns on GOT_IP and
+  // the eth task calls it via ensureMdnsStarted - a dual-connected Pro boot can do
+  // both at once, and MDNS.end()/begin() interleaved from two tasks is a crash.
+  // Created in begin(), before either task exists: creating it lazily at the first
+  // call would race exactly the two callers it is there to separate.
+  static SemaphoreHandle_t _mdnsMutex = NULL;
+
   // Provisioning state machine (pure logic in lib/wifi_provisioning, unit-tested there).
   // Owned by the WiFi task: only the task mutates _provisioning.
   static WifiProvisioning::Context _provisioning;
@@ -235,6 +242,8 @@ namespace CustomWifi
     // it, for the first xTaskNotifyWait to consume as stale.
     WiFi.onEvent(_onWiFiEventWithInfo);
     WiFi.onEvent(_onWiFiEvent);
+
+    if (!createMutexIfNeeded(&_mdnsMutex)) return false;
 
     // Start WiFi connection task
     _startWifiTask();
@@ -1073,10 +1082,6 @@ namespace CustomWifi
     return _setupMdns();
   }
 
-  // Serializes the responder rebuild: the WiFi task calls _setupMdns on GOT_IP and
-  // the eth task calls it via ensureMdnsStarted - a dual-connected Pro boot can do
-  // both at once, and MDNS.end()/begin() interleaved from two tasks is a crash.
-  static SemaphoreHandle_t _mdnsMutex = NULL;
   static bool _setupMdnsLocked();
 
   bool _setupMdns()
