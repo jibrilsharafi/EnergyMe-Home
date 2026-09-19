@@ -45,8 +45,9 @@ namespace WifiProvisioning {
 // link yet: the driver starts after this state machine, the PHY autonegotiates, and
 // esp_eth polls link every 2 s. Until it ends "link down" only means "not known yet",
 // so the AP raise is held back; link still down afterwards counts as "no cable".
-// Must stay below WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS.
 #define WIFI_PROVISIONING_WIRED_LINK_DETECT_MS (10UL * 1000UL)
+static_assert(WIFI_PROVISIONING_WIRED_LINK_DETECT_MS < WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS,
+              "the link-detect window must end inside the DHCP grace");
 
 enum class State : uint8_t {
     UNPROVISIONED,   // No stored credentials. AP up, DNS on, auth carve-out active.
@@ -107,6 +108,7 @@ struct Context {
     // boot (dev chip report, LittleFS format, post-OTA) must not eat them before the wired
     // driver had a chance - seen on the bench as a 4 s AP blip on a cabled device.
     uint64_t initAtMs;
+
     uint64_t graceStartedAtMs;
 };
 

@@ -252,7 +252,7 @@ bool shouldRaiseAp(const Context &context, uint64_t nowMs, bool wiredReachable, 
     if (wiredPresent && sinceInitMs < WIFI_PROVISIONING_WIRED_LINK_DETECT_MS) return false;
 
     // Zero-touch first boot: cable in, DHCP still negotiating. Hold the raise back
-    // briefly (boot-relative window) so a normally-leasing network never sees an AP
+    // briefly (init-relative window) so a normally-leasing network never sees an AP
     // blip; after the window, link-without-address counts as unreachable.
     if (wiredLinkUp && sinceInitMs < WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS) return false;
 
