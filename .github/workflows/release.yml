@@ -53,11 +53,13 @@ jobs:
         fi
         echo "✅ Tag and constants.h agree"
 
-    - name: Build esp32s3-prod
+    # One binary per product: the PSRAM mode (quad on Home, octal on Home Pro) is fixed at
+    # compile time, so neither image can boot on the other board.
+    - name: Build esp32s3-prod and esp32s3-prod-pro
       working-directory: source
       run: |
-        echo "🏗️ Building firmware for esp32s3-prod..."
-        pio run -e esp32s3-prod
+        echo "🏗️ Building firmware for esp32s3-prod and esp32s3-prod-pro..."
+        pio run -e esp32s3-prod -e esp32s3-prod-pro
         echo "✅ Build completed"
 
     - name: Prepare release artifacts
@@ -68,6 +70,12 @@ jobs:
         cp .pio/build/esp32s3-prod/firmware.elf release/energyme_home_${{ steps.version.outputs.VERSION }}.elf
         cp .pio/build/esp32s3-prod/bootloader.bin release/energyme_home_${{ steps.version.outputs.VERSION }}_bootloader.bin
         cp .pio/build/esp32s3-prod/partitions.bin release/energyme_home_${{ steps.version.outputs.VERSION }}_partitions.bin
+        # The names carry the product token the firmware's upload gate and release picker
+        # match on (FIRMWARE_ARTIFACT_TOKEN_* in hardware_profile.h).
+        cp .pio/build/esp32s3-prod-pro/firmware.bin release/energyme_home_pro_${{ steps.version.outputs.VERSION }}.bin
+        cp .pio/build/esp32s3-prod-pro/firmware.elf release/energyme_home_pro_${{ steps.version.outputs.VERSION }}.elf
+        cp .pio/build/esp32s3-prod-pro/bootloader.bin release/energyme_home_pro_${{ steps.version.outputs.VERSION }}_bootloader.bin
+        cp .pio/build/esp32s3-prod-pro/partitions.bin release/energyme_home_pro_${{ steps.version.outputs.VERSION }}_partitions.bin
 
     - name: Create draft GitHub Release
       uses: softprops/action-gh-release@v3
@@ -81,6 +89,22 @@ jobs:
           source/release/energyme_home_${{ steps.version.outputs.VERSION }}_bootloader.bin
           source/release/energyme_home_${{ steps.version.outputs.VERSION }}_partitions.bin
 
+    # A separate step, after the Home assets exist, on purpose: Home firmware up to 2.3.x
+    # offers the FIRST asset whose name contains ".bin" and "energyme_home" as the update,
+    # and nothing on those devices checks the product. The Pro names match that test too,
+    # so they must never be listed ahead of the Home image (they also sort after it by name).
+    - name: Add the Home Pro assets to the draft
+      uses: softprops/action-gh-release@v3
+      with:
+        draft: true
+        tag_name: ${{ github.ref_name }}
+        name: ${{ github.ref_name }}
+        files: |
+          source/release/energyme_home_pro_${{ steps.version.outputs.VERSION }}.bin
+          source/release/energyme_home_pro_${{ steps.version.outputs.VERSION }}.elf
+          source/release/energyme_home_pro_${{ steps.version.outputs.VERSION }}_bootloader.bin
+          source/release/energyme_home_pro_${{ steps.version.outputs.VERSION }}_partitions.bin
+
     - name: Release summary
       run: |
         echo "### 🚀 Draft Release Created" >> $GITHUB_STEP_SUMMARY
@@ -93,5 +117,9 @@ jobs:
         echo "  - \`energyme_home_${{ steps.version.outputs.VERSION }}.elf\`" >> $GITHUB_STEP_SUMMARY
         echo "  - \`energyme_home_${{ steps.version.outputs.VERSION }}_bootloader.bin\`" >> $GITHUB_STEP_SUMMARY
         echo "  - \`energyme_home_${{ steps.version.outputs.VERSION }}_partitions.bin\`" >> $GITHUB_STEP_SUMMARY
+        echo "  - \`energyme_home_pro_${{ steps.version.outputs.VERSION }}.bin\`" >> $GITHUB_STEP_SUMMARY
+        echo "  - \`energyme_home_pro_${{ steps.version.outputs.VERSION }}.elf\`" >> $GITHUB_STEP_SUMMARY
+        echo "  - \`energyme_home_pro_${{ steps.version.outputs.VERSION }}_bootloader.bin\`" >> $GITHUB_STEP_SUMMARY
+        echo "  - \`energyme_home_pro_${{ steps.version.outputs.VERSION }}_partitions.bin\`" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "👉 Open the draft on GitHub, write notes, optionally tick prerelease, then Publish." >> $GITHUB_STEP_SUMMARY
