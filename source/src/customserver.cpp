@@ -485,9 +485,20 @@ namespace CustomServer
     }
 
     // Helper functions for common response patterns
+    // The stream buffer starts at 1460 bytes of internal RAM and is re-created one size up on
+    // every write that does not fit, so a multi-KB document churned internal RAM on every
+    // request. Size it once from the document instead, and never below the PSRAM malloc
+    // threshold, so the buffer is a single PSRAM allocation.
+    static AsyncResponseStream *_beginJsonResponseStream(AsyncWebServerRequest *request, const JsonDocument &doc)
+    {
+        size_t size = measureJson(doc);
+        if (size < CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL) size = CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL;
+        return request->beginResponseStream("application/json", size);
+    }
+
     static void _sendJsonResponse(AsyncWebServerRequest *request, const JsonDocument &doc, int32_t statusCode)
     {
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        AsyncResponseStream *response = _beginJsonResponseStream(request, doc);
         response->setCode(statusCode);
         serializeJson(doc, *response);
         request->send(response);
@@ -3154,7 +3165,7 @@ namespace CustomServer
 
                 // Data has changed or no cached version, send full response with ETag
                 if (Ade7953::getAllChannelDataAsJson(doc)) {
-                    AsyncResponseStream *response = request->beginResponseStream("application/json");
+                    AsyncResponseStream *response = _beginJsonResponseStream(request, doc);
                     serializeJson(doc, *response);
                     _sendResponseWithEtag(request, response, etag);
                 } else {
