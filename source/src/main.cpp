@@ -170,12 +170,12 @@ void setup()
   Led::setOrange(Led::PRIO_NORMAL);
   LOG_DEBUG("Setting up crash monitor...");
   CrashMonitor::begin();
-  LOG_INFO("Crash monitor setup done");
+  LOG_DEBUG("Crash monitor setup done");
   logHeapLedger("crash monitor");
-  LOG_INFO("GPIO ISR service: %s | ipc0/ipc1 stack min free: %lu/%lu bytes",
-           esp_err_to_name(gpioIsrErr),
-           (unsigned long)taskStackMinFree("ipc0"),
-           (unsigned long)taskStackMinFree("ipc1"));
+  LOG_DEBUG("GPIO ISR service: %s | ipc0/ipc1 stack min free: %lu/%lu bytes",
+            esp_err_to_name(gpioIsrErr),
+            (unsigned long)taskStackMinFree("ipc0"),
+            (unsigned long)taskStackMinFree("ipc1"));
 
   printDeviceStatusStatic();
 
@@ -186,12 +186,12 @@ void setup()
       globalHwProfile->muxS1Pin,
       globalHwProfile->muxS2Pin,
       globalHwProfile->muxS3Pin);
-  LOG_INFO("Multiplexer setup done");
+  LOG_DEBUG("Multiplexer setup done");
   logHeapLedger("multiplexer");
 
   LOG_DEBUG("Setting up button handler...");
   ButtonHandler::begin(globalHwProfile->buttonPin);
-  LOG_INFO("Button handler setup done");
+  LOG_DEBUG("Button handler setup done");
   logHeapLedger("button");
 
   LOG_DEBUG("Setting up ADE7953...");
@@ -204,14 +204,14 @@ void setup()
       globalHwProfile->ade7953ResetPin,
       globalHwProfile->ade7953InterruptPin
     )
-  ) LOG_INFO("ADE7953 setup done");
+  ) LOG_DEBUG("ADE7953 setup done");
   else LOG_ERROR("ADE7953 initialization failed! This is a big issue mate..");
   logHeapLedger("ade7953");
 
   Led::setBlue(Led::PRIO_NORMAL);
   LOG_DEBUG("Setting up WiFi...");
   CustomWifi::begin();
-  LOG_INFO("WiFi setup done");
+  LOG_DEBUG("WiFi setup done");
   logHeapLedger("wifi");
 
   // No-op on products without Ethernet. On Pro this brings up the W5500 and the
@@ -226,7 +226,7 @@ void setup()
   CustomEth::onInterfaceChange([](InterfaceArbitration::Interface) { CustomMqtt::requestReconnect(); });
   CustomEth::onInterfaceChange([](InterfaceArbitration::Interface) { CustomTime::requestResync(); });
   LOG_DEBUG("Setting up Ethernet...");
-  if (CustomEth::begin()) LOG_INFO("Ethernet setup done");
+  if (CustomEth::begin()) LOG_DEBUG("Ethernet setup done");
   else LOG_ERROR("Ethernet initialization failed! Continuing on WiFi only");
   logHeapLedger("ethernet");
 
@@ -261,7 +261,7 @@ void setup()
   // Add custom logging setup after WiFi
   LOG_DEBUG("Setting up custom logging...");
   CustomLog::begin();
-  LOG_INFO("Custom logging setup done");
+  LOG_DEBUG("Custom logging setup done");
   logHeapLedger("network wait + custom logging");
 
   LOG_DEBUG("Syncing time...");
@@ -276,12 +276,12 @@ void setup()
   // task's cloud/influx checks read safe default flags until those modules begin().
   LOG_DEBUG("Setting up issue registry...");
   IssueRegistry::begin();
-  LOG_INFO("Issue registry setup done");
+  LOG_DEBUG("Issue registry setup done");
   logHeapLedger("issue registry");
 
   LOG_DEBUG("Setting up server...");
   CustomServer::begin();
-  LOG_INFO("Server setup done");
+  LOG_DEBUG("Server setup done");
   logHeapLedger("web server");
 
   // Only once there is a station link. Modbus TCP is unauthenticated and binds every
@@ -289,28 +289,28 @@ void setup()
   // range of the provisioning SoftAP. The health-check task starts it when STA comes up.
   LOG_DEBUG("Setting up Modbus TCP...");
   ModbusTcp::syncWithNetwork(CustomNet::isFullyConnected(), CustomWifi::isApServing());
-  LOG_INFO("Modbus TCP setup done");
+  LOG_DEBUG("Modbus TCP setup done");
   logHeapLedger("modbus tcp");
 
   if (!globalCommunityMode) {
     LOG_DEBUG("Setting up MQTT client...");
     Mqtt::begin();
-    LOG_INFO("MQTT client setup done");
+    LOG_DEBUG("MQTT client setup done");
   }
 
   LOG_DEBUG("Setting up Custom MQTT client...");
   CustomMqtt::begin();
-  LOG_INFO("Custom MQTT client setup done");
+  LOG_DEBUG("Custom MQTT client setup done");
   logHeapLedger("cloud mqtt + custom mqtt");
 
   LOG_DEBUG("Setting up InfluxDB client...");
   InfluxDbClient::begin();
-  LOG_INFO("InfluxDB client setup done");
+  LOG_DEBUG("InfluxDB client setup done");
   logHeapLedger("influxdb");
 
   LOG_DEBUG("Starting maintenance task...");
   startMaintenanceTask();
-  LOG_INFO("Maintenance task started");
+  LOG_DEBUG("Maintenance task started");
   logHeapLedger("maintenance");
 
   // Visual indicator for safe mode (restart protection active)
