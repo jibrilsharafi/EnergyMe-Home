@@ -52,7 +52,7 @@ namespace CustomWifi
   // Pure wake-up: the wired interface changed, so _serviceApLifecycle() (top of the loop)
   // must re-evaluate the AP and the network LED now, not at the next periodic tick.
   static const uint32_t WIFI_EVENT_WIRED_CHANGED = (1UL << 11);
-  static const uint32_t WIFI_EVENT_AP_STOP = (1UL << 12);
+  static const uint32_t WIFI_EVENT_AP_STOP = (1UL << 12); // Log-only: the SoftAP went down
 
   // Task state management
   static bool _taskShouldRun = false;
@@ -140,6 +140,7 @@ namespace CustomWifi
   static void _forceReconnectInternal();
   static void _serviceDisconnectDeadline();
   static bool _hasStoredCredentials();
+  static bool _hasCredentialsWorthRetrying();
   static void _feedProvisioning(WifiProvisioning::Event event);
   static bool _isPowerReset();
   static void _sendOpenSourceTelemetry();
@@ -949,7 +950,7 @@ namespace CustomWifi
             // reports the failure. Interfering here would restart the radio underneath it.
             LOG_DEBUG("Periodic check: association attempt in flight, leaving it alone");
           }
-          else if (_provisioning.hasCredentials || (_provisioning.commissioned && _hasStoredCredentials()))
+          else if (_hasCredentialsWorthRetrying())
           {
             // Re-enter the attempt machinery rather than calling WiFi.reconnect() directly.
             // _forceReconnectInternal() arms no deadline, so nothing ever fed
@@ -1245,6 +1246,14 @@ namespace CustomWifi
     return conf.sta.ssid[0] != '\0';
   }
 
+  // Proven credentials always retry. A commissioned device also keeps trying credentials
+  // that were submitted but never proven, exactly as it would after a reboot (init() seeds
+  // hasCredentials from what is stored). The driver read stays lazy behind the two flags.
+  static bool _hasCredentialsWorthRetrying()
+  {
+    return _provisioning.hasCredentials || (_provisioning.commissioned && _hasStoredCredentials());
+  }
+
   // Single funnel for provisioning transitions so the published snapshot can never drift
   // from the owned context. Task context only.
   static void _feedProvisioning(WifiProvisioning::Event event)
@@ -1367,9 +1376,7 @@ namespace CustomWifi
     // reason to stop: under APSTA both interfaces run at once, so the device can host the
     // portal and still rejoin by itself the moment the router comes back. Without
     // credentials there is nothing to attempt, and WiFi.begin() would just churn the radio.
-    // A commissioned device keeps trying credentials that were submitted but never proven,
-    // exactly as it would after a reboot (init() seeds hasCredentials from what is stored).
-    if (_provisioning.hasCredentials || (_provisioning.commissioned && _hasStoredCredentials())) {
+    if (_hasCredentialsWorthRetrying()) {
       _startStaAttempt();
     }
   }

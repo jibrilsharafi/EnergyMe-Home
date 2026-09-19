@@ -483,13 +483,10 @@ static void _reportInfo(JsonDocument& doc) {
     // descriptor (empty, erased, or a legacy pre-2.4 image).
     ImageDescriptor::Descriptor otherDesc;
     if (getOtherPartitionImageDescriptor(otherDesc)) {
-        char otherProduct[NAME_BUFFER_SIZE];
-        snprintf(otherProduct, sizeof(otherProduct), "%s", otherDesc.product);
-        rep["other_image_product"] = otherProduct; // mutable buffer: copied
+        // otherDesc is a non-const local, so ArduinoJson copies these (parse NUL-terminates them)
+        rep["other_image_product"] = otherDesc.product;
         rep["other_image_psram_mb"] = otherDesc.psramMb;
-        char otherFwVersion[VERSION_BUFFER_SIZE];
-        snprintf(otherFwVersion, sizeof(otherFwVersion), "%s", otherDesc.fwVersion);
-        rep["other_image_fw_version"] = otherFwVersion; // mutable buffer: copied
+        rep["other_image_fw_version"] = otherDesc.fwVersion;
     } else {
         rep["other_image_product"] = nullptr;
         rep["other_image_psram_mb"] = nullptr;

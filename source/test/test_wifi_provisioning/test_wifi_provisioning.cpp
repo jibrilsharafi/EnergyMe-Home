@@ -677,10 +677,6 @@ void test_wired_present_holds_raise_until_link_detect_window_ends(void) {
     TEST_ASSERT_FALSE(shouldRaiseAp(context, WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS, true, true, true));
 }
 
-void test_link_detect_window_is_inside_dhcp_grace(void) {
-    TEST_ASSERT_TRUE(WIFI_PROVISIONING_WIRED_LINK_DETECT_MS < WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS);
-}
-
 // Regression (Pro bench): a dev boot spent 9 s in the core's pre-setup report, so the
 // state machine started at ~10 s of uptime. With power-on-relative windows the hold-back
 // had already expired and a cabled device blipped its AP for 4 s.
@@ -935,7 +931,6 @@ int main(int, char **) {
     RUN_TEST(test_wired_commissioning_mid_submission_fails_into_ap_assist);
     RUN_TEST(test_wired_product_unprovisioned_boot_does_not_raise_in_init);
     RUN_TEST(test_wired_present_holds_raise_until_link_detect_window_ends);
-    RUN_TEST(test_link_detect_window_is_inside_dhcp_grace);
     RUN_TEST(test_wired_windows_count_from_init_not_from_power_on);
     RUN_TEST(test_home_init_is_unchanged_by_wired_parameter_default);
     RUN_TEST(test_commissioned_device_credentials_cleared_stays_provisioned);

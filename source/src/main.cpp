@@ -61,10 +61,8 @@ static esp_err_t installGpioIsrServiceEarly()
 
 #if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
 // Weak core hook: the first thing loopTask runs, BEFORE the core's pre-setup chip report
-// (dev builds, CORE_DEBUG_LEVEL >= 4). That report goes out one character at a time and
-// each one blocks for the HWCDC TX timeout while a USB host is attached but nothing reads
-// the port: ~2800 chars x 100 ms kept the firmware out of setup() for ~280 s on the bench.
-// Setting the timeout in setup() is too late for it, hence here.
+// (dev builds, CORE_DEBUG_LEVEL >= 4). Setting the TX timeout in setup() is too late for
+// that report, hence here. Bench numbers: see SERIAL_TX_TIMEOUT_MS in constants.h.
 uint64_t getArduinoSetupWaitTime_ms()
 {
   Serial.setTxTimeoutMs(SERIAL_TX_TIMEOUT_MS);
