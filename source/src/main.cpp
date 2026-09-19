@@ -84,7 +84,7 @@ void setup()
   const esp_err_t gpioIsrErr = installGpioIsrServiceEarly();
 
   Serial.begin(SERIAL_BAUDRATE);
-  Serial.printf("EnergyMe - Home\n____________________\n\n");
+  Serial.printf(FULL_PRODUCT_NAME "\n____________________\n\n");
   Serial.println("Booting...");
   Serial.printf("Build version: %s\n", FIRMWARE_BUILD_VERSION);
   Serial.printf("Build date: %s %s\n", FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME);
@@ -140,7 +140,7 @@ void setup()
   AdvancedLogger::setCallback(CustomLog::callbackMultiple);
   LOG_DEBUG("Callbacks for AdvancedLogger set up successfully");
 
-  LOG_INFO("Guess who's back, back again! EnergyMe - Home is starting up...");
+  LOG_INFO("Guess who's back, back again! " FULL_PRODUCT_NAME " is starting up...");
   LOG_INFO(
     "Build version: %s %s(MD5: %s) | Build date: %s %s | Device ID: %s", 
     FIRMWARE_BUILD_VERSION,
