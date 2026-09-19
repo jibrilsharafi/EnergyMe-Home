@@ -4,6 +4,10 @@
 #include <Arduino.h>
 #include <AdvancedLogger.h>
 #include <LittleFS.h>
+#include <driver/gpio.h>
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+#include <hal/usb_serial_jtag_ll.h>
+#endif
 
 // Project includes
 // Initialization before everything
@@ -35,8 +39,50 @@
 Statistics statistics; // Move both to utils and use getter to get and set them
 char DEVICE_ID[DEVICE_ID_BUFFER_SIZE];
 
+// gpio_install_isr_service() runs esp_intr_alloc() + a poisoned malloc on the 1024-byte ipcN
+// stack (prebuilt sdkconfig, not tunable); an interrupt frame pushed at that depth trips the
+// stack canary ("Stack canary watchpoint triggered (ipc1)", seen on the Pro bench while a host
+// drained the USB backlog). Install once while the core is quiet, with the USB-Serial-JTAG IRQ
+// masked at the peripheral. CPU interrupts must stay enabled: the IPC call blocks. This only
+// lowers the probability (tick/IPI remain). Later attachInterrupt()/ETH.begin() see "already
+// installed" and skip the IPC.
+static esp_err_t installGpioIsrServiceEarly()
+{
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+  const uint32_t usbIntrEna = usb_serial_jtag_ll_get_intr_ena_status();
+  usb_serial_jtag_ll_disable_intr_mask(usbIntrEna);
+#endif
+  const esp_err_t err = gpio_install_isr_service((int)ARDUINO_ISR_FLAG);
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+  usb_serial_jtag_ll_ena_intr_mask(usbIntrEna);
+#endif
+  return err;
+}
+
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+// Weak core hook: the first thing loopTask runs, BEFORE the core's pre-setup chip report
+// (dev builds, CORE_DEBUG_LEVEL >= 4). That report goes out one character at a time and
+// each one blocks for the HWCDC TX timeout while a USB host is attached but nothing reads
+// the port: ~2800 chars x 100 ms kept the firmware out of setup() for ~280 s on the bench.
+// Setting the timeout in setup() is too late for it, hence here.
+uint64_t getArduinoSetupWaitTime_ms()
+{
+  Serial.setTxTimeoutMs(SERIAL_TX_TIMEOUT_MS);
+  return 0;
+}
+#endif
+
+static uint32_t taskStackMinFree(const char *taskName)
+{
+  TaskHandle_t handle = xTaskGetHandle(taskName);
+  if (handle == NULL) return 0;
+  return (uint32_t)uxTaskGetStackHighWaterMark(handle);
+}
+
 void setup()
 {
+  const esp_err_t gpioIsrErr = installGpioIsrServiceEarly();
+
   Serial.begin(SERIAL_BAUDRATE);
   Serial.printf("EnergyMe - Home\n____________________\n\n");
   Serial.println("Booting...");
@@ -113,6 +159,10 @@ void setup()
   LOG_DEBUG("Setting up crash monitor...");
   CrashMonitor::begin();
   LOG_INFO("Crash monitor setup done");
+  LOG_INFO("GPIO ISR service: %s | ipc0/ipc1 stack min free: %lu/%lu bytes",
+           esp_err_to_name(gpioIsrErr),
+           (unsigned long)taskStackMinFree("ipc0"),
+           (unsigned long)taskStackMinFree("ipc1"));
 
   printDeviceStatusStatic();
 
@@ -158,7 +208,6 @@ void setup()
   CustomEth::onInterfaceChange([](InterfaceArbitration::Interface) { Mqtt::requestReconnect(); });
   CustomEth::onInterfaceChange([](InterfaceArbitration::Interface) { CustomMqtt::requestReconnect(); });
   CustomEth::onInterfaceChange([](InterfaceArbitration::Interface) { CustomTime::requestResync(); });
-
   LOG_DEBUG("Setting up Ethernet...");
   if (CustomEth::begin()) LOG_INFO("Ethernet setup done");
   else LOG_ERROR("Ethernet initialization failed! Continuing on WiFi only");
