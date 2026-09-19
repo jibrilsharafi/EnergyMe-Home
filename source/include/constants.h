@@ -141,6 +141,7 @@
 // Server used ports (here to ensure no conflicts)
 #define MODBUS_TCP_PORT 502
 #define WEBSERVER_PORT 80
+#define WEBSERVER_ROUTE_ALLOC_PSRAM_THRESHOLD 16 // malloc() PSRAM threshold (bytes) while the routes are registered - see CustomServer::begin()
 
 // Useful constants
 #define MAGIC_WORD_RTC 0xDEADBEEF // This is crucial to ensure that the RTC variables used have sensible values or it is just some garbage after reboot
