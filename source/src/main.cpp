@@ -149,6 +149,9 @@ void setup()
   
   LOG_DEBUG("Setting up callbacks for AdvancedLogger...");
   AdvancedLogger::setCallback(CustomLog::callbackMultiple);
+  // VERBOSE never goes to the callbacks (UDP, MQTT): at hundreds of lines per second it would only
+  // fill the log queue. It can be read on the serial console at best, through the print level.
+  AdvancedLogger::setCallbackLevel(LogLevel::DEBUG);
   LOG_DEBUG("Callbacks for AdvancedLogger set up successfully");
   logHeapLedger("led + littlefs + logger");
 
