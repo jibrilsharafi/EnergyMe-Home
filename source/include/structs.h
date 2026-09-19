@@ -252,6 +252,15 @@ struct SystemDynamicInfo {
     char wifiSubnetMask[IP_ADDRESS_BUFFER_SIZE];
     char wifiDnsIp[IP_ADDRESS_BUFFER_SIZE];
     char wifiBssid[MAC_ADDRESS_BUFFER_SIZE];
+
+    // Ethernet / interface arbitration (eth* meaningful only when ethEnabled)
+    char activeInterface[NAME_BUFFER_SIZE]; // "none" | "ethernet" | "wifi"
+    bool ethEnabled;
+    bool ethLinkUp;
+    char ethLocalIp[IP_ADDRESS_BUFFER_SIZE];
+    char ethMacAddress[MAC_ADDRESS_BUFFER_SIZE];
+    uint16_t ethLinkSpeedMbps;
+    bool ethFullDuplex;
     
     // Tasks
     TaskInfo mqttTaskInfo;
@@ -281,6 +290,9 @@ struct SystemDynamicInfo {
         snprintf(wifiSubnetMask, sizeof(wifiSubnetMask), "0.0.0.0");
         snprintf(wifiDnsIp, sizeof(wifiDnsIp), "0.0.0.0");
         snprintf(wifiBssid, sizeof(wifiBssid), "00:00:00:00:00:00");
+        snprintf(activeInterface, sizeof(activeInterface), "none");
+        snprintf(ethLocalIp, sizeof(ethLocalIp), "0.0.0.0");
+        snprintf(ethMacAddress, sizeof(ethMacAddress), "00:00:00:00:00:00");
     }
 };
 
