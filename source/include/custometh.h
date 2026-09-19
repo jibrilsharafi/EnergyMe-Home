@@ -32,7 +32,10 @@
 // The static config must survive long enough after link-up to be declared good.
 // Same philosophy as the WiFi static-IP backstop: clear the boot-fail counter
 // only once the interface has proven itself, not at apply time.
-#define ETH_STATIC_STABLE_CLEAR_MS (60 * 1000)
+// Kept under MIN_UPTIME_BEFORE_RESTART (30 s, link-up included): a clean restart can then
+// never land between the count and the clear. At 60 s, three quick restart-to-apply saves in
+// a row each counted as a failed boot and silently disabled a good static IP.
+#define ETH_STATIC_STABLE_CLEAR_MS (20 * 1000)
 #define ETH_STATIC_MAX_BOOT_FAILS 3
 
 // lwIP settle time after the interface obtains an address, mirroring

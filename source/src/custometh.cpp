@@ -389,7 +389,10 @@ namespace CustomEth
                 }
 
                 // Backstop clear: the static config has held the interface serviceable
-                // past the crash/misconfig window, so it is not a boot-loop offender.
+                // past the crash window, so it is not a boot-loop offender. That is all it
+                // proves: a static address is "serviceable" the moment the link is up, so a
+                // wrong-but-valid address is not caught here (recovery: pull the cable, which
+                // raises the access point, or the button network reset).
                 if (_staticApplied && !backstopCleared &&
                     (millis64() - snap.serviceableSinceMs) >= ETH_STATIC_STABLE_CLEAR_MS) {
                     _setStaticBootFails(0);
