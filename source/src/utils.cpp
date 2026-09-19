@@ -2443,6 +2443,14 @@ bool restoreNvsFromJson(JsonDocument &doc) {
         }
         if (isExcluded) continue;
 
+        // A backup taken on a product with Ethernet carries eth_ns. That namespace must never
+        // exist on a product without it: its commissioning marker alone would close the
+        // provisioning carve-out of a WiFi-only device.
+        if (strcmp(ns, PREFERENCES_NAMESPACE_ETH) == 0 && !globalHwProfile->hasEthernet) {
+            LOG_WARNING("Skipping namespace in restore: %s (this product has no Ethernet)", ns);
+            continue;
+        }
+
         LOG_DEBUG("Restoring namespace: %s", ns);
 
         Preferences prefs;

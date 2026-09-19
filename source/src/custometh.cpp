@@ -181,6 +181,7 @@ namespace CustomEth
         // clears the marker, and that path restarts). NVS is read once; after that the eth
         // task is the only source of change and it publishes through _commissioned, so
         // callers can poll this from any task at the cost of a bool load.
+        if (!globalHwProfile->hasEthernet) return false; // No wire to be commissioned over, and no eth_ns to probe
         if (_commissioned) return true;
         if (_commissionedNvsChecked) return false;
         _commissionedNvsChecked = true;
