@@ -1349,7 +1349,24 @@ namespace CustomWifi
     // that never started, which is what produced the phantom failures seen on hardware.
     esp_wifi_disconnect();
 
-    if (!WiFi.begin()) { // No arguments: uses the credentials the driver has stored
+    bool started;
+    if (globalHwProfile->hasEthernet) {
+      // WiFi.begin() returns the station STATUS, and that reads WL_IDLE_STATUS (0) for a
+      // station the wire kept released: every takeover would be reported as refused. Judge
+      // by the connect result instead. The disconnect above is asynchronous and connect()
+      // answers "already connected" without connecting while the association bit is still
+      // set, so wait for it to clear first.
+      uint32_t settledMs = 0;
+      while (WiFi.STA.connected() && settledMs < WIFI_STA_DISCONNECT_SETTLE_MAX_MS) {
+        vTaskDelay(pdMS_TO_TICKS(WIFI_STA_DISCONNECT_SETTLE_POLL_MS));
+        settledMs += WIFI_STA_DISCONNECT_SETTLE_POLL_MS;
+      }
+      started = WiFi.STA.begin(true);
+    } else {
+      started = WiFi.begin(); // No arguments: uses the credentials the driver has stored
+    }
+
+    if (!started) {
       // Do not arm a deadline for an attempt that did not start; report it now so the
       // state machine counts a real failure rather than waiting out a fictional one.
       LOG_WARNING("WiFi.begin() refused - treating as an immediate association failure");

@@ -35,6 +35,8 @@ static_assert(sizeof(WIFI_HOSTNAME_PREFIX) + 1 + WIFI_HOSTNAME_DEVICE_ID_LENGTH 
 #define WIFI_CONNECT_TIMEOUT_SECONDS 10
 #define WIFI_CONNECT_TIMEOUT_POWER_RESET_SECONDS (5 * 60)  // Extended timeout for the FIRST attempt after a power reset only (router likely rebooting)
 #define WIFI_CREDENTIAL_WRITE_RETRY_DELAY_MS 250    // Settle time between a disconnect and retrying esp_wifi_set_config(), which is refused while the STA is connecting
+#define WIFI_STA_DISCONNECT_SETTLE_POLL_MS 10       // Poll step while waiting for the association bit to clear before a new attempt (Ethernet products only)
+#define WIFI_STA_DISCONNECT_SETTLE_MAX_MS 500       // Bound of that wait: esp_wifi_disconnect() is asynchronous, normally settled within a few ms
 #define WIFI_DISCONNECT_DELAY (15 * 1000)           // Delay after WiFi disconnected to allow automatic reconnection
 #define WIFI_AP_LIFECYCLE_TICK_MS (10 * 1000)       // How often the AP lifetime/grace predicates are evaluated while the SoftAP is up
 #define WIFI_AP_PENDING_TICK_MS (1 * 1000)          // Tick while a deferred AP raise waits on the wired boot windows (Ethernet products only)
