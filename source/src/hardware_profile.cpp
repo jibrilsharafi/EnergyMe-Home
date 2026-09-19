@@ -266,6 +266,9 @@ bool parseProductLineString(const char* s, ProductLine& productOut) {
 // pin PRODUCT_FALLBACK=1 (HOME_PRO) so a Pro binary never falls back to a Home pinout.
 static ProductLine buildFallbackProduct() {
 #ifdef PRODUCT_FALLBACK
+    // constants.h and the image descriptor read anything other than 1 as Home: a stray
+    // value would name the binary "home" and still run it on another product's profile.
+    static_assert(PRODUCT_FALLBACK == 0 || PRODUCT_FALLBACK == 1, "PRODUCT_FALLBACK must be 0 (home) or 1 (home_pro)");
     return static_cast<ProductLine>(PRODUCT_FALLBACK);
 #else
     return ProductLine::HOME;
@@ -379,4 +382,12 @@ void initHardwareProfile() {
     globalCommunityMode = false;
     LOG_INFO("Hardware profile selected: %s v%u (pcb_revision=\"%s\")",
              productLineToString(product), version, pcbRevision.c_str());
+
+    // The board decides the pinout, so the factory product stands. But the build's name,
+    // PSRAM mode and image descriptor all say the other product, and the upload gates will
+    // refuse every image until a build for this board is flashed over serial.
+    if (product != buildFallbackProduct()) {
+        LOG_ERROR("This firmware is built for %s but the board is a %s - flash the right build over serial",
+                  productLineToString(buildFallbackProduct()), productLineToString(product));
+    }
 }
