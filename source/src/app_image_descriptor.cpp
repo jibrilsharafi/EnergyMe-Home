@@ -59,7 +59,10 @@ ImageDescriptor::DeviceIdentity deviceIdentity() {
     dev.pcbVersion = globalHwProfile->version;
     dev.partitionLayoutId = ENERGYME_APP_DESC.partitionLayoutId;
     dev.runningProdEnv = strncmp(ENERGYME_APP_DESC.buildEnv, "prod", sizeof(ENERGYME_APP_DESC.buildEnv)) == 0;
-    dev.allowMissingDescriptor = (globalHwProfile->product == ProductLine::HOME);
+    // Every pre-descriptor release is a quad-PSRAM Home image, so only a RUNNING quad image
+    // proves one can boot here. The product alone is not enough: it comes from factory NVS,
+    // and octal hardware provisioned as "home" would otherwise accept an unbootable image.
+    dev.allowMissingDescriptor = (globalHwProfile->product == ProductLine::HOME) && ENERGYME_APP_DESC.psramMb == 2;
     return dev;
 }
 
