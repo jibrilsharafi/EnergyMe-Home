@@ -610,7 +610,11 @@ namespace CustomWifi
 
     Led::clearPattern(Led::PRIO_MEDIUM); // Release the network layer; healthy status shows through
     Led::setGreen(Led::PRIO_NORMAL);
-    LOG_INFO("WiFi fully connected and operational");
+    LOG_INFO("WiFi up: SSID %s | IP %s | Gateway %s | Subnet %s | DNS %s | MAC %s | %d dBm | channel %d | %s",
+             WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(), WiFi.gatewayIP().toString().c_str(),
+             WiFi.subnetMask().toString().c_str(), WiFi.dnsIP(0).toString().c_str(),
+             WiFi.macAddress().c_str(), (int)WiFi.RSSI(), (int)WiFi.channel(),
+             _staticIpApplied ? "static" : "DHCP");
 
     // Static-IP health (boot-fail backstop clear + DHCP auto-recovery) is serviced from the periodic
     // check in the task loop, not here: it must run past the early crash window and after the restart
