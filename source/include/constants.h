@@ -97,7 +97,6 @@
 
 // Logger
 #define LOG_PATH "/log.txt"
-#define MAXIMUM_LOG_FILE_SIZE (200 * 1024)
 
 // UDP Log configuration
 #define PREFERENCES_KEY_UDP_DESTINATION "udp_dest"
