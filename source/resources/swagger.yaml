@@ -73,6 +73,9 @@ paths:
                     description: True when this request arrived on the device's own SoftAP
                   username:
                     type: string
+                  productName:
+                    type: string
+                    description: Product name for the page texts, e.g. "Home" or "Home Pro"
 
   /api/v1/auth/change-password:
     post:
@@ -1274,6 +1277,9 @@ paths:
                       WiFi driver. The submission endpoint answers as soon as the request is
                       queued, so its 200 does not mean the credentials were stored; this is
                       where that outcome is reported.
+                  productName:
+                    type: string
+                    description: Product name for the page texts, e.g. "Home" or "Home Pro"
 
   /api/v1/network/wifi/diagnostics:
     get:
@@ -1541,7 +1547,7 @@ paths:
                   gateway: { type: string, example: "192.168.1.1" }
                   subnet: { type: string, example: "255.255.255.0" }
                   dns1: { type: string, example: "192.168.1.1" }
-                  dns2: { type: string, example: "" }
+                  dns2: { type: string, example: "0.0.0.0" }
                   mac: { type: string, example: "DE:AD:BE:EF:FE:ED" }
         '404':
           description: Ethernet is not available on this product
@@ -1617,7 +1623,10 @@ paths:
         '200':
           $ref: '#/components/responses/Success'
         '400':
-          description: Invalid Ethernet configuration
+          description: >
+            Invalid Ethernet configuration. With a static IP the address, gateway and subnet
+            mask must be valid and non-zero, and the address must not fall inside
+            172.31.42.0/24, which is reserved for the recovery access point.
           content:
             application/json:
               schema:
@@ -1655,7 +1664,10 @@ paths:
         '200':
           $ref: '#/components/responses/Success'
         '400':
-          description: Invalid Ethernet configuration
+          description: >
+            Invalid Ethernet configuration. With a static IP the address, gateway and subnet
+            mask must be valid and non-zero, and the address must not fall inside
+            172.31.42.0/24, which is reserved for the recovery access point.
           content:
             application/json:
               schema:
