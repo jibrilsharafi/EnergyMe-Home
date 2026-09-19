@@ -897,7 +897,7 @@ namespace Mqtt
     {
         // Convert integer to LogLevel enum (0=VERBOSE, 1=DEBUG, 2=INFO, 3=WARNING, 4=ERROR, 5=FATAL)
         switch (_mqttLogLevelInt) {
-            case 0: _mqttMinLogLevel = LogLevel::VERBOSE; break;
+            case 0: _mqttMinLogLevel = LogLevel::VERBOSE; break; // Same as DEBUG in practice: VERBOSE never reaches the log callbacks (see main.cpp)
             case 1: _mqttMinLogLevel = LogLevel::DEBUG; break;
             case 2: _mqttMinLogLevel = LogLevel::INFO; break;
             case 3: _mqttMinLogLevel = LogLevel::WARNING; break;
