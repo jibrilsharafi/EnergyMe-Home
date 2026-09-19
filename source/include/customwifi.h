@@ -169,6 +169,7 @@ namespace CustomWifi
     void getDisconnectDiagnosticsAsJson(JsonDocument &jsonDocument);
     bool testConnectivity(); // Test actual network connectivity (check gateway and DNS)
     void forceReconnect();   // Force immediate WiFi reconnection
+    void notifyWiredStateChanged(); // Wake the WiFi task so the AP/LED follow an Ethernet change at once
 
     // Starts the mDNS responder if it is not already running. The WiFi connect path
     // does this itself; an Ethernet-only device (Pro with no credentials) has no

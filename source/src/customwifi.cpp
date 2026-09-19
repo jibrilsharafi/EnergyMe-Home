@@ -49,6 +49,10 @@ namespace CustomWifi
   // second unknown event before the bit is drained just replaces which one gets logged.
   static const uint32_t WIFI_EVENT_UNKNOWN = (1UL << 10);
   static volatile int32_t _lastUnknownWifiEvent = -1;
+  // Pure wake-up: the wired interface changed, so _serviceApLifecycle() (top of the loop)
+  // must re-evaluate the AP and the network LED now, not at the next periodic tick.
+  static const uint32_t WIFI_EVENT_WIRED_CHANGED = (1UL << 11);
+  static const uint32_t WIFI_EVENT_AP_STOP = (1UL << 12);
 
   // Task state management
   static bool _taskShouldRun = false;
@@ -436,6 +440,11 @@ namespace CustomWifi
     return _testConnectivity();
   }
 
+  void notifyWiredStateChanged()
+  {
+    if (_wifiTaskHandle != NULL) xTaskNotify(_wifiTaskHandle, WIFI_EVENT_WIRED_CHANGED, eSetBits);
+  }
+
   void forceReconnect()
   {
     if (_wifiTaskHandle != NULL) {
@@ -820,7 +829,9 @@ namespace CustomWifi
           // this event exactly while the AP is broadcasting - the one time the AP indication
           // has something to say. The AP owns the layer until it comes down, and
           // _tearDownAp() hands it back.
-          if (!_apRaised) Led::pulseBlue(Led::PRIO_MEDIUM);
+          // Nor while the wire serves the device: a Pro with failing WiFi credentials fires
+          // this on every attempt and would mask the healthy status layer forever.
+          if (!_apRaised && !CustomEth::isServiceable()) Led::pulseBlue(Led::PRIO_MEDIUM);
           LOG_WARNING("WiFi disconnected - auto-reconnect will handle");
           _lastWifiConnectedMillis = 0; // Reset stabilization timer on disconnect
           _feedProvisioning(WifiProvisioning::Event::STA_LOST);
@@ -1475,7 +1486,9 @@ namespace CustomWifi
     // so a device still searching for its network would be left showing nothing at all.
     // When connected there is nothing to restore - the healthy status layer shows through.
     Led::clearPattern(Led::PRIO_MEDIUM);
-    if (!isFullyConnected()) Led::pulseBlue(Led::PRIO_MEDIUM);
+    // Connected over the wire counts too: without this an Ethernet-only Pro pulsed blue
+    // forever, because only a WiFi association ever released this layer.
+    if (!isFullyConnected() && !CustomEth::isServiceable()) Led::pulseBlue(Led::PRIO_MEDIUM);
 
     LOG_INFO("SoftAP torn down");
   }
@@ -1578,6 +1591,18 @@ namespace CustomWifi
     LOG_WARNING("Auto-reconnect failed, attempt %d", _reconnectAttempts);
 
     // No portal fallback any more. Repeated failures now feed the AP-raise predicate,
+
+    // Wire-only device: no WiFi GOT_IP will ever release the network LED layer, so follow
+    // the wire's serviceable edges here (WiFi task only). Never entered on products
+    // without Ethernet: ethServiceable is permanently false and the flag never sets.
+    static bool wiredLedReleased = false;
+    if (ethServiceable && !wiredLedReleased && !_apRaised) {
+      Led::clearPattern(Led::PRIO_MEDIUM);
+      wiredLedReleased = true;
+    } else if (!ethServiceable && wiredLedReleased) {
+      wiredLedReleased = false;
+      if (!_apRaised && !isFullyConnected()) Led::pulseBlue(Led::PRIO_MEDIUM);
+    }
     // and _serviceApLifecycle() raises the SoftAP so the device can be re-provisioned
     // from its own web interface. It no longer restarts itself out of a bad network.
   }

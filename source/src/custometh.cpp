@@ -250,12 +250,24 @@ namespace CustomEth
         if (_ethTaskHandle != NULL) xTaskNotifyGive(_ethTaskHandle);
     }
 
+    // Runs in the eth task only - never from the Network event task (no logging there).
+    static void _logLinkDetails()
+    {
+        LOG_INFO("Ethernet up: IP %s | Gateway %s | Subnet %s | DNS %s | MAC %s | %u Mbps %s duplex | %s",
+                 ETH.localIP().toString().c_str(), ETH.gatewayIP().toString().c_str(),
+                 ETH.subnetMask().toString().c_str(), ETH.dnsIP(0).toString().c_str(),
+                 ETH.macAddress().c_str(), (unsigned)ETH.linkSpeed(),
+                 ETH.fullDuplex() ? "full" : "half",
+                 _staticApplied ? "static" : "DHCP");
+    }
+
     static void _ethTask(void *parameter)
     {
         (void)parameter;
         LOG_DEBUG("Ethernet task started");
 
         bool mdnsEnsured = false;
+        bool serviceableAnnounced = false;
         bool bootFailPersisted = false;
         bool backstopCleared = false;
         bool commissionAttempted = false;
@@ -272,6 +284,14 @@ namespace CustomEth
 
             Snapshot snap = _snapshot();
             if (snap.serviceable) {
+                if (!serviceableAnnounced) {
+                    serviceableAnnounced = true;
+                    _logLinkDetails();
+                    // The WiFi task owns the recovery AP and the network LED layer: wake it
+                    // so both follow the wire now instead of at its next periodic tick.
+                    CustomWifi::notifyWiredStateChanged();
+                }
+
                 // An Ethernet-only device (no WiFi credentials) never runs the WiFi
                 // connect path that starts mDNS - kick it here on the serviceable
                 // rising edge. Idempotent on devices where WiFi already started it.
@@ -305,6 +325,11 @@ namespace CustomEth
                     LOG_INFO("Static Ethernet IP stable - boot-fail backstop counter cleared");
                 }
             } else {
+                if (serviceableAnnounced) {
+                    serviceableAnnounced = false;
+                    LOG_WARNING("Ethernet no longer serviceable (link %s)", snap.linkUp ? "up, no address" : "down");
+                    CustomWifi::notifyWiredStateChanged();
+                }
                 mdnsEnsured = false;
             }
 
