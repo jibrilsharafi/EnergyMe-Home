@@ -34,6 +34,7 @@
 #define WIFI_CREDENTIAL_WRITE_RETRY_DELAY_MS 250    // Settle time between a disconnect and retrying esp_wifi_set_config(), which is refused while the STA is connecting
 #define WIFI_DISCONNECT_DELAY (15 * 1000)           // Delay after WiFi disconnected to allow automatic reconnection
 #define WIFI_AP_LIFECYCLE_TICK_MS (10 * 1000)       // How often the AP lifetime/grace predicates are evaluated while the SoftAP is up
+#define WIFI_AP_PENDING_TICK_MS (1 * 1000)          // Tick while a deferred AP raise waits on the wired boot windows (Ethernet products only)
 #define WIFI_SCAN_MS_PER_CHANNEL 120                // Per-channel dwell. The default (~300 ms) makes a full scan long enough that a phone on the SoftAP times out waiting
 #define WIFI_SCAN_MAX_RESULTS 30                    // Cap the JSON response; a dense apartment block can see far more than a user will scroll
 #define WIFI_SCAN_RESULTS_TTL_MS (2 * 60 * 1000)    // How long a completed result set is served before it is freed and re-scanned. The driver holds the full set in internal RAM, so it must not be kept for the rest of the uptime
