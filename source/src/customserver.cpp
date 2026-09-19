@@ -171,9 +171,18 @@ namespace CustomServer
         }
         LOG_DEBUG("API mutex created successfully");
 
+        // Route registration makes hundreds of small, permanent allocations (one handler
+        // object plus its URI and std::function per route), all below the PSRAM malloc
+        // threshold, so they would pin tens of KB of internal RAM for good. They are only
+        // walked on the AsyncTCP task while matching a request, which PSRAM is fine for:
+        // lower the threshold for the registration only. It is a global switch, so other
+        // tasks' malloc() calls land in PSRAM too during these few tens of ms - harmless,
+        // anything that needs internal or DMA memory asks for it explicitly via heap_caps.
+        heap_caps_malloc_extmem_enable(WEBSERVER_ROUTE_ALLOC_PSRAM_THRESHOLD);
         _setupMiddleware();
         _serveStaticContent();
         _serveApi();
+        heap_caps_malloc_extmem_enable(CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL);
 
         server.begin();
 
