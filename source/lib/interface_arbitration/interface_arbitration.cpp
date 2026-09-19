@@ -5,6 +5,18 @@
 
 namespace InterfaceArbitration {
 
+// How long the wire must hold before an engaged station is let go.
+static const uint64_t STA_RELEASE_WINDOW_MS =
+    (uint64_t)INTERFACE_ARBITRATION_ETH_HOLDDOWN_MS + (uint64_t)INTERFACE_ARBITRATION_STA_RELEASE_LINGER_MS;
+
+// Saturating, so a clock that went backwards reads as "no time has passed" rather
+// than as a huge elapsed value that would release the station at once. Keeping the
+// station is the safe direction: the device stays reachable on it.
+static uint64_t elapsedSince(uint64_t startMs, uint64_t nowMs) {
+    if (nowMs <= startMs) return 0;
+    return nowMs - startMs;
+}
+
 const char *interfaceName(Interface iface) {
     switch (iface) {
         case Interface::NONE:     return "none";
@@ -20,6 +32,7 @@ void init(Context &context) {
     context.ethHasAddress = false;
     context.staConnected = false;
     context.ethServiceableSinceMs = 0;
+    context.staEngaged = false;
 }
 
 void onEthState(Context &context, bool linkUp, bool hasAddress, uint64_t nowMs) {
@@ -36,11 +49,22 @@ void onEthState(Context &context, bool linkUp, bool hasAddress, uint64_t nowMs) 
         // Every drop restarts the hold-down: a flapping link never accumulates
         // enough continuous uptime to steal the route back from a working STA.
         context.ethServiceableSinceMs = 0;
+        // Losing a wire that was serving is what calls the station in. Engaging
+        // here, not when it connects, is what keeps it wanted through a flap even
+        // if it never manages to associate between two bounces. A wire that never
+        // served (boot, link without address) engages nothing.
+        if (wasServiceable) context.staEngaged = true;
     }
 }
 
 void onStaState(Context &context, bool connected) {
     context.staConnected = connected;
+    // A connected station may be carrying sessions, whatever brought it up (it
+    // beat the wire at boot, or a credential check on a wired product). Only a
+    // real connection counts: an attempt still in flight has nothing to protect,
+    // so it must not delay the release when the wire arrives first.
+    // Never cleared on a disconnect: the release window is timed off the wire.
+    if (connected) context.staEngaged = true;
 }
 
 bool isEthServiceable(const Context &context) {
@@ -76,7 +100,24 @@ static Decision evaluate(const Context &context, uint64_t nowMs) {
 Decision evaluateAndApply(Context &context, uint64_t nowMs) {
     Decision decision = evaluate(context, nowMs);
     if (decision.switchRequired) context.active = decision.preferred;
+
+    // The wire has outlasted the whole release window: the station is no longer
+    // owed a linger. isStaWanted() already reads false past the window, so this
+    // changes nothing on a sane clock; it stops a stale flag from re-wanting the
+    // station on a long-stable wire if the clock ever steps backwards.
+    uint64_t since = context.ethServiceableSinceMs;
+    if (context.staEngaged && since != 0 && elapsedSince(since, nowMs) >= STA_RELEASE_WINDOW_MS) {
+        context.staEngaged = false;
+    }
     return decision;
+}
+
+bool isStaWanted(const Context &context, uint64_t nowMs) {
+    if (!isEthServiceable(context)) return true;
+    if (!context.staEngaged) return false;
+
+    // Serviceable implies a non-zero timestamp (clamped to 1 in onEthState).
+    return elapsedSince(context.ethServiceableSinceMs, nowMs) < STA_RELEASE_WINDOW_MS;
 }
 
 }  // namespace InterfaceArbitration
