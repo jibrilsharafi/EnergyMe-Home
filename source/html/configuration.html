@@ -582,6 +582,9 @@
                 return;
             }
 
+            // The snapshot is missing when the system info request failed at page load; without
+            // it a wired device would silently take the WiFi-only flow below.
+            if (!currentNetwork) await loadCurrentNetwork();
             const wired = isServedOverEthernet();
             const userConfirmed = window.confirm(wired
                 ? "Switch WiFi to '" + ssid + "'? The device stays reachable over Ethernet."
@@ -671,7 +674,8 @@
                             seen[network.ssid] = true;
                             var option = document.createElement("option");
                             option.value = network.ssid;
-                            option.label = network.rssi + " dBm " + signalQualityLabel(network.rssi);
+                            // Firefox shows and filters on the label alone, so it must carry the SSID
+                            option.label = network.ssid + " · " + network.rssi + " dBm " + signalQualityLabel(network.rssi);
                             list.appendChild(option);
                         });
                     finish(Object.keys(seen).length + " networks found. Pick one from the network name field.", 'success');
@@ -730,6 +734,7 @@
         }
 
         async function disconnectWifi() {
+            if (!currentNetwork) await loadCurrentNetwork();
             const wired = isServedOverEthernet();
             const confirm = window.confirm(wired
                 ? "Erase the WiFi credentials? All IP settings go back to DHCP and the device restarts. It stays reachable over Ethernet."
