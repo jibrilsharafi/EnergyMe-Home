@@ -612,6 +612,51 @@ void test_commissioned_device_failing_submitted_credentials_land_in_ap_assist(vo
     TEST_ASSERT_FALSE(isAuthBypassAllowed(context.state, true, false));
 }
 
+// First-boot window: a factory-fresh wired device is commissioned during its first boot.
+// Pulling the cable before the first restart must raise an authenticated AP, not one
+// with the carve-out open.
+void test_wired_commissioning_closes_the_carve_out_within_the_same_boot(void) {
+    Context context;
+    init(context, false, 0, false, true);
+    TEST_ASSERT_EQUAL(State::UNPROVISIONED, context.state);
+
+    onEvent(context, Event::WIRED_COMMISSIONED, kMinute);
+    TEST_ASSERT_TRUE(context.commissioned);
+    TEST_ASSERT_EQUAL(State::AP_ASSIST, context.state);
+    TEST_ASSERT_FALSE(context.apRaised); // The wire serves: the event itself raises nothing
+
+    // Cable pulled later in the same boot.
+    TEST_ASSERT_TRUE(shouldRaiseAp(context, 2 * kMinute, false, false, true));
+    raiseAp(context, 2 * kMinute);
+    TEST_ASSERT_EQUAL(State::AP_ASSIST, context.state);
+    TEST_ASSERT_FALSE(isAuthBypassAllowed(context.state, true, false));
+
+    // And a WiFi reset in that boot must not reopen it either.
+    onEvent(context, Event::CREDENTIALS_CLEARED, 3 * kMinute);
+    TEST_ASSERT_EQUAL(State::AP_ASSIST, context.state);
+}
+
+void test_wired_commissioning_leaves_a_connected_device_alone(void) {
+    Context context = provisionedContext();
+    State before = context.state;
+    onEvent(context, Event::WIRED_COMMISSIONED, kMinute);
+    TEST_ASSERT_TRUE(context.commissioned);
+    TEST_ASSERT_EQUAL(before, context.state);
+    TEST_ASSERT_FALSE(context.apRaised);
+}
+
+void test_wired_commissioning_mid_submission_fails_into_ap_assist(void) {
+    Context context;
+    init(context, false, 0, false, true);
+    onEvent(context, Event::CREDENTIALS_SUBMITTED, kMinute);
+    onEvent(context, Event::WIRED_COMMISSIONED, kMinute);
+    TEST_ASSERT_EQUAL(State::STA_CONNECTING, context.state);
+
+    onEvent(context, Event::STA_ATTEMPT_FAILED, 2 * kMinute);
+    TEST_ASSERT_EQUAL(State::AP_ASSIST, context.state);
+    TEST_ASSERT_FALSE(isAuthBypassAllowed(context.state, true, false));
+}
+
 void test_wired_product_unprovisioned_boot_does_not_raise_in_init(void) {
     Context context;
     init(context, false, 0, false, true);
@@ -885,6 +930,9 @@ int main(int, char **) {
     RUN_TEST(test_commissioned_device_stray_attempt_failure_keeps_ap_assist);
     RUN_TEST(test_commissioned_device_single_failed_submission_stays_recoverable);
     RUN_TEST(test_commissioned_device_failing_submitted_credentials_land_in_ap_assist);
+    RUN_TEST(test_wired_commissioning_closes_the_carve_out_within_the_same_boot);
+    RUN_TEST(test_wired_commissioning_leaves_a_connected_device_alone);
+    RUN_TEST(test_wired_commissioning_mid_submission_fails_into_ap_assist);
     RUN_TEST(test_wired_product_unprovisioned_boot_does_not_raise_in_init);
     RUN_TEST(test_wired_present_holds_raise_until_link_detect_window_ends);
     RUN_TEST(test_link_detect_window_is_inside_dhcp_grace);

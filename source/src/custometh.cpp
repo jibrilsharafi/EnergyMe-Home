@@ -284,6 +284,23 @@ namespace CustomEth
 
             Snapshot snap = _snapshot();
             if (snap.serviceable) {
+                // First proof of being in service on the wire: persist the
+                // commissioning marker so the provisioning state machine never
+                // treats this device as UNPROVISIONED again (the auth carve-out
+                // must not re-arm on a recovery-AP raise months into service).
+                // Written BEFORE the WiFi task is woken below: that task reads the
+                // marker on the wake-up and closes the carve-out for this boot too.
+                // One attempt per boot even on write failure - no per-tick NVS churn.
+                if (!commissionAttempted && !isCommissioned()) {
+                    commissionAttempted = true;
+                    Preferences prefs;
+                    if (prefs.begin(PREFERENCES_NAMESPACE_ETH, false)) {
+                        prefs.putBool(ETH_COMMISSIONED_KEY, true);
+                        prefs.end();
+                        LOG_INFO("Device commissioned over Ethernet - marker persisted");
+                    }
+                }
+
                 if (!serviceableAnnounced) {
                     serviceableAnnounced = true;
                     _logLinkDetails();
@@ -297,23 +314,6 @@ namespace CustomEth
                 // rising edge. Idempotent on devices where WiFi already started it.
                 if (!mdnsEnsured) {
                     mdnsEnsured = CustomWifi::ensureMdnsStarted();
-                }
-
-                // First proof of being in service on the wire: persist the
-                // commissioning marker so the provisioning state machine never
-                // treats this device as UNPROVISIONED again (the auth carve-out
-                // must not re-arm on a recovery-AP raise months into service).
-                // Takes effect from the next provisioning init; within THIS first
-                // boot the carve-out window matches today's unprovisioned window.
-                // One attempt per boot even on write failure - no per-tick NVS churn.
-                if (!commissionAttempted && !isCommissioned()) {
-                    commissionAttempted = true;
-                    Preferences prefs;
-                    if (prefs.begin(PREFERENCES_NAMESPACE_ETH, false)) {
-                        prefs.putBool(ETH_COMMISSIONED_KEY, true);
-                        prefs.end();
-                        LOG_INFO("Device commissioned over Ethernet - marker persisted");
-                    }
                 }
 
                 // Backstop clear: the static config has held the interface serviceable
