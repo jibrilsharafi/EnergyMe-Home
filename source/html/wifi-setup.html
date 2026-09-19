@@ -72,7 +72,7 @@
 
 <body>
     <div class="header">EnergyMe</div>
-    <div class="subheader">Home</div>
+    <div class="subheader" id="productSubheader">Home</div>
 
     <!-- Landing -->
     <div id="welcome" class="section-box setup-box" style="display:none;">
@@ -88,7 +88,7 @@
     <div id="device" class="section-box setup-box" style="display:none;">
         <h2>Device</h2>
         <dl style="margin:0;">
-            <div class="kv"><dt>Model</dt><dd>EnergyMe - Home</dd></div>
+            <div class="kv"><dt>Model</dt><dd id="d-model">EnergyMe - Home</dd></div>
             <div class="kv"><dt>Device ID</dt><dd id="d-id">-</dd></div>
             <div class="kv"><dt>Firmware</dt><dd id="d-fw">-</dd></div>
             <div class="kv"><dt>Running for</dt><dd id="d-up">-</dd></div>
@@ -260,6 +260,10 @@
             function applyDeviceInfo(d) {
                 if (!d) return;
                 if (d.hostname) hostname = d.hostname;
+                if (d.productName) {
+                    document.getElementById('productSubheader').textContent = d.productName;
+                    document.getElementById('d-model').textContent = 'EnergyMe - ' + d.productName;
+                }
                 document.getElementById('d-id').textContent = d.deviceId || '-';
                 document.getElementById('d-fw').textContent = d.firmwareVersion || '-';
                 document.getElementById('d-up').textContent = humanUptime(d.uptime);

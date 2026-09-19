@@ -1227,7 +1227,9 @@ namespace CustomServer
             // straight back to the gate - so offering it there would be a dead end.
             doc["apOrigin"] = _isApOrigin(request);
             doc["username"] = WEBSERVER_DEFAULT_USERNAME;
-            
+            // For the pages that show the product name before (or without) a system-info fetch.
+            doc["productName"] = PRODUCT_NAME;
+
             _sendJsonResponse(request, doc);
         });
     }
@@ -2234,6 +2236,7 @@ namespace CustomServer
             // any of the authenticated endpoints are reachable. Nothing sensitive: the
             // device id is already the SoftAP's SSID suffix.
             doc["deviceId"] = DEVICE_ID;
+            doc["productName"] = PRODUCT_NAME;
             doc["firmwareVersion"] = FIRMWARE_BUILD_VERSION;
             doc["uptime"] = millis64();
 
