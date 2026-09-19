@@ -2411,8 +2411,12 @@ namespace CustomServer
         });
 
         // Set network configuration (full PUT or partial PATCH). The device restarts to apply.
+        // Exact match, here and on every JSON handler whose URL has sub-routes: a plain string
+        // also matches "<url>/...", so this handler used to take POST <url>/reset whenever the
+        // request carried a JSON content type (the web UI always sends one) and answer 400 for
+        // the missing body, before the reset route registered after it was ever consulted.
         static AsyncCallbackJsonWebHandler *setNetworkConfigHandler = new AsyncCallbackJsonWebHandler(
-            "/api/v1/network/config",
+            AsyncURIMatcher::exact("/api/v1/network/config"),
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
                 bool isPartialUpdate = _isPartialUpdate(request);
@@ -2469,7 +2473,7 @@ namespace CustomServer
 
         // Set Ethernet configuration (full PUT or partial PATCH). The device restarts to apply.
         static AsyncCallbackJsonWebHandler *setEthConfigHandler = new AsyncCallbackJsonWebHandler(
-            "/api/v1/network/ethernet/config",
+            AsyncURIMatcher::exact("/api/v1/network/ethernet/config"),
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
                 if (!globalHwProfile->hasEthernet) {
@@ -3092,7 +3096,7 @@ namespace CustomServer
 
         // Set ADE7953 configuration (PUT/PATCH)
         static AsyncCallbackJsonWebHandler *setAde7953ConfigHandler = new AsyncCallbackJsonWebHandler(
-            "/api/v1/ade7953/config",
+            AsyncURIMatcher::exact("/api/v1/ade7953/config"),
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
                 bool isPartialUpdate = _isPartialUpdate(request);
@@ -3459,7 +3463,7 @@ namespace CustomServer
 
         // Set energy values for a specific channel
         static AsyncCallbackJsonWebHandler *setEnergyValuesHandler = new AsyncCallbackJsonWebHandler(
-            "/api/v1/ade7953/energy",
+            AsyncURIMatcher::exact("/api/v1/ade7953/energy"),
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
                 if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_ADE7953_ENERGY)) return;
@@ -3522,7 +3526,7 @@ namespace CustomServer
         });
 
         static AsyncCallbackJsonWebHandler *setCustomMqttHandler = new AsyncCallbackJsonWebHandler(
-            "/api/v1/custom-mqtt/config",
+            AsyncURIMatcher::exact("/api/v1/custom-mqtt/config"),
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {                
                 bool isPartialUpdate = _isPartialUpdate(request);
@@ -3737,7 +3741,7 @@ namespace CustomServer
 
         // Set InfluxDB configuration
         static AsyncCallbackJsonWebHandler *setInfluxDbHandler = new AsyncCallbackJsonWebHandler(
-            "/api/v1/influxdb/config",
+            AsyncURIMatcher::exact("/api/v1/influxdb/config"),
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
                 bool isPartialUpdate = _isPartialUpdate(request);
