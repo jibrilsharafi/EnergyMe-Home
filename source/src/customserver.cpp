@@ -3518,8 +3518,9 @@ namespace CustomServer
             JsonDocument doc(&allocator);
             
             // Add runtime status information
-            char statusBuffer[STATUS_BUFFER_SIZE];
-            char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+            // Zeroed: getRuntimeStatus() leaves them untouched while the module is not set up
+            char statusBuffer[STATUS_BUFFER_SIZE] = "";
+            char timestampBuffer[TIMESTAMP_BUFFER_SIZE] = "";
             CustomMqtt::getRuntimeStatus(statusBuffer, sizeof(statusBuffer), timestampBuffer, sizeof(timestampBuffer));
             doc["status"] = statusBuffer;
             doc["statusTimestamp"] = timestampBuffer;
@@ -3733,8 +3734,9 @@ namespace CustomServer
             JsonDocument doc(&allocator);
             
             // Add runtime status information
-            char statusBuffer[STATUS_BUFFER_SIZE];
-            char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+            // Zeroed: getRuntimeStatus() leaves them untouched while the module is not set up
+            char statusBuffer[STATUS_BUFFER_SIZE] = "";
+            char timestampBuffer[TIMESTAMP_BUFFER_SIZE] = "";
             InfluxDbClient::getRuntimeStatus(statusBuffer, sizeof(statusBuffer), timestampBuffer, sizeof(timestampBuffer));
             doc["status"] = statusBuffer;
             doc["statusTimestamp"] = timestampBuffer;
