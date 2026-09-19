@@ -26,6 +26,12 @@
 
 // Serial
 #define SERIAL_BAUDRATE 115200 // Most common baudrate for ESP32
+// HWCDC blocks up to this long per write (per CHAR on the core-log path) when a USB host is attached
+// but not draining the port. Core default is 100 ms: in dev builds the core's pre-setup chip report
+// alone then takes ~280 s (measured: 292 s to first Ethernet reachability after a USB reset with the
+// COM port left closed, vs 7 s with a reader). Applied from getArduinoSetupWaitTime_ms() in main.cpp.
+// Must be >= 2: at 0 or 1 the core retry counter marks the port disconnected on healthy multi-chunk writes.
+#define SERIAL_TX_TIMEOUT_MS 3
 
 // While loops
 #define MAX_LOOP_ITERATIONS 1000 // The maximum number of iterations for any while loop to avoid infinite loops
