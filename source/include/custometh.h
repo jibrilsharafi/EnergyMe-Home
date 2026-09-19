@@ -81,6 +81,14 @@ struct EthConfiguration {
 
 namespace CustomEth
 {
+    // Registers the Ethernet event handler and creates the arbitration state. Call it
+    // BEFORE CustomWifi::begin(): the core keeps its event callbacks in a plain vector with
+    // no lock, so adding one while the WiFi station is already posting events can reallocate
+    // it under the event task (same rule as the WiFi handlers). It also lets the arbitration
+    // see a station that connects before begin() runs. No-op on products without Ethernet;
+    // begin() calls it itself if nobody did.
+    bool registerEvents();
+
     // Brings up the W5500 and the eth task. Returns true on products without
     // Ethernet (nothing to do) and false only on an actual bring-up failure.
     bool begin();

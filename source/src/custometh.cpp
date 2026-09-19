@@ -29,6 +29,7 @@ namespace CustomEth
     static InterfaceArbitration::Context _arbCtx;
 
     static bool _enabled = false;          // Profile has Ethernet and begin() ran
+    static bool _eventsRegistered = false;
     // _staticIntent is latched from the loaded config BEFORE ETH.begin() starts the
     // driver: ARDUINO_EVENT_ETH_CONNECTED can fire before _applyStaticConfiguration()
     // runs (fast PHY renegotiation on warm reboot), and the backstop must not miss
@@ -93,6 +94,21 @@ namespace CustomEth
         if (err != ESP_OK) LOG_WARNING("Could not set the universal Ethernet MAC (%s) - keeping the core default", esp_err_to_name(err));
     }
 
+    bool registerEvents()
+    {
+        if (!globalHwProfile->hasEthernet) return true;
+        if (_eventsRegistered) return true;
+
+        if (!createMutexIfNeeded(&_ctxMutex)) return false;
+        InterfaceArbitration::init(_arbCtx);
+
+        // The handler runs in the core's Network event task: it only copies state under
+        // the mutex and pokes the eth task, which does the actual work.
+        Network.onEvent(_onNetworkEvent);
+        _eventsRegistered = true;
+        return true;
+    }
+
     bool begin()
     {
         if (!globalHwProfile->hasEthernet) {
@@ -106,15 +122,9 @@ namespace CustomEth
 
         LOG_DEBUG("Starting Ethernet (W5500)...");
 
-        if (!createMutexIfNeeded(&_ctxMutex)) return false;
-        InterfaceArbitration::init(_arbCtx);
+        if (!registerEvents()) return false;
 
         _loadConfiguration();
-
-        // Register before ETH.begin() so no event can be missed. The handler runs
-        // in the core's Network event task: it only copies state under the mutex
-        // and pokes the eth task, which does the actual work.
-        Network.onEvent(_onNetworkEvent);
 
         // Latch static intent before the driver starts so the first link-up event
         // (which can beat _applyStaticConfiguration on a warm reboot) counts the
