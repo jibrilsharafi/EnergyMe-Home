@@ -1625,8 +1625,9 @@ paths:
         '400':
           description: >
             Invalid Ethernet configuration. With a static IP the address, gateway and subnet
-            mask must be valid and non-zero, and the address must not fall inside
-            172.31.42.0/24, which is reserved for the recovery access point.
+            mask must be valid and non-zero, the mask must be contiguous, the gateway must be
+            inside the address's network, and the address must not fall inside 172.31.42.0/24,
+            which is reserved for the recovery access point.
           content:
             application/json:
               schema:
@@ -1666,8 +1667,9 @@ paths:
         '400':
           description: >
             Invalid Ethernet configuration. With a static IP the address, gateway and subnet
-            mask must be valid and non-zero, and the address must not fall inside
-            172.31.42.0/24, which is reserved for the recovery access point.
+            mask must be valid and non-zero, the mask must be contiguous, the gateway must be
+            inside the address's network, and the address must not fall inside 172.31.42.0/24,
+            which is reserved for the recovery access point.
           content:
             application/json:
               schema:
