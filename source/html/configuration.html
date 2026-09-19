@@ -282,13 +282,13 @@
     </div>
 
     <div class="section-box">
-        <h2>Network Configuration</h2>
-        <p><i>Advanced network settings. By default the device uses DHCP. Changing these requires a restart to take effect.</i></p>
+        <h2>WiFi Configuration</h2>
+        <p><i>Advanced WiFi network settings. By default the device uses DHCP. Changing these requires a restart to take effect.</i></p>
 
         <!-- Current network (live, read-only) so the user knows the starting point -->
         <div id="currentNetworkBox"
             style="background-color: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px 15px; margin: 12px 0;">
-            <div style="font-weight: 600; margin-bottom: 8px;">Current network</div>
+            <div style="font-weight: 600; margin-bottom: 8px;">Current WiFi network</div>
             <div style="display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; font-size: 0.9em;">
                 <span style="color: #666;">Status</span><span id="curStatus">Loading...</span>
                 <span style="color: #666;">Mode</span><span id="curMode">-</span>
@@ -1130,7 +1130,7 @@
                 if (dns2 && !isValidIpv4(dns2)) { showStatus('Secondary DNS is not a valid IP address.', 'error'); return; }
             }
 
-            const userConfirmed = window.confirm("Apply network configuration? The device will restart and may be reachable at a different address.");
+            const userConfirmed = window.confirm("Apply WiFi configuration? The device will restart and may be reachable at a different address.");
             if (!userConfirmed) return;
 
             const button = document.getElementById("setNetworkConfigButton");
@@ -1138,7 +1138,7 @@
             button.classList.add('loading');
 
             try {
-                showStatus("Applying network configuration...", 'info');
+                showStatus("Applying WiFi configuration...", 'info');
 
                 await energyApi.setNetworkConfig({
                     useStaticIp: useStaticIp,
@@ -1160,7 +1160,7 @@
             } catch (error) {
                 button.disabled = false;
                 button.classList.remove('loading');
-                showStatus("Error setting network configuration: " + error.message, 'error');
+                showStatus("Error setting WiFi configuration: " + error.message, 'error');
             }
         }
 
