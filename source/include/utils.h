@@ -255,6 +255,11 @@ inline const char* getResetReasonString(esp_reset_reason_t reason) {
         case ESP_RST_DEEPSLEEP: return "Deep sleep";
         case ESP_RST_BROWNOUT: return "Brownout";
         case ESP_RST_SDIO: return "SDIO";
+        case ESP_RST_USB: return "USB peripheral";
+        case ESP_RST_JTAG: return "JTAG";
+        case ESP_RST_EFUSE: return "eFuse error";
+        case ESP_RST_PWR_GLITCH: return "Power glitch";
+        case ESP_RST_CPU_LOCKUP: return "CPU lockup";
         default: return "Undefined";
     }
 }
