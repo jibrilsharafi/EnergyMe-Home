@@ -63,7 +63,7 @@ namespace CustomMqtt
     
     // Task management
     static void _customMqttTask(void* parameter);
-    static void _startTask();
+    static bool _startTask();
     static void _stopTask();
 
     // Utils
@@ -141,7 +141,12 @@ namespace CustomMqtt
 
         // A disabled integration holds no task: its stack is internal RAM. Every config change
         // comes through here, so enabling it later starts the task without a restart.
-        if (config.enabled) _startTask();
+        if (config.enabled && !_startTask()) {
+            // Saved as enabled but not running: say so instead of answering success
+            snprintf(_status, sizeof(_status), "Failed to start the task (low memory) - save the configuration again");
+            _statusTimestampUnix = CustomTime::getUnixTime();
+            return false;
+        }
 
         LOG_DEBUG("Custom MQTT configuration set");
         return true;
@@ -258,11 +263,11 @@ namespace CustomMqtt
     // Private function implementations
     // =========================================================
 
-    static void _startTask()
+    static bool _startTask()
     {
         if (_customMqttTaskHandle != nullptr) {
             LOG_DEBUG("Custom MQTT task is already running");
-            return;
+            return true;
         }
 
         LOG_DEBUG("Starting Custom MQTT task with %d bytes stack", CUSTOM_MQTT_TASK_STACK_SIZE);
@@ -278,9 +283,11 @@ namespace CustomMqtt
         if (result != pdPASS) {
             LOG_ERROR("Failed to create Custom MQTT task");
             _customMqttTaskHandle = nullptr;
-        } else {
-            LOG_DEBUG("Custom MQTT task created");
+            return false;
         }
+
+        LOG_DEBUG("Custom MQTT task created");
+        return true;
     }
 
     static void _stopTask() { 
