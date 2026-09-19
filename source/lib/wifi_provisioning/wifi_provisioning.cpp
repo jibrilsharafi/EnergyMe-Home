@@ -52,7 +52,7 @@ const char *stateName(State state) {
     return STATE_NAMES[(uint8_t)state];
 }
 
-void init(Context &context, bool hasCredentials, uint64_t nowMs, bool commissioned) {
+void init(Context &context, bool hasCredentials, uint64_t nowMs, bool commissioned, bool wiredPresent) {
     context.hasCredentials = hasCredentials;
     context.commissioned = commissioned;
     context.staRetryAttempts = 0;
@@ -63,14 +63,22 @@ void init(Context &context, bool hasCredentials, uint64_t nowMs, bool commission
 
     // A commissioned device (Ethernet has proven it in service at least once) is
     // provisioned even with no WiFi credentials: UNPROVISIONED arms the AP auth
-    // carve-out, and an in-service device has plenty to protect. With nothing to
-    // associate to, the STA attempts fail and settle into AP_ASSIST - recovery AP
-    // up, full authentication - exactly the wire-loss behavior the Pro needs.
-    if (hasCredentials || commissioned) {
+    // carve-out, and an in-service device has plenty to protect. It has nothing to
+    // associate to, so the caller never starts an STA attempt and nothing would ever
+    // feed STA_ATTEMPT_FAILED: it starts directly in AP_ASSIST with the AP NOT raised,
+    // and shouldRaiseAp() raises it (full auth) exactly while the wire is unreachable -
+    // at boot after the wired windows, and again on any later wire loss. Starting in
+    // STA_CONNECTING left it there forever: once the wire-driven teardown lowered the
+    // boot AP, a pulled cable meant no interface and no AP until a power cycle.
+    if (hasCredentials) {
         context.state = State::STA_CONNECTING;
+    } else if (commissioned) {
+        context.state = State::AP_ASSIST;
     } else {
         context.state = State::UNPROVISIONED;
-        raiseAp(context, nowMs);
+        // With a wired interface the raise belongs to shouldRaiseAp(): a cabled
+        // zero-touch first boot must never blip an AP.
+        if (!wiredPresent) raiseAp(context, nowMs);
     }
 }
 
@@ -134,6 +142,10 @@ State onEvent(Context &context, Event event, uint64_t nowMs) {
             } else if (context.apRaiseTriggers >= WIFI_PROVISIONING_AP_RAISE_THRESHOLD) {
                 context.state = State::AP_ASSIST;
                 if (!context.apRaised) raiseAp(context, nowMs);
+            } else if (context.state == State::AP_ASSIST) {
+                // Already "cannot associate" (see STA_LOST). A commissioned device with
+                // no credentials sits here below the threshold; demoting it on a stray
+                // failure would strand it in a state nothing retries out of.
             } else {
                 context.state = State::STA_CONNECTING;
             }
@@ -213,11 +225,15 @@ bool shouldTearDownAp(const Context &context, uint64_t nowMs, bool wiredReachabl
            elapsedSince(context.graceStartedAtMs, nowMs) >= WIFI_PROVISIONING_GRACE_MS;
 }
 
-bool shouldRaiseAp(const Context &context, uint64_t nowMs, bool wiredReachable, bool wiredLinkUp) {
+bool shouldRaiseAp(const Context &context, uint64_t nowMs, bool wiredReachable, bool wiredLinkUp, bool wiredPresent) {
     if (context.apRaised) return false;
 
     // Wire-reachable is reachable: no AP.
     if (wiredReachable) return false;
+
+    // The wired driver starts after this state machine and reports link only at its
+    // first PHY poll: until then "link down" just means "not known yet".
+    if (wiredPresent && nowMs < WIFI_PROVISIONING_WIRED_LINK_DETECT_MS) return false;
 
     // Zero-touch first boot: cable in, DHCP still negotiating. Hold the raise back
     // briefly (boot-relative window) so a normally-leasing network never sees an AP

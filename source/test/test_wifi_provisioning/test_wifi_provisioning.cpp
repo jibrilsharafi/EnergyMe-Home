@@ -549,13 +549,44 @@ void test_commissioned_device_without_credentials_is_not_unprovisioned(void) {
     TEST_ASSERT_FALSE(context.apRaised);
 }
 
+// Regression (found on the first Pro bring-up): the firmware never starts an STA
+// attempt without credentials, so nothing feeds STA_ATTEMPT_FAILED. The commissioned
+// device must reach its recovery AP through shouldRaiseAp() alone - at boot and again
+// after a wire-driven teardown - and never through UNPROVISIONED, which would hand the
+// credentials carve-out to anyone in radio range.
 void test_commissioned_device_wire_loss_lands_in_ap_assist_with_auth(void) {
     Context context;
-    init(context, false, 0, true);
+    init(context, false, 0, true, true);
+    TEST_ASSERT_EQUAL(State::AP_ASSIST, context.state);
+    TEST_ASSERT_FALSE(context.apRaised);
 
-    // No credentials to associate with: every attempt fails. The device must
-    // settle into AP_ASSIST (recovery AP, full auth) - never UNPROVISIONED,
-    // which would hand the credentials carve-out to anyone in radio range.
+    TEST_ASSERT_FALSE(shouldRaiseAp(context, kMinute, true, true, true));      // on the wire
+    TEST_ASSERT_TRUE(shouldRaiseAp(context, 2 * kMinute, false, false, true)); // cable pulled
+    raiseAp(context, 2 * kMinute);
+    TEST_ASSERT_FALSE(isAuthBypassAllowed(context.state, true, false));        // full auth
+
+    TEST_ASSERT_TRUE(shouldTearDownAp(context, 3 * kMinute, true));            // cable back
+    tearDownAp(context, 3 * kMinute);
+    TEST_ASSERT_EQUAL(State::AP_ASSIST, context.state);
+    TEST_ASSERT_TRUE(shouldRaiseAp(context, 4 * kMinute, false, false, true)); // and again
+}
+
+void test_commissioned_device_stray_attempt_failure_keeps_ap_assist(void) {
+    Context context;
+    init(context, false, 0, true, true);
+
+    // Below the raise threshold a failure used to demote to STA_CONNECTING, a state
+    // nothing retries out of when there are no credentials.
+    onEvent(context, Event::STA_ATTEMPT_FAILED, kMinute);
+    TEST_ASSERT_EQUAL(State::AP_ASSIST, context.state);
+    TEST_ASSERT_TRUE(shouldRaiseAp(context, 2 * kMinute, false, false, true));
+}
+
+void test_commissioned_device_failing_submitted_credentials_land_in_ap_assist(void) {
+    Context context;
+    init(context, false, 0, true, true);
+    onEvent(context, Event::CREDENTIALS_SUBMITTED, kMinute);
+
     for (int i = 0; i < WIFI_PROVISIONING_AP_RAISE_THRESHOLD; i++) {
         onEvent(context, Event::STA_ATTEMPT_FAILED, kMinute);
         TEST_ASSERT_TRUE(context.state != State::UNPROVISIONED);
@@ -563,6 +594,44 @@ void test_commissioned_device_wire_loss_lands_in_ap_assist_with_auth(void) {
     TEST_ASSERT_EQUAL(State::AP_ASSIST, context.state);
     TEST_ASSERT_TRUE(context.apRaised);
     TEST_ASSERT_FALSE(isAuthBypassAllowed(context.state, true, false));
+}
+
+void test_wired_product_unprovisioned_boot_does_not_raise_in_init(void) {
+    Context context;
+    init(context, false, 0, false, true);
+    TEST_ASSERT_EQUAL(State::UNPROVISIONED, context.state);
+    TEST_ASSERT_FALSE(context.apRaised);
+}
+
+void test_wired_present_holds_raise_until_link_detect_window_ends(void) {
+    Context context;
+    init(context, false, 0, false, true);
+    TEST_ASSERT_FALSE(shouldRaiseAp(context, WIFI_PROVISIONING_WIRED_LINK_DETECT_MS - 1, false, false, true));
+    // No link by the end of the window: no cable, raise.
+    TEST_ASSERT_TRUE(shouldRaiseAp(context, WIFI_PROVISIONING_WIRED_LINK_DETECT_MS, false, false, true));
+    // Link seen: the DHCP grace takes over...
+    TEST_ASSERT_FALSE(shouldRaiseAp(context, WIFI_PROVISIONING_WIRED_LINK_DETECT_MS, false, true, true));
+    TEST_ASSERT_TRUE(shouldRaiseAp(context, WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS, false, true, true));
+    // ...and a lease means no AP at all.
+    TEST_ASSERT_FALSE(shouldRaiseAp(context, WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS, true, true, true));
+}
+
+void test_link_detect_window_is_inside_dhcp_grace(void) {
+    TEST_ASSERT_TRUE(WIFI_PROVISIONING_WIRED_LINK_DETECT_MS < WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS);
+}
+
+void test_home_init_is_unchanged_by_wired_parameter_default(void) {
+    Context a, b;
+    init(a, false, 5);
+    init(b, false, 5, false, false);
+    TEST_ASSERT_EQUAL(a.state, b.state);
+    TEST_ASSERT_TRUE(a.apRaised && b.apRaised);
+
+    // The link-detect hold-back must never apply without a wired interface.
+    Context c;
+    init(c, false, 0);
+    tearDownAp(c, 1);
+    TEST_ASSERT_TRUE(shouldRaiseAp(c, 2));
 }
 
 void test_commissioned_device_credentials_cleared_stays_provisioned(void) {
@@ -780,6 +849,12 @@ int main(int, char **) {
     RUN_TEST(test_avoiding_skips_malformed_comparison_prefixes);
     RUN_TEST(test_commissioned_device_without_credentials_is_not_unprovisioned);
     RUN_TEST(test_commissioned_device_wire_loss_lands_in_ap_assist_with_auth);
+    RUN_TEST(test_commissioned_device_stray_attempt_failure_keeps_ap_assist);
+    RUN_TEST(test_commissioned_device_failing_submitted_credentials_land_in_ap_assist);
+    RUN_TEST(test_wired_product_unprovisioned_boot_does_not_raise_in_init);
+    RUN_TEST(test_wired_present_holds_raise_until_link_detect_window_ends);
+    RUN_TEST(test_link_detect_window_is_inside_dhcp_grace);
+    RUN_TEST(test_home_init_is_unchanged_by_wired_parameter_default);
     RUN_TEST(test_commissioned_device_credentials_cleared_stays_provisioned);
     RUN_TEST(test_uncommissioned_credentials_cleared_still_reopens_provisioning);
     RUN_TEST(test_wired_reachable_suppresses_ap_raise);
