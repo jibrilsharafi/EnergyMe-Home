@@ -9,6 +9,7 @@
 #include <esp_system.h>
 #include <esp_wifi.h>
 #include <ESPmDNS.h>
+#include <lwip/dns.h>
 #include <mbedtls/sha256.h>
 #include <DNSServer.h>
 #include <WiFi.h>
@@ -123,6 +124,15 @@ struct WifiConfiguration {
 #define TELEMETRY_TIMEOUT_MS (1 * 1000) // Very short timeout since we don't really care about the response
 #define TELEMETRY_JSON_BUFFER_SIZE 512 // Sufficient for {hashed_device_id, firmware_version, sketch_md5}
 
+// One entry of lwIP's resolver list as a raw IPAddress dword, 0 when empty or not IPv4. The
+// list is global (not per netif). A plain memory read, so it is safe from an event callback,
+// where the esp_netif getters behind dnsIP() are not.
+static inline uint32_t lwipDnsServer(uint8_t index)
+{
+    const ip_addr_t *server = dns_getserver(index);
+    return (server != nullptr && IP_IS_V4(server)) ? ip_2_ip4(server)->addr : 0;
+}
+
 namespace CustomWifi
 {
     bool begin();
@@ -175,6 +185,10 @@ namespace CustomWifi
     bool testConnectivity(); // Test actual network connectivity (check gateway and DNS)
     void forceReconnect();   // Force immediate WiFi reconnection
     void notifyWiredStateChanged(); // Wake the WiFi task so the AP/LED follow an Ethernet change at once
+
+    // DNS servers the station last brought (lease or static config), 0.0.0.0 when unknown.
+    // Lock-free. lwIP's resolver list is global, so the live WiFi.STA.dnsIP() cannot answer this.
+    void getStaDnsServers(IPAddress &dns1, IPAddress &dns2);
 
     // Starts the mDNS responder if it is not already running. The WiFi connect path
     // does this itself; an Ethernet-only device (Pro with no credentials) has no

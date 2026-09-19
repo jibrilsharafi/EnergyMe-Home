@@ -47,6 +47,12 @@ namespace CustomEth
     static volatile bool _commissioned = false;
     static volatile bool _commissionedNvsChecked = false;
 
+    // DNS servers the wire brought (lease or static config), as raw IPAddress dwords. lwIP
+    // keeps ONE resolver list for every netif, so ETH.dnsIP() reads whatever the last lease
+    // on ANY interface wrote. Captured in the GOT_IP event, right after the wire's own lease
+    // wrote the list.
+    static volatile uint32_t _ethDns[2] = {0, 0};
+
     #define ETH_MAX_INTERFACE_CALLBACKS 6
     static InterfaceChangeCallback _callbacks[ETH_MAX_INTERFACE_CALLBACKS] = {};
     static size_t _callbackCount = 0;
@@ -65,6 +71,7 @@ namespace CustomEth
     static void _updateEthState(bool linkUp, bool hasAddress);
     static void _evaluateArbitration();
     static void _applyDnsForActiveInterface(InterfaceArbitration::Interface active);
+    static void _keepDnsOnActiveInterface(InterfaceArbitration::Interface active);
     static void _notifyEthTask();
 
     // The core gives SPI Ethernet esp_derive_local_mac(base): a locally administered address
@@ -277,6 +284,12 @@ namespace CustomEth
                 _updateEthState(true, ETH.hasIP());
                 break;
             case ARDUINO_EVENT_ETH_GOT_IP:
+                // Plain lwIP reads, no esp_netif call from this task. A static config
+                // filled the cache itself.
+                if (!_staticApplied) {
+                    _ethDns[0] = lwipDnsServer(0);
+                    _ethDns[1] = lwipDnsServer(1);
+                }
                 _updateEthState(true, true);
                 break;
             case ARDUINO_EVENT_ETH_LOST_IP:
@@ -337,6 +350,7 @@ namespace CustomEth
             _evaluateArbitration();
 
             Snapshot snap = _snapshot();
+            _keepDnsOnActiveInterface(snap.active);
             if (snap.serviceable) {
                 // First proof of being in service on the wire: persist the
                 // commissioning marker so the provisioning state machine never
@@ -429,25 +443,44 @@ namespace CustomEth
         }
     }
 
+    // False when nothing is known for this interface (no lease seen yet).
+    static bool _dnsServersOf(InterfaceArbitration::Interface iface, IPAddress &dns1, IPAddress &dns2)
+    {
+        if (iface == InterfaceArbitration::Interface::ETHERNET) {
+            dns1 = IPAddress(_ethDns[0]);
+            dns2 = IPAddress(_ethDns[1]);
+        } else if (iface == InterfaceArbitration::Interface::WIFI_STATION) {
+            CustomWifi::getStaDnsServers(dns1, dns2);
+        } else {
+            return false;
+        }
+        return dns1 != IPAddress(0, 0, 0, 0);
+    }
+
+    // Both interfaces stay up, and every lease the OTHER one takes or renews rewrites the
+    // resolver list with its own servers, with no event and no route switch to hang a
+    // re-apply on. So the list is checked against the active interface on every tick.
+    static void _keepDnsOnActiveInterface(InterfaceArbitration::Interface active)
+    {
+        IPAddress dns1, dns2;
+        if (!_dnsServersOf(active, dns1, dns2)) return;
+        if (lwipDnsServer(0) == (uint32_t)dns1) return;
+        _applyDnsForActiveInterface(active);
+    }
+
     // lwIP's DNS server list is global, not per-netif: after a failover the
     // resolver keeps the OLD interface's servers (fatal when a static ETH DNS
-    // sits on a now-unreachable segment). Re-apply the new interface's servers.
+    // sits on a now-unreachable segment). Put back what the new interface brought:
+    // reading ETH.dnsIP() / WiFi.STA.dnsIP() would only return that same global list.
     static void _applyDnsForActiveInterface(InterfaceArbitration::Interface active)
     {
-        IPAddress dns1(0, 0, 0, 0), dns2(0, 0, 0, 0);
-        if (active == InterfaceArbitration::Interface::ETHERNET) {
-            dns1 = ETH.dnsIP(0);
-            dns2 = ETH.dnsIP(1);
-        } else if (active == InterfaceArbitration::Interface::WIFI_STATION) {
-            dns1 = WiFi.STA.dnsIP(0);
-            dns2 = WiFi.STA.dnsIP(1);
-        } else {
-            return;
-        }
+        IPAddress dns1, dns2;
+        if (!_dnsServersOf(active, dns1, dns2)) return; // Leave the list as it is
 
+        // Both slots, an empty secondary included: one left over from the other
+        // interface may not be reachable from this one.
         for (int i = 0; i < 2; i++) {
             IPAddress dns = (i == 0) ? dns1 : dns2;
-            if (dns == IPAddress(0, 0, 0, 0)) continue;
             ip_addr_t addr = IPADDR4_INIT((uint32_t)dns); // Fully initialized - no garbage union bytes
             dns_setserver((u8_t)i, &addr);
         }
@@ -670,6 +703,8 @@ namespace CustomEth
 
         if (ETH.config(ip, gateway, subnet, dns1, dns2)) {
             _staticApplied = true;
+            _ethDns[0] = (uint32_t)dns1;
+            _ethDns[1] = (uint32_t)dns2;
             LOG_INFO("Static Ethernet IP configured: %s (gateway: %s, attempt %u)", config.ip, config.gateway, _bootFailsAtBoot + 1);
         } else {
             LOG_ERROR("Failed to apply static Ethernet IP configuration - falling back to DHCP");
