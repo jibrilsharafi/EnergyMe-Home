@@ -2037,6 +2037,8 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Success'
+        '503':
+          description: The log file is busy (a log rotation is in progress). Retry in a few seconds.
 
   /api/v1/logs-udp-destination:
     get:
