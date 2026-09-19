@@ -7,6 +7,7 @@
 #include <Preferences.h>
 #include <SPI.h>
 #include <WiFi.h>
+#include <esp_mac.h>
 #include <lwip/dns.h>
 
 #include "customwifi.h"
@@ -65,6 +66,33 @@ namespace CustomEth
     static void _applyDnsForActiveInterface(InterfaceArbitration::Interface active);
     static void _notifyEthTask();
 
+    // The core gives SPI Ethernet esp_derive_local_mac(base): a locally administered address
+    // (routers and NAC treat those as "private/randomized"), and on the S3, which owns two
+    // universal addresses per chip, the very same value the SoftAP uses. Take the chip's
+    // second universal address instead (base + 1, no carry, exactly as esp_read_mac() does):
+    // globally unique, Espressif-assigned, and otherwise only claimed by Bluetooth, which
+    // this firmware never starts.
+    // The netif glue copied the driver MAC when ETH.begin() attached it, so BOTH must change:
+    // with only the driver updated the W5500 filters on the new address while lwIP still
+    // sends the old one, and DHCP never completes (seen on the bench: link up, no lease).
+    static void _applyUniversalMac()
+    {
+        uint8_t previousMac[ETH_ADDR_LEN];
+        uint8_t mac[ETH_ADDR_LEN];
+        esp_err_t err = esp_eth_ioctl(ETH.handle(), ETH_CMD_G_MAC_ADDR, previousMac);
+        if (err == ESP_OK) err = esp_efuse_mac_get_default(mac);
+        if (err == ESP_OK) {
+            mac[ETH_ADDR_LEN - 1] += 1;
+            err = esp_eth_ioctl(ETH.handle(), ETH_CMD_S_MAC_ADDR, mac);
+        }
+        if (err == ESP_OK) {
+            err = esp_netif_set_mac(ETH.netif(), mac);
+            // Never leave the two halves disagreeing: put the driver back on the old address.
+            if (err != ESP_OK) esp_eth_ioctl(ETH.handle(), ETH_CMD_S_MAC_ADDR, previousMac);
+        }
+        if (err != ESP_OK) LOG_WARNING("Could not set the universal Ethernet MAC (%s) - keeping the core default", esp_err_to_name(err));
+    }
+
     bool begin()
     {
         if (!globalHwProfile->hasEthernet) {
@@ -110,6 +138,8 @@ namespace CustomEth
             LOG_ERROR("W5500 initialization failed - Ethernet unavailable this boot");
             return false;
         }
+
+        _applyUniversalMac();
 
         // Same hostname as the WiFi interface: one device, one name in the DHCP lease table.
         // Only after begin(): the core drops setHostname() while the netif does not exist yet
