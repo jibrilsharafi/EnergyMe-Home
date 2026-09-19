@@ -1049,6 +1049,9 @@
         let ethernetAvailable = null;
 
         async function fetchEthernetStatus() {
+            // The system info already says whether the device has Ethernet: no request, no 404.
+            const network = systemInfo && systemInfo.dynamic && systemInfo.dynamic.network;
+            if (network && network.ethEnabled === false) ethernetAvailable = false;
             if (ethernetAvailable === false) return;
             try {
                 const status = await energyApi.getEthernetStatusIfAvailable();
