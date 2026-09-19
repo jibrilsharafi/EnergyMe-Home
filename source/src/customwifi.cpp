@@ -638,7 +638,7 @@ namespace CustomWifi
     bool wiredPresent = globalHwProfile->hasEthernet;
     WifiProvisioning::init(_provisioning, hasCredentials, millis64(), commissioned, wiredPresent);
     _publishedState = _provisioning.state;
-    LOG_INFO("Provisioning init: %s credentials, %scommissioned, state %s",
+    LOG_DEBUG("Provisioning init: %s credentials, %scommissioned, state %s",
              hasCredentials ? "found" : "no", commissioned ? "" : "not ",
              WifiProvisioning::stateName(_provisioning.state));
     _taskShouldRun = true;
@@ -1272,7 +1272,7 @@ namespace CustomWifi
     _publishedState = current;
 
     if (current != previous) {
-      LOG_INFO("Provisioning state %s -> %s", WifiProvisioning::stateName(previous), WifiProvisioning::stateName(current));
+      LOG_DEBUG("Provisioning state %s -> %s", WifiProvisioning::stateName(previous), WifiProvisioning::stateName(current));
     }
 
     // Act on the decision immediately. onEvent() can decide an AP is needed (the move to

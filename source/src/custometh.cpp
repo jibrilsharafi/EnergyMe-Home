@@ -160,8 +160,9 @@ namespace CustomEth
         }
 
         _enabled = true;
-        LOG_INFO("Ethernet started (CS=%u IRQ=%u RST=%u)", globalHwProfile->ethCsPin,
-                 globalHwProfile->ethIrqPin, globalHwProfile->ethRstPin);
+        LOG_INFO("Ethernet started");
+        LOG_DEBUG("Ethernet pins: CS=%u IRQ=%u RST=%u", globalHwProfile->ethCsPin,
+                  globalHwProfile->ethIrqPin, globalHwProfile->ethRstPin);
         return true;
     }
 
