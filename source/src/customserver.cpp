@@ -1926,7 +1926,12 @@ namespace CustomServer
         // of the Pro token, so productFromArtifactName resolves Pro first).
         for (JsonObject asset : release["assets"].as<JsonArray>()) {
             const char* name = asset["name"].as<const char*>();
-            if (name == nullptr || strstr(name, ".bin") == nullptr) continue;
+            if (name == nullptr) continue;
+            // The application image only: a release also carries <name>_bootloader.bin and
+            // <name>_partitions.bin under the same product token.
+            size_t nameLength = strlen(name);
+            if (nameLength < 4 || strcmp(name + nameLength - 4, ".bin") != 0) continue;
+            if (strstr(name, "bootloader") != nullptr || strstr(name, "partitions") != nullptr) continue;
             ProductLine assetProduct;
             if (productFromArtifactName(name, assetProduct) && assetProduct == globalHwProfile->product) {
                 downloadUrl = asset["browser_download_url"].as<const char*>();
