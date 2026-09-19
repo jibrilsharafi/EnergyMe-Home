@@ -949,7 +949,7 @@ namespace CustomWifi
             // reports the failure. Interfering here would restart the radio underneath it.
             LOG_DEBUG("Periodic check: association attempt in flight, leaving it alone");
           }
-          else if (_provisioning.hasCredentials)
+          else if (_provisioning.hasCredentials || (_provisioning.commissioned && _hasStoredCredentials()))
           {
             // Re-enter the attempt machinery rather than calling WiFi.reconnect() directly.
             // _forceReconnectInternal() arms no deadline, so nothing ever fed
@@ -1251,6 +1251,15 @@ namespace CustomWifi
   {
     WifiProvisioning::State previous = _provisioning.state;
     WifiProvisioning::State current = WifiProvisioning::onEvent(_provisioning, event, millis64());
+
+    // onEvent() has no wired input, so it can ask for an AP while the wire is serving.
+    // Veto it before the radio is touched: otherwise every failed attempt raises the AP
+    // here and _serviceApLifecycle() tears it down in the same loop iteration, forever.
+    // Never true on products without Ethernet.
+    if (_provisioning.apRaised && !_apRaised && CustomEth::isServiceable()) {
+      WifiProvisioning::tearDownAp(_provisioning, millis64());
+      current = _provisioning.state;
+    }
     _publishedState = current;
 
     if (current != previous) {
@@ -1358,7 +1367,9 @@ namespace CustomWifi
     // reason to stop: under APSTA both interfaces run at once, so the device can host the
     // portal and still rejoin by itself the moment the router comes back. Without
     // credentials there is nothing to attempt, and WiFi.begin() would just churn the radio.
-    if (_provisioning.hasCredentials) {
+    // A commissioned device keeps trying credentials that were submitted but never proven,
+    // exactly as it would after a reboot (init() seeds hasCredentials from what is stored).
+    if (_provisioning.hasCredentials || (_provisioning.commissioned && _hasStoredCredentials())) {
       _startStaAttempt();
     }
   }
@@ -1601,7 +1612,10 @@ namespace CustomWifi
       wiredLedReleased = true;
     } else if (!ethServiceable && wiredLedReleased) {
       wiredLedReleased = false;
-      if (!_apRaised && !isFullyConnected()) Led::pulseBlue(Led::PRIO_MEDIUM);
+      // Raw association, not isFullyConnected(): that is false for the lwIP stabilisation
+      // delay after GOT_IP, and nothing would clear the pulse again on a link that stays up.
+      bool staUp = WiFi.isConnected() && WiFi.localIP() != IPAddress(0, 0, 0, 0);
+      if (!_apRaised && !staUp) Led::pulseBlue(Led::PRIO_MEDIUM);
     }
   }
 
