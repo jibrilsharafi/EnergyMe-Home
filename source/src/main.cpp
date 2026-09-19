@@ -212,6 +212,7 @@ void setup()
   logHeapLedger("ade7953");
 
   Led::setBlue(Led::PRIO_NORMAL);
+  CustomEth::registerEvents(); // Ahead of the first WiFi event, see custometh.h. No-op without Ethernet
   LOG_DEBUG("Setting up WiFi...");
   CustomWifi::begin();
   LOG_DEBUG("WiFi setup done");
