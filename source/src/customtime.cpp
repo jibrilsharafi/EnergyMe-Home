@@ -266,8 +266,13 @@ namespace CustomTime {
         return true;
     }
 
+    // A flag rather than zeroing _lastSyncAttempt: that only reads as "due" once the uptime
+    // itself exceeds the sync interval, so a failover in the first hour kept the old gateway
+    // as the NTP server. Set from the eth task, consumed here: a single-byte store.
+    static volatile bool _resyncRequested = false;
+
     void requestResync() {
-        _lastSyncAttempt = 0;
+        _resyncRequested = true;
     }
 
     static void _checkAndSyncTime() {
@@ -277,11 +282,12 @@ namespace CustomTime {
         bool isTimeToSync = (currentTime - _lastSyncAttempt >= (uint64_t)TIME_SYNC_INTERVAL);
         bool needToRetry = !_isTimeSynched && (currentTime - _lastSyncAttempt >= (uint64_t)TIME_SYNC_RETRY_IF_NOT_SYNCHED);
 
-        if (isTimeToSync || needToRetry) {
+        if (isTimeToSync || needToRetry || _resyncRequested) {
             if (!CustomNet::isFullyConnected(true)) {
                 LOG_DEBUG("Skipping time sync - no network connectivity");
                 return;
             }
+            _resyncRequested = false;
             _lastSyncAttempt = currentTime;
 
             // Re-configure time to trigger a new sync
