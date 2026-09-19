@@ -30,6 +30,6 @@
 
 ## 6. Hardware-blocked (bench, when a device is available)
 
-- [ ] 6.1 Manual upload of a renamed wrong-product .bin is rejected on-device
+- [x] 6.1 Manual upload of a renamed wrong-product .bin is rejected on-device - done 2026-09-19: the Home image named `firmware.bin` on the Pro and the Pro image named `firmware.bin` on the Home both answer 400 "not compatible with this device" on the first chunk (nothing written, other partition still rollback-able, device keeps running); a Pro image carrying a Home artifact name is refused by the name gate
 - [ ] 6.2 Cloud OTA job with a wrong-product image fails with `image_incompatible:*` and the device keeps running
 - [ ] 6.3 Downgrade to a pre-descriptor release still works on Home
