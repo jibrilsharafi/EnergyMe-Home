@@ -52,6 +52,14 @@ namespace CustomServer
 
     // OTA timeout task variables
     static TaskHandle_t _otaTimeoutTaskHandle = NULL;
+
+    // The request that owns the firmware upload in progress, and whether Update.end(true) went
+    // through for it. The upload callback runs for every client and before authentication, so state
+    // that is not tied to a request let any host on the LAN reset somebody else's upload: the
+    // remaining chunks were skipped and the completion handler still answered "success".
+    // Only touched from the AsyncTCP task.
+    static AsyncWebServerRequest *_otaOwner = nullptr;
+    static bool _otaFinalized = false;
     static bool _otaTimeoutTaskShouldRun = false;
 
     // API request synchronization
@@ -142,7 +150,7 @@ namespace CustomServer
     static bool _initializeOtaUpload(AsyncWebServerRequest *request, const String& filename);
     static void _setupOtaMd5Verification(AsyncWebServerRequest *request);
     static bool _writeOtaChunk(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index);
-    static void _finalizeOtaUpload(AsyncWebServerRequest *request);
+    static bool _finalizeOtaUpload(AsyncWebServerRequest *request);
     
     // Logging helper functions
     static bool _parseLogLevel(const char *levelStr, LogLevel &level);
@@ -1351,17 +1359,27 @@ namespace CustomServer
     static void _handleOtaUploadComplete(AsyncWebServerRequest *request)
     {
         // Handle the completion of the upload
+        bool isOwner = (request == _otaOwner);
+        if (isOwner) _otaOwner = nullptr;
+
         if (request->getResponse()) return;  // Response already set due to error
+
+        // No file part at all, or not the request whose image was written: nothing here says
+        // an update happened, so never answer success (or restart) on its behalf.
+        if (!isOwner) {
+            _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "No firmware image was received");
+            return;
+        }
 
         // Stop OTA timeout task since OTA process is completing
         _stopOtaTimeoutTask();
 
-        if (Update.hasError()) {
+        if (Update.hasError() || !_otaFinalized) {
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
 
             doc["success"] = false;
-            doc["message"] = Update.errorString();
+            doc["message"] = Update.hasError() ? Update.errorString() : "Firmware upload did not complete";
             _sendJsonResponse(request, doc);
             
             LOG_ERROR("OTA update failed: %s", Update.errorString());
@@ -1449,15 +1467,29 @@ namespace CustomServer
         return false;
     }
 
+    // The owner's connection closed. After a completed upload the completion handler has
+    // already let go; anything else is a transfer that died half way.
+    static void _releaseOtaOwner(AsyncWebServerRequest *request)
+    {
+        if (request != _otaOwner) return;
+        _otaOwner = nullptr;
+        if (_otaFinalized) return;
+        LOG_WARNING("Firmware upload connection closed before completion - aborting the update");
+        Update.abort();
+        _stopOtaTimeoutTask();
+    }
+
     static void _handleOtaUploadData(AsyncWebServerRequest *request, const String& filename,
                                    size_t index, uint8_t *data, size_t len, bool final)
     {
-        static bool otaInitialized = false;
-
         if (!index) {
             // Before Update.begin() erases anything. See _rejectUploadIfNotPermitted().
-            if (_rejectUploadIfNotPermitted(request)) {
-                otaInitialized = false;
+            // A refused request never touches the upload in progress.
+            if (_rejectUploadIfNotPermitted(request)) return;
+
+            if (_otaOwner != nullptr) {
+                LOG_WARNING("Refused a firmware upload while another one is in progress");
+                _sendErrorResponse(request, HTTP_CODE_CONFLICT, "Another firmware upload is in progress");
                 return;
             }
 
@@ -1465,7 +1497,9 @@ namespace CustomServer
             if (!_initializeOtaUpload(request, filename)) {
                 return;
             }
-            otaInitialized = true;
+            _otaOwner = request;
+            _otaFinalized = false;
+            request->onDisconnect([request]() { _releaseOtaOwner(request); });
 
             // Fail fast when the first chunk already covers the descriptor
             // region (it normally does): a wrong-hardware image is rejected
@@ -1478,25 +1512,25 @@ namespace CustomServer
                     _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Firmware image is not compatible with this device");
                     Update.abort();
                     _stopOtaTimeoutTask();
-                    otaInitialized = false;
+                    _otaOwner = nullptr;
                     return;
                 }
             }
         }
-        
+
+        // Refused on its first chunk, already failed, or not the upload in progress
+        if (request != _otaOwner) return;
+
         // Write chunk to flash
-        if (len && otaInitialized) {
+        if (len) {
             if (!_writeOtaChunk(request, data, len, index)) {
-                otaInitialized = false;
+                _otaOwner = nullptr;
                 return;
             }
         }
-        
-        // Final chunk - complete the update
-        if (final && otaInitialized) {
-            _finalizeOtaUpload(request);
-            otaInitialized = false;
-        }
+
+        // Final chunk - complete the update. Ownership is released by the completion handler.
+        if (final) _otaFinalized = _finalizeOtaUpload(request);
     }
 
     static bool _initializeOtaUpload(AsyncWebServerRequest *request, const String& filename)
@@ -1622,7 +1656,8 @@ namespace CustomServer
         return true;
     }
 
-    static void _finalizeOtaUpload(AsyncWebServerRequest *request)
+    // True only when the staged image passed every check and Update.end(true) activated it.
+    static bool _finalizeOtaUpload(AsyncWebServerRequest *request)
     {
         LOG_DEBUG("Finalizing OTA update...");
 
@@ -1632,7 +1667,7 @@ namespace CustomServer
             _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "No firmware data received");
             Update.abort();
             _stopOtaTimeoutTask(); // Stop timeout task on failure
-            return;
+            return false;
         }
 
         // Validate minimum size
@@ -1641,7 +1676,7 @@ namespace CustomServer
             _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Firmware file too small");
             Update.abort();
             _stopOtaTimeoutTask(); // Stop timeout task on failure
-            return;
+            return false;
         }
 
         // Authoritative compatibility gate: read the staged image's descriptor
@@ -1662,7 +1697,7 @@ namespace CustomServer
             // rollback target.)
             scrubOtaImageHeader(stagedPartition);
             _stopOtaTimeoutTask();
-            return;
+            return false;
         }
         if (verdict == ImageDescriptor::Verdict::ACCEPT_DEV_ON_PROD) {
             LOG_WARNING("Accepting a dev-built image on a prod device via manual upload");
@@ -1682,6 +1717,7 @@ namespace CustomServer
             Led::blinkGreenFast(Led::PRIO_CRITICAL, 3000ULL);
             // Note: timeout task will be stopped in _handleOtaUploadComplete
         }
+        return success;
     }
 
     static void _handleFileUploadData(AsyncWebServerRequest *request, const String& filename, 
