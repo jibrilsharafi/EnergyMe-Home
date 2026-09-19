@@ -49,6 +49,18 @@ namespace WifiProvisioning {
 static_assert(WIFI_PROVISIONING_WIRED_LINK_DETECT_MS < WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS,
               "the link-detect window must end inside the DHCP grace");
 
+// Longest (counted from init()) the station is held back at boot on a product with a wired
+// interface whose link is up but has no address yet. Such a product runs one station-side
+// interface at a time, and a station started while the wire is still leasing would put a
+// second address on the LAN only to be released moments later. Deliberately longer than the
+// AP-raise grace above: a spanning-tree port forwards nothing for 30 s and lwIP's DHCP
+// backoff adds to that, and a station associating in that gap is exactly the second address
+// the hold exists to prevent. The cost is a link that never leases (no DHCP server) keeping
+// stored credentials unused for this long at boot; the AP raise does not wait for it.
+#define WIFI_PROVISIONING_STA_HOLD_DHCP_MS (45UL * 1000UL)
+static_assert(WIFI_PROVISIONING_STA_HOLD_DHCP_MS >= WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS,
+              "the station must not start while the AP raise still gives the wire time to lease");
+
 enum class State : uint8_t {
     UNPROVISIONED,   // No stored credentials. AP up, DNS on, auth carve-out active.
     STA_CONNECTING,  // Association in progress or being retried.
@@ -143,6 +155,25 @@ bool shouldRaiseAp(const Context &context, uint64_t nowMs, bool wiredReachable =
 // True while a wired link could still be coming up after init() (the DHCP grace, which
 // contains the link-detect window). Callers use it to tick fast and to query the link.
 bool insideWiredBootWindows(const Context &context, uint64_t nowMs);
+
+// True while the station must not be started yet because a wired interface could still
+// come up (boot only, counted from init()). Never true without a wired interface, and
+// over the moment the wire is serviceable: from there on it is the interface arbitration
+// that keeps the station down, not this. Otherwise it holds for the link-detect window
+// (link state not knowable yet), and past it only while the link is up with no address,
+// up to WIFI_PROVISIONING_STA_HOLD_DHCP_MS. Link still down at the end of the link-detect
+// window counts as "no cable" and frees the station at the same instant shouldRaiseAp()
+// stops holding the AP back. Independent of the state: it gates the radio, not the FSM.
+bool shouldHoldStaAtBoot(const Context &context, uint64_t nowMs, bool wiredPresent, bool wiredLinkUp,
+                         bool wiredReachable);
+
+// The caller put the station on standby because the wire serves. No event reaches the
+// state machine while it is suspended, so whatever the last outage left behind would
+// otherwise still be there at the next cable pull. Not an Event on purpose: onEvent()
+// describes what the station did, and a standby is the caller deciding not to use it.
+// Leaves `apRaised` alone: lowering the AP belongs to shouldTearDownAp() / tearDownAp(),
+// which already see the wire.
+void onStaSuspended(Context &context);
 
 // Applies the teardown, including the settle to STA_ONLY when a grace window ends.
 // Every path that lowers the AP goes through here, so no caller can leave the state
