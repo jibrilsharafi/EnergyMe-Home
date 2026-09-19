@@ -633,6 +633,15 @@
                     return;
                 }
 
+                // Browsing the WiFi address of a wired device: that address is going away, but
+                // the device does not restart and keeps answering on the wire. Continue there.
+                var net = currentNetwork || {};
+                if (net.ethLinkUp && net.ethLocalIp && net.ethLocalIp !== "0.0.0.0") {
+                    showStatus("WiFi is switching. Continuing on the Ethernet address " + net.ethLocalIp + "...", 'info');
+                    setTimeout(function () { location.href = "http://" + net.ethLocalIp + "/configuration"; }, 2000);
+                    return;
+                }
+
                 // No way to know the device's new address in advance (unlike the static-IP
                 // case). Best-effort poll energyme.local, same target the DHCP branch of
                 // network-config-apply uses; if the new network doesn't overlap with this
@@ -691,7 +700,7 @@
         function renderWifiNetworks(networks) {
             var list = document.getElementById("wifiNetworkList");
             list.innerHTML = "";
-            var seen = {};
+            var seen = Object.create(null); // SSIDs are attacker-controlled: "constructor" must not read as already seen
             networks.sort(function (a, b) { return b.rssi - a.rssi; }).forEach(function (network) {
                 if (!network.ssid || seen[network.ssid]) return;
                 seen[network.ssid] = true;
@@ -825,7 +834,10 @@
                 await energyApi.resetWifi();
 
                 if (wired) {
-                    window.rebootWait.show();
+                    // The reset also puts Ethernet back on DHCP: a static address this page
+                    // was loaded from is gone after the restart.
+                    var wasStatic = currentEthernet && currentEthernet.staticApplied;
+                    window.rebootWait.show(wasStatic ? { redirectTo: "http://energyme.local", baseUrl: "http://energyme.local" } : {});
                     return;
                 }
 
@@ -1317,6 +1329,19 @@
                 });
         }
 
+        // The firmware refuses 0.0.0.0 for the address, the gateway and the subnet mask.
+        function isUsableIpv4(value) {
+            return isValidIpv4(value) && value !== "0.0.0.0";
+        }
+
+        // Where the wait screen should look for the device after a restart that changes the
+        // address of ONE interface. When this page is served over the other interface its
+        // address does not change, so stay on this origin (empty options = same-origin defaults).
+        function rebootWaitTarget(changesEthernet, newUrl) {
+            if (isServedOverEthernet() !== changesEthernet) return {};
+            return { redirectTo: newUrl, baseUrl: newUrl };
+        }
+
         async function setNetworkConfiguration() {
             const useStaticIp = getSelectedIpMode("ipMode") === "static";
             const ip = document.getElementById("staticIp").value.trim();
@@ -1329,9 +1354,9 @@
             const fallbackToDhcp = document.getElementById("fallbackToDhcp").checked;
 
             if (useStaticIp) {
-                if (!isValidIpv4(ip)) { showStatus('Please enter a valid IP address.', 'error'); return; }
-                if (!isValidIpv4(gateway)) { showStatus('Please enter a valid gateway address.', 'error'); return; }
-                if (!isValidIpv4(subnet)) { showStatus('Please enter a valid subnet mask.', 'error'); return; }
+                if (!isUsableIpv4(ip)) { showStatus('Please enter a valid IP address.', 'error'); return; }
+                if (!isUsableIpv4(gateway)) { showStatus('Please enter a valid gateway address.', 'error'); return; }
+                if (!isUsableIpv4(subnet)) { showStatus('Please enter a valid subnet mask.', 'error'); return; }
                 if (!isValidIpv4(dns1)) { showStatus('Primary DNS is not a valid IP address.', 'error'); return; }
                 if (dns2 && !isValidIpv4(dns2)) { showStatus('Secondary DNS is not a valid IP address.', 'error'); return; }
             }
@@ -1361,7 +1386,7 @@
                 // it whatever lease it gets. Poll and redirect against that new address, not the
                 // one this page was loaded from.
                 const targetUrl = useStaticIp ? ("http://" + ip) : "http://energyme.local";
-                window.rebootWait.show({ redirectTo: targetUrl, baseUrl: targetUrl });
+                window.rebootWait.show(rebootWaitTarget(false, targetUrl));
                 // Don't restore button - the device is restarting
             } catch (error) {
                 button.disabled = false;
@@ -1389,6 +1414,8 @@
         // (404 or enabled:false means it does not; the catch keeps the section
         // hidden on transient errors too - this page loads once, no retry cycle).
         async function loadEthernet() {
+            // Already known from the system info: no Ethernet, so no request (and no 404).
+            if (currentNetwork && currentNetwork.ethEnabled === false) return;
             try {
                 var status = await energyApi.getEthernetStatusIfAvailable();
                 if (!status) return;
@@ -1407,9 +1434,21 @@
                 set("curEthDns", status.dns1);
                 set("curEthMac", status.mac);
 
-                var config = await energyApi.getEthernetConfig();
+                var config;
+                try {
+                    config = await energyApi.getEthernetConfig();
+                } catch (error) {
+                    // The form below would show DHCP with empty fields, and applying that
+                    // would overwrite a stored static configuration.
+                    document.getElementById("setEthConfigButton").disabled = true;
+                    document.getElementById("resetEthConfigButton").disabled = true;
+                    showStatus("Could not load the Ethernet configuration. Reload the page to change it.", 'error');
+                    return;
+                }
                 setSelectedIpMode("ethIpMode", config.useStaticIp ? "static" : "dhcp");
-                document.getElementById("curEthMode").textContent = config.useStaticIp ? "Static IP" : "DHCP (automatic)";
+                // The boot-fail backstop can keep a static configuration stored but unused.
+                document.getElementById("curEthMode").textContent = !config.useStaticIp ? "DHCP (automatic)"
+                    : (status.staticApplied ? "Static IP" : "Static IP (not applied, using DHCP)");
                 document.getElementById("ethStaticIp").value = config.ip || "";
                 document.getElementById("ethStaticGateway").value = config.gateway || "";
                 document.getElementById("ethStaticSubnet").value = config.subnet || "";
@@ -1434,7 +1473,7 @@
             try {
                 showStatus(pendingMsg, 'info');
                 await apiCall();
-                window.rebootWait.show({ redirectTo: targetUrl, baseUrl: targetUrl });
+                window.rebootWait.show(rebootWaitTarget(true, targetUrl));
                 // Don't restore button - the device is restarting
             } catch (error) {
                 button.disabled = false;
@@ -1454,11 +1493,13 @@
             const dns2 = document.getElementById("ethStaticDns2").value.trim();
 
             if (useStaticIp) {
-                if (!isValidIpv4(ip)) { showStatus('Please enter a valid IP address.', 'error'); return; }
-                if (!isValidIpv4(gateway)) { showStatus('Please enter a valid gateway address.', 'error'); return; }
-                if (!isValidIpv4(subnet)) { showStatus('Please enter a valid subnet mask.', 'error'); return; }
+                if (!isUsableIpv4(ip)) { showStatus('Please enter a valid IP address.', 'error'); return; }
+                if (!isUsableIpv4(gateway)) { showStatus('Please enter a valid gateway address.', 'error'); return; }
+                if (!isUsableIpv4(subnet)) { showStatus('Please enter a valid subnet mask.', 'error'); return; }
                 if (!isValidIpv4(dns1)) { showStatus('Primary DNS is not a valid IP address.', 'error'); return; }
                 if (dns2 && !isValidIpv4(dns2)) { showStatus('Secondary DNS is not a valid IP address.', 'error'); return; }
+                // Same rule as the firmware: that range belongs to the recovery access point.
+                if (ip.indexOf("172.31.42.") === 0) { showStatus('172.31.42.x is reserved for the recovery access point. Please pick another address.', 'error'); return; }
             }
 
             // For a static IP the new address is the one the user just entered; for DHCP

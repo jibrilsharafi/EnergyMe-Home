@@ -304,7 +304,7 @@
 
                 // Strongest first, and drop duplicate SSIDs from mesh/repeater setups so the
                 // list shows networks rather than radios.
-                var seen = {};
+                var seen = Object.create(null); // SSIDs are attacker-controlled: "constructor" must not read as already seen
                 networks.sort(function (a, b) { return b.rssi - a.rssi; })
                     .filter(function (n) {
                         if (!n.ssid || seen[n.ssid]) return false;
