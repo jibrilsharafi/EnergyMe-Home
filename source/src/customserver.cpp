@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "customserver.h"
+#include "app_image_descriptor.h"
 #include "custometh.h"
 #include "modbustcp.h" // Local integrations are started/stopped to follow the STA link
 #include "taskprofiler.h"
@@ -170,9 +171,18 @@ namespace CustomServer
         }
         LOG_DEBUG("API mutex created successfully");
 
+        // Route registration makes hundreds of small, permanent allocations (one handler
+        // object plus its URI and std::function per route), all below the PSRAM malloc
+        // threshold, so they would pin tens of KB of internal RAM for good. They are only
+        // walked on the AsyncTCP task while matching a request, which PSRAM is fine for:
+        // lower the threshold for the registration only. It is a global switch, so other
+        // tasks' malloc() calls land in PSRAM too during these few tens of ms - harmless,
+        // anything that needs internal or DMA memory asks for it explicitly via heap_caps.
+        heap_caps_malloc_extmem_enable(WEBSERVER_ROUTE_ALLOC_PSRAM_THRESHOLD);
         _setupMiddleware();
         _serveStaticContent();
         _serveApi();
+        heap_caps_malloc_extmem_enable(CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL);
 
         server.begin();
 
@@ -475,9 +485,22 @@ namespace CustomServer
     }
 
     // Helper functions for common response patterns
+    // The stream buffer starts at 1460 bytes of internal RAM and is re-created one size up on
+    // every write that does not fit, so a multi-KB document churned internal RAM on every
+    // request. Size it once from the document instead, and always above the PSRAM malloc
+    // threshold (malloc() keeps sizes up to and INCLUDING the threshold internal), so the
+    // buffer is a single PSRAM allocation.
+    static AsyncResponseStream *_beginJsonResponseStream(AsyncWebServerRequest *request, const JsonDocument &doc)
+    {
+        const size_t minPsramSize = (size_t)CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL + 1;
+        size_t size = measureJson(doc);
+        if (size < minPsramSize) size = minPsramSize;
+        return request->beginResponseStream("application/json", size);
+    }
+
     static void _sendJsonResponse(AsyncWebServerRequest *request, const JsonDocument &doc, int32_t statusCode)
     {
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        AsyncResponseStream *response = _beginJsonResponseStream(request, doc);
         response->setCode(statusCode);
         serializeJson(doc, *response);
         request->send(response);
@@ -1226,7 +1249,9 @@ namespace CustomServer
             // straight back to the gate - so offering it there would be a dead end.
             doc["apOrigin"] = _isApOrigin(request);
             doc["username"] = WEBSERVER_DEFAULT_USERNAME;
-            
+            // For the pages that show the product name before (or without) a system-info fetch.
+            doc["productName"] = PRODUCT_NAME;
+
             _sendJsonResponse(request, doc);
         });
     }
@@ -1441,6 +1466,22 @@ namespace CustomServer
                 return;
             }
             otaInitialized = true;
+
+            // Fail fast when the first chunk already covers the descriptor
+            // region (it normally does): a wrong-hardware image is rejected
+            // before a single byte is written. The authoritative re-check in
+            // _finalizeOtaUpload() covers a first chunk too small for this.
+            if (ImageDescriptor::coversDescriptor(len)) {
+                ImageDescriptor::Verdict verdict = AppImageDescriptor::validateImageBuffer(data, len, false);
+                if (!ImageDescriptor::accepts(verdict)) {
+                    LOG_ERROR("Firmware image rejected on first chunk: %s", ImageDescriptor::verdictToString(verdict));
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Firmware image is not compatible with this device");
+                    Update.abort();
+                    _stopOtaTimeoutTask();
+                    otaInitialized = false;
+                    return;
+                }
+            }
         }
         
         // Write chunk to flash
@@ -1601,6 +1642,32 @@ namespace CustomServer
             Update.abort();
             _stopOtaTimeoutTask(); // Stop timeout task on failure
             return;
+        }
+
+        // Authoritative compatibility gate: read the staged image's descriptor
+        // back off the passive partition before Update.end(true) activates it.
+        // A wrong-PSRAM image fails PSRAM init before any application code runs,
+        // so nothing post-boot can recover from activating one.
+        const esp_partition_t* stagedPartition = esp_ota_get_next_update_partition(NULL);
+        ImageDescriptor::Verdict verdict = AppImageDescriptor::validatePartition(stagedPartition, false);
+        if (!ImageDescriptor::accepts(verdict)) {
+            LOG_ERROR("Staged firmware image rejected: %s", ImageDescriptor::verdictToString(verdict));
+            _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Firmware image is not compatible with this device");
+            Update.abort();
+            // The rejected image is complete and structurally valid in the passive
+            // slot; Update.abort() does not touch flash. Scrub it or the rollback
+            // consumers - none of which are descriptor-gated - could later activate
+            // it and brick the device. (Not done on the first-chunk reject: nothing
+            // was written there and the passive slot still holds a legitimate
+            // rollback target.)
+            scrubOtaImageHeader(stagedPartition);
+            _stopOtaTimeoutTask();
+            return;
+        }
+        if (verdict == ImageDescriptor::Verdict::ACCEPT_DEV_ON_PROD) {
+            LOG_WARNING("Accepting a dev-built image on a prod device via manual upload");
+        } else if (verdict == ImageDescriptor::Verdict::ACCEPT_LEGACY_NO_DESCRIPTOR) {
+            LOG_WARNING("Staged image carries no descriptor (pre-2.4 release or self-built) - accepted on Home");
         }
 
         // Reset watchdog before flash verification and finalization
@@ -2191,6 +2258,7 @@ namespace CustomServer
             // any of the authenticated endpoints are reachable. Nothing sensitive: the
             // device id is already the SoftAP's SSID suffix.
             doc["deviceId"] = DEVICE_ID;
+            doc["productName"] = PRODUCT_NAME;
             doc["firmwareVersion"] = FIRMWARE_BUILD_VERSION;
             doc["uptime"] = millis64();
 
@@ -2497,7 +2565,10 @@ namespace CustomServer
                   {
             if (!_validateRequest(request, "POST")) return;
 
-            AdvancedLogger::clearLog();
+            if (!AdvancedLogger::clearLog()) {
+                _sendErrorResponse(request, HTTP_CODE_SERVICE_UNAVAILABLE, "Log file is busy (rotation in progress), retry in a few seconds");
+                return;
+            }
             _sendSuccessResponse(request, "Logs cleared successfully");
             LOG_INFO("Logs cleared via API");
         });
@@ -3099,7 +3170,7 @@ namespace CustomServer
 
                 // Data has changed or no cached version, send full response with ETag
                 if (Ade7953::getAllChannelDataAsJson(doc)) {
-                    AsyncResponseStream *response = request->beginResponseStream("application/json");
+                    AsyncResponseStream *response = _beginJsonResponseStream(request, doc);
                     serializeJson(doc, *response);
                     _sendResponseWithEtag(request, response, etag);
                 } else {
@@ -3452,8 +3523,9 @@ namespace CustomServer
             JsonDocument doc(&allocator);
             
             // Add runtime status information
-            char statusBuffer[STATUS_BUFFER_SIZE];
-            char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+            // Zeroed: getRuntimeStatus() leaves them untouched while the module is not set up
+            char statusBuffer[STATUS_BUFFER_SIZE] = "";
+            char timestampBuffer[TIMESTAMP_BUFFER_SIZE] = "";
             CustomMqtt::getRuntimeStatus(statusBuffer, sizeof(statusBuffer), timestampBuffer, sizeof(timestampBuffer));
             doc["status"] = statusBuffer;
             doc["statusTimestamp"] = timestampBuffer;
@@ -3667,8 +3739,9 @@ namespace CustomServer
             JsonDocument doc(&allocator);
             
             // Add runtime status information
-            char statusBuffer[STATUS_BUFFER_SIZE];
-            char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+            // Zeroed: getRuntimeStatus() leaves them untouched while the module is not set up
+            char statusBuffer[STATUS_BUFFER_SIZE] = "";
+            char timestampBuffer[TIMESTAMP_BUFFER_SIZE] = "";
             InfluxDbClient::getRuntimeStatus(statusBuffer, sizeof(statusBuffer), timestampBuffer, sizeof(timestampBuffer));
             doc["status"] = statusBuffer;
             doc["statusTimestamp"] = timestampBuffer;

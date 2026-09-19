@@ -85,13 +85,22 @@ namespace CrashMonitor
     RTC_NOINIT_ATTR bool _crashResetReasonValid = false;
 
     bool isLastResetDueToCrash() {
-        // Only case in which it is not crash is when the reset reason is not
-        // due to software reset (ESP.restart()), power on, or deep sleep (unused here)
-        esp_reset_reason_t _hwResetReason = esp_reset_reason();
-
-        return (uint32_t)_hwResetReason != ESP_RST_SW && 
-                (uint32_t)_hwResetReason != ESP_RST_POWERON && 
-                (uint32_t)_hwResetReason != ESP_RST_DEEPSLEEP;
+        // Deliberate resets are not crashes. USB/JTAG matter on the native
+        // USB-Serial-JTAG: the host toggling DTR/RTS (serial monitor open/close,
+        // esptool hard reset after flashing) resets the chip as ESP_RST_USB, and
+        // counting those walked the crash ladder into rollback/factory reset.
+        switch (esp_reset_reason()) {
+            case ESP_RST_SW:        // ESP.restart()
+            case ESP_RST_POWERON:
+            case ESP_RST_DEEPSLEEP: // unused here
+            case ESP_RST_EXT:       // reset pin
+            case ESP_RST_USB:       // USB-Serial-JTAG host-initiated reset
+            case ESP_RST_JTAG:      // debugger
+                return false;
+            default:
+                // Unknown/new reasons fail safe as crashes
+                return true;
+        }
     }
 
     void clearConsecutiveCrashCount() {

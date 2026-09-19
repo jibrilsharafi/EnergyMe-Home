@@ -52,7 +52,7 @@ const char *stateName(State state) {
     return STATE_NAMES[(uint8_t)state];
 }
 
-void init(Context &context, bool hasCredentials, uint64_t nowMs, bool commissioned) {
+void init(Context &context, bool hasCredentials, uint64_t nowMs, bool commissioned, bool wiredPresent) {
     context.hasCredentials = hasCredentials;
     context.commissioned = commissioned;
     context.staRetryAttempts = 0;
@@ -60,17 +60,26 @@ void init(Context &context, bool hasCredentials, uint64_t nowMs, bool commission
     context.apRaised = false;
     context.apRaisedAtMs = 0;
     context.graceStartedAtMs = 0;
+    context.initAtMs = nowMs;
 
     // A commissioned device (Ethernet has proven it in service at least once) is
     // provisioned even with no WiFi credentials: UNPROVISIONED arms the AP auth
-    // carve-out, and an in-service device has plenty to protect. With nothing to
-    // associate to, the STA attempts fail and settle into AP_ASSIST - recovery AP
-    // up, full authentication - exactly the wire-loss behavior the Pro needs.
-    if (hasCredentials || commissioned) {
+    // carve-out, and an in-service device has plenty to protect. It has nothing to
+    // associate to, so the caller never starts an STA attempt and nothing would ever
+    // feed STA_ATTEMPT_FAILED: it starts directly in AP_ASSIST with the AP NOT raised,
+    // and shouldRaiseAp() raises it (full auth) exactly while the wire is unreachable -
+    // at boot after the wired windows, and again on any later wire loss. Starting in
+    // STA_CONNECTING left it there forever: once the wire-driven teardown lowered the
+    // boot AP, a pulled cable meant no interface and no AP until a power cycle.
+    if (hasCredentials) {
         context.state = State::STA_CONNECTING;
+    } else if (commissioned) {
+        context.state = State::AP_ASSIST;
     } else {
         context.state = State::UNPROVISIONED;
-        raiseAp(context, nowMs);
+        // With a wired interface the raise belongs to shouldRaiseAp(): a cabled
+        // zero-touch first boot must never blip an AP.
+        if (!wiredPresent) raiseAp(context, nowMs);
     }
 }
 
@@ -134,6 +143,14 @@ State onEvent(Context &context, Event event, uint64_t nowMs) {
             } else if (context.apRaiseTriggers >= WIFI_PROVISIONING_AP_RAISE_THRESHOLD) {
                 context.state = State::AP_ASSIST;
                 if (!context.apRaised) raiseAp(context, nowMs);
+            } else if (context.state == State::AP_ASSIST || !context.hasCredentials) {
+                // Reaching here with !hasCredentials implies commissioned. The core stops
+                // reconnecting on AUTH_FAIL/210-212 and a single failure is all that gets
+                // fed, so STA_CONNECTING would be a state nothing leaves and shouldRaiseAp()
+                // does not cover: a later wire loss left the device dark. Park in AP_ASSIST
+                // (full auth); the AP itself is left to shouldRaiseAp(), so a device served
+                // by the wire shows no AP.
+                context.state = State::AP_ASSIST;
             } else {
                 context.state = State::STA_CONNECTING;
             }
@@ -192,6 +209,16 @@ State onEvent(Context &context, Event event, uint64_t nowMs) {
             if (context.state == State::GRACE) tearDownAp(context, nowMs);
             break;
 
+        case Event::WIRED_COMMISSIONED:
+            // Applied now rather than at the next init(): otherwise a factory-fresh wired
+            // device stays UNPROVISIONED for its whole first boot, and losing the cable
+            // before the first restart raises the AP with the auth carve-out open on a
+            // device that is already in service. The AP itself is left to shouldRaiseAp()
+            // / shouldTearDownAp(), which see the wire.
+            context.commissioned = true;
+            if (context.state == State::UNPROVISIONED) context.state = State::AP_ASSIST;
+            break;
+
         case Event::TICK:
             break;
     }
@@ -213,21 +240,69 @@ bool shouldTearDownAp(const Context &context, uint64_t nowMs, bool wiredReachabl
            elapsedSince(context.graceStartedAtMs, nowMs) >= WIFI_PROVISIONING_GRACE_MS;
 }
 
-bool shouldRaiseAp(const Context &context, uint64_t nowMs, bool wiredReachable, bool wiredLinkUp) {
+bool shouldRaiseAp(const Context &context, uint64_t nowMs, bool wiredReachable, bool wiredLinkUp, bool wiredPresent) {
     if (context.apRaised) return false;
 
     // Wire-reachable is reachable: no AP.
     if (wiredReachable) return false;
 
+    // The wired driver starts after this state machine and reports link only at its
+    // first PHY poll: until then "link down" just means "not known yet".
+    uint64_t sinceInitMs = elapsedSince(context.initAtMs, nowMs);
+    if (wiredPresent && sinceInitMs < WIFI_PROVISIONING_WIRED_LINK_DETECT_MS) return false;
+
     // Zero-touch first boot: cable in, DHCP still negotiating. Hold the raise back
-    // briefly (boot-relative window) so a normally-leasing network never sees an AP
+    // briefly (init-relative window) so a normally-leasing network never sees an AP
     // blip; after the window, link-without-address counts as unreachable.
-    if (wiredLinkUp && nowMs < WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS) return false;
+    if (wiredLinkUp && sinceInitMs < WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS) return false;
 
     // Both states mean "unreachable over the network": UNPROVISIONED has nothing to
     // connect to, AP_ASSIST has credentials that do not work. Neither is time-limited,
     // so a device that loses its network stays fixable in place.
     return context.state == State::UNPROVISIONED || context.state == State::AP_ASSIST;
+}
+
+bool insideWiredBootWindows(const Context &context, uint64_t nowMs) {
+    return elapsedSince(context.initAtMs, nowMs) < WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS;
+}
+
+bool shouldHoldStaAtBoot(const Context &context, uint64_t nowMs, bool wiredPresent, bool wiredLinkUp,
+                         bool wiredReachable) {
+    // No wire to wait for: the station starts at once, as it always has.
+    if (!wiredPresent) return false;
+
+    // The wire serves, so there is nothing left to wait for. The station stays down from
+    // here because the arbitration does not want it, which is not this predicate's call.
+    if (wiredReachable) return false;
+
+    // Same clock and same first window as shouldRaiseAp(): until the first PHY poll "link
+    // down" only means "not known yet", and starting the station on a guess is how a cabled
+    // device ends up with two addresses. A clock that went backwards reads as no time
+    // passed, so it holds: the error is bounded by the clock moving forward again, while
+    // the opposite error would be a second address on the LAN.
+    uint64_t sinceInitMs = elapsedSince(context.initAtMs, nowMs);
+    if (sinceInitMs < WIFI_PROVISIONING_WIRED_LINK_DETECT_MS) return true;
+
+    // Link without an address: DHCP is negotiating, or the switch port is still in its
+    // spanning-tree forward delay. Past the window a link that never leased counts as
+    // unusable and the stored credentials get their turn. No link at all is "no cable".
+    return wiredLinkUp && sinceInitMs < WIFI_PROVISIONING_STA_HOLD_DHCP_MS;
+}
+
+void onStaSuspended(Context &context) {
+    // Failures counted during the outage that ended with the wire taking over. Left in
+    // place they would carry into the next cable pull, where the first failed attempt (or
+    // one of very few) would cross the threshold and raise the AP on a device whose
+    // credentials have had no real chance yet.
+    context.staRetryAttempts = 0;
+    context.apRaiseTriggers = 0;
+
+    // A stale AP_ASSIST is worse: shouldRaiseAp() covers it, so the AP would come up the
+    // instant the wire goes, before the station made a single attempt. Only with proven
+    // credentials, though. Without them nothing is going to associate, AP_ASSIST is the one
+    // state that keeps the device reachable after a wire loss, and STA_CONNECTING would be
+    // a state nothing leaves (see STA_ATTEMPT_FAILED in onEvent()).
+    if (context.state == State::AP_ASSIST && context.hasCredentials) context.state = State::STA_CONNECTING;
 }
 
 bool isNetworkServiceable(bool staConnected, bool apServing) {

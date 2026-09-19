@@ -4,6 +4,10 @@
 #include <Arduino.h>
 #include <AdvancedLogger.h>
 #include <LittleFS.h>
+#include <driver/gpio.h>
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+#include <hal/usb_serial_jtag_ll.h>
+#endif
 
 // Project includes
 // Initialization before everything
@@ -35,10 +39,63 @@
 Statistics statistics; // Move both to utils and use getter to get and set them
 char DEVICE_ID[DEVICE_ID_BUFFER_SIZE];
 
+// gpio_install_isr_service() runs esp_intr_alloc() + a poisoned malloc on the 1024-byte ipcN
+// stack (prebuilt sdkconfig, not tunable); an interrupt frame pushed at that depth trips the
+// stack canary ("Stack canary watchpoint triggered (ipc1)", seen on the Pro bench while a host
+// drained the USB backlog). Install once while the core is quiet, with the USB-Serial-JTAG IRQ
+// masked at the peripheral. CPU interrupts must stay enabled: the IPC call blocks. This only
+// lowers the probability (tick/IPI remain). Later attachInterrupt()/ETH.begin() see "already
+// installed" and skip the IPC.
+static esp_err_t installGpioIsrServiceEarly()
+{
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+  const uint32_t usbIntrEna = usb_serial_jtag_ll_get_intr_ena_status();
+  usb_serial_jtag_ll_disable_intr_mask(usbIntrEna);
+#endif
+  const esp_err_t err = gpio_install_isr_service((int)ARDUINO_ISR_FLAG);
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+  usb_serial_jtag_ll_ena_intr_mask(usbIntrEna);
+#endif
+  return err;
+}
+
+#if ARDUINO_USB_CDC_ON_BOOT && ARDUINO_USB_MODE
+// Weak core hook: the first thing loopTask runs, BEFORE the core's pre-setup chip report
+// (dev builds, CORE_DEBUG_LEVEL >= 4). Setting the TX timeout in setup() is too late for
+// that report, hence here. Bench numbers: see SERIAL_TX_TIMEOUT_MS in constants.h.
+uint64_t getArduinoSetupWaitTime_ms()
+{
+  Serial.setTxTimeoutMs(SERIAL_TX_TIMEOUT_MS);
+  return 0;
+}
+#endif
+
+static uint32_t taskStackMinFree(const char *taskName)
+{
+  TaskHandle_t handle = xTaskGetHandle(taskName);
+  if (handle == NULL) return 0;
+  return (uint32_t)uxTaskGetStackHighWaterMark(handle);
+}
+
+#ifdef ENV_DEV
+// Dev-only boot heap ledger: internal free heap after each setup stage, so internal RAM
+// can be attributed per module from the boot log (UDP logs carry the boot lines too).
+static void logHeapLedger(const char *stage)
+{
+  LOG_DEBUG("Heap ledger | %s | internal free %lu | largest block %lu", stage,
+            (unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+            (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+}
+#else
+static inline void logHeapLedger(const char *) {}
+#endif
+
 void setup()
 {
+  const esp_err_t gpioIsrErr = installGpioIsrServiceEarly();
+
   Serial.begin(SERIAL_BAUDRATE);
-  Serial.printf("EnergyMe - Home\n____________________\n\n");
+  Serial.printf(FULL_PRODUCT_NAME "\n____________________\n\n");
   Serial.println("Booting...");
   Serial.printf("Build version: %s\n", FIRMWARE_BUILD_VERSION);
   Serial.printf("Build date: %s %s\n", FIRMWARE_BUILD_DATE, FIRMWARE_BUILD_TIME);
@@ -92,9 +149,13 @@ void setup()
   
   LOG_DEBUG("Setting up callbacks for AdvancedLogger...");
   AdvancedLogger::setCallback(CustomLog::callbackMultiple);
+  // VERBOSE never goes to the callbacks (UDP, MQTT): at hundreds of lines per second it would only
+  // fill the log queue. It can be read on the serial console at best, through the print level.
+  AdvancedLogger::setCallbackLevel(LogLevel::DEBUG);
   LOG_DEBUG("Callbacks for AdvancedLogger set up successfully");
+  logHeapLedger("led + littlefs + logger");
 
-  LOG_INFO("Guess who's back, back again! EnergyMe - Home is starting up...");
+  LOG_INFO("Guess who's back, back again! " FULL_PRODUCT_NAME " is starting up...");
   LOG_INFO(
     "Build version: %s %s(MD5: %s) | Build date: %s %s | Device ID: %s", 
     FIRMWARE_BUILD_VERSION,
@@ -112,7 +173,12 @@ void setup()
   Led::setOrange(Led::PRIO_NORMAL);
   LOG_DEBUG("Setting up crash monitor...");
   CrashMonitor::begin();
-  LOG_INFO("Crash monitor setup done");
+  LOG_DEBUG("Crash monitor setup done");
+  logHeapLedger("crash monitor");
+  LOG_DEBUG("GPIO ISR service: %s | ipc0/ipc1 stack min free: %lu/%lu bytes",
+            esp_err_to_name(gpioIsrErr),
+            (unsigned long)taskStackMinFree("ipc0"),
+            (unsigned long)taskStackMinFree("ipc1"));
 
   printDeviceStatusStatic();
 
@@ -123,11 +189,13 @@ void setup()
       globalHwProfile->muxS1Pin,
       globalHwProfile->muxS2Pin,
       globalHwProfile->muxS3Pin);
-  LOG_INFO("Multiplexer setup done");
+  LOG_DEBUG("Multiplexer setup done");
+  logHeapLedger("multiplexer");
 
   LOG_DEBUG("Setting up button handler...");
   ButtonHandler::begin(globalHwProfile->buttonPin);
-  LOG_INFO("Button handler setup done");
+  LOG_DEBUG("Button handler setup done");
+  logHeapLedger("button");
 
   LOG_DEBUG("Setting up ADE7953...");
   if (
@@ -139,13 +207,15 @@ void setup()
       globalHwProfile->ade7953ResetPin,
       globalHwProfile->ade7953InterruptPin
     )
-  ) LOG_INFO("ADE7953 setup done");
+  ) LOG_DEBUG("ADE7953 setup done");
   else LOG_ERROR("ADE7953 initialization failed! This is a big issue mate..");
+  logHeapLedger("ade7953");
 
   Led::setBlue(Led::PRIO_NORMAL);
   LOG_DEBUG("Setting up WiFi...");
   CustomWifi::begin();
-  LOG_INFO("WiFi setup done");
+  LOG_DEBUG("WiFi setup done");
+  logHeapLedger("wifi");
 
   // No-op on products without Ethernet. On Pro this brings up the W5500 and the
   // interface arbitration; a cabled device typically has a lease before the WiFi
@@ -158,10 +228,10 @@ void setup()
   CustomEth::onInterfaceChange([](InterfaceArbitration::Interface) { Mqtt::requestReconnect(); });
   CustomEth::onInterfaceChange([](InterfaceArbitration::Interface) { CustomMqtt::requestReconnect(); });
   CustomEth::onInterfaceChange([](InterfaceArbitration::Interface) { CustomTime::requestResync(); });
-
   LOG_DEBUG("Setting up Ethernet...");
-  if (CustomEth::begin()) LOG_INFO("Ethernet setup done");
+  if (CustomEth::begin()) LOG_DEBUG("Ethernet setup done");
   else LOG_ERROR("Ethernet initialization failed! Continuing on WiFi only");
+  logHeapLedger("ethernet");
 
   // Wait until the device is reachable by SOMETHING: STA connected, or the SoftAP raised
   // and serving. Waiting on isFullyConnected() here would spin forever on a device with no
@@ -194,11 +264,13 @@ void setup()
   // Add custom logging setup after WiFi
   LOG_DEBUG("Setting up custom logging...");
   CustomLog::begin();
-  LOG_INFO("Custom logging setup done");
+  LOG_DEBUG("Custom logging setup done");
+  logHeapLedger("network wait + custom logging");
 
   LOG_DEBUG("Syncing time...");
   if (CustomTime::begin()) LOG_INFO("Initial time sync successful");
   else LOG_ERROR("Initial time sync failed! Will retry later.");
+  logHeapLedger("time");
 
   // Before the web server: the /api/v1/system/issues endpoint reads the registry
   // mutex, so the registry must exist before requests can arrive (else early polls
@@ -207,36 +279,42 @@ void setup()
   // task's cloud/influx checks read safe default flags until those modules begin().
   LOG_DEBUG("Setting up issue registry...");
   IssueRegistry::begin();
-  LOG_INFO("Issue registry setup done");
+  LOG_DEBUG("Issue registry setup done");
+  logHeapLedger("issue registry");
 
   LOG_DEBUG("Setting up server...");
   CustomServer::begin();
-  LOG_INFO("Server setup done");
+  LOG_DEBUG("Server setup done");
+  logHeapLedger("web server");
 
   // Only once there is a station link. Modbus TCP is unauthenticated and binds every
   // interface, so starting it on an AP-only boot would serve meter data to anyone in radio
   // range of the provisioning SoftAP. The health-check task starts it when STA comes up.
   LOG_DEBUG("Setting up Modbus TCP...");
   ModbusTcp::syncWithNetwork(CustomNet::isFullyConnected(), CustomWifi::isApServing());
-  LOG_INFO("Modbus TCP setup done");
+  LOG_DEBUG("Modbus TCP setup done");
+  logHeapLedger("modbus tcp");
 
   if (!globalCommunityMode) {
     LOG_DEBUG("Setting up MQTT client...");
     Mqtt::begin();
-    LOG_INFO("MQTT client setup done");
+    LOG_DEBUG("MQTT client setup done");
   }
 
   LOG_DEBUG("Setting up Custom MQTT client...");
   CustomMqtt::begin();
-  LOG_INFO("Custom MQTT client setup done");
+  LOG_DEBUG("Custom MQTT client setup done");
+  logHeapLedger("cloud mqtt + custom mqtt");
 
   LOG_DEBUG("Setting up InfluxDB client...");
   InfluxDbClient::begin();
-  LOG_INFO("InfluxDB client setup done");
+  LOG_DEBUG("InfluxDB client setup done");
+  logHeapLedger("influxdb");
 
   LOG_DEBUG("Starting maintenance task...");
   startMaintenanceTask();
-  LOG_INFO("Maintenance task started");
+  LOG_DEBUG("Maintenance task started");
+  logHeapLedger("maintenance");
 
   // Visual indicator for safe mode (restart protection active)
   if (CrashMonitor::isInSafeMode()) {

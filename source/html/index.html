@@ -23,7 +23,7 @@
 
 <body>
     <div class="header">EnergyMe</div>
-    <div class="subheader">Home</div>
+    <div class="subheader" id="productSubheader">Home</div>
     
     <div class="buttonNavigation-container">
         <a class="buttonNavigation" type="inner" href="/info">💡 Info</a>
@@ -1085,7 +1085,13 @@
     // ============================================================================
     document.addEventListener('DOMContentLoaded', async () => {
         ChartHelpers.initSparkline();
-        
+
+        // First, so a Pro does not read "Home" for the whole init; not awaited, because the
+        // label is cosmetic and must not delay the meter data.
+        energyApi.getAuthStatus().then(status => {
+            if (status && status.productName) document.getElementById('productSubheader').textContent = status.productName;
+        }).catch(() => {});
+
         await initializePage();
         await fetchFirmwareUpdateInfo();
 

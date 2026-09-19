@@ -2,7 +2,9 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "utils.h"
+#include "app_image_descriptor.h"
 #include "backoff_schedule.h"
+#include "custometh.h"
 #include "duration_format.h"
 #include "sha256_hex.h"
 #include "version_compare.h"
@@ -114,6 +116,29 @@ void populateSystemStaticInfo(SystemStaticInfo& info) {
              (unsigned)(globalHwProfile->version / 10), (unsigned)(globalHwProfile->version % 10));
     info.communityMode = globalCommunityMode;
 
+    // Running image's own descriptor
+    info.imgDescPsramMb = ENERGYME_APP_DESC.psramMb;
+    snprintf(info.imgDescFwVersion, sizeof(info.imgDescFwVersion), "%s", ENERGYME_APP_DESC.fwVersion);
+    snprintf(info.imgDescBuildEnv, sizeof(info.imgDescBuildEnv), "%s", ENERGYME_APP_DESC.buildEnv);
+    snprintf(info.imgDescGitRev, sizeof(info.imgDescGitRev), "%s", ENERGYME_APP_DESC.gitRev);
+    info.imgDescMinPcbVersion = ENERGYME_APP_DESC.minPcbVersion;
+    info.imgDescMaxPcbVersion = ENERGYME_APP_DESC.maxPcbVersion;
+    info.imgDescPartitionLayoutId = ENERGYME_APP_DESC.partitionLayoutId;
+
+    // Passive/"other" OTA partition's descriptor, if it has a valid one
+    ImageDescriptor::Descriptor otherDesc;
+    info.otherImgDescPresent = getOtherPartitionImageDescriptor(otherDesc);
+    if (info.otherImgDescPresent) {
+        snprintf(info.otherImgDescProduct, sizeof(info.otherImgDescProduct), "%s", otherDesc.product);
+        info.otherImgDescPsramMb = otherDesc.psramMb;
+        snprintf(info.otherImgDescFwVersion, sizeof(info.otherImgDescFwVersion), "%s", otherDesc.fwVersion);
+        snprintf(info.otherImgDescBuildEnv, sizeof(info.otherImgDescBuildEnv), "%s", otherDesc.buildEnv);
+        snprintf(info.otherImgDescGitRev, sizeof(info.otherImgDescGitRev), "%s", otherDesc.gitRev);
+        info.otherImgDescMinPcbVersion = otherDesc.minPcbVersion;
+        info.otherImgDescMaxPcbVersion = otherDesc.maxPcbVersion;
+        info.otherImgDescPartitionLayoutId = otherDesc.partitionLayoutId;
+    }
+
     LOG_DEBUG("Static system info populated");
 }
 
@@ -215,6 +240,26 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
     }
     snprintf(info.wifiMacAddress, sizeof(info.wifiMacAddress), "%s", WiFi.macAddress().c_str()); // MAC is available even when disconnected
 
+    // Ethernet. Every field is written on every path: printDeviceStatusDynamic() hands in a
+    // raw ps_malloc() block, so the struct constructor never ran. Arbitration never runs on
+    // products without Ethernet, so the active interface is derived from the WiFi state there.
+    info.ethEnabled = CustomEth::isEnabled();
+    info.ethLinkUp = info.ethEnabled && CustomEth::isLinkUp();
+    info.ethLinkSpeedMbps = info.ethLinkUp ? ETH.linkSpeed() : 0;
+    info.ethFullDuplex = info.ethLinkUp && ETH.fullDuplex();
+    if (info.ethEnabled) {
+        snprintf(info.ethLocalIp, sizeof(info.ethLocalIp), "%s", ETH.localIP().toString().c_str());
+        snprintf(info.ethMacAddress, sizeof(info.ethMacAddress), "%s", ETH.macAddress().c_str());
+        snprintf(info.activeInterface, sizeof(info.activeInterface), "%s",
+                 InterfaceArbitration::interfaceName(CustomEth::activeInterface()));
+    } else {
+        snprintf(info.ethLocalIp, sizeof(info.ethLocalIp), "0.0.0.0");
+        snprintf(info.ethMacAddress, sizeof(info.ethMacAddress), "00:00:00:00:00:00");
+        snprintf(info.activeInterface, sizeof(info.activeInterface), "%s",
+                 InterfaceArbitration::interfaceName(info.wifiConnected ? InterfaceArbitration::Interface::WIFI_STATION
+                                                                        : InterfaceArbitration::Interface::NONE));
+    }
+
     // Tasks
     if (!globalCommunityMode) {
         info.mqttTaskInfo = Mqtt::getMqttTaskInfo();
@@ -298,6 +343,27 @@ void systemStaticInfoToJson(SystemStaticInfo& info, JsonDocument &doc) {
     doc["factory"]["pcbRevision"] = info.pcbRevision;
     doc["factory"]["communityMode"] = info.communityMode;
 
+    // Image descriptor (see lib/image_descriptor)
+    doc["imageDescriptor"]["running"]["psramMb"] = info.imgDescPsramMb;
+    doc["imageDescriptor"]["running"]["fwVersion"] = info.imgDescFwVersion;
+    doc["imageDescriptor"]["running"]["buildEnv"] = info.imgDescBuildEnv;
+    doc["imageDescriptor"]["running"]["gitRev"] = info.imgDescGitRev;
+    doc["imageDescriptor"]["running"]["minPcbVersion"] = info.imgDescMinPcbVersion;
+    doc["imageDescriptor"]["running"]["maxPcbVersion"] = info.imgDescMaxPcbVersion;
+    doc["imageDescriptor"]["running"]["partitionLayoutId"] = info.imgDescPartitionLayoutId;
+
+    doc["imageDescriptor"]["other"]["present"] = info.otherImgDescPresent;
+    if (info.otherImgDescPresent) {
+        doc["imageDescriptor"]["other"]["product"] = info.otherImgDescProduct;
+        doc["imageDescriptor"]["other"]["psramMb"] = info.otherImgDescPsramMb;
+        doc["imageDescriptor"]["other"]["fwVersion"] = info.otherImgDescFwVersion;
+        doc["imageDescriptor"]["other"]["buildEnv"] = info.otherImgDescBuildEnv;
+        doc["imageDescriptor"]["other"]["gitRev"] = info.otherImgDescGitRev;
+        doc["imageDescriptor"]["other"]["minPcbVersion"] = info.otherImgDescMinPcbVersion;
+        doc["imageDescriptor"]["other"]["maxPcbVersion"] = info.otherImgDescMaxPcbVersion;
+        doc["imageDescriptor"]["other"]["partitionLayoutId"] = info.otherImgDescPartitionLayoutId;
+    }
+
     LOG_DEBUG("Static system info converted to JSON");
 }
 
@@ -370,6 +436,15 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument &doc) {
     doc["network"]["wifiDnsIp"] = JsonString(info.wifiDnsIp); // Ensure it is not a dangling pointer
     doc["network"]["wifiBssid"] = JsonString(info.wifiBssid); // Ensure it is not a dangling pointer
     doc["network"]["wifiRssi"] = info.wifiRssi;
+    doc["network"]["activeInterface"] = JsonString(info.activeInterface); // Ensure it is not a dangling pointer
+    doc["network"]["ethEnabled"] = info.ethEnabled;
+    if (info.ethEnabled) {
+        doc["network"]["ethLinkUp"] = info.ethLinkUp;
+        doc["network"]["ethLocalIp"] = JsonString(info.ethLocalIp); // Ensure it is not a dangling pointer
+        doc["network"]["ethMacAddress"] = JsonString(info.ethMacAddress); // Ensure it is not a dangling pointer
+        doc["network"]["ethLinkSpeedMbps"] = info.ethLinkSpeedMbps;
+        doc["network"]["ethFullDuplex"] = info.ethFullDuplex;
+    }
 
     // Tasks
     uint64_t nowMs = millis64();
@@ -403,6 +478,15 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument &doc) {
     addTask("ade7953GridSampler", info.ade7953GridSamplerTaskInfo);
     addTask("maintenance", info.maintenanceTaskInfo);
     addTask("issueRegistry", info.issueRegistryTaskInfo);
+
+    // Tasks the firmware does not own (libraries, core, IDF): only the stack low-water mark is
+    // known. Looked up by name, so a task that does not exist on this product is left out.
+    static const char *const systemTaskNames[] = {"AdvancedLogTask", "async_tcp", "arduino_events", "tiT",
+                                                  "sys_evt", "esp_timer", "wifi", "w5500_tsk", "ipc0", "ipc1"};
+    for (const char *name : systemTaskNames) {
+        TaskHandle_t handle = xTaskGetHandle(name);
+        if (handle != NULL) doc["systemTasks"][name]["minimumFreeStack"] = (uint32_t)uxTaskGetStackHighWaterMark(handle);
+    }
 
     LOG_DEBUG("Dynamic system info converted to JSON");
 }
@@ -490,13 +574,6 @@ static void _maintenanceTask(void* parameter) {
             setRestartSystem("PSRAM memory has degraded below safe minimum");
         }
 
-        // If the log file exceeds maximum size, clear it
-        size_t logSize = getLogFileSize();
-        if (logSize >= MAXIMUM_LOG_FILE_SIZE) {
-            AdvancedLogger::clearLogKeepLatestXPercent(10);
-            LOG_INFO("Log cleared due to size limit (size: %zu bytes, limit: %d bytes)", logSize, MAXIMUM_LOG_FILE_SIZE);
-        }
-
         // Check LittleFS memory and clear log if needed
         if (LittleFS.totalBytes() - LittleFS.usedBytes() < MINIMUM_FREE_LITTLEFS_SIZE) {
             AdvancedLogger::clearLog(); // Here we clear all for safety
@@ -537,23 +614,6 @@ void startMaintenanceTask() {
     if (result != pdPASS) {
         LOG_ERROR("Failed to create maintenance task");
     }
-}
-
-size_t getLogFileSize() {
-    if (!LittleFS.exists(LOG_PATH)) {
-        return 0;
-    }
-    
-    File logFile = LittleFS.open(LOG_PATH, FILE_READ);
-    if (!logFile) {
-        LOG_WARNING("Failed to open log file to check size");
-        return 0;
-    }
-    
-    size_t size = logFile.size();
-    logFile.close();
-    
-    return size;
 }
 
 void stopTaskGracefully(TaskHandle_t* taskHandle, const char* taskName) {
@@ -760,6 +820,27 @@ bool getOtherPartitionSha256(char* out, size_t outSize) {
     return _getPartitionSha256(_getPassiveOtaPartition(), out, outSize);
 }
 
+bool getOtherPartitionImageDescriptor(ImageDescriptor::Descriptor& out) {
+    const esp_partition_t* partition = _getPassiveOtaPartition();
+    if (!partition) return false;
+
+    uint8_t buf[ImageDescriptor::IMAGE_OFFSET + sizeof(ImageDescriptor::Descriptor)];
+    if (esp_partition_read(partition, 0, buf, sizeof(buf)) != ESP_OK) return false;
+
+    return ImageDescriptor::parseFromImageStart(buf, sizeof(buf), out);
+}
+
+bool scrubOtaImageHeader(const esp_partition_t* partition) {
+    if (partition == nullptr) return false;
+    esp_err_t err = esp_partition_erase_range(partition, 0, OTA_PARTITION_SCRUB_SIZE);
+    if (err != ESP_OK) {
+        LOG_ERROR("Failed to scrub rejected OTA image header: %s", esp_err_to_name(err));
+        return false;
+    }
+    LOG_INFO("Scrubbed rejected OTA image header from passive partition");
+    return true;
+}
+
 FirmwareRollbackResult attemptFirmwareRollback(const char* reason) {
     // Refuse up front while nothing has been touched. Calling setRestartSystem
     // and reacting to its false return is not equivalent: its uptime-gate branch
@@ -829,7 +910,8 @@ void printDeviceStatusStatic()
     populateSystemStaticInfo(*info);
 
     LOG_DEBUG("--- Static System Info ---");
-    LOG_DEBUG("Product: %s (%s)", info->fullProductName, info->productName);
+    LOG_DEBUG("Product: %s (%s) | Line: %s | PCB: %s%s", info->fullProductName, info->productName,
+              info->productLine, info->pcbRevision, info->communityMode ? " | community mode" : "");
     LOG_DEBUG("Company: %s | Author: %s", info->companyName, info->author);
     LOG_DEBUG("Firmware: %s | Build: %s %s", info->buildVersion, info->buildDate, info->buildTime);
     LOG_DEBUG("Sketch MD5: %s | Partition app name: %s", info->sketchMD5, info->partitionAppName);
@@ -891,6 +973,15 @@ void printDeviceStatusDynamic()
     } else {
         LOG_DEBUG("WiFi: Disconnected | MAC %s", info->wifiMacAddress);
     }
+    if (info->ethEnabled) {
+        if (info->ethLinkUp) {
+            LOG_DEBUG("Ethernet: Link up %u Mbps %s duplex | IP %s | MAC %s", (unsigned)info->ethLinkSpeedMbps,
+                      info->ethFullDuplex ? "full" : "half", info->ethLocalIp, info->ethMacAddress);
+        } else {
+            LOG_DEBUG("Ethernet: Link down | MAC %s", info->ethMacAddress);
+        }
+    }
+    LOG_DEBUG("Active interface: %s", info->activeInterface);
 
     free(info);
     LOG_DEBUG("-------------------------");
@@ -1033,6 +1124,18 @@ static void _factoryReset() { // No logger here it is likely destroyed already
     Led::blinkRedFast(Led::PRIO_CRITICAL); // The critical layer carries its own brightness floor
 
     clearAllPreferences();
+
+    // clearAllPreferences() shares its exclusion list with backup/restore, where the web
+    // password must never travel. A factory reset is the opposite case: it has to hand the
+    // device over on the default password, so wipe auth here. The server re-seeds the
+    // default on the next boot when the namespace is empty.
+    Preferences authPreferences;
+    if (authPreferences.begin(PREFERENCES_NAMESPACE_AUTH, false)) {
+        authPreferences.clear();
+        authPreferences.end();
+    } else {
+        Serial.println("[ERROR] Failed to clear the web password");
+    }
 
     // clearAllPreferences() deliberately skips every "nvs.*" namespace (see its own
     // comment), which includes the WiFi driver's own persisted association

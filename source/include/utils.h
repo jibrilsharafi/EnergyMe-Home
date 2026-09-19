@@ -28,6 +28,7 @@
 #include "buttonhandler.h"
 #include "constants.h"
 #include "factory_keys.h"
+#include "image_descriptor.h"
 #include "customlog.h"
 #include "customtime.h"
 #include "customwifi.h"
@@ -180,7 +181,6 @@ void printDeviceStatusDynamic();
 void stopTaskGracefully(TaskHandle_t* taskHandle, const char* taskName);
 void startMaintenanceTask();
 void stopMaintenanceTask();
-size_t getLogFileSize();
 
 // Task information utilities
 inline TaskInfo getTaskInfoSafely(TaskHandle_t taskHandle, uint32_t stackSize, const TaskHeartbeat* heartbeat = nullptr)
@@ -220,6 +220,21 @@ void sha256BytesToHex(const uint8_t sha256[32], char* out, size_t outSize); // o
 bool getRunningPartitionSha256(char* out, size_t outSize);
 bool getOtherPartitionSha256(char* out, size_t outSize);
 
+// Reads the passive/"other" OTA partition's image descriptor without executing
+// it. False when unreadable or the image carries no valid descriptor (legacy
+// pre-2.4 image, erased/partial slot).
+bool getOtherPartitionImageDescriptor(ImageDescriptor::Descriptor& out);
+
+// One flash sector: erasing the image header is enough to make a rejected
+// image fail esp_image_verify, so it can never become a rollback target.
+#define OTA_PARTITION_SCRUB_SIZE 4096
+
+// Erase the header of a complete-but-rejected staged OTA image. Both OTA
+// write paths call this on a post-download rejection (signature or image
+// descriptor); the rollback consumers are not descriptor-gated, so a rejected
+// image left intact could be activated later and brick the device.
+bool scrubOtaImageHeader(const esp_partition_t* partition);
+
 // Switch the boot partition to the passive slot and restart. Validation is
 // esp_ota_set_boot_partition's own image_validate - deliberately NOT
 // Update.canRollBack(), whose only check is flash[0] == 0xE9 (true even for a
@@ -239,6 +254,11 @@ inline const char* getResetReasonString(esp_reset_reason_t reason) {
         case ESP_RST_DEEPSLEEP: return "Deep sleep";
         case ESP_RST_BROWNOUT: return "Brownout";
         case ESP_RST_SDIO: return "SDIO";
+        case ESP_RST_USB: return "USB peripheral";
+        case ESP_RST_JTAG: return "JTAG";
+        case ESP_RST_EFUSE: return "eFuse error";
+        case ESP_RST_PWR_GLITCH: return "Power glitch";
+        case ESP_RST_CPU_LOCKUP: return "CPU lockup";
         default: return "Undefined";
     }
 }

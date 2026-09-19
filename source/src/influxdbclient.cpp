@@ -62,7 +62,7 @@ namespace InfluxDbClient
     
     // Task management
     static void _influxDbTask(void* parameter);
-    static void _startTask();
+    static bool _startTask();
     static void _stopTask();
 
     // Public API functions
@@ -169,7 +169,14 @@ namespace InfluxDbClient
         _setInfluxFullUrl(config);
         _setInfluxHeader(config);
 
-        _startTask();
+        // A disabled integration holds no task: its stack is internal RAM. Every config change
+        // comes through here, so enabling it later starts the task without a restart.
+        if (config.enabled && !_startTask()) {
+            // Saved as enabled but not running: say so instead of answering success
+            snprintf(_status, sizeof(_status), "Failed to start the task (low memory) - save the configuration again");
+            _statusTimestampUnix = CustomTime::getUnixTime();
+            return false;
+        }
 
         LOG_DEBUG("InfluxDB configuration set");
         return true;
@@ -295,11 +302,11 @@ namespace InfluxDbClient
     // Private function implementations
     // ================================
 
-    static void _startTask()
+    static bool _startTask()
     {
         if (_influxDbTaskHandle != nullptr) {
             LOG_DEBUG("InfluxDB task is already running");
-            return;
+            return true;
         }
 
         LOG_DEBUG("Starting InfluxDB task with %d bytes stack", INFLUXDB_TASK_STACK_SIZE);
@@ -315,7 +322,10 @@ namespace InfluxDbClient
         if (result != pdPASS) {
             LOG_ERROR("Failed to create InfluxDB task");
             _influxDbTaskHandle = nullptr;
+            return false;
         }
+
+        return true;
     }
 
     static void _stopTask() { 

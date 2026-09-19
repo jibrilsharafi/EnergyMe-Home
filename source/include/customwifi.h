@@ -27,13 +27,17 @@
 #define WIFI_TASK_PRIORITY 5
 
 #define WIFI_CONFIG_PORTAL_SSID "EnergyMe"
-#define WIFI_HOSTNAME_PREFIX "energyme-home"
+#define WIFI_HOSTNAME_PREFIX PRODUCT_SLUG // DHCP hostname on WiFi and Ethernet: <slug>-<device id>
+#define WIFI_HOSTNAME_DEVICE_ID_LENGTH 12 // The device id is a MAC as hex; bounding it keeps the longest slug inside the 32-byte netif hostname
+#define WIFI_HOSTNAME_BUFFER_SIZE 32
+static_assert(sizeof(WIFI_HOSTNAME_PREFIX) + 1 + WIFI_HOSTNAME_DEVICE_ID_LENGTH <= WIFI_HOSTNAME_BUFFER_SIZE, "hostname does not fit the netif limit");
 
 #define WIFI_CONNECT_TIMEOUT_SECONDS 10
 #define WIFI_CONNECT_TIMEOUT_POWER_RESET_SECONDS (5 * 60)  // Extended timeout for the FIRST attempt after a power reset only (router likely rebooting)
 #define WIFI_CREDENTIAL_WRITE_RETRY_DELAY_MS 250    // Settle time between a disconnect and retrying esp_wifi_set_config(), which is refused while the STA is connecting
 #define WIFI_DISCONNECT_DELAY (15 * 1000)           // Delay after WiFi disconnected to allow automatic reconnection
 #define WIFI_AP_LIFECYCLE_TICK_MS (10 * 1000)       // How often the AP lifetime/grace predicates are evaluated while the SoftAP is up
+#define WIFI_AP_PENDING_TICK_MS (1 * 1000)          // Tick while a deferred AP raise waits on the wired boot windows (Ethernet products only)
 #define WIFI_SCAN_MS_PER_CHANNEL 120                // Per-channel dwell. The default (~300 ms) makes a full scan long enough that a phone on the SoftAP times out waiting
 #define WIFI_SCAN_MAX_RESULTS 30                    // Cap the JSON response; a dense apartment block can see far more than a user will scroll
 #define WIFI_SCAN_RESULTS_TTL_MS (2 * 60 * 1000)    // How long a completed result set is served before it is freed and re-scanned. The driver holds the full set in internal RAM, so it must not be kept for the rest of the uptime
@@ -168,6 +172,7 @@ namespace CustomWifi
     void getDisconnectDiagnosticsAsJson(JsonDocument &jsonDocument);
     bool testConnectivity(); // Test actual network connectivity (check gateway and DNS)
     void forceReconnect();   // Force immediate WiFi reconnection
+    void notifyWiredStateChanged(); // Wake the WiFi task so the AP/LED follow an Ethernet change at once
 
     // Starts the mDNS responder if it is not already running. The WiFi connect path
     // does this itself; an Ethernet-only device (Pro with no credentials) has no

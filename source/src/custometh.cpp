@@ -7,6 +7,7 @@
 #include <Preferences.h>
 #include <SPI.h>
 #include <WiFi.h>
+#include <esp_mac.h>
 #include <lwip/dns.h>
 
 #include "customwifi.h"
@@ -39,6 +40,12 @@ namespace CustomEth
     // NVS increment (a flash GC pause must never stall network event delivery).
     static volatile bool _bootFailCounted = false;
 
+    // See isCommissioned(). Set by the eth task the moment the wire proves the device in
+    // service, whether or not flash accepted the marker: closing the auth carve-out for
+    // THIS boot must not depend on NVS.
+    static volatile bool _commissioned = false;
+    static volatile bool _commissionedNvsChecked = false;
+
     #define ETH_MAX_INTERFACE_CALLBACKS 6
     static InterfaceChangeCallback _callbacks[ETH_MAX_INTERFACE_CALLBACKS] = {};
     static size_t _callbackCount = 0;
@@ -58,6 +65,33 @@ namespace CustomEth
     static void _evaluateArbitration();
     static void _applyDnsForActiveInterface(InterfaceArbitration::Interface active);
     static void _notifyEthTask();
+
+    // The core gives SPI Ethernet esp_derive_local_mac(base): a locally administered address
+    // (routers and NAC treat those as "private/randomized"), and on the S3, which owns two
+    // universal addresses per chip, the very same value the SoftAP uses. Take the chip's
+    // second universal address instead (base + 1, no carry, exactly as esp_read_mac() does):
+    // globally unique, Espressif-assigned, and otherwise only claimed by Bluetooth, which
+    // this firmware never starts.
+    // The netif glue copied the driver MAC when ETH.begin() attached it, so BOTH must change:
+    // with only the driver updated the W5500 filters on the new address while lwIP still
+    // sends the old one, and DHCP never completes (seen on the bench: link up, no lease).
+    static void _applyUniversalMac()
+    {
+        uint8_t previousMac[ETH_ADDR_LEN];
+        uint8_t mac[ETH_ADDR_LEN];
+        esp_err_t err = esp_eth_ioctl(ETH.handle(), ETH_CMD_G_MAC_ADDR, previousMac);
+        if (err == ESP_OK) err = esp_efuse_mac_get_default(mac);
+        if (err == ESP_OK) {
+            mac[ETH_ADDR_LEN - 1] += 1;
+            err = esp_eth_ioctl(ETH.handle(), ETH_CMD_S_MAC_ADDR, mac);
+        }
+        if (err == ESP_OK) {
+            err = esp_netif_set_mac(ETH.netif(), mac);
+            // Never leave the two halves disagreeing: put the driver back on the old address.
+            if (err != ESP_OK) esp_eth_ioctl(ETH.handle(), ETH_CMD_S_MAC_ADDR, previousMac);
+        }
+        if (err != ESP_OK) LOG_WARNING("Could not set the universal Ethernet MAC (%s) - keeping the core default", esp_err_to_name(err));
+    }
 
     bool begin()
     {
@@ -82,11 +116,6 @@ namespace CustomEth
         // and pokes the eth task, which does the actual work.
         Network.onEvent(_onNetworkEvent);
 
-        // Same hostname as the WiFi interface: one device, one name in the DHCP lease table.
-        char hostname[WIFI_SSID_BUFFER_SIZE];
-        snprintf(hostname, sizeof(hostname), "%s-%s", WIFI_HOSTNAME_PREFIX, DEVICE_ID);
-        ETH.setHostname(hostname);
-
         // Latch static intent before the driver starts so the first link-up event
         // (which can beat _applyStaticConfiguration on a warm reboot) counts the
         // backstop attempt correctly.
@@ -110,6 +139,16 @@ namespace CustomEth
             return false;
         }
 
+        _applyUniversalMac();
+
+        // Same hostname as the WiFi interface: one device, one name in the DHCP lease table.
+        // Only after begin(): the core drops setHostname() while the netif does not exist yet
+        // (the router then lists the device as "espressif"). Still ahead of DHCP, which
+        // waits for link-up.
+        char hostname[WIFI_HOSTNAME_BUFFER_SIZE];
+        snprintf(hostname, sizeof(hostname), "%s-%.*s", WIFI_HOSTNAME_PREFIX, WIFI_HOSTNAME_DEVICE_ID_LENGTH, DEVICE_ID);
+        if (!ETH.setHostname(hostname)) LOG_WARNING("Could not set the Ethernet hostname to %s", hostname);
+
         _applyStaticConfiguration();
 
         _stopRequested = false;
@@ -121,8 +160,9 @@ namespace CustomEth
         }
 
         _enabled = true;
-        LOG_INFO("Ethernet started (CS=%u IRQ=%u RST=%u)", globalHwProfile->ethCsPin,
-                 globalHwProfile->ethIrqPin, globalHwProfile->ethRstPin);
+        LOG_INFO("Ethernet started");
+        LOG_DEBUG("Ethernet pins: CS=%u IRQ=%u RST=%u", globalHwProfile->ethCsPin,
+                  globalHwProfile->ethIrqPin, globalHwProfile->ethRstPin);
         return true;
     }
 
@@ -137,15 +177,18 @@ namespace CustomEth
 
     bool isCommissioned()
     {
-        // Monotonic cache: once commissioned, always commissioned this boot.
-        // Only a factory reset clears the marker, and that path restarts.
-        static bool cached = false;
-        if (cached) return true;
+        // Monotonic: once commissioned, always commissioned this boot (only a factory reset
+        // clears the marker, and that path restarts). NVS is read once; after that the eth
+        // task is the only source of change and it publishes through _commissioned, so
+        // callers can poll this from any task at the cost of a bool load.
+        if (_commissioned) return true;
+        if (_commissionedNvsChecked) return false;
+        _commissionedNvsChecked = true;
         Preferences prefs;
         if (!prefs.begin(PREFERENCES_NAMESPACE_ETH, true)) return false; // eth_ns never written (Home, or factory-fresh Pro)
-        cached = prefs.getBool(ETH_COMMISSIONED_KEY, false);
+        if (prefs.getBool(ETH_COMMISSIONED_KEY, false)) _commissioned = true;
         prefs.end();
-        return cached;
+        return _commissioned;
     }
 
     // One mutex hold for everything readers need; every predicate derives from it.
@@ -250,12 +293,24 @@ namespace CustomEth
         if (_ethTaskHandle != NULL) xTaskNotifyGive(_ethTaskHandle);
     }
 
+    // Runs in the eth task only - never from the Network event task (no logging there).
+    static void _logLinkDetails()
+    {
+        LOG_INFO("Ethernet up: IP %s | Gateway %s | Subnet %s | DNS %s | MAC %s | %u Mbps %s duplex | %s",
+                 ETH.localIP().toString().c_str(), ETH.gatewayIP().toString().c_str(),
+                 ETH.subnetMask().toString().c_str(), ETH.dnsIP(0).toString().c_str(),
+                 ETH.macAddress().c_str(), (unsigned)ETH.linkSpeed(),
+                 ETH.fullDuplex() ? "full" : "half",
+                 _staticApplied ? "static" : "DHCP");
+    }
+
     static void _ethTask(void *parameter)
     {
         (void)parameter;
         LOG_DEBUG("Ethernet task started");
 
         bool mdnsEnsured = false;
+        bool serviceableAnnounced = false;
         bool bootFailPersisted = false;
         bool backstopCleared = false;
         bool commissionAttempted = false;
@@ -272,28 +327,40 @@ namespace CustomEth
 
             Snapshot snap = _snapshot();
             if (snap.serviceable) {
+                // First proof of being in service on the wire: persist the
+                // commissioning marker so the provisioning state machine never
+                // treats this device as UNPROVISIONED again (the auth carve-out
+                // must not re-arm on a recovery-AP raise months into service).
+                // Published BEFORE the WiFi task is woken below: that task polls
+                // isCommissioned() and closes the carve-out for this boot too.
+                // One attempt per boot even on write failure - no per-tick NVS churn;
+                // a failed write only costs the NEXT boot its head start.
+                if (!commissionAttempted && !isCommissioned()) {
+                    commissionAttempted = true;
+                    Preferences prefs;
+                    bool persisted = false;
+                    if (prefs.begin(PREFERENCES_NAMESPACE_ETH, false)) {
+                        persisted = prefs.putBool(ETH_COMMISSIONED_KEY, true) > 0;
+                        prefs.end();
+                    }
+                    _commissioned = true;
+                    if (persisted) LOG_INFO("Device commissioned over Ethernet - marker persisted");
+                    else LOG_WARNING("Device commissioned over Ethernet for this boot, but the marker could not be persisted");
+                }
+
+                if (!serviceableAnnounced) {
+                    serviceableAnnounced = true;
+                    _logLinkDetails();
+                    // The WiFi task owns the recovery AP and the network LED layer: wake it
+                    // so both follow the wire now instead of at its next periodic tick.
+                    CustomWifi::notifyWiredStateChanged();
+                }
+
                 // An Ethernet-only device (no WiFi credentials) never runs the WiFi
                 // connect path that starts mDNS - kick it here on the serviceable
                 // rising edge. Idempotent on devices where WiFi already started it.
                 if (!mdnsEnsured) {
                     mdnsEnsured = CustomWifi::ensureMdnsStarted();
-                }
-
-                // First proof of being in service on the wire: persist the
-                // commissioning marker so the provisioning state machine never
-                // treats this device as UNPROVISIONED again (the auth carve-out
-                // must not re-arm on a recovery-AP raise months into service).
-                // Takes effect from the next provisioning init; within THIS first
-                // boot the carve-out window matches today's unprovisioned window.
-                // One attempt per boot even on write failure - no per-tick NVS churn.
-                if (!commissionAttempted && !isCommissioned()) {
-                    commissionAttempted = true;
-                    Preferences prefs;
-                    if (prefs.begin(PREFERENCES_NAMESPACE_ETH, false)) {
-                        prefs.putBool(ETH_COMMISSIONED_KEY, true);
-                        prefs.end();
-                        LOG_INFO("Device commissioned over Ethernet - marker persisted");
-                    }
                 }
 
                 // Backstop clear: the static config has held the interface serviceable
@@ -305,6 +372,11 @@ namespace CustomEth
                     LOG_INFO("Static Ethernet IP stable - boot-fail backstop counter cleared");
                 }
             } else {
+                if (serviceableAnnounced) {
+                    serviceableAnnounced = false;
+                    LOG_WARNING("Ethernet no longer serviceable (link %s)", snap.linkUp ? "up, no address" : "down");
+                    CustomWifi::notifyWiredStateChanged();
+                }
                 mdnsEnsured = false;
             }
 

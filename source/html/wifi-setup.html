@@ -72,7 +72,7 @@
 
 <body>
     <div class="header">EnergyMe</div>
-    <div class="subheader">Home</div>
+    <div class="subheader" id="productSubheader">Home</div>
 
     <!-- Landing -->
     <div id="welcome" class="section-box setup-box" style="display:none;">
@@ -88,7 +88,7 @@
     <div id="device" class="section-box setup-box" style="display:none;">
         <h2>Device</h2>
         <dl style="margin:0;">
-            <div class="kv"><dt>Model</dt><dd>EnergyMe - Home</dd></div>
+            <div class="kv"><dt>Model</dt><dd id="d-model">EnergyMe - Home</dd></div>
             <div class="kv"><dt>Device ID</dt><dd id="d-id">-</dd></div>
             <div class="kv"><dt>Firmware</dt><dd id="d-fw">-</dd></div>
             <div class="kv"><dt>Running for</dt><dd id="d-up">-</dd></div>
@@ -260,6 +260,10 @@
             function applyDeviceInfo(d) {
                 if (!d) return;
                 if (d.hostname) hostname = d.hostname;
+                if (d.productName) {
+                    document.getElementById('productSubheader').textContent = d.productName;
+                    document.getElementById('d-model').textContent = 'EnergyMe - ' + d.productName;
+                }
                 document.getElementById('d-id').textContent = d.deviceId || '-';
                 document.getElementById('d-fw').textContent = d.firmwareVersion || '-';
                 document.getElementById('d-up').textContent = humanUptime(d.uptime);
@@ -440,34 +444,35 @@
             // readable answer is a verdict.
             function pollOutcome(startedAt) {
                 readStatus().then(function (d) {
-                    if (!d) {
-                        if (Date.now() - startedAt > 60000) {
-                            clearInterval(connectPoll); connectPoll = null;
-                            // Never resolved either way. Do NOT call this a success: an
-                            // earlier build did, and on a wrong password it told the user
-                            // the meter had joined and the light was green while the device
-                            // was in fact still blinking blue and getting nowhere.
-                            showFailure('The meter has not reported back. It may still be '
-                                + 'trying, or the password may be wrong. Check the light on '
-                                + 'the device: solid green means it made it, blinking blue '
-                                + 'means it did not.');
-                        }
-                        return;
-                    }
-
-                    if (d.connected) {
+                    if (d && d.connected) {
                         clearInterval(connectPoll); connectPoll = null;
                         showConnected(d);
                         return;
                     }
 
-                    // Back to UNPROVISIONED means the attempt was given up on. The device
-                    // leaves that state in the same instant it accepts the credentials, so
-                    // the only reason to wait at all is the gap between the POST returning
-                    // and the WiFi task picking the notification up.
-                    if (d.state === 0 && Date.now() - startedAt > 4000) {
+                    // Back to UNPROVISIONED (0), or to AP_ASSIST (2) on a device already in
+                    // service, means the attempt was given up on. The device leaves either
+                    // state in the same instant it accepts the credentials, so the only
+                    // reason to wait at all is the gap between the POST returning and the
+                    // WiFi task picking the notification up.
+                    if (d && (d.state === 0 || d.state === 2) && Date.now() - startedAt > 4000) {
                         clearInterval(connectPoll); connectPoll = null;
                         showFailure();
+                        return;
+                    }
+
+                    // Ceiling for every other case, readable status or not: without it a
+                    // device that keeps retrying left this page spinning forever.
+                    if (Date.now() - startedAt > 60000) {
+                        clearInterval(connectPoll); connectPoll = null;
+                        // Never resolved either way. Do NOT call this a success: an
+                        // earlier build did, and on a wrong password it told the user
+                        // the meter had joined and the light was green while the device
+                        // was in fact still blinking blue and getting nowhere.
+                        showFailure('The meter has not reported back. It may still be '
+                            + 'trying, or the password may be wrong. Check the light on '
+                            + 'the device: solid green means it made it, blinking blue '
+                            + 'means it did not.');
                     }
                 });
             }

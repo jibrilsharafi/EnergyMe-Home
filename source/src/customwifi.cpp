@@ -49,6 +49,10 @@ namespace CustomWifi
   // second unknown event before the bit is drained just replaces which one gets logged.
   static const uint32_t WIFI_EVENT_UNKNOWN = (1UL << 10);
   static volatile int32_t _lastUnknownWifiEvent = -1;
+  // Pure wake-up: the wired interface changed, so _serviceApLifecycle() (top of the loop)
+  // must re-evaluate the AP and the network LED now, not at the next periodic tick.
+  static const uint32_t WIFI_EVENT_WIRED_CHANGED = (1UL << 11);
+  static const uint32_t WIFI_EVENT_AP_STOP = (1UL << 12); // Log-only: the SoftAP went down
 
   // Task state management
   static bool _taskShouldRun = false;
@@ -136,6 +140,7 @@ namespace CustomWifi
   static void _forceReconnectInternal();
   static void _serviceDisconnectDeadline();
   static bool _hasStoredCredentials();
+  static bool _hasCredentialsWorthRetrying();
   static void _feedProvisioning(WifiProvisioning::Event event);
   static bool _isPowerReset();
   static void _sendOpenSourceTelemetry();
@@ -173,8 +178,8 @@ namespace CustomWifi
     LOG_DEBUG("Starting WiFi...");
 
     // This has to be before everything else to ensure the hostname is actually set
-    char hostname[WIFI_SSID_BUFFER_SIZE];
-    snprintf(hostname, sizeof(hostname), "%s-%s", WIFI_HOSTNAME_PREFIX, DEVICE_ID);
+    char hostname[WIFI_HOSTNAME_BUFFER_SIZE];
+    snprintf(hostname, sizeof(hostname), "%s-%.*s", WIFI_HOSTNAME_PREFIX, WIFI_HOSTNAME_DEVICE_ID_LENGTH, DEVICE_ID);
     WiFi.setHostname(hostname); // Allow for easier identification in the router/network client list
 
     // This loop owns the connect path, so Arduino must not also drive one. With
@@ -436,6 +441,11 @@ namespace CustomWifi
     return _testConnectivity();
   }
 
+  void notifyWiredStateChanged()
+  {
+    if (_wifiTaskHandle != NULL) xTaskNotify(_wifiTaskHandle, WIFI_EVENT_WIRED_CHANGED, eSetBits);
+  }
+
   void forceReconnect()
   {
     if (_wifiTaskHandle != NULL) {
@@ -490,6 +500,21 @@ namespace CustomWifi
     // probe request and would flood the notification path.
     case ARDUINO_EVENT_WIFI_AP_START:
       xTaskNotify(_wifiTaskHandle, WIFI_EVENT_AP_START, eSetBits);
+      break;
+
+    case ARDUINO_EVENT_WIFI_AP_STOP:
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_AP_STOP, eSetBits);
+      break;
+
+    // WiFi.onEvent() is the shared Network dispatcher on core 3.x, so Ethernet events
+    // arrive here too. custometh owns them; they are not "unknown WiFi events".
+    case ARDUINO_EVENT_ETH_START:
+    case ARDUINO_EVENT_ETH_STOP:
+    case ARDUINO_EVENT_ETH_CONNECTED:
+    case ARDUINO_EVENT_ETH_DISCONNECTED:
+    case ARDUINO_EVENT_ETH_GOT_IP:
+    case ARDUINO_EVENT_ETH_LOST_IP:
+    case ARDUINO_EVENT_ETH_GOT_IP6:
       break;
 
     case ARDUINO_EVENT_WIFI_AP_STACONNECTED:
@@ -585,7 +610,11 @@ namespace CustomWifi
 
     Led::clearPattern(Led::PRIO_MEDIUM); // Release the network layer; healthy status shows through
     Led::setGreen(Led::PRIO_NORMAL);
-    LOG_INFO("WiFi fully connected and operational");
+    LOG_INFO("WiFi up: SSID %s | IP %s | Gateway %s | Subnet %s | DNS %s | MAC %s | %d dBm | channel %d | %s",
+             WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(), WiFi.gatewayIP().toString().c_str(),
+             WiFi.subnetMask().toString().c_str(), WiFi.dnsIP(0).toString().c_str(),
+             WiFi.macAddress().c_str(), (int)WiFi.RSSI(), (int)WiFi.channel(),
+             _staticIpApplied ? "static" : "DHCP");
 
     // Static-IP health (boot-fail backstop clear + DHCP auto-recovery) is serviced from the periodic
     // check in the task loop, not here: it must run past the early crash window and after the restart
@@ -609,9 +638,11 @@ namespace CustomWifi
     // UNPROVISIONED carve-out.
     bool hasCredentials = _hasStoredCredentials();
     bool commissioned = CustomEth::isCommissioned();
-    WifiProvisioning::init(_provisioning, hasCredentials, millis64(), commissioned);
+    // Profile fact, not CustomEth::isEnabled(): this task starts before CustomEth::begin().
+    bool wiredPresent = globalHwProfile->hasEthernet;
+    WifiProvisioning::init(_provisioning, hasCredentials, millis64(), commissioned, wiredPresent);
     _publishedState = _provisioning.state;
-    LOG_INFO("Provisioning init: %s credentials, %scommissioned, state %s",
+    LOG_DEBUG("Provisioning init: %s credentials, %scommissioned, state %s",
              hasCredentials ? "found" : "no", commissioned ? "" : "not ",
              WifiProvisioning::stateName(_provisioning.state));
     _taskShouldRun = true;
@@ -625,13 +656,17 @@ namespace CustomWifi
 
     if (hasCredentials) {
       _startStaAttempt();
-    } else {
+    } else if (!wiredPresent) {
       // Nothing to try. Record the decision, then let the same reconciliation path every
       // other raise goes through bring the radio up; the loop below keeps it bounded.
       LOG_INFO("No stored credentials - raising the SoftAP for provisioning");
       WifiProvisioning::raiseAp(_provisioning, millis64());
       _publishedState = _provisioning.state;
       _reconcileApWithState();
+    } else {
+      // _serviceApLifecycle() raises it if the wire does not come up within the bounded
+      // link-detect / DHCP windows; a cabled device never shows an AP at all.
+      LOG_INFO("No stored credentials - holding the SoftAP back while Ethernet comes up");
     }
 
     // Main task loop - handles fallback scenarios and deferred logging
@@ -666,6 +701,15 @@ namespace CustomWifi
         // The AP lifetime and grace windows are minutes long, so a coarse tick is enough
         // to bound them without waking the task needlessly.
         waitMs = WIFI_AP_LIFECYCLE_TICK_MS;
+      }
+      // A deferred raise may be pending inside the boot wired windows: tick fast so the
+      // decision is not left waiting for the 30 s periodic interval. Never true on Home.
+      if (!_apRaised && globalHwProfile->hasEthernet && WifiProvisioning::insideWiredBootWindows(_provisioning, nowMs) &&
+          (_provisioning.state == WifiProvisioning::State::UNPROVISIONED ||
+           _provisioning.state == WifiProvisioning::State::AP_ASSIST) &&
+          waitMs > WIFI_AP_PENDING_TICK_MS)
+      {
+        waitMs = WIFI_AP_PENDING_TICK_MS;
       }
 
       // Wait for notification from event handler or timeout. ULONG_MAX as the clear-on-exit
@@ -805,7 +849,9 @@ namespace CustomWifi
           // this event exactly while the AP is broadcasting - the one time the AP indication
           // has something to say. The AP owns the layer until it comes down, and
           // _tearDownAp() hands it back.
-          if (!_apRaised) Led::pulseBlue(Led::PRIO_MEDIUM);
+          // Nor while the wire serves the device: a Pro with failing WiFi credentials fires
+          // this on every attempt and would mask the healthy status layer forever.
+          if (!_apRaised && !CustomEth::isServiceable()) Led::pulseBlue(Led::PRIO_MEDIUM);
           LOG_WARNING("WiFi disconnected - auto-reconnect will handle");
           _lastWifiConnectedMillis = 0; // Reset stabilization timer on disconnect
           _feedProvisioning(WifiProvisioning::Event::STA_LOST);
@@ -831,7 +877,14 @@ namespace CustomWifi
 
         if (notificationValue & WIFI_EVENT_AP_START)
         {
-          LOG_DEBUG("SoftAP started on %s", WiFi.softAPIP().toString().c_str());
+          // softAPdisconnect() reconfigures the live AP before disabling it, and this task is
+          // blocked inside that call: a START can be drained here after the AP is already gone.
+          if (isApServing()) LOG_DEBUG("SoftAP started on %s", WiFi.softAPIP().toString().c_str());
+        }
+
+        if (notificationValue & WIFI_EVENT_AP_STOP)
+        {
+          LOG_DEBUG("SoftAP stopped");
         }
 
         if (notificationValue & WIFI_EVENT_AP_STACONNECTED)
@@ -901,7 +954,7 @@ namespace CustomWifi
             // reports the failure. Interfering here would restart the radio underneath it.
             LOG_DEBUG("Periodic check: association attempt in flight, leaving it alone");
           }
-          else if (_provisioning.hasCredentials)
+          else if (_hasCredentialsWorthRetrying())
           {
             // Re-enter the attempt machinery rather than calling WiFi.reconnect() directly.
             // _forceReconnectInternal() arms no deadline, so nothing ever fed
@@ -1197,16 +1250,33 @@ namespace CustomWifi
     return conf.sta.ssid[0] != '\0';
   }
 
+  // Proven credentials always retry. A commissioned device also keeps trying credentials
+  // that were submitted but never proven, exactly as it would after a reboot (init() seeds
+  // hasCredentials from what is stored). The driver read stays lazy behind the two flags.
+  static bool _hasCredentialsWorthRetrying()
+  {
+    return _provisioning.hasCredentials || (_provisioning.commissioned && _hasStoredCredentials());
+  }
+
   // Single funnel for provisioning transitions so the published snapshot can never drift
   // from the owned context. Task context only.
   static void _feedProvisioning(WifiProvisioning::Event event)
   {
     WifiProvisioning::State previous = _provisioning.state;
     WifiProvisioning::State current = WifiProvisioning::onEvent(_provisioning, event, millis64());
+
+    // onEvent() has no wired input, so it can ask for an AP while the wire is serving.
+    // Veto it before the radio is touched: otherwise every failed attempt raises the AP
+    // here and _serviceApLifecycle() tears it down in the same loop iteration, forever.
+    // Never true on products without Ethernet.
+    if (_provisioning.apRaised && !_apRaised && CustomEth::isServiceable()) {
+      WifiProvisioning::tearDownAp(_provisioning, millis64());
+      current = _provisioning.state;
+    }
     _publishedState = current;
 
     if (current != previous) {
-      LOG_INFO("Provisioning state %s -> %s", WifiProvisioning::stateName(previous), WifiProvisioning::stateName(current));
+      LOG_DEBUG("Provisioning state %s -> %s", WifiProvisioning::stateName(previous), WifiProvisioning::stateName(current));
     }
 
     // Act on the decision immediately. onEvent() can decide an AP is needed (the move to
@@ -1310,7 +1380,7 @@ namespace CustomWifi
     // reason to stop: under APSTA both interfaces run at once, so the device can host the
     // portal and still rejoin by itself the moment the router comes back. Without
     // credentials there is nothing to attempt, and WiFi.begin() would just churn the radio.
-    if (_provisioning.hasCredentials) {
+    if (_hasCredentialsWorthRetrying()) {
       _startStaAttempt();
     }
   }
@@ -1460,7 +1530,9 @@ namespace CustomWifi
     // so a device still searching for its network would be left showing nothing at all.
     // When connected there is nothing to restore - the healthy status layer shows through.
     Led::clearPattern(Led::PRIO_MEDIUM);
-    if (!isFullyConnected()) Led::pulseBlue(Led::PRIO_MEDIUM);
+    // Connected over the wire counts too: without this an Ethernet-only Pro pulsed blue
+    // forever, because only a WiFi association ever released this layer.
+    if (!isFullyConnected() && !CustomEth::isServiceable()) Led::pulseBlue(Led::PRIO_MEDIUM);
 
     LOG_INFO("SoftAP torn down");
   }
@@ -1524,21 +1596,46 @@ namespace CustomWifi
     // products without Ethernet, so the Home evaluation is bit-identical. The
     // link query is only paid while the boot DHCP grace window can still matter.
     bool ethServiceable = CustomEth::isServiceable();
-    bool ethLinkUp = (!ethServiceable && nowMs < WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS)
+    bool ethLinkUp = (!ethServiceable && WifiProvisioning::insideWiredBootWindows(_provisioning, nowMs))
                          ? CustomEth::isLinkUp() : false;
+
+    // custometh publishes "commissioned" before it wakes this task on the first serviceable
+    // edge; apply it to this boot too (see Event::WIRED_COMMISSIONED). Level-triggered on
+    // purpose: gating it on the wire still serving would miss a cable pulled (or a link
+    // blip) between the publish and this wake-up, which is exactly the case it is for.
+    if (!_provisioning.commissioned && CustomEth::isCommissioned()) {
+      _feedProvisioning(WifiProvisioning::Event::WIRED_COMMISSIONED);
+    }
 
     if (WifiProvisioning::shouldTearDownAp(_provisioning, nowMs, ethServiceable)) {
       WifiProvisioning::tearDownAp(_provisioning, nowMs);
       _publishedState = _provisioning.state;
-    } else if (WifiProvisioning::shouldRaiseAp(_provisioning, nowMs, ethServiceable, ethLinkUp)) {
+    } else if (WifiProvisioning::shouldRaiseAp(_provisioning, nowMs, ethServiceable, ethLinkUp,
+                                               globalHwProfile->hasEthernet)) {
       // Covers both the first raise and any later one: if the AP is somehow down while the
       // device still cannot associate, this puts it back rather than leaving it dark.
+      LOG_INFO("Device not reachable over its own network - raising the SoftAP");
       WifiProvisioning::raiseAp(_provisioning, nowMs);
       _publishedState = _provisioning.state;
     }
 
     _reconcileApWithState();
     _serviceDns(ethServiceable);
+
+    // Wire-only device: no WiFi GOT_IP will ever release the network LED layer, so follow
+    // the wire's serviceable edges here (WiFi task only). Never entered on products
+    // without Ethernet: ethServiceable is permanently false and the flag never sets.
+    static bool wiredLedReleased = false;
+    if (ethServiceable && !wiredLedReleased && !_apRaised) {
+      Led::clearPattern(Led::PRIO_MEDIUM);
+      wiredLedReleased = true;
+    } else if (!ethServiceable && wiredLedReleased) {
+      wiredLedReleased = false;
+      // Raw association, not isFullyConnected(): that is false for the lwIP stabilisation
+      // delay after GOT_IP, and nothing would clear the pulse again on a link that stays up.
+      bool staUp = WiFi.isConnected() && WiFi.localIP() != IPAddress(0, 0, 0, 0);
+      if (!_apRaised && !staUp) Led::pulseBlue(Led::PRIO_MEDIUM);
+    }
   }
 
   // Evaluates a disconnect grace window once it expires. This is the non-blocking
