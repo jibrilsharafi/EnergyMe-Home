@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "crashmonitor.h"
+#include "app_image_descriptor.h"
 #include "duration_format.h"
 
 #include <LittleFS.h>
@@ -419,8 +420,16 @@ namespace CrashMonitor
             _consecutiveResetCount = 0;
             _quickRestartCount = 0; // Also clear quick restart counter
 
-            // Try rollback first (if available and not already tried)
-            if (Update.canRollBack() && !_rollbackTried) {
+            // Try rollback first (if available and not already tried). Never onto an image of
+            // the other product: canRollBack() only looks at the first byte, and such an image
+            // dies at PSRAM init, where nothing can bring the device back.
+            bool rollbackPossible = Update.canRollBack() && !_rollbackTried;
+            ImageDescriptor::Verdict passiveVerdict = rollbackPossible
+                ? AppImageDescriptor::validatePartition(esp_ota_get_next_update_partition(NULL), false)
+                : ImageDescriptor::Verdict::ACCEPT;
+            if (!ImageDescriptor::accepts(passiveVerdict)) {
+                LOG_WARNING("Rollback image is not compatible with this device (%s)", ImageDescriptor::verdictToString(passiveVerdict));
+            } else if (rollbackPossible) {
                 LOG_WARNING("Attempting firmware rollback...");
                 if (Update.rollBack()) {
                     _rollbackTried = true;
