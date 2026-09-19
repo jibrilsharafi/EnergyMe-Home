@@ -41,6 +41,13 @@ namespace WifiProvisioning {
 // a normally-leasing network never sees an AP blip on a zero-touch first boot.
 #define WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS (15UL * 1000UL)
 
+// Boot-relative window in which a product WITH a wired interface cannot have reported
+// link yet: the driver starts after this state machine, the PHY autonegotiates, and
+// esp_eth polls link every 2 s. Until it ends "link down" only means "not known yet",
+// so the AP raise is held back; link still down afterwards counts as "no cable".
+// Must stay below WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS.
+#define WIFI_PROVISIONING_WIRED_LINK_DETECT_MS (10UL * 1000UL)
+
 enum class State : uint8_t {
     UNPROVISIONED,   // No stored credentials. AP up, DNS on, auth carve-out active.
     STA_CONNECTING,  // Association in progress or being retried.
@@ -98,8 +105,11 @@ struct Context {
 
 // Sets the initial state from what NVS holds. `nowMs` seeds the AP timers when the
 // device comes up with nothing to connect to. `commissioned` marks a device the
-// wire has already proven in service (see Context.commissioned).
-void init(Context &context, bool hasCredentials, uint64_t nowMs, bool commissioned = false);
+// wire has already proven in service (see Context.commissioned). `wiredPresent`: the
+// product has a wired interface, so the boot raise is decided by shouldRaiseAp()
+// (which can see the wire) instead of here. Always false on WiFi-only products.
+void init(Context &context, bool hasCredentials, uint64_t nowMs, bool commissioned = false,
+          bool wiredPresent = false);
 
 // Applies an event and returns the resulting state. Pure apart from `context`.
 State onEvent(Context &context, Event event, uint64_t nowMs);
@@ -114,9 +124,12 @@ bool shouldTearDownAp(const Context &context, uint64_t nowMs, bool wiredReachabl
 // Holds for UNPROVISIONED (nothing to connect to) and for AP_ASSIST (credentials that
 // do not work), and keeps holding until STA associates or the wire becomes
 // serviceable. `wiredLinkUp` with no address holds the raise back for the boot
-// DHCP grace window only. Nothing expires the raise itself, so a device that loses
-// its network stays reachable by walking up to it rather than going dark.
-bool shouldRaiseAp(const Context &context, uint64_t nowMs, bool wiredReachable = false, bool wiredLinkUp = false);
+// DHCP grace window only; `wiredPresent` holds it back for the shorter boot
+// link-detect window, before the link state can be known at all. Nothing expires the
+// raise itself, so a device that loses its network stays reachable by walking up to
+// it rather than going dark.
+bool shouldRaiseAp(const Context &context, uint64_t nowMs, bool wiredReachable = false, bool wiredLinkUp = false,
+                   bool wiredPresent = false);
 
 // Applies the teardown, including the settle to STA_ONLY when a grace window ends.
 // Every path that lowers the AP goes through here, so no caller can leave the state
