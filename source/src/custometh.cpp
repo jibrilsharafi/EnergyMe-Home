@@ -82,11 +82,6 @@ namespace CustomEth
         // and pokes the eth task, which does the actual work.
         Network.onEvent(_onNetworkEvent);
 
-        // Same hostname as the WiFi interface: one device, one name in the DHCP lease table.
-        char hostname[WIFI_SSID_BUFFER_SIZE];
-        snprintf(hostname, sizeof(hostname), "%s-%s", WIFI_HOSTNAME_PREFIX, DEVICE_ID);
-        ETH.setHostname(hostname);
-
         // Latch static intent before the driver starts so the first link-up event
         // (which can beat _applyStaticConfiguration on a warm reboot) counts the
         // backstop attempt correctly.
@@ -109,6 +104,14 @@ namespace CustomEth
             LOG_ERROR("W5500 initialization failed - Ethernet unavailable this boot");
             return false;
         }
+
+        // Same hostname as the WiFi interface: one device, one name in the DHCP lease table.
+        // Only after begin(): the core drops setHostname() while the netif does not exist yet
+        // (the router then lists the device as "espressif"). Still ahead of DHCP, which
+        // waits for link-up.
+        char hostname[WIFI_HOSTNAME_BUFFER_SIZE];
+        snprintf(hostname, sizeof(hostname), "%s-%.*s", WIFI_HOSTNAME_PREFIX, WIFI_HOSTNAME_DEVICE_ID_LENGTH, DEVICE_ID);
+        if (!ETH.setHostname(hostname)) LOG_WARNING("Could not set the Ethernet hostname to %s", hostname);
 
         _applyStaticConfiguration();
 
