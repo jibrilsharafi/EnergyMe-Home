@@ -169,7 +169,9 @@ namespace InfluxDbClient
         _setInfluxFullUrl(config);
         _setInfluxHeader(config);
 
-        _startTask();
+        // A disabled integration holds no task: its stack is internal RAM. Every config change
+        // comes through here, so enabling it later starts the task without a restart.
+        if (config.enabled) _startTask();
 
         LOG_DEBUG("InfluxDB configuration set");
         return true;
