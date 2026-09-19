@@ -582,6 +582,22 @@ void test_commissioned_device_stray_attempt_failure_keeps_ap_assist(void) {
     TEST_ASSERT_TRUE(shouldRaiseAp(context, 2 * kMinute, false, false, true));
 }
 
+// Regression (review of the bring-up fixes): the firmware feeds ONE failure for a
+// submission the core will not retry (AUTH_FAIL), not five. The device must not be left
+// in STA_CONNECTING, which shouldRaiseAp() does not cover.
+void test_commissioned_device_single_failed_submission_stays_recoverable(void) {
+    Context context;
+    init(context, false, 0, true, true);
+    onEvent(context, Event::CREDENTIALS_SUBMITTED, kMinute);
+    onEvent(context, Event::STA_ATTEMPT_FAILED, kMinute);
+
+    TEST_ASSERT_EQUAL(State::AP_ASSIST, context.state);
+    TEST_ASSERT_FALSE(context.apRaised);                                       // wire still serving
+    TEST_ASSERT_FALSE(shouldRaiseAp(context, 2 * kMinute, true, true, true));
+    TEST_ASSERT_TRUE(shouldRaiseAp(context, 2 * kMinute, false, false, true)); // cable pulled
+    TEST_ASSERT_FALSE(isAuthBypassAllowed(context.state, true, false));
+}
+
 void test_commissioned_device_failing_submitted_credentials_land_in_ap_assist(void) {
     Context context;
     init(context, false, 0, true, true);
@@ -867,6 +883,7 @@ int main(int, char **) {
     RUN_TEST(test_commissioned_device_without_credentials_is_not_unprovisioned);
     RUN_TEST(test_commissioned_device_wire_loss_lands_in_ap_assist_with_auth);
     RUN_TEST(test_commissioned_device_stray_attempt_failure_keeps_ap_assist);
+    RUN_TEST(test_commissioned_device_single_failed_submission_stays_recoverable);
     RUN_TEST(test_commissioned_device_failing_submitted_credentials_land_in_ap_assist);
     RUN_TEST(test_wired_product_unprovisioned_boot_does_not_raise_in_init);
     RUN_TEST(test_wired_present_holds_raise_until_link_detect_window_ends);

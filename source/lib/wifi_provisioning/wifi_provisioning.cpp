@@ -143,10 +143,14 @@ State onEvent(Context &context, Event event, uint64_t nowMs) {
             } else if (context.apRaiseTriggers >= WIFI_PROVISIONING_AP_RAISE_THRESHOLD) {
                 context.state = State::AP_ASSIST;
                 if (!context.apRaised) raiseAp(context, nowMs);
-            } else if (context.state == State::AP_ASSIST) {
-                // Already "cannot associate" (see STA_LOST). A commissioned device with
-                // no credentials sits here below the threshold; demoting it on a stray
-                // failure would strand it in a state nothing retries out of.
+            } else if (context.state == State::AP_ASSIST || !context.hasCredentials) {
+                // Reaching here with !hasCredentials implies commissioned. The core stops
+                // reconnecting on AUTH_FAIL/210-212 and a single failure is all that gets
+                // fed, so STA_CONNECTING would be a state nothing leaves and shouldRaiseAp()
+                // does not cover: a later wire loss left the device dark. Park in AP_ASSIST
+                // (full auth); the AP itself is left to shouldRaiseAp(), so a device served
+                // by the wire shows no AP.
+                context.state = State::AP_ASSIST;
             } else {
                 context.state = State::STA_CONNECTING;
             }
