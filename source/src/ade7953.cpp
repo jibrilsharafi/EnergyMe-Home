@@ -2159,8 +2159,13 @@ namespace Ade7953
         bool suppressed = (_zxtoLastTriggerMs != 0) && ((nowMs - _zxtoLastTriggerMs) < ADE7953_ZXTO_SUPPRESS_MS);
 
         if (suppressed) {
+            #ifdef ENV_DEV // Bench boards often run with no voltage input connected: keep this out of the DEBUG stream
+            LOG_VERBOSE("Blackout still ongoing (suppressed, %llums since last alert, count=%llu)",
+                       (unsigned long long)(nowMs - _zxtoLastTriggerMs), statistics.ade7953ZxtoInterrupts);
+            #else
             LOG_DEBUG("Blackout still ongoing (suppressed, %llums since last alert, count=%llu)",
                        (unsigned long long)(nowMs - _zxtoLastTriggerMs), statistics.ade7953ZxtoInterrupts);
+            #endif
             return;
         }
 
