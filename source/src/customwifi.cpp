@@ -2136,6 +2136,12 @@ namespace CustomWifi
     // (so a later internet blip on a good static IP can never reboot the device off it).
     if (_staticRecoveryResolved) return;
 
+    // The connectivity probe follows the default route, and while Ethernet serves that is the
+    // wire: the result says nothing about the WiFi static IP. Judging by it would restart a
+    // device wired to an isolated LAN off a good WiFi address, or bless a bad one. No verdict
+    // until WiFi carries the traffic. Never true on products without Ethernet.
+    if (CustomEth::isServiceable()) return;
+
     WifiConfiguration config;
     if (!getConfiguration(config) || !config.fallbackToDhcp) return;
 
