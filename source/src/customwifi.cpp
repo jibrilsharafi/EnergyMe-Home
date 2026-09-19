@@ -125,6 +125,12 @@ namespace CustomWifi
   // A uint32_t is written atomically on this target and readers only compare it for equality.
   static volatile uint32_t _apAddressHostOrder = 0;
 
+  // DNS servers the station brought (lease or static config), as raw IPAddress dwords. lwIP
+  // keeps ONE resolver list for every netif, so WiFi.STA.dnsIP() reads whatever the last lease
+  // on ANY interface wrote; custometh puts these back when WiFi carries the traffic.
+  // Single-word stores, read lock-free from the eth task.
+  static volatile uint32_t _staDns[2] = {0, 0};
+
   // Private helper functions
   static void _onWiFiEvent(WiFiEvent_t event);
   static void _onWiFiEventWithInfo(WiFiEvent_t event, WiFiEventInfo_t info);
@@ -450,6 +456,12 @@ namespace CustomWifi
     return _testConnectivity();
   }
 
+  void getStaDnsServers(IPAddress &dns1, IPAddress &dns2)
+  {
+    dns1 = IPAddress(_staDns[0]);
+    dns2 = IPAddress(_staDns[1]);
+  }
+
   void notifyWiredStateChanged()
   {
     if (_wifiTaskHandle != NULL) xTaskNotify(_wifiTaskHandle, WIFI_EVENT_WIRED_CHANGED, eSetBits);
@@ -548,6 +560,13 @@ namespace CustomWifi
   static void _onWiFiEventWithInfo(WiFiEvent_t event, WiFiEventInfo_t info)
   {
     // DO NOT USE ANY LOGGING HERE to avoid weird crashes (this is a callback.. I don't know why but it seems unsafe)
+    if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP && !_staticIpApplied) {
+      // The station's lease has just written the resolver list: take its servers before a
+      // lease on the wire replaces them. A static config filled the cache itself.
+      _staDns[0] = lwipDnsServer(0);
+      _staDns[1] = lwipDnsServer(1);
+    }
+
     if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
       // A spinlock, not a semaphore: taskENTER_CRITICAL never blocks or logs, so it is safe
       // in this context, and the section below is a handful of fixed-size snprintf calls -
@@ -2092,6 +2111,8 @@ namespace CustomWifi
 
     if (WiFi.config(ip, gateway, subnet, dns1, dns2)) {
       _staticIpApplied = true;
+      _staDns[0] = (uint32_t)dns1;
+      _staDns[1] = (uint32_t)dns2;
       LOG_INFO("Static IP configured: %s (gateway: %s, attempt %u)", config.ip, config.gateway, bootFails + 1);
     } else {
       LOG_ERROR("Failed to apply static IP configuration - falling back to DHCP");
