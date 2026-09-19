@@ -443,6 +443,28 @@ class EnergyMeAPI {
     }
 
     /**
+     * Get WiFi provisioning status (state, connected, ssid, ip, rssi, credentialWriteFailed)
+     */
+    async getWifiStatus() {
+        return this.get('network/wifi/status');
+    }
+
+    /**
+     * Get the WiFi scan state. The scan is async on the device: poll until status is not 'running'.
+     * @param {boolean} refresh - Ask the device to start a fresh scan instead of serving its cache
+     */
+    async scanWifiNetworks(refresh = false) {
+        return this.get('network/wifi/scan' + (refresh ? '?refresh=1' : ''));
+    }
+
+    /**
+     * Get the last WiFi disconnect diagnostics (reason of a failed association)
+     */
+    async getWifiDiagnostics() {
+        return this.get('network/wifi/diagnostics');
+    }
+
+    /**
      * Get network configuration (static IP)
      */
     async getNetworkConfig() {
