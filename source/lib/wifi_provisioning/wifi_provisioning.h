@@ -36,12 +36,12 @@ namespace WifiProvisioning {
 #define WIFI_PROVISIONING_MIN_CIDR 24
 #define WIFI_PROVISIONING_MAX_CIDR 28
 
-// Boot-relative grace for a wired link that has not obtained an address yet
+// Grace (counted from init()) for a wired link that has not obtained an address yet
 // (cable in, DHCP negotiating): the recovery AP raise is held back this long so
 // a normally-leasing network never sees an AP blip on a zero-touch first boot.
 #define WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS (15UL * 1000UL)
 
-// Boot-relative window in which a product WITH a wired interface cannot have reported
+// Window (counted from init()) in which a product WITH a wired interface cannot have reported
 // link yet: the driver starts after this state machine, the PHY autonegotiates, and
 // esp_eth polls link every 2 s. Until it ends "link down" only means "not known yet",
 // so the AP raise is held back; link still down afterwards counts as "no cable".
@@ -100,6 +100,11 @@ struct Context {
 
     bool apRaised;
     uint64_t apRaisedAtMs;   // Diagnostics only; the AP is not lifetime-bounded
+
+    // When init() ran. The wired boot windows count from here, not from power-on: a slow
+    // boot (dev chip report, LittleFS format, post-OTA) must not eat them before the wired
+    // driver had a chance - seen on the bench as a 4 s AP blip on a cabled device.
+    uint64_t initAtMs;
     uint64_t graceStartedAtMs;
 };
 
@@ -130,6 +135,10 @@ bool shouldTearDownAp(const Context &context, uint64_t nowMs, bool wiredReachabl
 // it rather than going dark.
 bool shouldRaiseAp(const Context &context, uint64_t nowMs, bool wiredReachable = false, bool wiredLinkUp = false,
                    bool wiredPresent = false);
+
+// True while a wired link could still be coming up after init() (the DHCP grace, which
+// contains the link-detect window). Callers use it to tick fast and to query the link.
+bool insideWiredBootWindows(const Context &context, uint64_t nowMs);
 
 // Applies the teardown, including the settle to STA_ONLY when a grace window ends.
 // Every path that lowers the AP goes through here, so no caller can leave the state

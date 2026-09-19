@@ -60,6 +60,7 @@ void init(Context &context, bool hasCredentials, uint64_t nowMs, bool commission
     context.apRaised = false;
     context.apRaisedAtMs = 0;
     context.graceStartedAtMs = 0;
+    context.initAtMs = nowMs;
 
     // A commissioned device (Ethernet has proven it in service at least once) is
     // provisioned even with no WiFi credentials: UNPROVISIONED arms the AP auth
@@ -233,17 +234,22 @@ bool shouldRaiseAp(const Context &context, uint64_t nowMs, bool wiredReachable, 
 
     // The wired driver starts after this state machine and reports link only at its
     // first PHY poll: until then "link down" just means "not known yet".
-    if (wiredPresent && nowMs < WIFI_PROVISIONING_WIRED_LINK_DETECT_MS) return false;
+    uint64_t sinceInitMs = elapsedSince(context.initAtMs, nowMs);
+    if (wiredPresent && sinceInitMs < WIFI_PROVISIONING_WIRED_LINK_DETECT_MS) return false;
 
     // Zero-touch first boot: cable in, DHCP still negotiating. Hold the raise back
     // briefly (boot-relative window) so a normally-leasing network never sees an AP
     // blip; after the window, link-without-address counts as unreachable.
-    if (wiredLinkUp && nowMs < WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS) return false;
+    if (wiredLinkUp && sinceInitMs < WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS) return false;
 
     // Both states mean "unreachable over the network": UNPROVISIONED has nothing to
     // connect to, AP_ASSIST has credentials that do not work. Neither is time-limited,
     // so a device that loses its network stays fixable in place.
     return context.state == State::UNPROVISIONED || context.state == State::AP_ASSIST;
+}
+
+bool insideWiredBootWindows(const Context &context, uint64_t nowMs) {
+    return elapsedSince(context.initAtMs, nowMs) < WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS;
 }
 
 bool isNetworkServiceable(bool staConnected, bool apServing) {

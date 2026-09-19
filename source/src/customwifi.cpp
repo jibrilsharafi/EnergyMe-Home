@@ -699,7 +699,7 @@ namespace CustomWifi
       }
       // A deferred raise may be pending inside the boot wired windows: tick fast so the
       // decision is not left waiting for the 30 s periodic interval. Never true on Home.
-      if (!_apRaised && globalHwProfile->hasEthernet && nowMs < WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS &&
+      if (!_apRaised && globalHwProfile->hasEthernet && WifiProvisioning::insideWiredBootWindows(_provisioning, nowMs) &&
           (_provisioning.state == WifiProvisioning::State::UNPROVISIONED ||
            _provisioning.state == WifiProvisioning::State::AP_ASSIST) &&
           waitMs > WIFI_AP_PENDING_TICK_MS)
@@ -1574,7 +1574,7 @@ namespace CustomWifi
     // products without Ethernet, so the Home evaluation is bit-identical. The
     // link query is only paid while the boot DHCP grace window can still matter.
     bool ethServiceable = CustomEth::isServiceable();
-    bool ethLinkUp = (!ethServiceable && nowMs < WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS)
+    bool ethLinkUp = (!ethServiceable && WifiProvisioning::insideWiredBootWindows(_provisioning, nowMs))
                          ? CustomEth::isLinkUp() : false;
 
     if (WifiProvisioning::shouldTearDownAp(_provisioning, nowMs, ethServiceable)) {
