@@ -66,9 +66,9 @@
 
 ## 9. Hardware bring-up (BLOCKED on Pro board) - covers all hardware-only spec scenarios
 
-- [ ] 9.1 Serial-first bring-up of the Pro board (never OTA-test new pre-network boot code)
-- [ ] 9.2 Verify the netlist-derived pinout/mux map/divider values on hardware; correct any discrepancy in the v1.0 profile; verify all 12 channels measure
-- [ ] 9.3 Zero-touch commissioning test: factory-fresh + cable + DHCP → reachable, first-run password setup, then fully operational; no AP raised
-- [ ] 9.4 Failover tests on hardware: cable pull → STA, cable return → ETH, flap, static-IP backstop, button reset, DNS/NTP follow the active interface
+- [x] 9.1 Serial-first bring-up of the Pro board (never OTA-test new pre-network boot code) - done 2026-09-19: boots, OPI PSRAM 8 MB, v1.0 profile / 12 channels, W5500 up (100 Mbps full duplex), DHCP lease ~5 s after ETH.begin, web/API/Modbus TCP served over the wire. Data path: 0.07% loss over 3000 pings, 390 HTTP downloads (59 MB) with zero errors/corruption, ~6 Mbit/s.
+- [ ] 9.2 Verify the netlist-derived pinout/mux map/divider values on hardware; correct any discrepancy in the v1.0 profile; verify all 12 channels measure (ADE7953 SPI, LED, button, W5500 pins confirmed 2026-09-19; mux map/dividers/channels need mains + CTs)
+- [x] 9.3 Zero-touch commissioning test: factory-fresh + cable + DHCP → reachable, first-run password setup, then fully operational; no AP raised - done 2026-09-19 after fixes found by this test: boot AP was raised unconditionally, commissioned credential-less device never re-raised the AP after a wire-driven teardown, windows were power-on-relative, network LED layer never released on a wire-only device
+- [ ] 9.4 Failover tests on hardware: cable pull → STA, cable return → ETH, flap, static-IP backstop, button reset, DNS/NTP follow the active interface (static IP apply + reset-to-DHCP over the API verified 2026-09-19; the physical cable/button cases remain)
 - [ ] 9.5 Home regression on shared code: v6.1 device boots with no ETH objects created and free-heap delta within noise (< 8 KB) vs previous release
 - [ ] 9.6 RELEASE GATE - dual-netif heap soak: free/minFree/maxAlloc during MQTT TLS publishes and a full cloud OTA with both interfaces up
