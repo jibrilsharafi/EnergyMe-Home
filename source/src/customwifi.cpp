@@ -609,7 +609,9 @@ namespace CustomWifi
     // UNPROVISIONED carve-out.
     bool hasCredentials = _hasStoredCredentials();
     bool commissioned = CustomEth::isCommissioned();
-    WifiProvisioning::init(_provisioning, hasCredentials, millis64(), commissioned);
+    // Profile fact, not CustomEth::isEnabled(): this task starts before CustomEth::begin().
+    bool wiredPresent = globalHwProfile->hasEthernet;
+    WifiProvisioning::init(_provisioning, hasCredentials, millis64(), commissioned, wiredPresent);
     _publishedState = _provisioning.state;
     LOG_INFO("Provisioning init: %s credentials, %scommissioned, state %s",
              hasCredentials ? "found" : "no", commissioned ? "" : "not ",
@@ -656,6 +658,10 @@ namespace CustomWifi
         uint64_t remainingMs = (_disconnectDeadlineMs > nowMs) ? (_disconnectDeadlineMs - nowMs) : 0;
         if (remainingMs < waitMs) waitMs = (uint32_t)remainingMs;
       }
+    } else if (!wiredPresent) {
+      // _serviceApLifecycle() raises it if the wire does not come up within the bounded
+      // link-detect / DHCP windows; a cabled device never shows an AP at all.
+      LOG_INFO("No stored credentials - holding the SoftAP back while Ethernet comes up");
       if (_connectDeadlineMs != 0)
       {
         uint64_t remainingMs = (_connectDeadlineMs > nowMs) ? (_connectDeadlineMs - nowMs) : 0;
@@ -691,6 +697,15 @@ namespace CustomWifi
 
         if (notificationValue & WIFI_EVENT_GOT_IP)
         {
+      // A deferred raise may be pending inside the boot wired windows: tick fast so the
+      // decision is not left waiting for the 30 s periodic interval. Never true on Home.
+      if (!_apRaised && globalHwProfile->hasEthernet && nowMs < WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS &&
+          (_provisioning.state == WifiProvisioning::State::UNPROVISIONED ||
+           _provisioning.state == WifiProvisioning::State::AP_ASSIST) &&
+          waitMs > WIFI_AP_PENDING_TICK_MS)
+      {
+        waitMs = WIFI_AP_PENDING_TICK_MS;
+      }
           LOG_DEBUG("WiFi got IP: %s", WiFi.localIP().toString().c_str());
           // Both deadlines must be disarmed here. isFullyConnected() deliberately returns
           // false for WIFI_LWIP_STABILIZATION_DELAY after this point, so an association
@@ -1530,7 +1545,8 @@ namespace CustomWifi
     if (WifiProvisioning::shouldTearDownAp(_provisioning, nowMs, ethServiceable)) {
       WifiProvisioning::tearDownAp(_provisioning, nowMs);
       _publishedState = _provisioning.state;
-    } else if (WifiProvisioning::shouldRaiseAp(_provisioning, nowMs, ethServiceable, ethLinkUp)) {
+    } else if (WifiProvisioning::shouldRaiseAp(_provisioning, nowMs, ethServiceable, ethLinkUp,
+                                               globalHwProfile->hasEthernet)) {
       // Covers both the first raise and any later one: if the AP is somehow down while the
       // device still cannot associate, this puts it back rather than leaving it dark.
       WifiProvisioning::raiseAp(_provisioning, nowMs);
@@ -1568,6 +1584,7 @@ namespace CustomWifi
 
   static bool _isPowerReset()
   {
+      LOG_INFO("Device not reachable over its own network - raising the SoftAP");
     // Check if the reset reason indicates a power-related event
     // ESP_RST_POWERON: Power on reset (cold boot)
     // ESP_RST_BROWNOUT: Brownout reset (power supply voltage dropped below minimum)
