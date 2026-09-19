@@ -43,12 +43,6 @@
 // address appears have crashed on WiFi before; assume ETH deserves the same.
 #define ETH_LWIP_STABILIZATION_DELAY (1 * 1000)
 
-// Early-boot DHCP grace: with the link up but no address yet, the recovery AP
-// raise is held back this long from boot so a normally-leasing network never
-// sees an AP blip on a zero-touch first boot. After the window, link-without-
-// address counts as unreachable and the AP may rise.
-#define ETH_LINK_DHCP_GRACE_MS (15 * 1000)
-
 // Preferences keys (eth_ns). Max 15 chars each. Namespace is created lazily on
 // first write so it never exists on a Home device; factory reset and config
 // backup handle it generically (clear-if-present / include-if-present).
@@ -117,12 +111,13 @@ namespace CustomEth
     InterfaceArbitration::Interface activeInterface();
 
     // Feed from CustomWifi on every STA connect/disconnect so arbitration sees
-    // both sides. Safe to call on any product; a no-op before begin() on Pro.
+    // both sides. Safe to call on any product; a no-op before registerEvents() on Pro.
     void notifyStaState(bool connected);
 
     // Called after the default route moved to a different interface. Consumers
-    // (MQTT, InfluxDB, time sync) register to drop-and-reconnect their sessions
-    // instead of waiting out TCP keepalive on a dead path.
+    // (cloud MQTT, custom MQTT) register to drop-and-reconnect their sessions
+    // instead of waiting out TCP keepalive on a dead path; time sync registers
+    // to resync through the new route.
     typedef void (*InterfaceChangeCallback)(InterfaceArbitration::Interface newActive);
     bool onInterfaceChange(InterfaceChangeCallback callback);
 

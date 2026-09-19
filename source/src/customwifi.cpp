@@ -146,6 +146,7 @@ namespace CustomWifi
   static void _readStoredSsid(char *out, size_t outSize);
   static void _handleSuccessfulConnection();
   static bool _setupMdns();
+  static bool _setupMdnsLocked();
   static void _cleanup();
   static void _startWifiTask();
   static void _stopWifiTask();
@@ -1100,8 +1101,6 @@ namespace CustomWifi
   {
     return _setupMdns();
   }
-
-  static bool _setupMdnsLocked();
 
   bool _setupMdns()
   {

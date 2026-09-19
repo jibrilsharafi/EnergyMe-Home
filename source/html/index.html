@@ -355,8 +355,9 @@
             
             // Load monthly archives
             const monthlyFiles = await energyApi.getFileList('energy/monthly') || {};
-            ArchiveCache.archiveFiles.monthly = new Set(Object.keys(monthlyFiles).filter(f => f.endsWith('.csv.gz')).map(f => f.replace('.csv.gz', '')));
-            for (const filename of Object.keys(monthlyFiles).filter(f => f.endsWith('.csv.gz'))) {
+            const monthlyArchives = Object.keys(monthlyFiles).filter(f => f.endsWith('.csv.gz'));
+            ArchiveCache.archiveFiles.monthly = new Set(monthlyArchives.map(f => f.replace('.csv.gz', '')));
+            for (const filename of monthlyArchives) {
                 const yearMonth = filename.replace('.csv.gz', '');
                 allMonths.add(yearMonth);
                 allYears.add(yearMonth.substring(0, 4));
@@ -383,8 +384,9 @@
             
             // Load yearly archives
             const yearlyFiles = await energyApi.getFileList('energy/yearly') || {};
-            ArchiveCache.archiveFiles.yearly = new Set(Object.keys(yearlyFiles).filter(f => f.endsWith('.csv.gz')).map(f => f.replace('.csv.gz', '')));
-            for (const filename of Object.keys(yearlyFiles).filter(f => f.endsWith('.csv.gz'))) {
+            const yearlyArchives = Object.keys(yearlyFiles).filter(f => f.endsWith('.csv.gz'));
+            ArchiveCache.archiveFiles.yearly = new Set(yearlyArchives.map(f => f.replace('.csv.gz', '')));
+            for (const filename of yearlyArchives) {
                 const year = filename.replace('.csv.gz', '');
                 const yearInt = parseInt(year);
                 allYears.add(year);

@@ -74,10 +74,7 @@ ImageDescriptor::Verdict validatePartition(const esp_partition_t* partition, boo
     if (partition == nullptr || esp_partition_read(partition, 0, buf, sizeof(buf)) != ESP_OK) {
         return ImageDescriptor::Verdict::REJECT_NO_DESCRIPTOR;
     }
-    ImageDescriptor::Descriptor desc;
-    const ImageDescriptor::Descriptor* descPtr =
-        ImageDescriptor::parseFromImageStart(buf, sizeof(buf), desc) ? &desc : nullptr;
-    return ImageDescriptor::validate(descPtr, deviceIdentity(), rejectDevOnProd);
+    return validateImageBuffer(buf, sizeof(buf), rejectDevOnProd);
 }
 
 ImageDescriptor::Verdict validateImageBuffer(const uint8_t* data, size_t len, bool rejectDevOnProd) {

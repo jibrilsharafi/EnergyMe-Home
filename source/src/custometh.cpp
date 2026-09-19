@@ -133,9 +133,7 @@ namespace CustomEth
 
         _loadConfiguration();
 
-        // Latch static intent before the driver starts so the first link-up event
-        // (which can beat _applyStaticConfiguration on a warm reboot) counts the
-        // backstop attempt correctly.
+        // Latched before the driver starts: see _staticIntent.
         {
             EthConfiguration config;
             _bootFailsAtBoot = _getStaticBootFails();
@@ -252,7 +250,7 @@ namespace CustomEth
 
     void notifyStaState(bool connected)
     {
-        if (_ctxMutex == NULL) return; // Home, or before begin(): nothing to arbitrate
+        if (_ctxMutex == NULL) return; // Home, or before registerEvents(): nothing to arbitrate
         if (!acquireMutex(&_ctxMutex)) return;
         InterfaceArbitration::onStaState(_arbCtx, connected);
         releaseMutex(&_ctxMutex);
@@ -277,9 +275,8 @@ namespace CustomEth
                 // Backstop accounting: count the attempt at first link-up, so a
                 // crash caused by the static config still accumulates, while a
                 // cable-out boot (no link ever) stays neutral per the spec. The
-                // NVS write happens in the eth task - never here, in the shared
-                // Network event task, where a flash GC pause would stall every
-                // network event (same rule as _onWiFiEvent).
+                // NVS write is deferred to the eth task (see _bootFailCounted;
+                // same rule as _onWiFiEvent).
                 if (_staticIntent) _bootFailCounted = true;
                 _updateEthState(true, ETH.hasIP());
                 break;
@@ -751,10 +748,6 @@ namespace CustomEth
         if (config.dns1[0] != '\0' && !isValidIpv4(config.dns1, true)) { LOG_WARNING("Invalid 'dns1' address"); return false; }
         if (config.dns2[0] != '\0' && !isValidIpv4(config.dns2, true)) { LOG_WARNING("Invalid 'dns2' address"); return false; }
 
-        // A static address inside the recovery SoftAP's default subnet would route
-        // ambiguously exactly when the AP is most needed. Only the default candidate
-        // is rejected outright: the AP subnet selection avoids the other candidates
-        // dynamically (it accounts for the ETH subnet like it does for STA).
         auto toHostOrder = [](const char *text) {
             IPAddress address;
             address.fromString(text);
@@ -776,6 +769,10 @@ namespace CustomEth
             return false;
         }
 
+        // A static address inside the recovery SoftAP's default subnet would route
+        // ambiguously exactly when the AP is most needed. Only the default candidate
+        // is rejected outright: the AP subnet selection avoids the other candidates
+        // dynamically (it accounts for the ETH subnet like it does for STA).
         WifiProvisioning::Subnet apDefault = WifiProvisioning::candidateSubnet(0);
         if (WifiProvisioning::subnetsOverlap(ipHost, apDefault.cidr, apDefault.address, apDefault.cidr)) {
             LOG_WARNING("Static IP %s overlaps the recovery access point subnet - rejected", config.ip);

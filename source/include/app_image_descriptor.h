@@ -23,8 +23,9 @@ inline constexpr uint32_t PARTITION_LAYOUT_ID = 1;
 ImageDescriptor::DeviceIdentity deviceIdentity();
 
 // Read the staged image's descriptor off `partition` and validate it against
-// this device. A read failure or invalid descriptor follows the legacy policy
-// (accepted on Home, rejected elsewhere).
+// this device. A missing partition or failed read is a hard reject; a readable
+// image with no valid descriptor follows the legacy policy (accepted only on a
+// quad-PSRAM Home, see deviceIdentity()).
 ImageDescriptor::Verdict validatePartition(const esp_partition_t* partition, bool rejectDevOnProd);
 
 // Same validation from an in-memory buffer that starts at image offset 0
