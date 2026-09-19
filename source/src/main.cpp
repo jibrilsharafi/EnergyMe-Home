@@ -218,17 +218,18 @@ void setup()
   LOG_DEBUG("WiFi setup done");
   logHeapLedger("wifi");
 
-  // No-op on products without Ethernet. On Pro this brings up the W5500 and the
-  // interface arbitration; a cabled device typically has a lease before the WiFi
-  // association finishes, so the wait below clears on the wire.
-  // Registered BEFORE begin() so the callback array is complete before the eth
-  // task exists - no writer/iterator race. On failover the established TLS/TCP
+  // Callbacks registered BEFORE begin() so the callback array is complete before the
+  // eth task exists - no writer/iterator race. On failover the established TLS/TCP
   // sessions are bound to the dead interface's address: drop them so they
   // reconnect on the new route, and resync NTP against a server reachable
   // through it. Harmless on Home (the callbacks never fire without Ethernet).
   CustomEth::onInterfaceChange([](InterfaceArbitration::Interface) { Mqtt::requestReconnect(); });
   CustomEth::onInterfaceChange([](InterfaceArbitration::Interface) { CustomMqtt::requestReconnect(); });
   CustomEth::onInterfaceChange([](InterfaceArbitration::Interface) { CustomTime::requestResync(); });
+
+  // No-op on products without Ethernet. On Pro this brings up the W5500 and the
+  // interface arbitration; a cabled device typically has a lease before the WiFi
+  // association finishes, so the wait below clears on the wire.
   LOG_DEBUG("Setting up Ethernet...");
   if (CustomEth::begin()) LOG_DEBUG("Ethernet setup done");
   else LOG_ERROR("Ethernet initialization failed! Continuing on WiFi only");

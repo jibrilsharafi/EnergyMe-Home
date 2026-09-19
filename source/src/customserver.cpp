@@ -52,6 +52,7 @@ namespace CustomServer
 
     // OTA timeout task variables
     static TaskHandle_t _otaTimeoutTaskHandle = NULL;
+    static bool _otaTimeoutTaskShouldRun = false;
 
     // The request that owns the firmware upload in progress, and whether Update.end(true) went
     // through for it. The upload callback runs for every client and before authentication, so state
@@ -60,7 +61,6 @@ namespace CustomServer
     // Only touched from the AsyncTCP task.
     static AsyncWebServerRequest *_otaOwner = nullptr;
     static bool _otaFinalized = false;
-    static bool _otaTimeoutTaskShouldRun = false;
 
     // API request synchronization
     static SemaphoreHandle_t _apiMutex = NULL;
@@ -571,9 +571,6 @@ namespace CustomServer
         return true;
     }
 
-    // Helper function to validate HTTP method
-    // We cannot do setMethod since it makes all PUT requests fail (404) for some weird reason
-    // It is not too bad anyway since like this we have full control over the response
     // 404 for the Ethernet surface on products without the hardware. Runs after
     // the middleware chain, so auth still comes first - an unauthenticated scanner
     // cannot fingerprint the product.
@@ -584,6 +581,9 @@ namespace CustomServer
         return false;
     }
 
+    // Helper function to validate HTTP method
+    // We cannot do setMethod since it makes all PUT requests fail (404) for some weird reason
+    // It is not too bad anyway since like this we have full control over the response
     static bool _validateRequest(AsyncWebServerRequest *request, const char *expectedMethod, size_t maxContentLength)
     {
         if (maxContentLength > 0 && request->contentLength() > maxContentLength)
@@ -2481,10 +2481,7 @@ namespace CustomServer
             AsyncURIMatcher::exact("/api/v1/network/ethernet/config"),
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
-                if (!globalHwProfile->hasEthernet) {
-                    _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "Ethernet is not available on this product");
-                    return;
-                }
+                if (!_requireEthernet(request)) return;
                 bool isPartialUpdate = _isPartialUpdate(request);
                 if (!_validateRequest(request, isPartialUpdate ? "PATCH" : "PUT", HTTP_MAX_CONTENT_LENGTH_NETWORK)) return;
 
