@@ -180,6 +180,25 @@
         .config-input.field-loading {
             opacity: 0.5;
         }
+
+        /* WiFi network picker - same look as wifi-setup.html */
+        .wifi-list-header { display: flex; justify-content: space-between; align-items: center; margin: 15px 0 6px; font-weight: 600; }
+        .wifi-scan-button { background: none; border: 1px solid #ccc; border-radius: 5px; padding: 4px 10px; cursor: pointer; font-size: 0.85em; color: inherit; }
+        .wifi-scan-button:hover:not(:disabled) { background: #f0f0f0; }
+        .wifi-scan-button:disabled { opacity: 0.6; cursor: default; }
+        .wifi-network-list { list-style: none; margin: 0 0 12px; padding: 0; border: 1px solid #ddd; border-radius: 8px; overflow-y: auto; max-height: 260px; }
+        .wifi-network-list li { display: flex; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer; border-bottom: 1px solid #eee; }
+        .wifi-network-list li:last-child { border-bottom: none; }
+        .wifi-network-list li:hover, .wifi-network-list li.selected { background: #f0f0f0; }
+        .wifi-network-list li.wifi-list-note { cursor: default; color: #777; font-style: italic; background: none; }
+        .wifi-network-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .wifi-network-meta { flex: none; display: flex; align-items: center; gap: 7px; font-size: 0.8em; color: #666; }
+        .wifi-bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 13px; }
+        .wifi-bars i { display: block; width: 3px; background: #d0d0d0; border-radius: 1px; }
+        .wifi-bars i.on { background: var(--green, #2e7d32); }
+        .wifi-bars i:nth-child(1) { height: 5px; }
+        .wifi-bars i:nth-child(2) { height: 9px; }
+        .wifi-bars i:nth-child(3) { height: 13px; }
     </style>
 </head>
 
@@ -422,12 +441,18 @@
 
     <div class="section-box">
         <h2>Switch WiFi Network</h2>
-        <p><i>Enter new WiFi credentials to switch to a different network. The device saves them and joins the new network without restarting.</i></p>
+        <p><i>Pick a network from the list, or type the name of a hidden one. The device saves the credentials and joins the new network without restarting.</i></p>
+        <div class="wifi-list-header">
+            <span>Nearby networks</span>
+            <button type="button" class="wifi-scan-button" onclick="scanWifi()" id="scanWifi">↻ Scan</button>
+        </div>
+        <ul id="wifiNetworkList" class="wifi-network-list">
+            <li class="wifi-list-note">Press Scan to list the networks the device can see.</li>
+        </ul>
         <div style="display: flex; flex-direction: column; gap: 10px; margin: 15px 0;">
             <div>
                 <label for="newWifiSsid">Network Name (SSID):</label>
-                <input type="text" id="newWifiSsid" class="config-input" list="wifiNetworkList" placeholder="Enter WiFi network name, or scan and pick one" maxlength="32" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
-                <datalist id="wifiNetworkList"></datalist>
+                <input type="text" id="newWifiSsid" class="config-input" placeholder="Pick from the list above, or type it" maxlength="32" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
             </div>
             <div>
                 <label for="newWifiPassword">Password:</label>
@@ -438,7 +463,6 @@
             style="background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; margin: 10px 0;"> ⚠️
             <span id="switchWifiWarning">Warning: The device leaves this network to join the new one. You will lose access at this address.</span>
         </div>
-        <button class="buttonForm" onclick="scanWifi()" id="scanWifi">🔍 Scan networks</button>
         <button class="buttonForm" onclick="switchWifi()" id="switchWifi">📶 Switch Network</button>
     </div>
 
@@ -640,50 +664,98 @@
                 "The device stays reachable over Ethernet after the restart. If a static Ethernet IP was set, it comes back on a DHCP address.";
         }
 
-        // Fills the SSID suggestions. The scan is async on the device, so poll until it ends.
+        // Messages live inside the list itself, so the feedback is where the user is looking.
+        function setWifiListNote(message) {
+            var list = document.getElementById("wifiNetworkList");
+            list.innerHTML = "";
+            var note = document.createElement("li");
+            note.className = "wifi-list-note";
+            note.textContent = message;
+            list.appendChild(note);
+        }
+
+        function wifiSignalBars(rssi) {
+            var filled = rssi >= -60 ? 3 : (rssi >= -72 ? 2 : 1);
+            var bars = document.createElement("span");
+            bars.className = "wifi-bars";
+            bars.title = rssi + " dBm";
+            for (var i = 1; i <= 3; i++) {
+                var bar = document.createElement("i");
+                if (i <= filled) bar.className = "on";
+                bars.appendChild(bar);
+            }
+            return bars;
+        }
+
+        // Strongest first, one row per SSID (mesh and repeaters announce the same name many times)
+        function renderWifiNetworks(networks) {
+            var list = document.getElementById("wifiNetworkList");
+            list.innerHTML = "";
+            var seen = {};
+            networks.sort(function (a, b) { return b.rssi - a.rssi; }).forEach(function (network) {
+                if (!network.ssid || seen[network.ssid]) return;
+                seen[network.ssid] = true;
+
+                var item = document.createElement("li");
+                var name = document.createElement("span");
+                name.className = "wifi-network-name";
+                name.textContent = network.ssid;
+                var meta = document.createElement("span");
+                meta.className = "wifi-network-meta";
+                if (network.secure) {
+                    var lock = document.createElement("span");
+                    lock.textContent = "🔒";
+                    lock.title = "Password protected";
+                    meta.appendChild(lock);
+                }
+                meta.appendChild(wifiSignalBars(network.rssi));
+                item.appendChild(name);
+                item.appendChild(meta);
+
+                item.addEventListener("click", function () {
+                    var previous = list.querySelector(".selected");
+                    if (previous) previous.classList.remove("selected");
+                    item.classList.add("selected");
+                    document.getElementById("newWifiSsid").value = network.ssid;
+                    var password = document.getElementById("newWifiPassword");
+                    password.value = "";
+                    if (network.secure) password.focus();
+                });
+                list.appendChild(item);
+            });
+            if (!list.children.length) setWifiListNote("No networks found. Scan again, or type the network name below.");
+        }
+
+        // The scan is async on the device, so poll until it ends.
         function scanWifi() {
             const button = document.getElementById("scanWifi");
             button.disabled = true;
-            button.classList.add('loading');
+            button.textContent = "Scanning...";
+            setWifiListNote("Looking for networks...");
 
             var startedAt = Date.now();
             var done = false;
-            var finish = function (message, kind) {
+            var finish = function (errorNote) {
                 if (done) return;
                 done = true;
                 clearInterval(timer);
                 button.disabled = false;
-                button.classList.remove('loading');
-                showStatus(message, kind);
+                button.textContent = "↻ Scan again";
+                if (errorNote) setWifiListNote(errorNote);
             };
             var poll = function (refresh) {
                 energyApi.scanWifiNetworks(refresh).then(function (data) {
-                    if (data.status === 'running') return;
+                    if (done || data.status === 'running') return;
                     if (data.status === 'unavailable') {
-                        finish("Could not scan right now. Type the network name in, or try again.", 'error');
+                        finish("Could not scan right now. Type the network name below, or scan again.");
                         return;
                     }
-
-                    var list = document.getElementById("wifiNetworkList");
-                    list.innerHTML = "";
-                    var seen = {};
-                    (data.networks || [])
-                        .sort(function (a, b) { return b.rssi - a.rssi; })
-                        .forEach(function (network) {
-                            if (!network.ssid || seen[network.ssid]) return;
-                            seen[network.ssid] = true;
-                            var option = document.createElement("option");
-                            option.value = network.ssid;
-                            // Firefox shows and filters on the label alone, so it must carry the SSID
-                            option.label = network.ssid + " · " + network.rssi + " dBm " + signalQualityLabel(network.rssi);
-                            list.appendChild(option);
-                        });
-                    finish(Object.keys(seen).length + " networks found. Pick one from the network name field.", 'success');
-                    document.getElementById("newWifiSsid").focus();
+                    renderWifiNetworks(data.networks || []);
+                    finish();
                 }).catch(function () {
                     // A dropped request during scanning is normal on a busy radio.
                 });
-                if (Date.now() - startedAt > 25000) finish("Scanning is taking too long. Type the network name in, or try again.", 'error');
+                if (Date.now() - startedAt > 25000) finish("Scanning is taking too long. Type the network name below, or scan again.");
             };
             var timer = setInterval(function () { poll(false); }, 1500);
             poll(true);
