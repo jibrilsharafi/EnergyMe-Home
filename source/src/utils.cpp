@@ -1140,6 +1140,18 @@ static void _factoryReset() { // No logger here it is likely destroyed already
 
     clearAllPreferences();
 
+    // clearAllPreferences() shares its exclusion list with backup/restore, where the web
+    // password must never travel. A factory reset is the opposite case: it has to hand the
+    // device over on the default password, so wipe auth here. The server re-seeds the
+    // default on the next boot when the namespace is empty.
+    Preferences authPreferences;
+    if (authPreferences.begin(PREFERENCES_NAMESPACE_AUTH, false)) {
+        authPreferences.clear();
+        authPreferences.end();
+    } else {
+        Serial.println("[ERROR] Failed to clear the web password");
+    }
+
     // clearAllPreferences() deliberately skips every "nvs.*" namespace (see its own
     // comment), which includes the WiFi driver's own persisted association
     // (nvs.net80211 - the same store CustomWifi::_hasStoredCredentials() reads and
