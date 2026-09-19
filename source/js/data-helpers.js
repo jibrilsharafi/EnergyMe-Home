@@ -164,6 +164,10 @@ const ArchiveCache = {
     yearly: {},
     dailyFilesSet: new Set(),
 
+    // Archives the device actually has, filled by the page from the folder listings.
+    // null = not listed yet: nothing is known, so the fetch is attempted.
+    archiveFiles: { monthly: null, yearly: null },
+
     // localStorage cache configuration
     CONFIG: {
         PREFIX: 'energyme_csv_',
@@ -231,6 +235,10 @@ const ArchiveCache = {
             this[type][key] = data;
             return data;
         }
+
+        // Known not to exist: skip a request that can only answer 404
+        const known = this.archiveFiles[type];
+        if (known && !known.has(key)) throw new Error(`No ${type} archive for ${key}`);
 
         // Fetch from server
         const filename = `energy/${type}/${key}.csv.gz`;

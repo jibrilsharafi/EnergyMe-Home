@@ -355,6 +355,7 @@
             
             // Load monthly archives
             const monthlyFiles = await energyApi.getFileList('energy/monthly') || {};
+            ArchiveCache.archiveFiles.monthly = new Set(Object.keys(monthlyFiles).filter(f => f.endsWith('.csv.gz')).map(f => f.replace('.csv.gz', '')));
             for (const filename of Object.keys(monthlyFiles).filter(f => f.endsWith('.csv.gz'))) {
                 const yearMonth = filename.replace('.csv.gz', '');
                 allMonths.add(yearMonth);
@@ -382,6 +383,7 @@
             
             // Load yearly archives
             const yearlyFiles = await energyApi.getFileList('energy/yearly') || {};
+            ArchiveCache.archiveFiles.yearly = new Set(Object.keys(yearlyFiles).filter(f => f.endsWith('.csv.gz')).map(f => f.replace('.csv.gz', '')));
             for (const filename of Object.keys(yearlyFiles).filter(f => f.endsWith('.csv.gz'))) {
                 const year = filename.replace('.csv.gz', '');
                 const yearInt = parseInt(year);
@@ -565,6 +567,10 @@
     // ============================================================================
     // CHART LOADING
     // ============================================================================
+    // The period simply has no samples yet (a new device, the first hour of a day, a file
+    // holding only its header): not a failure, so it gets a neutral message, not the red one.
+    class NoEnergyDataError extends Error {}
+
     async function loadAndDisplayCharts() {
         if (currentView === 'daily' && !currentDate) return;
         if (currentView === 'monthly' && !currentMonth) return;
@@ -579,8 +585,12 @@
             else if (currentView === 'total') await loadTotalCharts();
             
         } catch (error) {
-            console.error('Error loading charts:', error);
             const periods = { daily: currentDate, monthly: currentMonth, yearly: currentYear, total: 'all time' };
+            if (error instanceof NoEnergyDataError) {
+                ChartHelpers.setChartMessage('📊', `No energy data yet for ${periods[currentView]}. It appears once the first hourly values are recorded.`);
+                return;
+            }
+            console.error('Error loading charts:', error);
             ChartHelpers.showErrorMessage(`Failed to load energy data for ${periods[currentView]}`);
         }
     }
@@ -605,7 +615,7 @@
             } catch (e) { /* Date may not exist */ }
         }
         
-        if (allEnergyData.length === 0) throw new Error('No data available');
+        if (allEnergyData.length === 0) throw new NoEnergyDataError();
         
         const nextLocalDate = new Date(currentDate + 'T00:00:00');
         nextLocalDate.setDate(nextLocalDate.getDate() + 1);
@@ -619,7 +629,7 @@
             return false;
         });
         
-        if (energyData.length === 0) throw new Error('No data available');
+        if (energyData.length === 0) throw new NoEnergyDataError();
         
         const hourlyData = calculateHourlyConsumption(energyData, currentDate);
         const totalConsumption = calculateTotalConsumption(energyData.filter(entry => {
@@ -660,7 +670,7 @@
             }
         }
 
-        if (allEnergyData.length === 0) throw new Error('No data available');
+        if (allEnergyData.length === 0) throw new NoEnergyDataError();
         
         const dailyConsumptions = {};
         const monthlyRawImported = {};
@@ -737,7 +747,7 @@
             }
         }
 
-        if (allEnergyData.length === 0) throw new Error('No data available');
+        if (allEnergyData.length === 0) throw new NoEnergyDataError();
         
         const monthlyConsumptions = {};
         const monthlyExported = {};
@@ -815,7 +825,7 @@
             }
         }
 
-        if (allEnergyData.length === 0) throw new Error('No data available');
+        if (allEnergyData.length === 0) throw new NoEnergyDataError();
 
         const yearlyConsumptions = {};
         const yearlyExported = {};
