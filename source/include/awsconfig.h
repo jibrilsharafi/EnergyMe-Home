@@ -24,18 +24,30 @@ constexpr const char* AWS_IOT_CORE_ENDPOINT = "a26zjeqaj9a3xc-ats.iot.eu-west-1.
 #define AWS_IOT_CORE_PORT 8883
 
 // IoT Core Basic Ingest rule names - routes messages server-side, enabling cheaper MQTT ingestion.
+// Basic Ingest ($aws/rules/<name>/...) requires a rule of that exact name to exist server-side,
+// per product line: one set for Home, one for Home Pro (see MQTT_TOPIC_2_HOME_PRO below).
 #ifdef ENV_DEV
-constexpr const char* AWS_IOT_CORE_RULE_METER  = "energyme_home_dev_rule_meter";
-constexpr const char* AWS_IOT_CORE_RULE_LOG    = "energyme_home_dev_rule_log";
-constexpr const char* AWS_IOT_CORE_RULE_GRID   = "energyme_home_dev_rule_grid";
-constexpr const char* AWS_IOT_CORE_RULE_ENERGY = "energyme_home_dev_rule_energy";
-constexpr const char* AWS_IOT_CORE_RULE_ALARM  = "energyme_home_dev_rule_alarm";
+constexpr const char* AWS_IOT_CORE_RULE_METER_HOME      = "energyme_home_dev_rule_meter";
+constexpr const char* AWS_IOT_CORE_RULE_LOG_HOME        = "energyme_home_dev_rule_log";
+constexpr const char* AWS_IOT_CORE_RULE_GRID_HOME       = "energyme_home_dev_rule_grid";
+constexpr const char* AWS_IOT_CORE_RULE_ENERGY_HOME     = "energyme_home_dev_rule_energy";
+constexpr const char* AWS_IOT_CORE_RULE_ALARM_HOME      = "energyme_home_dev_rule_alarm";
+constexpr const char* AWS_IOT_CORE_RULE_METER_HOME_PRO  = "energyme_homepro_dev_rule_meter";
+constexpr const char* AWS_IOT_CORE_RULE_LOG_HOME_PRO    = "energyme_homepro_dev_rule_log";
+constexpr const char* AWS_IOT_CORE_RULE_GRID_HOME_PRO   = "energyme_homepro_dev_rule_grid";
+constexpr const char* AWS_IOT_CORE_RULE_ENERGY_HOME_PRO = "energyme_homepro_dev_rule_energy";
+constexpr const char* AWS_IOT_CORE_RULE_ALARM_HOME_PRO  = "energyme_homepro_dev_rule_alarm";
 #else
-constexpr const char* AWS_IOT_CORE_RULE_METER  = "energyme_home_prod_rule_meter";
-constexpr const char* AWS_IOT_CORE_RULE_LOG    = "energyme_home_prod_rule_log";
-constexpr const char* AWS_IOT_CORE_RULE_GRID   = "energyme_home_prod_rule_grid";
-constexpr const char* AWS_IOT_CORE_RULE_ENERGY = "energyme_home_prod_rule_energy";
-constexpr const char* AWS_IOT_CORE_RULE_ALARM  = "energyme_home_prod_rule_alarm";
+constexpr const char* AWS_IOT_CORE_RULE_METER_HOME      = "energyme_home_prod_rule_meter";
+constexpr const char* AWS_IOT_CORE_RULE_LOG_HOME        = "energyme_home_prod_rule_log";
+constexpr const char* AWS_IOT_CORE_RULE_GRID_HOME       = "energyme_home_prod_rule_grid";
+constexpr const char* AWS_IOT_CORE_RULE_ENERGY_HOME     = "energyme_home_prod_rule_energy";
+constexpr const char* AWS_IOT_CORE_RULE_ALARM_HOME      = "energyme_home_prod_rule_alarm";
+constexpr const char* AWS_IOT_CORE_RULE_METER_HOME_PRO  = "energyme_homepro_prod_rule_meter";
+constexpr const char* AWS_IOT_CORE_RULE_LOG_HOME_PRO    = "energyme_homepro_prod_rule_log";
+constexpr const char* AWS_IOT_CORE_RULE_GRID_HOME_PRO   = "energyme_homepro_prod_rule_grid";
+constexpr const char* AWS_IOT_CORE_RULE_ENERGY_HOME_PRO = "energyme_homepro_prod_rule_energy";
+constexpr const char* AWS_IOT_CORE_RULE_ALARM_HOME_PRO  = "energyme_homepro_prod_rule_alarm";
 #endif
 
 // AWS reserved topic prefixes
@@ -43,10 +55,14 @@ constexpr const char* AWS_IOT_CORE_RULE_ALARM  = "energyme_home_prod_rule_alarm"
 #define MQTT_BASIC_INGEST AWS_TOPIC "/rules"
 #define MQTT_THINGS       AWS_TOPIC "/things"
 
-// EnergyMe-Home topic namespace (fleet-wide; change requires OTA + cloud-side update)
-#define MQTT_TOPIC_1       "energyme"
-#define MQTT_TOPIC_2       "home"
-#define MQTT_TOPIC_VERSION "v1"
+// EnergyMe-Home topic namespace (fleet-wide; change requires OTA + cloud-side update).
+// Home Pro gets its own namespace segment, picked at runtime from globalHwProfile->product
+// (see Mqtt::_topicProductSegment / _topicRuleFor in mqtt.cpp) - not compile-time, since
+// product is a factory-NVS value, not a build flag.
+#define MQTT_TOPIC_1         "energyme"
+#define MQTT_TOPIC_2_HOME     "home"
+#define MQTT_TOPIC_2_HOME_PRO "homepro"
+#define MQTT_TOPIC_VERSION   "v1"
 
 // Amazon Root CA 1 - can be public
 // https://www.amazontrust.com/repository/AmazonRootCA1.pem

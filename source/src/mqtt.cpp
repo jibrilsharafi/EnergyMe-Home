@@ -1102,6 +1102,16 @@ namespace Mqtt
 
     // Topic management
     // ================
+
+    // Product is a runtime (factory-NVS) value, not a build flag, so the topic
+    // namespace segment and Basic Ingest rule names are picked here rather than
+    // at compile time (see awsconfig.h).
+    static const char* _selectByProduct(const char* homeValue, const char* homeProValue) {
+        return (globalHwProfile->product == ProductLine::HOME_PRO) ? homeProValue : homeValue;
+    }
+
+    static const char* _topicProductSegment() { return _selectByProduct(MQTT_TOPIC_2_HOME, MQTT_TOPIC_2_HOME_PRO); }
+
     static void _constructMqttTopicReservedThings(const char* finalTopic, char* topicBuffer, size_t topicBufferSize) {
         // Example: $aws/things/588c81c47a5c/jobs/notify-next
         snprintf(
@@ -1124,7 +1134,7 @@ namespace Mqtt
             MQTT_BASIC_INGEST,
             ruleName,
             MQTT_TOPIC_1,
-            MQTT_TOPIC_2,
+            _topicProductSegment(),
             MQTT_TOPIC_VERSION,
             DEVICE_ID,
             finalTopic
@@ -1139,7 +1149,7 @@ namespace Mqtt
             topicBufferSize,
             "%s/%s/%s/%s/%s",
             MQTT_TOPIC_1,
-            MQTT_TOPIC_2,
+            _topicProductSegment(),
             MQTT_TOPIC_VERSION,
             DEVICE_ID,
             finalTopic
@@ -1170,14 +1180,14 @@ namespace Mqtt
         LOG_DEBUG("MQTT topics setup complete");
     }
 
-    static void _setTopicMeter() { _constructMqttTopicWithRule(AWS_IOT_CORE_RULE_METER, MQTT_TOPIC_METER, _mqttTopicMeter, sizeof(_mqttTopicMeter)); }
-    static void _setTopicGrid() { _constructMqttTopicWithRule(AWS_IOT_CORE_RULE_GRID, MQTT_TOPIC_GRID, _mqttTopicGrid, sizeof(_mqttTopicGrid)); }
-    static void _setTopicEnergy() { _constructMqttTopicWithRule(AWS_IOT_CORE_RULE_ENERGY, MQTT_TOPIC_ENERGY, _mqttTopicEnergy, sizeof(_mqttTopicEnergy)); }
+    static void _setTopicMeter() { _constructMqttTopicWithRule(_selectByProduct(AWS_IOT_CORE_RULE_METER_HOME, AWS_IOT_CORE_RULE_METER_HOME_PRO), MQTT_TOPIC_METER, _mqttTopicMeter, sizeof(_mqttTopicMeter)); }
+    static void _setTopicGrid() { _constructMqttTopicWithRule(_selectByProduct(AWS_IOT_CORE_RULE_GRID_HOME, AWS_IOT_CORE_RULE_GRID_HOME_PRO), MQTT_TOPIC_GRID, _mqttTopicGrid, sizeof(_mqttTopicGrid)); }
+    static void _setTopicEnergy() { _constructMqttTopicWithRule(_selectByProduct(AWS_IOT_CORE_RULE_ENERGY_HOME, AWS_IOT_CORE_RULE_ENERGY_HOME_PRO), MQTT_TOPIC_ENERGY, _mqttTopicEnergy, sizeof(_mqttTopicEnergy)); }
     static void _setTopicSystemDynamic() { _constructMqttTopic(MQTT_TOPIC_SYSTEM_DYNAMIC, _mqttTopicSystemDynamic, sizeof(_mqttTopicSystemDynamic)); }
     static void _setTopicStatistics() { _constructMqttTopic(MQTT_TOPIC_STATISTICS, _mqttTopicStatistics, sizeof(_mqttTopicStatistics)); }
     static void _setTopicCrash() { _constructMqttTopic(MQTT_TOPIC_CRASH, _mqttTopicCrash, sizeof(_mqttTopicCrash)); }
-    static void _setTopicLog() { _constructMqttTopicWithRule(AWS_IOT_CORE_RULE_LOG, MQTT_TOPIC_LOG, _mqttTopicLog, sizeof(_mqttTopicLog)); }
-    static void _setTopicAlarm() { _constructMqttTopicWithRule(AWS_IOT_CORE_RULE_ALARM, MQTT_TOPIC_ALARM, _mqttTopicAlarm, sizeof(_mqttTopicAlarm)); }
+    static void _setTopicLog() { _constructMqttTopicWithRule(_selectByProduct(AWS_IOT_CORE_RULE_LOG_HOME, AWS_IOT_CORE_RULE_LOG_HOME_PRO), MQTT_TOPIC_LOG, _mqttTopicLog, sizeof(_mqttTopicLog)); }
+    static void _setTopicAlarm() { _constructMqttTopicWithRule(_selectByProduct(AWS_IOT_CORE_RULE_ALARM_HOME, AWS_IOT_CORE_RULE_ALARM_HOME_PRO), MQTT_TOPIC_ALARM, _mqttTopicAlarm, sizeof(_mqttTopicAlarm)); }
 
     static void _subscribeToTopics() {
         _subscribeAwsIotJobs();
