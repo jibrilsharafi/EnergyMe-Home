@@ -114,6 +114,8 @@ struct WifiConfiguration {
 // =====================
 // NOTE: Build-time flag ENABLE_OPEN_SOURCE_TELEMETRY controls whether telemetry is sent.
 //       Set -DENABLE_OPEN_SOURCE_TELEMETRY=0 or remove the define to disable.
+// FIXME: shared between Home and Home Pro for now (no Home Pro telemetry endpoint
+// provisioned yet) - split per product, like the AWS IoT topics/rules, once it exists.
 #ifdef ENV_DEV
 #define TELEMETRY_URL "5jyfvyfmubfr6rw7tx7ozb4foq0hstkk.lambda-url.eu-west-1.on.aws"
 #else
