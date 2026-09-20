@@ -93,7 +93,7 @@ jobs:
         echo "📌 Detected version: $VERSION"
         # The artifact name carries the product token the firmware's upload gate and
         # release picker match on (FIRMWARE_ARTIFACT_TOKEN_* in hardware_profile.h).
-        if [[ "${{ matrix.env }}" == *-pro ]]; then TOKEN=energyme_home_pro; else TOKEN=energyme_home; fi
+        if [[ "${{ matrix.env }}" == *-pro ]]; then TOKEN=energyme_homepro; else TOKEN=energyme_home; fi
         echo "TOKEN=$TOKEN" >> $GITHUB_OUTPUT
 
     - name: Build firmware (${{ matrix.env }})
@@ -163,7 +163,7 @@ jobs:
         echo "📌 Detected version: $VERSION"
         # The artifact name carries the product token the firmware's upload gate and
         # release picker match on (FIRMWARE_ARTIFACT_TOKEN_* in hardware_profile.h).
-        if [[ "${{ matrix.env }}" == *-pro ]]; then TOKEN=energyme_home_pro; else TOKEN=energyme_home; fi
+        if [[ "${{ matrix.env }}" == *-pro ]]; then TOKEN=energyme_homepro; else TOKEN=energyme_home; fi
         echo "TOKEN=$TOKEN" >> $GITHUB_OUTPUT
 
     - name: Build firmware (${{ matrix.env }})

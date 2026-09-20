@@ -144,8 +144,8 @@ void test_matching_image_accepted(void) {
 }
 
 void test_matching_pro_image_accepted(void) {
-    Descriptor d = makeDescriptor("home_pro", 8);
-    DeviceIdentity dev = makeDevice("home_pro", 8);
+    Descriptor d = makeDescriptor("homepro", 8);
+    DeviceIdentity dev = makeDevice("homepro", 8);
     TEST_ASSERT_EQUAL(Verdict::ACCEPT, validate(&d, dev, true));
 }
 
@@ -159,7 +159,7 @@ void test_missing_descriptor_accepted_on_home(void) {
 }
 
 void test_missing_descriptor_rejected_on_pro(void) {
-    DeviceIdentity dev = makeDevice("home_pro", 8);
+    DeviceIdentity dev = makeDevice("homepro", 8);
     TEST_ASSERT_EQUAL(Verdict::REJECT_NO_DESCRIPTOR, validate(nullptr, dev, true));
 }
 
@@ -169,21 +169,21 @@ void test_missing_descriptor_rejected_on_pro(void) {
 
 void test_psram_mismatch_rejected(void) {
     // The bricking case: octal image on a quad device.
-    Descriptor d = makeDescriptor("home_pro", 8);
+    Descriptor d = makeDescriptor("homepro", 8);
     DeviceIdentity dev = makeDevice("home", 2);
     TEST_ASSERT_EQUAL(Verdict::REJECT_PSRAM_MISMATCH, validate(&d, dev, false));
 }
 
 void test_psram_mismatch_beats_product_mismatch(void) {
     // Same PSRAM class but wrong product still names the product, not PSRAM.
-    Descriptor d = makeDescriptor("home_pro", 2);
+    Descriptor d = makeDescriptor("homepro", 2);
     DeviceIdentity dev = makeDevice("home", 2);
     TEST_ASSERT_EQUAL(Verdict::REJECT_PRODUCT_MISMATCH, validate(&d, dev, false));
 }
 
 void test_product_mismatch_rejected(void) {
     Descriptor d = makeDescriptor("home", 2);
-    DeviceIdentity dev = makeDevice("home_pro", 8);
+    DeviceIdentity dev = makeDevice("homepro", 8);
     TEST_ASSERT_EQUAL(Verdict::REJECT_PSRAM_MISMATCH, validate(&d, dev, false));
     // With equal PSRAM the product check fires:
     dev.psramMb = 2;

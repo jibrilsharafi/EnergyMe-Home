@@ -12,7 +12,7 @@ The system SHALL read `factory_ns::product_line` at boot to determine the produc
 
 #### Scenario: Provisioned Home Pro device
 
-- **WHEN** the device boots with `product_line = "home_pro"` and a matching `pcb_revision`
+- **WHEN** the device boots with `product_line = "homepro"` and a matching `pcb_revision`
 - **THEN** the Home Pro hardware profile for that revision is selected and the device operates as a provisioned (non-community) device
 
 #### Scenario: Legacy fleet device without the key

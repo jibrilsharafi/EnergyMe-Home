@@ -6,7 +6,7 @@ EnergyMe Home Pro is a new hardware variant: same ESP32-S3 platform but with a W
 
 ## What Changes
 
-- Factory NVS gains a `product_line` key (`home` / `home_pro`), written at manufacturing. Firmware treats a missing key as `home` so the entire deployed fleet and community devices keep working with zero action. New provisioning payloads must always set it (mandatory in the pydantic model going forward).
+- Factory NVS gains a `product_line` key (`home` / `homepro`), written at manufacturing. Firmware treats a missing key as `home` so the entire deployed fleet and community devices keep working with zero action. New provisioning payloads must always set it (mandatory in the pydantic model going forward).
 - Hardware profile selection becomes keyed by `(product, pcb version)` instead of version alone; Pro PCB numbering restarts at v1.0. Community fallback remains "latest Home".
 - New Home Pro v1.0 hardware profile: 74HC4067 with 11 wired channels + direct ADE7953 input = 12 channels; W5500 pins on a dedicated SPI bus; pinout extracted from the PCB netlist (see design.md), verified on hardware at bring-up.
 - New Ethernet subsystem (W5500 via the core `ETH` API): DHCP-first zero-touch commissioning, static IP configurable via web UI, stored in a new `eth_ns` namespace following the existing WifiConfiguration + boot-fail-backstop pattern.

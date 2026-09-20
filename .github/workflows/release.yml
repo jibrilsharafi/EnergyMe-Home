@@ -72,10 +72,10 @@ jobs:
         cp .pio/build/esp32s3-prod/partitions.bin release/energyme_home_${{ steps.version.outputs.VERSION }}_partitions.bin
         # The names carry the product token the firmware's upload gate and release picker
         # match on (FIRMWARE_ARTIFACT_TOKEN_* in hardware_profile.h).
-        cp .pio/build/esp32s3-prod-pro/firmware.bin release/energyme_home_pro_${{ steps.version.outputs.VERSION }}.bin
-        cp .pio/build/esp32s3-prod-pro/firmware.elf release/energyme_home_pro_${{ steps.version.outputs.VERSION }}.elf
-        cp .pio/build/esp32s3-prod-pro/bootloader.bin release/energyme_home_pro_${{ steps.version.outputs.VERSION }}_bootloader.bin
-        cp .pio/build/esp32s3-prod-pro/partitions.bin release/energyme_home_pro_${{ steps.version.outputs.VERSION }}_partitions.bin
+        cp .pio/build/esp32s3-prod-pro/firmware.bin release/energyme_homepro_${{ steps.version.outputs.VERSION }}.bin
+        cp .pio/build/esp32s3-prod-pro/firmware.elf release/energyme_homepro_${{ steps.version.outputs.VERSION }}.elf
+        cp .pio/build/esp32s3-prod-pro/bootloader.bin release/energyme_homepro_${{ steps.version.outputs.VERSION }}_bootloader.bin
+        cp .pio/build/esp32s3-prod-pro/partitions.bin release/energyme_homepro_${{ steps.version.outputs.VERSION }}_partitions.bin
 
     - name: Create draft GitHub Release
       uses: softprops/action-gh-release@v3
@@ -100,10 +100,10 @@ jobs:
         tag_name: ${{ github.ref_name }}
         name: ${{ github.ref_name }}
         files: |
-          source/release/energyme_home_pro_${{ steps.version.outputs.VERSION }}.bin
-          source/release/energyme_home_pro_${{ steps.version.outputs.VERSION }}.elf
-          source/release/energyme_home_pro_${{ steps.version.outputs.VERSION }}_bootloader.bin
-          source/release/energyme_home_pro_${{ steps.version.outputs.VERSION }}_partitions.bin
+          source/release/energyme_homepro_${{ steps.version.outputs.VERSION }}.bin
+          source/release/energyme_homepro_${{ steps.version.outputs.VERSION }}.elf
+          source/release/energyme_homepro_${{ steps.version.outputs.VERSION }}_bootloader.bin
+          source/release/energyme_homepro_${{ steps.version.outputs.VERSION }}_partitions.bin
 
     - name: Release summary
       run: |
@@ -117,9 +117,9 @@ jobs:
         echo "  - \`energyme_home_${{ steps.version.outputs.VERSION }}.elf\`" >> $GITHUB_STEP_SUMMARY
         echo "  - \`energyme_home_${{ steps.version.outputs.VERSION }}_bootloader.bin\`" >> $GITHUB_STEP_SUMMARY
         echo "  - \`energyme_home_${{ steps.version.outputs.VERSION }}_partitions.bin\`" >> $GITHUB_STEP_SUMMARY
-        echo "  - \`energyme_home_pro_${{ steps.version.outputs.VERSION }}.bin\`" >> $GITHUB_STEP_SUMMARY
-        echo "  - \`energyme_home_pro_${{ steps.version.outputs.VERSION }}.elf\`" >> $GITHUB_STEP_SUMMARY
-        echo "  - \`energyme_home_pro_${{ steps.version.outputs.VERSION }}_bootloader.bin\`" >> $GITHUB_STEP_SUMMARY
-        echo "  - \`energyme_home_pro_${{ steps.version.outputs.VERSION }}_partitions.bin\`" >> $GITHUB_STEP_SUMMARY
+        echo "  - \`energyme_homepro_${{ steps.version.outputs.VERSION }}.bin\`" >> $GITHUB_STEP_SUMMARY
+        echo "  - \`energyme_homepro_${{ steps.version.outputs.VERSION }}.elf\`" >> $GITHUB_STEP_SUMMARY
+        echo "  - \`energyme_homepro_${{ steps.version.outputs.VERSION }}_bootloader.bin\`" >> $GITHUB_STEP_SUMMARY
+        echo "  - \`energyme_homepro_${{ steps.version.outputs.VERSION }}_partitions.bin\`" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "👉 Open the draft on GitHub, write notes, optionally tick prerelease, then Publish." >> $GITHUB_STEP_SUMMARY
