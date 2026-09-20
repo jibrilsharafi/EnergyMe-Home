@@ -174,7 +174,7 @@
 #define MQTT_TOPIC_STATISTICS "statistics"
 #define MQTT_TOPIC_CRASH "crash"
 #define MQTT_TOPIC_LOG "log"
-#define MQTT_TOPIC_ALARM "alarm" // Routed via its own rule (AWS_IOT_CORE_RULE_ALARM_HOME / _HOME_PRO, awsconfig.h); requires that rule to exist server-side
+#define MQTT_TOPIC_ALARM "alarm" // Routed via its own rule (AWS_IOT_CORE_RULE_ALARM_HOME / _HOMEPRO, awsconfig.h); requires that rule to exist server-side
 // Subscribe topics. The legacy `command` topic is retired (-> IoT Commands +
 // system shadow); only AWS IoT Jobs (OTA) and shadow/command reserved topics remain.
 #define MQTT_TOPIC_SUBSCRIBE_JOBS "jobs"
