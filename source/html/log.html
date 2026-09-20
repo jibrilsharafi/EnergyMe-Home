@@ -476,10 +476,10 @@
             });
         });
 
-        // "Home Pro" -> "home_pro", so a log export says which product it came from.
+        // "Home Pro" -> "homepro", so a log export says which product it came from.
         let productFileToken = 'home';
         window.energyApi.getAuthStatus().then(status => {
-            if (status && status.productName) productFileToken = status.productName.toLowerCase().replace(/\s+/g, '_');
+            if (status && status.productName) productFileToken = status.productName.toLowerCase().replace(/\s+/g, '');
         }).catch(() => {});
 
         document.getElementById('download-csv').addEventListener('click', function () {

@@ -19,7 +19,7 @@ const HardwareProfile PCB_PROFILES[] = {
         // EnergyMe Home Pro v1.0 (ESP32-S3-WROOM-1U-N16R8, W5500 Ethernet, 12 channels).
         // Pinout extracted from the PCB netlist (energyme-home-pro-pcb, 2026-08-31);
         // to be verified on hardware at bring-up.
-        .product = ProductLine::HOME_PRO,
+        .product = ProductLine::HOMEPRO,
         .version = 10, // v1.0 - Pro PCB numbering restarts at v1.0
 
         // RGB LED (same as Home v6.x)
@@ -231,15 +231,15 @@ bool globalCommunityMode = false;
 const char* productLineToString(ProductLine product) {
     switch (product) {
         case ProductLine::HOME:     return PRODUCT_LINE_HOME_STR;
-        case ProductLine::HOME_PRO: return PRODUCT_LINE_HOME_PRO_STR;
+        case ProductLine::HOMEPRO: return PRODUCT_LINE_HOMEPRO_STR;
     }
     return PRODUCT_LINE_HOME_STR;
 }
 
 bool productFromArtifactName(const char* name, ProductLine& productOut) {
     if (name == nullptr) return false;
-    if (strstr(name, FIRMWARE_ARTIFACT_TOKEN_HOME_PRO) != nullptr) {
-        productOut = ProductLine::HOME_PRO;
+    if (strstr(name, FIRMWARE_ARTIFACT_TOKEN_HOMEPRO) != nullptr) {
+        productOut = ProductLine::HOMEPRO;
         return true;
     }
     if (strstr(name, FIRMWARE_ARTIFACT_TOKEN_HOME) != nullptr) {
@@ -255,20 +255,20 @@ bool parseProductLineString(const char* s, ProductLine& productOut) {
         productOut = ProductLine::HOME;
         return true;
     }
-    if (strcmp(s, PRODUCT_LINE_HOME_PRO_STR) == 0) {
-        productOut = ProductLine::HOME_PRO;
+    if (strcmp(s, PRODUCT_LINE_HOMEPRO_STR) == 0) {
+        productOut = ProductLine::HOMEPRO;
         return true;
     }
     return false;
 }
 
 // The product a binary falls back to when factory NVS cannot answer. Pro build envs
-// pin PRODUCT_FALLBACK=1 (HOME_PRO) so a Pro binary never falls back to a Home pinout.
+// pin PRODUCT_FALLBACK=1 (HOMEPRO) so a Pro binary never falls back to a Home pinout.
 static ProductLine buildFallbackProduct() {
 #ifdef PRODUCT_FALLBACK
     // constants.h and the image descriptor read anything other than 1 as Home: a stray
     // value would name the binary "home" and still run it on another product's profile.
-    static_assert(PRODUCT_FALLBACK == 0 || PRODUCT_FALLBACK == 1, "PRODUCT_FALLBACK must be 0 (home) or 1 (home_pro)");
+    static_assert(PRODUCT_FALLBACK == 0 || PRODUCT_FALLBACK == 1, "PRODUCT_FALLBACK must be 0 (home) or 1 (homepro)");
     return static_cast<ProductLine>(PRODUCT_FALLBACK);
 #else
     return ProductLine::HOME;

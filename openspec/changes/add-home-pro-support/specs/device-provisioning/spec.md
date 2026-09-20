@@ -4,12 +4,12 @@
 
 ### Requirement: Factory identity includes the product line
 
-The factory namespace SHALL carry a `product_line` key (`home` or `home_pro`) on newly manufactured devices, written at provisioning alongside the serial number and PCB revision. The provisioning payload SHALL treat the field as mandatory going forward. Firmware SHALL NOT write, backfill, or expose a remote write path for `product_line` (or any factory key) outside the existing dev-build NVS debug endpoints: the factory namespace is write-once at manufacturing.
+The factory namespace SHALL carry a `product_line` key (`home` or `homepro`) on newly manufactured devices, written at provisioning alongside the serial number and PCB revision. The provisioning payload SHALL treat the field as mandatory going forward. Firmware SHALL NOT write, backfill, or expose a remote write path for `product_line` (or any factory key) outside the existing dev-build NVS debug endpoints: the factory namespace is write-once at manufacturing.
 
 #### Scenario: Newly manufactured Home Pro unit
 
 - **WHEN** a Home Pro unit is provisioned at manufacturing
-- **THEN** `factory_ns::product_line` is `"home_pro"` and `pcb_revision` follows the Home Pro numbering (starting at v1.0)
+- **THEN** `factory_ns::product_line` is `"homepro"` and `pcb_revision` follows the Home Pro numbering (starting at v1.0)
 
 #### Scenario: No remote backfill of the fleet
 

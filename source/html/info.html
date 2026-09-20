@@ -865,7 +865,7 @@
             document.getElementById('manufacturingDate').textContent = mfgTs > 0
                 ? new Date(mfgTs * 1000).toLocaleDateString()
                 : 'Unknown';
-            const productNames = { 'home': 'Home', 'home_pro': 'Home Pro' };
+            const productNames = { 'home': 'Home', 'homepro': 'Home Pro' };
             const productLabel = productNames[factory.productLine] || factory.productLine || 'Unknown';
             document.getElementById('productLine').textContent = factory.pcbRevision
                 ? `${productLabel} (PCB ${factory.pcbRevision}${factory.communityMode ? ', community' : ''})`
