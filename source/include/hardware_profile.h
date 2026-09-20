@@ -24,15 +24,15 @@
 // so profile lookup is always keyed by (product, version), never version alone.
 enum class ProductLine : uint8_t {
     HOME = 0,
-    HOME_PRO = 1,
+    HOMEPRO = 1,
 };
 
 #define PRODUCT_LINE_HOME_STR     "home"
-#define PRODUCT_LINE_HOME_PRO_STR "home_pro"
+#define PRODUCT_LINE_HOMEPRO_STR "homepro"
 
 const char* productLineToString(ProductLine product);
 
-// Parse a product string ("home" / "home_pro") into the enum.
+// Parse a product string ("home" / "homepro") into the enum.
 // Returns false for any unknown value, leaving productOut untouched.
 bool parseProductLineString(const char* s, ProductLine& productOut);
 
@@ -40,7 +40,7 @@ bool parseProductLineString(const char* s, ProductLine& productOut);
 // (quad vs octal PSRAM, fixed at compile time), so every delivery path checks
 // the artifact against the running product before flashing.
 #define FIRMWARE_ARTIFACT_TOKEN_HOME     "energyme_home"
-#define FIRMWARE_ARTIFACT_TOKEN_HOME_PRO "energyme_home_pro"
+#define FIRMWARE_ARTIFACT_TOKEN_HOMEPRO "energyme_homepro"
 
 // Identify the product a firmware artifact name was built for. The Home token is
 // a substring of the Pro token, so the Pro token is matched FIRST - a plain

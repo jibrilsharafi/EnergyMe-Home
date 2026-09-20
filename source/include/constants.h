@@ -23,7 +23,7 @@
 #if defined(PRODUCT_FALLBACK) && PRODUCT_FALLBACK == 1
 #define PRODUCT_NAME "Home Pro"
 #define FULL_PRODUCT_NAME "EnergyMe - Home Pro"
-#define PRODUCT_SLUG "energyme-home-pro"
+#define PRODUCT_SLUG "energyme-homepro"
 #define PRODUCT_DESCRIPTION "An open-source energy monitoring system with Ethernet, capable of monitoring up to 12 circuits."
 #else
 #define PRODUCT_NAME "Home"

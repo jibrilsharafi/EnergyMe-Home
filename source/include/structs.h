@@ -141,7 +141,7 @@ struct SystemStaticInfo {
     uint64_t manufacturingUnixTs;
 
     // Selected hardware profile (always valid after initHardwareProfile())
-    char productLine[NAME_BUFFER_SIZE];  // "home" | "home_pro"
+    char productLine[NAME_BUFFER_SIZE];  // "home" | "homepro"
     char pcbRevision[NAME_BUFFER_SIZE];  // e.g. "v6.1", from the selected profile
     bool communityMode;
 
