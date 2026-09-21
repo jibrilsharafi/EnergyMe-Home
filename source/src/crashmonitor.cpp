@@ -604,7 +604,7 @@ namespace CrashMonitor
             return;
         }
 
-        LOG_WARNING("Crash: Reason=%s(%d) | Crashes=%lu (consecutive=%lu) | Task=%s",
+        LOG_WARNING("Crash: Reason=%s(%d) | Crashes=%lu (consecutive=%lu) | Task=%s | PC=0x%08lx",
                     getResetReasonString(resetReason), (int32_t)resetReason,
                     _crashCount, _consecutiveCrashCount,
                     summary->exc_task, (uint32_t)summary->exc_pc);
