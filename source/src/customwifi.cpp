@@ -648,8 +648,11 @@ namespace CustomWifi
     // Static-IP health (boot-fail backstop clear + DHCP auto-recovery) is serviced from the periodic
     // check in the task loop, not here: it must run past the early crash window and after the restart
     // gate's minimum uptime, and we never reconfigure the live netif (that races lwIP).
-
-    sendOpenSourceTelemetry(); // Non-blocking short POST (guarded by compile-time flag)
+    //
+    // Telemetry is serviced from there too, not here: _lastWifiConnectedMillis is set
+    // immediately before this call, so isFullyConnected(true)'s own lwIP-stabilization
+    // check would always see 0 ms elapsed and skip every time - a long-standing bug
+    // (confirmed via zero telemetry Lambda invocations, ever, on real Home devices).
   }
 
   static void _wifiConnectionTask(void *parameter)
@@ -957,6 +960,10 @@ namespace CustomWifi
             bool internetReachable = _testConnectivity();
             if (!internetReachable) {
               LOG_DEBUG("Internet connectivity unavailable - device operating in local-only mode");
+            } else {
+              // Past the connect-time race in _handleSuccessfulConnection(): retried every
+              // interval until it succeeds once, self-guarded by _telemetrySent.
+              sendOpenSourceTelemetry();
             }
 
             // Manage the static-IP safety nets (backstop clear + DHCP auto-recovery)
