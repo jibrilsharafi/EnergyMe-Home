@@ -1746,10 +1746,11 @@ namespace Mqtt
 
         mbedtls_pk_context pk;
         mbedtls_pk_init(&pk);
+        const char* otaSigningPublicKeyPem = _selectByProduct(OTA_SIGNING_PUBLIC_KEY_PEM_HOME, OTA_SIGNING_PUBLIC_KEY_PEM_HOMEPRO);
         int parseRet = mbedtls_pk_parse_public_key(
             &pk,
-            reinterpret_cast<const unsigned char*>(OTA_SIGNING_PUBLIC_KEY_PEM),
-            strlen(OTA_SIGNING_PUBLIC_KEY_PEM) + 1); // +1: mbedtls PEM parsing requires the null terminator
+            reinterpret_cast<const unsigned char*>(otaSigningPublicKeyPem),
+            strlen(otaSigningPublicKeyPem) + 1); // +1: mbedtls PEM parsing requires the null terminator
         if (parseRet != 0) {
             LOG_ERROR("Failed to parse embedded OTA signing public key: -0x%04X", -parseRet);
             mbedtls_pk_free(&pk);

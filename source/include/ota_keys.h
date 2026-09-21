@@ -3,25 +3,36 @@
 
 #pragma once
 
-// ECDSA P-256 public key used by Mqtt::_verifyOtaSignature() to verify OTA
+// ECDSA P-256 public keys used by Mqtt::_verifyOtaSignature() to verify OTA
 // firmware signatures before the boot partition is switched. Compiled in,
-// not NVS-stored, so it cannot be altered without reflashing.
+// not NVS-stored, so they cannot be altered without reflashing.
 //
-// Public half of an asymmetric KMS signing key; the private half never
-// leaves KMS. Gated per build so dev and prod trust different keys.
+// Public half of asymmetric KMS signing keys; the private half never leaves
+// KMS. One key per env (ENV_DEV, compile-time) per product (runtime, via
+// globalHwProfile->product - selected the same way as the AWS IoT
+// topics/rules) so a compromised signing pipeline for one product can't
+// forge images for the other.
 
 #ifndef ENV_DEV
-// Production key.
-constexpr const char* OTA_SIGNING_PUBLIC_KEY_PEM =
+// Production keys.
+constexpr const char* OTA_SIGNING_PUBLIC_KEY_PEM_HOME =
 "-----BEGIN PUBLIC KEY-----\n"
 "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEFtOoSAhpqnoaVbqMTTGsc3t0nMaMp0raYmcJId22\n"
 "bzF37RlPSgXIqXRlwUhxhRWJzwVHhouE/hqUWdL3rmdwMg==\n"
 "-----END PUBLIC KEY-----\n";
+// FIXME: Home Pro doesn't have its own prod KMS signing key provisioned yet -
+// shared with Home's for now. Split into its own key once it exists.
+constexpr const char* OTA_SIGNING_PUBLIC_KEY_PEM_HOMEPRO = OTA_SIGNING_PUBLIC_KEY_PEM_HOME;
 #else
-// Dev/test key - dev builds only, never reaches a vendor device.
-constexpr const char* OTA_SIGNING_PUBLIC_KEY_PEM =
+// Dev/test keys - dev builds only, never reach a vendor device.
+constexpr const char* OTA_SIGNING_PUBLIC_KEY_PEM_HOME =
 "-----BEGIN PUBLIC KEY-----\n"
 "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEL30m5KjXuHbjc7Q36kt023IgGid7\n"
 "XH1V0oCPXF2ebIUSY+Pm/tIWXEhVA08SE7ROIwHFWdonsXY0lb3BgnOWww==\n"
+"-----END PUBLIC KEY-----\n";
+constexpr const char* OTA_SIGNING_PUBLIC_KEY_PEM_HOMEPRO =
+"-----BEGIN PUBLIC KEY-----\n"
+"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE9QFnlcef4kbXsd1UdRtTese8fDA9\n"
+"ran770WFkjVWuHFfCiFgazlMMBs5EEJVyRnAfx0Tf7cV49/A8LAaAVLNFw==\n"
 "-----END PUBLIC KEY-----\n";
 #endif
