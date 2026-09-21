@@ -331,7 +331,6 @@ namespace CustomEth
         LOG_DEBUG("Ethernet task started");
 
         bool mdnsEnsured = false;
-        bool telemetrySent = false;
         bool serviceableAnnounced = false;
         bool bootFailPersisted = false;
         bool backstopCleared = false;
@@ -388,12 +387,12 @@ namespace CustomEth
 
                 // Same story as mDNS above: the WiFi connect path sends the one-shot
                 // telemetry ping itself, which an Ethernet-only device never runs.
-                // sendOpenSourceTelemetry() is idempotent (guards on its own
-                // once-per-boot flag), so no-op here once WiFi already sent it.
-                if (!telemetrySent) {
-                    CustomWifi::sendOpenSourceTelemetry();
-                    telemetrySent = true;
-                }
+                // Called every tick, not gated on a local one-shot flag: the function
+                // requires a real connectivity probe to pass (not just link-up), which
+                // can fail on the first few ticks - self-guarded by its own
+                // once-per-boot flag once it actually succeeds, so this is a cheap
+                // no-op after that.
+                CustomWifi::sendOpenSourceTelemetry();
 
                 // Backstop clear: the static config has held the interface serviceable
                 // past the crash window, so it is not a boot-loop offender. That is all it
