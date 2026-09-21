@@ -202,6 +202,14 @@ namespace CustomWifi
     // ESP-IDF responder answers on every netif once running, ETH included.
     bool ensureMdnsStarted();
 
+    // Sends the one-shot anonymous usage ping (hashed device id, firmware version,
+    // sketch MD5) if not already sent this boot. Same story as ensureMdnsStarted:
+    // the WiFi connect path calls this itself; an Ethernet-only device (Pro with
+    // no credentials) has no such path, so custometh calls this when the wire
+    // becomes serviceable. Idempotent and a no-op once ENABLE_OPEN_SOURCE_TELEMETRY
+    // is off or the ping has already gone out.
+    void sendOpenSourceTelemetry();
+
     void resetWifi();
     bool setCredentials(const char* ssid, const char* password); // Set new WiFi credentials and trigger reconnection
 
