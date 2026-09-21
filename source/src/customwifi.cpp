@@ -1770,11 +1770,13 @@ namespace CustomWifi
       return; 
     }
 
+    const char* telemetryUrl = (globalHwProfile->product == ProductLine::HOMEPRO) ? TELEMETRY_URL_HOMEPRO : TELEMETRY_URL_HOME;
+
     WiFiClientSecure client;
     client.setTimeout(TELEMETRY_TIMEOUT_MS);
     client.setCACert(AWS_IOT_CORE_CA_CERT); // Use Amazon Root CA 1 for secure connection
 
-    if (!client.connect(TELEMETRY_URL, TELEMETRY_PORT)) {
+    if (!client.connect(telemetryUrl, TELEMETRY_PORT)) {
       LOG_WARNING("Telemetry connection failed");
       return;
     }
@@ -1784,7 +1786,7 @@ namespace CustomWifi
     int headerLen = snprintf(header, sizeof(header),
                              "POST %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: EnergyMe-Home/%s\r\nContent-Type: application/json\r\nContent-Length: %u\r\nConnection: close\r\n\r\n",
                              TELEMETRY_PATH,
-                             TELEMETRY_URL,
+                             telemetryUrl,
                              FIRMWARE_BUILD_VERSION,
                              (unsigned)jsonSize);
     if (headerLen <= 0 || headerLen >= (int)sizeof(header)) {

@@ -114,12 +114,16 @@ struct WifiConfiguration {
 // =====================
 // NOTE: Build-time flag ENABLE_OPEN_SOURCE_TELEMETRY controls whether telemetry is sent.
 //       Set -DENABLE_OPEN_SOURCE_TELEMETRY=0 or remove the define to disable.
-// FIXME: shared between Home and Home Pro for now (no Home Pro telemetry endpoint
-// provisioned yet) - split per product, like the AWS IoT topics/rules, once it exists.
+// Product is a runtime (factory-NVS) value, not a build flag, so the endpoint is picked
+// at the call site via globalHwProfile->product, like the AWS IoT topics/rules.
 #ifdef ENV_DEV
-#define TELEMETRY_URL "5jyfvyfmubfr6rw7tx7ozb4foq0hstkk.lambda-url.eu-west-1.on.aws"
+#define TELEMETRY_URL_HOME "5jyfvyfmubfr6rw7tx7ozb4foq0hstkk.lambda-url.eu-west-1.on.aws"
+#define TELEMETRY_URL_HOMEPRO "7vamemex2tdwqgp5qfiytsb37m0tcwhr.lambda-url.eu-west-1.on.aws"
 #else
-#define TELEMETRY_URL "vd2obqbugurdyhbf4iaxrzmk4i0njltb.lambda-url.eu-west-1.on.aws"
+#define TELEMETRY_URL_HOME "vd2obqbugurdyhbf4iaxrzmk4i0njltb.lambda-url.eu-west-1.on.aws"
+// FIXME: Home Pro doesn't have its own prod telemetry endpoint provisioned yet -
+// shared with Home's for now. Split once it exists.
+#define TELEMETRY_URL_HOMEPRO TELEMETRY_URL_HOME
 #endif
 #define TELEMETRY_PORT 443
 #define TELEMETRY_PATH "/"
