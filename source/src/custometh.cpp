@@ -331,6 +331,7 @@ namespace CustomEth
         LOG_DEBUG("Ethernet task started");
 
         bool mdnsEnsured = false;
+        bool telemetrySent = false;
         bool serviceableAnnounced = false;
         bool bootFailPersisted = false;
         bool backstopCleared = false;
@@ -383,6 +384,15 @@ namespace CustomEth
                 // rising edge. Idempotent on devices where WiFi already started it.
                 if (!mdnsEnsured) {
                     mdnsEnsured = CustomWifi::ensureMdnsStarted();
+                }
+
+                // Same story as mDNS above: the WiFi connect path sends the one-shot
+                // telemetry ping itself, which an Ethernet-only device never runs.
+                // sendOpenSourceTelemetry() is idempotent (guards on its own
+                // once-per-boot flag), so no-op here once WiFi already sent it.
+                if (!telemetrySent) {
+                    CustomWifi::sendOpenSourceTelemetry();
+                    telemetrySent = true;
                 }
 
                 // Backstop clear: the static config has held the interface serviceable

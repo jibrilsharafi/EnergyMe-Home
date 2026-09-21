@@ -3,6 +3,7 @@
 
 #include "customwifi.h"
 #include "custometh.h"
+#include "customnet.h"
 #include "taskprofiler.h"
 
 namespace CustomWifi
@@ -157,7 +158,6 @@ namespace CustomWifi
   static bool _hasCredentialsWorthRetrying();
   static void _feedProvisioning(WifiProvisioning::Event event);
   static bool _isPowerReset();
-  static void _sendOpenSourceTelemetry();
   static void _resolveApPassword(char* out, size_t outSize);
   static uint32_t _toHostOrder(const IPAddress &address);
   static IPAddress _fromHostOrder(uint32_t value);
@@ -649,7 +649,7 @@ namespace CustomWifi
     // check in the task loop, not here: it must run past the early crash window and after the restart
     // gate's minimum uptime, and we never reconfigure the live netif (that races lwIP).
 
-    _sendOpenSourceTelemetry(); // Non-blocking short POST (guarded by compile-time flag)
+    sendOpenSourceTelemetry(); // Non-blocking short POST (guarded by compile-time flag)
   }
 
   static void _wifiConnectionTask(void *parameter)
@@ -1732,14 +1732,17 @@ namespace CustomWifi
     }
   }
 
-  static void _sendOpenSourceTelemetry()
+  void sendOpenSourceTelemetry()
   {
 #ifdef ENABLE_OPEN_SOURCE_TELEMETRY
     if (_telemetrySent) return;
 
-    // Basic preconditions: WiFi connected with IP
-    if (!isFullyConnected(true)) {
-      LOG_DEBUG("Skipping telemetry - WiFi not fully connected");
+    // Interface-agnostic: called from both the WiFi connect path and (for an
+    // Ethernet-only Home Pro) custometh's serviceable rising edge, same as
+    // ensureMdnsStarted() above - CustomNet counts Ethernet the moment it
+    // exists, where CustomWifi::isFullyConnected() never would.
+    if (!CustomNet::isFullyConnected(true)) {
+      LOG_DEBUG("Skipping telemetry - network not fully connected");
       return;
     }
 
