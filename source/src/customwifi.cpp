@@ -125,6 +125,7 @@ namespace CustomWifi
   // Host order rather than the raw IPAddress dword for the reason _toHostOrder() documents.
   // A uint32_t is written atomically on this target and readers only compare it for equality.
   static volatile uint32_t _apAddressHostOrder = 0;
+  static volatile uint8_t _apCidr = 0; // Written before _apAddressHostOrder is published
 
   // DNS servers the station brought (lease or static config), as raw IPAddress dwords. lwIP
   // keeps ONE resolver list for every netif, so WiFi.STA.dnsIP() reads whatever the last lease
@@ -303,6 +304,18 @@ namespace CustomWifi
     uint32_t apAddress = _apAddressHostOrder;
     if (apAddress == 0) return false; // No AP up: nothing can match
     return _toHostOrder(address) == apAddress;
+  }
+
+  bool isApConnection(const IPAddress &localAddress, const IPAddress &remoteAddress)
+  {
+    uint32_t apAddress = _apAddressHostOrder;
+    if (apAddress == 0 || _toHostOrder(localAddress) != apAddress) return false;
+    // The destination alone is not proof of arrival interface: with Ethernet up, lwIP
+    // accepts a wired packet addressed to the AP address and routes the reply back out
+    // ETH. A real AP client always has an address the SoftAP leased, inside its subnet.
+    uint32_t mask = WifiProvisioning::netmaskFromCidr(_apCidr);
+    uint32_t remote = _toHostOrder(remoteAddress);
+    return mask != 0 && remote != apAddress && (remote & mask) == (apAddress & mask);
   }
 
   WifiProvisioning::State getProvisioningState()
@@ -1540,6 +1553,7 @@ namespace CustomWifi
     // Publish the address the auth carve-out filter compares against. Set only after softAP()
     // has succeeded, so isApAddress() is never true for an AP that does not exist, and taken
     // from the address we configured rather than read back, which keeps it a plain store.
+    _apCidr = chosen.cidr;
     _apAddressHostOrder = chosen.address;
 
     // Same signal the WiFiManager portal used to give (its setAPCallback), so the meaning

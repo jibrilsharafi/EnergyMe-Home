@@ -400,7 +400,7 @@ namespace CustomServer
         if (client == nullptr) return false;
 
         // False whenever no AP is up, so there is nothing to carve out until one exists.
-        return CustomWifi::isApAddress(client->localIP());
+        return CustomWifi::isApConnection(client->localIP(), client->remoteIP());
     }
 
     // Same origin test, but also true during GRACE: the window right after credentials are
@@ -421,7 +421,7 @@ namespace CustomServer
         AsyncClient *client = request->client();
         if (client == nullptr) return false;
 
-        return CustomWifi::isApAddress(client->localIP());
+        return CustomWifi::isApConnection(client->localIP(), client->remoteIP());
     }
 
     // True whenever the request was addressed to the device's own SoftAP, in ANY provisioning
@@ -458,7 +458,7 @@ namespace CustomServer
         if (client == nullptr) return false;
 
         // False whenever no AP is up.
-        return CustomWifi::isApAddress(client->localIP());
+        return CustomWifi::isApConnection(client->localIP(), client->remoteIP());
     }
 
     // Registers a route twice: an open handler that only matches provisioning-origin
