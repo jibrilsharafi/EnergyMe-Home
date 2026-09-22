@@ -21,6 +21,7 @@ namespace CustomNet
 
     // "Can anyone reach this device": a station-side interface is up OR the
     // recovery SoftAP is serving. This is what the health check and the boot
-    // wait gate on - a device serving on the AP is working as intended.
+    // wait gate on - a device serving on the AP is working as intended, and
+    // treating it as unhealthy restarts it every ~150 s.
     bool isNetworkServiceable();
 }

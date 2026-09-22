@@ -222,7 +222,7 @@ namespace CustomWifi
     // That is not cosmetic. _apAddressHostOrder stays 0 for an AP nobody raised, so
     // isApAddress() is false for requests arriving on it: the Modbus TCP block and the
     // authentication carve-out both key off that test and both read the rogue AP as if it
-    // were the LAN. It also pins apServing true forever, which makes isNetworkServiceable()
+    // were the LAN. It also pins apServing true forever, which makes CustomNet::isNetworkServiceable()
     // unconditionally true and stops the health check from ever restarting a dead device.
     //
     // Clear it before anything can associate. This also erases the stale NVS copy, so a
@@ -295,11 +295,6 @@ namespace CustomWifi
     uint32_t apAddress = _apAddressHostOrder;
     if (apAddress == 0) return false; // No AP up: nothing can match
     return _toHostOrder(address) == apAddress;
-  }
-
-  bool isNetworkServiceable()
-  {
-    return WifiProvisioning::isNetworkServiceable(isFullyConnected(), isApServing());
   }
 
   WifiProvisioning::State getProvisioningState()
