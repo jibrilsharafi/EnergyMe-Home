@@ -20,9 +20,11 @@ constexpr const char* OTA_SIGNING_PUBLIC_KEY_PEM_HOME =
 "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEFtOoSAhpqnoaVbqMTTGsc3t0nMaMp0raYmcJId22\n"
 "bzF37RlPSgXIqXRlwUhxhRWJzwVHhouE/hqUWdL3rmdwMg==\n"
 "-----END PUBLIC KEY-----\n";
-// FIXME: Home Pro doesn't have its own prod KMS signing key provisioned yet -
-// shared with Home's for now. Split into its own key once it exists.
-constexpr const char* OTA_SIGNING_PUBLIC_KEY_PEM_HOMEPRO = OTA_SIGNING_PUBLIC_KEY_PEM_HOME;
+constexpr const char* OTA_SIGNING_PUBLIC_KEY_PEM_HOMEPRO =
+"-----BEGIN PUBLIC KEY-----\n"
+"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEMWFWihKmoYwCCGwuRINmU0/ZVUE2\n"
+"1IqjKWKBnBMonB3MuaGxphswkYvqsUeTL7kErKeviD7Lz+DkBCztseIjGQ==\n"
+"-----END PUBLIC KEY-----\n";
 #else
 // Dev/test keys - dev builds only, never reach a vendor device.
 constexpr const char* OTA_SIGNING_PUBLIC_KEY_PEM_HOME =

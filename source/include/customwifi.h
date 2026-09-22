@@ -121,9 +121,7 @@ struct WifiConfiguration {
 #define TELEMETRY_URL_HOMEPRO "7vamemex2tdwqgp5qfiytsb37m0tcwhr.lambda-url.eu-west-1.on.aws"
 #else
 #define TELEMETRY_URL_HOME "vd2obqbugurdyhbf4iaxrzmk4i0njltb.lambda-url.eu-west-1.on.aws"
-// FIXME: Home Pro doesn't have its own prod telemetry endpoint provisioned yet -
-// shared with Home's for now. Split once it exists.
-#define TELEMETRY_URL_HOMEPRO TELEMETRY_URL_HOME
+#define TELEMETRY_URL_HOMEPRO "26jgpjiel7qdotp3rkpa7dvui40ynllt.lambda-url.eu-west-1.on.aws"
 #endif
 #define TELEMETRY_PORT 443
 #define TELEMETRY_PATH "/"
