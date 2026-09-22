@@ -313,11 +313,9 @@
             await loadAvailableDates();
 
             if (availableDates.length > 0) {
-                // Prefer the most recent date with an actual daily file
-                const actualDailyDates = availableDates.filter(d => ArchiveCache.dailyFilesSet.has(d));
-                currentDate = actualDailyDates.length > 0 
-                    ? actualDailyDates[actualDailyDates.length - 1] 
-                    : availableDates[availableDates.length - 1];
+                // Lists are local dates clamped to local today, so the last entry is the
+                // most recent local day/month/year with data
+                currentDate = availableDates[availableDates.length - 1];
                 currentMonth = availableMonths[availableMonths.length - 1];
                 currentYear = availableYears[availableYears.length - 1];
                 document.getElementById('date-picker').value = currentDate;
@@ -334,13 +332,21 @@
         }
     }
 
+    function daysOfUtcMonth(yearMonth, lastDay = null) {
+        const [year, month] = yearMonth.split('-').map(Number);
+        const count = lastDay || new Date(Date.UTC(year, month, 0)).getUTCDate();
+        return Array.from({ length: count }, (_, i) => `${yearMonth}-${String(i + 1).padStart(2, '0')}`);
+    }
+
+    // File names are UTC dates; the pickers and navigation work in local dates
     async function loadAvailableDates() {
         try {
-            const allDates = new Set();
-            const allMonths = new Set();
-            const allYears = new Set();
-            
-            // Load daily files
+            const utcDates = new Set();
+            const now = new Date();
+            const utcToday = now.toISOString().substring(0, 10);
+            const utcMonth = utcToday.substring(0, 7);
+            const utcYear = utcToday.substring(0, 4);
+
             const dailyFiles = await energyApi.getFileList('energy/daily') || {};
             ArchiveCache.dailyFilesSet.clear();
             Object.keys(dailyFiles)
@@ -348,77 +354,31 @@
                 .map(filename => filename.replace('.csv.gz', '').replace('.csv', ''))
                 .forEach(date => {
                     ArchiveCache.dailyFilesSet.add(date);
-                    allDates.add(date);
-                    allMonths.add(date.substring(0, 7));
-                    allYears.add(date.substring(0, 4));
+                    utcDates.add(date);
                 });
-            
-            // Load monthly archives
+
             const monthlyFiles = await energyApi.getFileList('energy/monthly') || {};
-            const monthlyArchives = Object.keys(monthlyFiles).filter(f => f.endsWith('.csv.gz'));
-            ArchiveCache.archiveFiles.monthly = new Set(monthlyArchives.map(f => f.replace('.csv.gz', '')));
-            for (const filename of monthlyArchives) {
-                const yearMonth = filename.replace('.csv.gz', '');
-                allMonths.add(yearMonth);
-                allYears.add(yearMonth.substring(0, 4));
-                
-                const [year, month] = yearMonth.split('-');
-                const now = new Date();
-                const archiveMonth = new Date(parseInt(year), parseInt(month) - 1, 1);
-                const currentMonthDate = new Date(now.getFullYear(), now.getMonth(), 1);
+            const monthlyArchives = Object.keys(monthlyFiles).filter(f => f.endsWith('.csv.gz')).map(f => f.replace('.csv.gz', ''));
+            ArchiveCache.archiveFiles.monthly = new Set(monthlyArchives);
+            monthlyArchives.forEach(yearMonth => {
+                if (yearMonth < utcMonth) daysOfUtcMonth(yearMonth).forEach(d => utcDates.add(d));
+                else if (yearMonth === utcMonth) daysOfUtcMonth(yearMonth, now.getUTCDate()).forEach(d => utcDates.add(d));
+            });
 
-                if (archiveMonth < currentMonthDate) {
-                    // Past month: generate all days
-                    const daysInMonth = new Date(parseInt(year), parseInt(month), 0).getDate();
-                    for (let day = 1; day <= daysInMonth; day++) {
-                        allDates.add(`${yearMonth}-${String(day).padStart(2, '0')}`);
-                    }
-                } else if (archiveMonth.getTime() === currentMonthDate.getTime()) {
-                    // Current month: generate days 1 through today
-                    const today = now.getDate();
-                    for (let day = 1; day <= today; day++) {
-                        allDates.add(`${yearMonth}-${String(day).padStart(2, '0')}`);
-                    }
-                }
-            }
-            
-            // Load yearly archives
+            // A yearly archive holds the year's completed months
             const yearlyFiles = await energyApi.getFileList('energy/yearly') || {};
-            const yearlyArchives = Object.keys(yearlyFiles).filter(f => f.endsWith('.csv.gz'));
-            ArchiveCache.archiveFiles.yearly = new Set(yearlyArchives.map(f => f.replace('.csv.gz', '')));
-            for (const filename of yearlyArchives) {
-                const year = filename.replace('.csv.gz', '');
-                const yearInt = parseInt(year);
-                allYears.add(year);
-
-                const now = new Date();
-                if (yearInt < now.getFullYear()) {
-                    // Past year: generate all 12 months and all dates
-                    for (let month = 1; month <= 12; month++) {
-                        const ym = `${year}-${String(month).padStart(2, '0')}`;
-                        allMonths.add(ym);
-                        const daysInMonth = new Date(yearInt, month, 0).getDate();
-                        for (let day = 1; day <= daysInMonth; day++) {
-                            allDates.add(`${ym}-${String(day).padStart(2, '0')}`);
-                        }
-                    }
-                } else if (yearInt === now.getFullYear()) {
-                    // Current year: generate completed months (1 through current_month - 1)
-                    const currentMonthNum = now.getMonth() + 1;
-                    for (let month = 1; month < currentMonthNum; month++) {
-                        const ym = `${year}-${String(month).padStart(2, '0')}`;
-                        allMonths.add(ym);
-                        const daysInMonth = new Date(yearInt, month, 0).getDate();
-                        for (let day = 1; day <= daysInMonth; day++) {
-                            allDates.add(`${ym}-${String(day).padStart(2, '0')}`);
-                        }
-                    }
+            const yearlyArchives = Object.keys(yearlyFiles).filter(f => f.endsWith('.csv.gz')).map(f => f.replace('.csv.gz', ''));
+            ArchiveCache.archiveFiles.yearly = new Set(yearlyArchives);
+            yearlyArchives.forEach(year => {
+                const lastMonth = year < utcYear ? 12 : year === utcYear ? now.getUTCMonth() : 0;
+                for (let month = 1; month <= lastMonth; month++) {
+                    daysOfUtcMonth(`${year}-${String(month).padStart(2, '0')}`).forEach(d => utcDates.add(d));
                 }
-            }
-            
-            availableDates = [...allDates].sort();
-            availableMonths = [...allMonths].sort();
-            availableYears = [...allYears].sort();
+            });
+
+            availableDates = EnergyAggregation.localDatesForUtcDates([...utcDates]);
+            availableMonths = [...new Set(availableDates.map(d => d.substring(0, 7)))];
+            availableYears = [...new Set(availableDates.map(d => d.substring(0, 4)))];
         } catch (error) {
             console.error('Error loading available dates:', error);
             availableDates = [];
@@ -578,7 +538,8 @@
 
     async function loadAndDisplayCharts() {
         const periods = { daily: currentDate, monthly: currentMonth, yearly: currentYear, total: 'all time' };
-        if (currentView !== 'total' && !periods[currentView]) return;
+        // Total needs the listing (its first year), the others their period
+        if (currentView === 'total' ? availableYears.length === 0 : !periods[currentView]) return;
 
         const view = currentView;
         const seq = ++chartLoadSeq;
@@ -586,11 +547,14 @@
             ChartHelpers.showLoadingMessage(currentChartType);
             const period = view === 'total' ? null : periods[view];
             const utcDates = EnergyAggregation.utcDatesForPeriod(view, period, availableYears[0]);
-            const entries = await loadEnergyEntries(utcDates);
+            const { entries, fetchFailed } = await loadEnergyEntries(utcDates);
             if (seq !== chartLoadSeq) return;
 
             const result = EnergyAggregation.finalize(EnergyAggregation.aggregate(entries, view, period));
-            if (Object.keys(result.imported).length === 0) throw new NoEnergyDataError();
+            if (Object.keys(result.imported).length === 0) {
+                if (fetchFailed) throw new Error('Energy files could not be fetched');
+                throw new NoEnergyDataError();
+            }
             displayCharts(result, view);
         } catch (error) {
             if (seq !== chartLoadSeq) return;
@@ -603,30 +567,51 @@
         }
     }
 
-    // Readings for the given UTC dates: the daily file where the device still has one,
-    // otherwise that month's archive (which itself falls back to the yearly archive).
-    // Overlaps are harmless: EnergyAggregation dedupes by channel and timestamp.
-    async function loadEnergyEntries(utcDates) {
-        const currentUtcMonth = new Date().toISOString().substring(0, 7);
-        const archiveMonths = new Set();
-        let entries = [];
+    // A file that does not exist is expected (no data then); anything else is a failure
+    function isMissingFileError(error) {
+        return /^No |: 404$/.test((error && error.message) || '');
+    }
 
+    // Readings for the given UTC dates: the daily file where the device still has one,
+    // otherwise that month's archive, otherwise those months' rows of the yearly archive
+    // (the firmware merges finished months into it). Overlaps are harmless:
+    // EnergyAggregation dedupes by channel and timestamp.
+    async function loadEnergyEntries(utcDates) {
+        const entries = [];
+        let fetchFailed = false;
+        const append = rows => { for (const row of rows) entries.push(row); };
+        const noteError = error => { if (!isMissingFileError(error)) fetchFailed = true; };
+
+        const archiveMonths = new Set();
         for (const date of utcDates) {
             if (ArchiveCache.dailyFilesSet.has(date)) {
                 try {
-                    entries = entries.concat(DataHelpers.parseCsvEnergyData(await DataHelpers.loadDailyCsvData(date)));
+                    append(DataHelpers.parseCsvEnergyData(await DataHelpers.loadDailyCsvData(date)));
                     continue;
-                } catch (e) { /* fall back to the archive */ }
+                } catch (e) { noteError(e); }
             }
-            if (date.substring(0, 7) <= currentUtcMonth) archiveMonths.add(date.substring(0, 7));
+            archiveMonths.add(date.substring(0, 7));
         }
 
+        const yearlyMonths = {};
         for (const yearMonth of archiveMonths) {
-            try {
-                entries = entries.concat(DataHelpers.parseCsvEnergyData(await DataHelpers.loadMonthlyCsvData(yearMonth)));
-            } catch (e) { /* No data for this month */ }
+            const known = ArchiveCache.archiveFiles.monthly;
+            if (!known || known.has(yearMonth)) {
+                try {
+                    append(DataHelpers.parseCsvEnergyData(await ArchiveCache.loadArchiveWithCache('monthly', yearMonth)));
+                    continue;
+                } catch (e) { noteError(e); }
+            }
+            const year = yearMonth.substring(0, 4);
+            (yearlyMonths[year] = yearlyMonths[year] || []).push(yearMonth);
         }
-        return entries;
+
+        for (const [year, months] of Object.entries(yearlyMonths)) {
+            try {
+                append(DataHelpers.parseCsvEnergyData(await ArchiveCache.loadArchiveWithCache('yearly', year), months));
+            } catch (e) { noteError(e); }
+        }
+        return { entries, fetchFailed };
     }
 
     function displayCharts(result, view) {
@@ -646,6 +631,11 @@
     // ============================================================================
     const CSV_PERIOD_HEADERS = { daily: 'Local time', monthly: 'Date', yearly: 'Month', total: 'Year' };
 
+    function csvPeriodHeader(viewType) {
+        const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        return timeZone ? `${CSV_PERIOD_HEADERS[viewType]} (${timeZone})` : CSV_PERIOD_HEADERS[viewType];
+    }
+
     function csvField(value) {
         const text = String(value);
         return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
@@ -661,7 +651,8 @@
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        URL.revokeObjectURL(url);
+        // Deferred: some browsers cancel a download whose URL is revoked synchronously
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
     }
 
     function setupCsvDownload(consumptionData, viewType) {
@@ -679,7 +670,7 @@
                 return parseInt(a) - parseInt(b);
             });
 
-            const rows = [[CSV_PERIOD_HEADERS[viewType], ...channelArray.map(ch => ChartHelpers.getChannelLabel(ch, channelData))]];
+            const rows = [[csvPeriodHeader(viewType), ...channelArray.map(ch => ChartHelpers.getChannelLabel(ch, channelData))]];
             periods.forEach(key => {
                 rows.push([EnergyAggregation.csvPeriodLabel(key, viewType, period),
                     ...channelArray.map(ch => (consumptionData[key][ch] || 0).toFixed(3))]);
@@ -690,7 +681,7 @@
         document.getElementById('download-balance-csv').onclick = function() {
             if (!balanceData) return;
 
-            const rows = [[CSV_PERIOD_HEADERS[viewType], 'Grid Import (kWh)', 'Grid Export (kWh)', 'PV (kWh)', 'Battery Discharge (kWh)', 'Battery Charge (kWh)', 'Home (kWh)']];
+            const rows = [[csvPeriodHeader(viewType), 'Grid Import (kWh)', 'Grid Export (kWh)', 'PV (kWh)', 'Battery Discharge (kWh)', 'Battery Charge (kWh)', 'Home (kWh)']];
             balanceData.periods.forEach((key, i) => {
                 rows.push([EnergyAggregation.csvPeriodLabel(key, viewType, period),
                     ...['gridImport', 'gridExport', 'pv', 'batteryDischarge', 'batteryCharge', 'homeConsumption'].map(series => balanceData[series][i].toFixed(3))]);
