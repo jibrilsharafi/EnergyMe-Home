@@ -2,10 +2,10 @@
 
 See proposal.md - Why. The constraints that shape the approach, all verified against the code and the pinned core rather than assumed:
 
-- The OTA download is one call to `esp_https_ota()` in `_performOtaUpdate` (`mqtt.cpp:1460`), driven by `_otaTask` (`mqtt.cpp:1505`). The task self-deletes on every exit path.
-- `_publishOtaStatus` (`mqtt.cpp:2747`) builds `statusDetails` as a JSON object with one `reason` key. AWS IoT `UpdateJobExecution` types `statusDetails` as a string-to-string map, keys up to 128 chars matching `[a-zA-Z0-9:_-]+`, values up to 1024 chars with no control characters. Sibling keys are therefore native, and every value must be rendered as a string.
-- `calculateExponentialBackoff` already exists at `utils.cpp:1070` with the signature this change needs, but lives in `src/`, which the `native` test environment cannot compile.
-- `source/lib/` already holds 15 pure modules. `version_compare` is the closest template: a namespaced pure module with a thin forwarder left behind at `utils.cpp:2455`.
+- The OTA download was one call to `esp_https_ota()` in `_performOtaUpdate`, driven by `_otaTask`. The task self-deletes on every exit path (now through `_finishOtaTask()`). `_performOtaUpdate` has since moved to the granular `esp_https_ota_begin()` / `_perform()` / `_finish()` sequence so the signature and image-descriptor checks can run before activation; each attempt is still one begin-to-finish pass.
+- `_publishOtaStatus` (mqtt.cpp) builds `statusDetails` as a JSON object with one `reason` key. AWS IoT `UpdateJobExecution` types `statusDetails` as a string-to-string map, keys up to 128 chars matching `[a-zA-Z0-9:_-]+`, values up to 1024 chars with no control characters. Sibling keys are therefore native, and every value must be rendered as a string.
+- `calculateExponentialBackoff` (utils.cpp) already exists with the signature this change needs, but lives in `src/`, which the `native` test environment cannot compile.
+- `source/lib/` already holds 15 pure modules. `version_compare` is the closest template: a namespaced pure module with a thin forwarder (`compareVersions()`) left behind in utils.cpp.
 - The presigned URL is minted when the device picks up the job, not when the job is created, so the device owns the full 60 minute lifetime from its own start of work.
 
 ## Goals / Non-Goals
@@ -20,7 +20,7 @@ See proposal.md - Why. The constraints that shape the approach, all verified aga
 
 - Reducing steady-state internal-heap fragmentation. That is a separate reliability concern and is not addressed here.
 - Guaranteeing a download succeeds on a device whose steady-state contiguous block sits below the mbedTLS requirement. On such a device this change converts a silent failure into a described one, nothing more.
-- Treating the local web-UI OTA upload path (`customserver.cpp:1406-1548`). It runs on the `async_tcp` task, carries no TLS, and is out of scope.
+- Treating the local web-UI OTA upload path (customserver.cpp `_handleOtaUploadData()` / `_initializeOtaUpload()` / `_finalizeOtaUpload()`). It runs on the `async_tcp` task, carries no TLS, and is out of scope.
 
 ## Decisions
 
@@ -42,11 +42,11 @@ The levers that would actually move the contiguous block, none of them taken her
 
 ### Retry in `_otaTask`, not inside `_performOtaUpdate`
 
-The loop wraps `_performOtaUpdate` so the DNS probe at `mqtt.cpp:1463-1475` does not re-run on every attempt. That probe opens a plaintext `WiFiClient` to port 443 purely to log whether the host resolves, and repeating it per attempt would add a socket allocation to the very heap the change is trying to protect. Keeping the loop in `_otaTask` also leaves `_performOtaUpdate` as a single-attempt function that returns enough for the caller to report on.
+The loop wraps `_performOtaUpdate` so the DNS probe (`_probeOtaHost()`, called once at the top of `_otaTask`) does not re-run on every attempt. That probe opens a plaintext `WiFiClient` to port 443 purely to log whether the host resolves, and repeating it per attempt would add a socket allocation to the very heap the change is trying to protect. Keeping the loop in `_otaTask` also leaves `_performOtaUpdate` as a single-attempt function that returns enough for the caller to report on.
 
 `_performOtaUpdate` keeps returning `bool`, but the error, HTTP status, byte progress and heap figures land in a shared `OtaAttempt` that the HTTP event handler also writes into. The handler is a C callback with no context of its own, so shared state is unavoidable there; giving it one struct rather than four loose statics keeps the reset to a single assignment.
 
-Each `esp_https_ota()` call performs its own `esp_ota_begin`, so a retry restarts the write from scratch. With `bulk_flash_erase = false` the partition is erased as it goes, so a retry re-erases what the failed attempt wrote. That is slower but correct, and no partial-image state survives between attempts.
+Each attempt performs its own `esp_https_ota_begin()` (and so its own `esp_ota_begin`), so a retry restarts the write from scratch. With `bulk_flash_erase = false` the partition is erased as it goes, so a retry re-erases what the failed attempt wrote. That is slower but correct, and no partial-image state survives between attempts.
 
 ### Backoff of 5 attempts, 2 min initial, x2, capped at 15 min
 
@@ -54,7 +54,7 @@ Delays are 2, 4, 8 and 15 minutes (the fourth doubling to 16 is clamped), for 29
 
 Chosen over a tighter schedule because the failure being defended against is heap pressure, which does not clear in seconds, and over a longer one because the URL lifetime is a hard ceiling. `multiplier = 2` also takes the existing helper's bit-shift branch rather than its loop.
 
-No elapsed-time guard on the total, deliberately: a guard would add a failure mode without removing one. An expired URL is instead detected directly. `esp_https_ota()` collapses every 4xx and 5xx into a bare `ESP_FAIL`, so the HTTP status is captured from the response headers, and a 4xx breaks the schedule immediately rather than spending the remaining attempts on a URL that cannot succeed.
+No elapsed-time guard on the total, deliberately: a guard would add a failure mode without removing one. An expired URL is instead detected directly. The OTA API collapses every 4xx and 5xx into a bare `ESP_FAIL`, so the HTTP status is captured by `_captureOtaHttpStatus()` from the HTTP event handler (on data/finish/disconnect events, not `HTTP_EVENT_ON_HEADER`, which fires before the client assigns the status), and a 4xx breaks the schedule immediately rather than spending the remaining attempts on a URL that cannot succeed.
 
 Attempt 1 runs immediately, so the delay for attempt N is the wait *before* attempt N+1. This keeps the mapping onto `calculateExponentialBackoff(attempt, ...)`, which already returns 0 for attempt 0.
 
@@ -64,18 +64,18 @@ Attempt 1 runs immediately, so the delay for attempt N is the wait *before* atte
 
 | Key | Value |
 |---|---|
-| `reason` | unchanged, still `download_failed` |
+| `reason` | `download_failed` for a generic download failure; `incomplete_download` when the connection closed before the full image arrived (#233); post-download rejections carry their own reason (`signature_invalid`, `image_incompatible:<verdict>`, `finish_failed`, ...) |
 | `espError` | `esp_err_to_name()` of the final attempt's return |
 | `httpStatus` | from the response headers; the only field that separates a server refusal from a transport or memory failure |
 | `progress` | `"<bytesReceived>/<contentLength>"`, or `n/a` when the response did not carry firmware |
-| `heapFreeMinMax` | internal-heap triple in one key, same sources as `utils.cpp:125` |
+| `heapFreeMinMax` | internal-heap triple in one key, same sources as `populateSystemDynamicInfo()`; omitted when not sampled (post-download rejections, see below) |
 | `attempts` | attempts made |
 | `uptime` | seconds |
 | `rssi` | dBm |
 
-Eight keys. `espError` and `progress` carry the most diagnostic weight: today an allocation failure, a DNS failure, a TLS reject and a 404 all collapse into the same `download_failed` string, and there is no way to tell a download that died at 5% from one that died at 95%.
+Up to eight keys. `espError` and `progress` carry the most diagnostic weight: today an allocation failure, a DNS failure, a TLS reject and a 404 all collapse into the same `download_failed` string, and there is no way to tell a download that died at 5% from one that died at 95%.
 
-Heap figures are sampled immediately after the failing `esp_https_ota()` returns, inside the loop. Sampling after the loop unwinds would record recovered heap and describe the wrong moment.
+Heap figures are sampled immediately after the failing attempt returns, inside the loop. Sampling after the loop unwinds would record recovered heap and describe the wrong moment. They are sampled only for retryable (download) failures: a post-download rejection (signature, image descriptor, finish) happened with the full image received and already logs its specific cause, so heap figures would describe nothing, and `heapFreeMinMax` is omitted rather than reported as `0/0/0` (2008981). A DEBUG log line carries the heap figures at the start and end of every attempt, visible over UDP logs before the job status arrives.
 
 Target version, checksum, job id and device id are excluded: AWS already holds all of them.
 
@@ -87,7 +87,7 @@ The remaining pure helpers in `utils.cpp` (`roundToDecimals`, `isValueInRange`, 
 
 ### Remove the dead pause/resume API
 
-`Ade7953::pauseTasks()` / `resumeTasks()` (`ade7953.cpp:562-582`, `ade7953.h:619-620`) have no callers anywhere in the firmware. They were the nearest precedent for the task-suspension approach this change rejects, so leaving them in place invites a future reader to reach for a pattern that was evaluated and dropped.
+`Ade7953::pauseTasks()` / `resumeTasks()` (ade7953.cpp / ade7953.h) had no callers anywhere in the firmware. They were the nearest precedent for the task-suspension approach this change rejects, so leaving them in place invites a future reader to reach for a pattern that was evaluated and dropped.
 
 ## Risks / Trade-offs
 

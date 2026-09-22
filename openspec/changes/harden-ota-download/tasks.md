@@ -32,7 +32,7 @@ Each numbered group is one commit. Run the applicable tests before committing ea
 - [x] 5.3 Populate `espError`, `httpStatus`, `progress`, `heapFreeMinMax` (free/min-free/max-alloc merged into one key, keeping the pair count well clear of the `statusDetails` limit), `attempts`, `uptime` and `rssi` on the download-failure path only
 - [x] 5.4 Sample the heap figures immediately after the failing `esp_https_ota()` returns inside the retry loop, not after the loop unwinds, so they describe the moment of failure
 - [x] 5.5 Confirm the other `FAILED` reasons (`partition_error`, `sha256_read_error`, `preferences_error`, `sha256_mismatch_firmware_rollback`) report exactly as before
-- [x] 5.6 Add a DEBUG log line with the same heap figures before and after each attempt, so the same data is visible over the UDP log without waiting for the job status
+- [x] 5.6 Add a DEBUG log line with the same heap figures before and after each attempt, so the same data is visible over the UDP log without waiting for the job status - implemented in 2008981 (`OTA attempt start heap` / `OTA attempt end heap` in `_performOtaUpdate`); the same commit omits `heapFreeMinMax` for post-download rejections instead of reporting `0/0/0`
 - [x] 5.7 Run `pio run`
 
 ## 8. Make the download path testable on hardware
@@ -65,6 +65,6 @@ for the synthetic cases, and through real AWS IoT jobs for the end-to-end ones.
 - [x] 7.3 Run the simplification agent (also re-run on the same later diff)
 - [x] 7.4 Triage every finding, fix or document each with its reason, and re-run `pio run` and `pio test -e native`
 - [x] 7.5 Open the PR to `development` with `Closes #191` in the body and a label
-- [ ] 7.6 Retitle issue #191, whose current title names the task-suspension mechanism this change evaluated and rejected
+- [x] 7.6 Retitle issue #191, whose current title names the task-suspension mechanism this change evaluated and rejected - done: now "OTA: retry failed downloads and report why they failed", closed as completed 2026-08-13
 - [ ] 7.7 Follow-up, not this PR: apply the `_finishOtaTask` single-exit pattern to `_otaValidationTask`, which still repeats `handle = nullptr; vTaskDelete(nullptr)` at six exit points
-- [ ] 7.8 Follow-up, not this PR: `_captureOtaHttpStatus` works around the event-based status API; `esp_https_ota_get_status_code()` would let it collapse to one read, but only against the handle from the granular `esp_https_ota_begin`/`_perform`/`_finish` sequence, which this PR's retry loop was not built or hardware-tested against. Consider the switch once the current retry/backoff behaviour has run in the fleet
+- [x] 7.8 WON'T DO (obsolete): `_performOtaUpdate` already uses the granular `esp_https_ota_begin`/`_perform`/`_finish` sequence (for the signature and image-descriptor gates), and it does not remove the need for `_captureOtaHttpStatus`: a refused response (403/404) fails `esp_https_ota_begin()` itself, which NULLs the handle, so `esp_https_ota_get_status_code()` has nothing to query for exactly the failure the status exists to distinguish. Original text: Follow-up, not this PR: `_captureOtaHttpStatus` works around the event-based status API; `esp_https_ota_get_status_code()` would let it collapse to one read, but only against the handle from the granular `esp_https_ota_begin`/`_perform`/`_finish` sequence, which this PR's retry loop was not built or hardware-tested against. Consider the switch once the current retry/backoff behaviour has run in the fleet
