@@ -161,7 +161,15 @@ namespace CustomWifi
   static void _resolveApPassword(char* out, size_t outSize);
   static uint32_t _toHostOrder(const IPAddress &address);
   static IPAddress _fromHostOrder(uint32_t value);
+  // Telemetry state, shared by the WiFi and eth tasks (both request it) and the one-shot
+  // telemetry task, guarded by _telemetryMux
+  static portMUX_TYPE _telemetryMux = portMUX_INITIALIZER_UNLOCKED;
   static bool _telemetrySent = false; // Ensures telemetry is sent only once per boot
+  static bool _telemetryTaskRunning = false;
+  static uint8_t _telemetryAttempts = 0;
+  static uint64_t _telemetryLastAttemptMs = 0;
+  static void _telemetryTask(void* parameter);
+  static bool _sendOpenSourceTelemetryBlocking();
   static bool _powerResetGraceUsed = false; // The extended post-power-cut timeout is for the first attempt only
 
   // Network configuration helpers
@@ -956,8 +964,8 @@ namespace CustomWifi
             if (!internetReachable) {
               LOG_DEBUG("Internet connectivity unavailable - device operating in local-only mode");
             } else {
-              // Past the connect-time race in _handleSuccessfulConnection(): retried every
-              // interval until it succeeds once, self-guarded by _telemetrySent.
+              // Past the connect-time race in _handleSuccessfulConnection(): non-blocking,
+              // rate-limited and capped per boot inside sendOpenSourceTelemetry().
               sendOpenSourceTelemetry();
             }
 
@@ -1729,18 +1737,56 @@ namespace CustomWifi
     }
   }
 
+  // Non-blocking: the TLS POST runs in a one-shot task, so neither caller (the WiFi task's
+  // periodic check, the eth task's tick) is stalled by a slow or firewalled endpoint. A
+  // LAN-only install gives up after TELEMETRY_MAX_ATTEMPTS instead of probing forever.
   void sendOpenSourceTelemetry()
   {
 #ifdef ENABLE_OPEN_SOURCE_TELEMETRY
-    if (_telemetrySent) return;
+    uint64_t now = millis64();
+    bool start = false;
+    portENTER_CRITICAL(&_telemetryMux);
+    if (!_telemetrySent && !_telemetryTaskRunning && _telemetryAttempts < TELEMETRY_MAX_ATTEMPTS &&
+        (_telemetryAttempts == 0 || now - _telemetryLastAttemptMs >= TELEMETRY_RETRY_INTERVAL_MS)) {
+      _telemetryTaskRunning = true;
+      _telemetryAttempts++;
+      _telemetryLastAttemptMs = now;
+      start = true;
+    }
+    portEXIT_CRITICAL(&_telemetryMux);
+    if (!start) return;
 
-    // Interface-agnostic: called from both the WiFi connect path and (for an
-    // Ethernet-only Home Pro) custometh's serviceable rising edge, same as
+    if (xTaskCreate(_telemetryTask, TELEMETRY_TASK_NAME, TELEMETRY_TASK_STACK_SIZE, nullptr, TELEMETRY_TASK_PRIORITY, nullptr) != pdPASS) {
+      LOG_WARNING("Failed to create telemetry task");
+      portENTER_CRITICAL(&_telemetryMux);
+      _telemetryTaskRunning = false;
+      portEXIT_CRITICAL(&_telemetryMux);
+    }
+#else
+    LOG_DEBUG("Open source telemetry disabled (compile-time)");
+#endif
+  }
+
+  static void _telemetryTask(void* parameter)
+  {
+    bool sent = _sendOpenSourceTelemetryBlocking();
+    portENTER_CRITICAL(&_telemetryMux);
+    if (sent) _telemetrySent = true;
+    _telemetryTaskRunning = false;
+    portEXIT_CRITICAL(&_telemetryMux);
+    vTaskDelete(NULL);
+  }
+
+  static bool _sendOpenSourceTelemetryBlocking()
+  {
+#ifdef ENABLE_OPEN_SOURCE_TELEMETRY
+    // Interface-agnostic: requested from both the WiFi connect path and (for an
+    // Ethernet-only Home Pro) custometh's serviceable tick, same as
     // ensureMdnsStarted() above - CustomNet counts Ethernet the moment it
     // exists, where CustomWifi::isFullyConnected() never would.
     if (!CustomNet::isFullyConnected(true)) {
       LOG_DEBUG("Skipping telemetry - network not fully connected");
-      return;
+      return false;
     }
 
     // Prepare JSON payload using PSRAM allocator
@@ -1767,7 +1813,7 @@ namespace CustomWifi
     size_t jsonSize = serializeJson(doc, jsonBuffer, sizeof(jsonBuffer));
     if (jsonSize == 0 || jsonSize >= sizeof(jsonBuffer)) {
       LOG_WARNING("Telemetry JSON invalid or too large"); 
-      return; 
+      return true; // Not retryable
     }
 
     const char* telemetryUrl = (globalHwProfile->product == ProductLine::HOMEPRO) ? TELEMETRY_URL_HOMEPRO : TELEMETRY_URL_HOME;
@@ -1775,10 +1821,12 @@ namespace CustomWifi
     WiFiClientSecure client;
     client.setTimeout(TELEMETRY_TIMEOUT_MS);
     client.setCACert(AWS_IOT_CORE_CA_CERT); // Use Amazon Root CA 1 for secure connection
+    // The core defaults are 30 s TCP and 120 s handshake; setTimeout() alone does not reach them
+    client.setHandshakeTimeout(TELEMETRY_CONNECT_TIMEOUT_MS / 1000);
 
-    if (!client.connect(telemetryUrl, TELEMETRY_PORT)) {
+    if (!client.connect(telemetryUrl, TELEMETRY_PORT, TELEMETRY_CONNECT_TIMEOUT_MS)) {
       LOG_WARNING("Telemetry connection failed");
-      return;
+      return false;
     }
 
     // Build HTTP request headers
@@ -1792,7 +1840,7 @@ namespace CustomWifi
     if (headerLen <= 0 || headerLen >= (int)sizeof(header)) {
       client.stop(); 
       LOG_WARNING("Telemetry header build failed"); 
-      return; 
+      return true; // Not retryable
     }
 
     // Send request
@@ -1809,11 +1857,9 @@ namespace CustomWifi
     }
     client.stop();
 
-    _telemetrySent = true; // Set to true regardless of success to avoid repeated attempts. This info is not critical.
     LOG_INFO("Open source telemetry sent");
-#else
-    LOG_DEBUG("Open source telemetry disabled (compile-time)");
 #endif
+    return true;
   }
 
   static void _startWifiTask()

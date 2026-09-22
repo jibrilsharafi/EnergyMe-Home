@@ -127,6 +127,12 @@ struct WifiConfiguration {
 #define TELEMETRY_PATH "/"
 #define TELEMETRY_TIMEOUT_MS (1 * 1000) // Very short timeout since we don't really care about the response
 #define TELEMETRY_JSON_BUFFER_SIZE 512 // Sufficient for {hashed_device_id, firmware_version, sketch_md5}
+#define TELEMETRY_CONNECT_TIMEOUT_MS (10 * 1000) // TCP connect and TLS handshake each
+#define TELEMETRY_MAX_ATTEMPTS 5 // Per boot; a LAN-only install stops trying after these
+#define TELEMETRY_RETRY_INTERVAL_MS (10 * 60 * 1000)
+#define TELEMETRY_TASK_NAME "telemetry_task"
+#define TELEMETRY_TASK_STACK_SIZE (8 * 1024) // One TLS handshake; the MQTT task uses ~6 KB for its own
+#define TELEMETRY_TASK_PRIORITY 1
 
 // One entry of lwIP's resolver list as a raw IPAddress dword, 0 when empty or not IPv4. The
 // list is global (not per netif). A plain memory read, so it is safe from an event callback,
