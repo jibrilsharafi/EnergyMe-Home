@@ -10,6 +10,7 @@ const { ChannelCache, EnergyAggregation: EA } = require('../../js/data-helpers.j
 
 const HOUR = 3600 * 1000;
 const EPS = 1e-9;
+const FUTURE = new Date('2030-01-01T00:00:00Z'); // loaded dates stop at "today"
 
 // Whole-hour, DST (EU/US/southern), half-hour DST (Lord Howe), :30/:45 offsets, both
 // date-line extremes.
@@ -110,19 +111,20 @@ for (const zone of ZONES) {
         const covers = (dates, t) => dates.includes(new Date(t).toISOString().substring(0, 10));
         for (const day of ['2026-01-01', '2026-03-29', '2026-10-25', '2026-12-31']) {
             const [y, m, d] = day.split('-').map(Number);
-            const dates = EA.utcDatesForPeriod('daily', day);
+            const dates = EA.utcDatesForPeriod('daily', day, null, FUTURE);
             assert.ok(covers(dates, new Date(y, m - 1, d).getTime() - HOUR), `${day} start`);
             assert.ok(covers(dates, new Date(y, m - 1, d + 1).getTime() + HOUR), `${day} closing reading`);
         }
-        const monthDates = EA.utcDatesForPeriod('monthly', '2026-12');
+        const monthDates = EA.utcDatesForPeriod('monthly', '2026-12', null, FUTURE);
         assert.ok(covers(monthDates, new Date(2027, 0, 1).getTime() + HOUR), 'month closing reading');
-        const yearDates = EA.utcDatesForPeriod('yearly', '2026');
+        const yearDates = EA.utcDatesForPeriod('yearly', '2026', null, FUTURE);
         assert.ok(covers(yearDates, new Date(2026, 0, 1).getTime() - HOUR), 'year start');
         assert.ok(covers(yearDates, new Date(2027, 0, 1).getTime() + HOUR), 'year closing reading');
         const now = new Date(2026, 8, 22, 23, 30);
         const totalDates = EA.utcDatesForPeriod('total', null, '2025', now);
         assert.ok(covers(totalDates, new Date(2025, 0, 1).getTime()), 'total start');
-        assert.ok(covers(totalDates, now.getTime() + HOUR), 'total now');
+        assert.ok(covers(totalDates, now.getTime()), 'total now');
+        assert.ok(!covers(totalDates, now.getTime() + 2 * EA.MS_PER_DAY), 'total stops at today');
     }));
 }
 
@@ -158,6 +160,66 @@ test('a gap across midnight is split between the two days', () => withTz('UTC', 
     assert.ok(Math.abs(before + after - total) < EPS);
     assert.ok(after > 0 && before > 0);
 }));
+
+// What the page does: each view only sees the UTC dates it loads
+const loadedFor = (entries, view, period, firstYear, now) => {
+    const dates = new Set(EA.utcDatesForPeriod(view, period, firstYear, now));
+    return entries.filter(e => dates.has(e.timestamp.substring(0, 10)));
+};
+
+for (const zone of ['Europe/Rome', 'America/New_York', 'Pacific/Kiritimati', 'Pacific/Pago_Pago', 'Asia/Kathmandu']) {
+    test(`views agree across gaps with only their own files loaded in ${zone}`, () => withTz(zone, () => {
+        const now = new Date('2026-12-31T00:00:00Z');
+        const gaps = [['2026-09-03T10', '2026-09-03T13'], ['2026-09-06T02', '2026-09-07T01'], ['2026-09-10T12', '2026-09-13T12'], ['2026-09-19T22', '2026-09-20T23']];
+        const readings = makeReadings('2026-08-25T00:00:00Z', '2026-10-05T00:00:00Z')
+            .filter(e => !gaps.some(([a, b]) => e.timestamp >= a && e.timestamp < b));
+        const monthly = EA.aggregate(loadedFor(readings, 'monthly', '2026-09', null, now), 'monthly', '2026-09').imported;
+        for (const day of localDays(2026, 9)) {
+            const daily = EA.aggregate(loadedFor(readings, 'daily', day, null, now), 'daily', day).imported;
+            assertClose(sumBuckets(daily), monthly[day.substring(8)] || {}, `${day} vs monthly`);
+        }
+        const yearly = EA.aggregate(loadedFor(readings, 'yearly', '2026', null, now), 'yearly', '2026').imported;
+        assertClose(sumBuckets(monthly), yearly['09'], 'September vs yearly');
+    }));
+}
+
+test('a gap longer than a day is unknown, not spread', () => withTz('UTC', () => {
+    const all = makeReadings('2026-09-01T00:00:00Z', '2026-09-05T00:00:00Z', [0]);
+    const at = iso => all.find(e => e.timestamp.startsWith(iso)).activeImported;
+    // 26 h gap (02T00 -> 03T02): dropped
+    const long = all.filter(e => e.timestamp < '2026-09-02T01' || e.timestamp >= '2026-09-03T02');
+    const monthly = EA.aggregate(long, 'monthly', '2026-09').imported;
+    assert.equal(monthly['02'], undefined);
+    const gapWh = at('2026-09-03T02') - at('2026-09-02T00');
+    const allWh = at('2026-09-05T00') - at('2026-09-01T00');
+    assert.ok(Math.abs(sumBuckets(monthly)[0] - (allWh - gapWh) / 1000) < EPS);
+    // Exactly 24 h (02T00 -> 03T00): spread
+    const day = all.filter(e => e.timestamp < '2026-09-02T01' || e.timestamp >= '2026-09-03T00');
+    assert.ok(Math.abs(sumBuckets(EA.aggregate(day, 'monthly', '2026-09').imported)[0] - allWh / 1000) < EPS);
+}));
+
+test('loaded dates never go past today', () => withTz('Europe/Rome', () => {
+    const now = new Date('2026-09-22T20:00:00Z');
+    const dates = EA.utcDatesForPeriod('monthly', '2026-09', null, now);
+    assert.equal(dates[dates.length - 1], '2026-09-22');
+    assert.equal(dates[0], '2026-08-30');
+}));
+
+test('local available dates follow the browser timezone and stop at local today', () => {
+    withTz('America/New_York', () => {
+        // 21:30 EDT on Sep 22 is Sep 23 in UTC, where a new daily file already exists
+        const now = new Date('2026-09-23T01:30:00Z');
+        assert.deepEqual(EA.localDatesForUtcDates(['2026-09-22', '2026-09-23'], now), ['2026-09-21', '2026-09-22']);
+    });
+    withTz('Pacific/Kiritimati', () => {
+        // +14: local Sep 23 has started while UTC is still Sep 22
+        const now = new Date('2026-09-22T12:00:00Z');
+        assert.deepEqual(EA.localDatesForUtcDates(['2026-09-22'], now), ['2026-09-22', '2026-09-23']);
+    });
+    withTz('UTC', () => {
+        assert.deepEqual(EA.localDatesForUtcDates(['2026-09-21'], new Date('2026-09-22T00:00:00Z')), ['2026-09-21']);
+    });
+});
 
 test('a counter reset never yields negative energy', () => withTz('UTC', () => {
     const readings = makeReadings('2026-09-01T00:00:00Z', '2026-09-01T05:00:00Z', [0]);

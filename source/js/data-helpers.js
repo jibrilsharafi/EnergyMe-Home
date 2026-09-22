@@ -175,9 +175,9 @@ const ArchiveCache = {
         CURRENT_MONTH_TTL_MS: 60 * 60 * 1000         // 1 hour
     },
 
+    // Archive names are UTC months/years
     getCurrentYearMonth() {
-        const now = new Date();
-        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        return new Date().toISOString().substring(0, 7);
     },
 
     isCompletedMonth(yearMonth) {
@@ -185,14 +185,15 @@ const ArchiveCache = {
     },
 
     isCompletedYear(year) {
-        return parseInt(year) < new Date().getFullYear();
+        return parseInt(year) < new Date().getUTCFullYear();
     },
 
-    saveToLocalCache(key, data) {
+    saveToLocalCache(key, data, completed) {
         try {
             const cacheEntry = {
                 data: data,
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                completed: completed
             };
             localStorage.setItem(this.CONFIG.PREFIX + key, JSON.stringify(cacheEntry));
         } catch (e) {
@@ -200,14 +201,22 @@ const ArchiveCache = {
         }
     },
 
-    loadFromLocalCache(key, isCompleted) {
+    removeFromLocalCache(key) {
+        try {
+            localStorage.removeItem(this.CONFIG.PREFIX + key);
+        } catch (e) { /* storage unavailable */ }
+    },
+
+    loadFromLocalCache(key) {
         try {
             const cached = localStorage.getItem(this.CONFIG.PREFIX + key);
             if (!cached) return null;
 
             const entry = JSON.parse(cached);
             const age = Date.now() - entry.timestamp;
-            const ttl = isCompleted ? this.CONFIG.COMPLETED_TTL_MS : this.CONFIG.CURRENT_MONTH_TTL_MS;
+            // Long TTL only for data saved after its period closed: a copy taken while the
+            // period was current is partial however old the period is now.
+            const ttl = entry.completed === true ? this.CONFIG.COMPLETED_TTL_MS : this.CONFIG.CURRENT_MONTH_TTL_MS;
 
             if (age > ttl) {
                 localStorage.removeItem(this.CONFIG.PREFIX + key);
@@ -221,30 +230,32 @@ const ArchiveCache = {
     },
 
     async loadArchiveWithCache(type, key) {
-        // Try memory cache first
+        const cacheKey = `${type}_${key}`;
+
+        // Known not to exist, checked before any cache: the firmware deletes a monthly
+        // archive once merged into the yearly one, so a cached copy would be stale.
+        const known = this.archiveFiles[type];
+        if (known && !known.has(key)) {
+            delete this[type][key];
+            this.removeFromLocalCache(cacheKey);
+            throw new Error(`No ${type} archive for ${key}`);
+        }
+
         if (this[type][key]) {
             return this[type][key];
         }
 
-        // Try localStorage
-        const cacheKey = `${type}_${key}`;
-        const isCompleted = type === 'monthly' ? this.isCompletedMonth(key) : this.isCompletedYear(key);
-        let data = this.loadFromLocalCache(cacheKey, isCompleted);
-
+        let data = this.loadFromLocalCache(cacheKey);
         if (data) {
             this[type][key] = data;
             return data;
         }
 
-        // Known not to exist: skip a request that can only answer 404
-        const known = this.archiveFiles[type];
-        if (known && !known.has(key)) throw new Error(`No ${type} archive for ${key}`);
-
-        // Fetch from server
+        const isCompleted = type === 'monthly' ? this.isCompletedMonth(key) : this.isCompletedYear(key);
         const filename = `energy/${type}/${key}.csv.gz`;
         data = await DataHelpers.decompressGzipFile(filename);
         this[type][key] = data;
-        this.saveToLocalCache(cacheKey, data);
+        this.saveToLocalCache(cacheKey, data, isCompleted);
         return data;
     }
 };
@@ -280,13 +291,15 @@ const DataHelpers = {
     },
 
     /**
-     * Parse CSV energy data into array of objects
+     * Parse CSV energy data into array of objects, optionally only rows whose timestamp
+     * starts with one of `prefixes` (e.g. the months needed out of a yearly archive)
      */
-    parseCsvEnergyData(csvText) {
+    parseCsvEnergyData(csvText, prefixes = null) {
         const lines = csvText.trim().split('\n');
         const data = [];
 
         for (let i = 1; i < lines.length; i++) {
+            if (prefixes && !prefixes.some(prefix => lines[i].startsWith(prefix))) continue;
             const [timestamp, channel, activeImported, activeExported] = lines[i].split(',');
             const imported = parseFloat(activeImported);
             const exported = parseFloat(activeExported);
@@ -470,6 +483,10 @@ const DataHelpers = {
 const EnergyAggregation = {
     MS_PER_HOUR: 3600 * 1000,
     MS_PER_DAY: 24 * 3600 * 1000,
+    // Longest gap between readings whose energy is spread over its hours. Every view loads
+    // at least one day around its period, so up to this length both ends of a gap are
+    // visible to every view and they agree; longer gaps (device off for days) are unknown.
+    MAX_SPREAD_MS: 24 * 3600 * 1000,
 
     pad2(n) {
         return String(n).padStart(2, '0');
@@ -499,6 +516,23 @@ const EnergyAggregation = {
     },
 
     /**
+     * Local dates holding readings from the given UTC dates (a UTC day spans two local
+     * dates unless the offset is zero), never after local today.
+     */
+    localDatesForUtcDates(utcDates, now = new Date()) {
+        const today = this.localDateString(now);
+        const dates = new Set();
+        utcDates.forEach(utcDate => {
+            const start = Date.parse(utcDate + 'T00:00:00Z');
+            [start, start + 23 * this.MS_PER_HOUR].forEach(t => {
+                const local = this.localDateString(new Date(t));
+                if (local <= today) dates.add(local);
+            });
+        });
+        return [...dates].sort();
+    },
+
+    /**
      * Full local-time label of a bucket for CSV export: 'YYYY-MM-DD HH:MM', 'YYYY-MM-DD',
      * 'YYYY-MM' or 'YYYY'.
      */
@@ -510,10 +544,11 @@ const EnergyAggregation = {
 
     /**
      * UTC dates ('YYYY-MM-DD') whose files must be loaded to cover a local period plus
-     * the reading that closes its last interval. One day of margin on each side covers
-     * every UTC offset (-12h..+14h).
+     * the reading that closes its last interval, never past today (UTC). One day of margin
+     * on each side covers every UTC offset (-12h..+14h) and gaps up to MAX_SPREAD_MS.
      */
     utcDatesForPeriod(view, period, firstYear = null, now = new Date()) {
+        const today = now.toISOString().substring(0, 10);
         let start, end;
         if (view === 'daily') {
             const [y, m, d] = period.split('-').map(Number);
@@ -534,7 +569,7 @@ const EnergyAggregation = {
         const dates = [];
         const last = new Date(end.getTime() + this.MS_PER_DAY).toISOString().substring(0, 10);
         let cursor = new Date(start.getTime() - this.MS_PER_DAY).toISOString().substring(0, 10);
-        for (let i = 0; i < 400 * 200 && cursor <= last; i++) {
+        for (let i = 0; i < 400 * 200 && cursor <= last && cursor <= today; i++) {
             dates.push(cursor);
             cursor = new Date(Date.parse(cursor + 'T00:00:00Z') + this.MS_PER_DAY).toISOString().substring(0, 10);
         }
@@ -576,6 +611,7 @@ const EnergyAggregation = {
                 // A gap longer than one sample is spread evenly over hourly slices, so a
                 // missing reading does not dump hours of energy into a single bucket.
                 const span = times[i] - times[i - 1];
+                if (span > this.MAX_SPREAD_MS) continue;
                 const slices = Math.max(1, Math.round(span / this.MS_PER_HOUR));
                 for (let s = 0; s < slices; s++) {
                     const key = this.bucketKey(new Date(times[i - 1] + s * span / slices), view, period);
