@@ -39,6 +39,8 @@ namespace CustomTime {
     void getTimestampIsoRoundedToHour(char* buffer, size_t bufferSize);
     void getCurrentDateIso(char* buffer, size_t bufferSize);
     void getDateIsoOffset(char *outBuf, size_t outBufLen, int offsetDays);
+    // UTC date of the nearest hour (+ offsetDays): the date an hourly save belongs to
+    void getDateIsoOfNearestHour(char* buffer, size_t bufferSize, int offsetDays = 0);
 
     uint64_t getMillisecondsUntilNextHour();
 
