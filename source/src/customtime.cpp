@@ -4,6 +4,7 @@
 #include "customtime.h"
 #include "customnet.h"
 #include "duration_format.h"
+#include "unix_time.h"
 
 namespace CustomTime {
     // Static variables to maintain state
@@ -35,42 +36,21 @@ namespace CustomTime {
     }
 
     bool isNowCloseToHour(uint64_t toleranceMillis) {
-        struct timeval tv;
-        gettimeofday(&tv, NULL);
-        
-        struct tm timeinfo;
-        localtime_r(&tv.tv_sec, &timeinfo);
-        
-        // Calculate milliseconds since the current hour started (minutes and seconds)
-        uint64_t millisSinceCurrentHour = ((uint64_t)(timeinfo.tm_min) * 60ULL + (uint64_t)(timeinfo.tm_sec)) * 1000ULL;
-        
-        // Calculate milliseconds until the next hour
-        uint64_t millisUntilNextHour = 3600000ULL - millisSinceCurrentHour;
-
-        // Check if we're close to either the current hour (just passed) or the next hour (approaching)
-        char toleranceHuman[DURATION_FORMAT_BUFFER_SIZE], sinceHourHuman[DURATION_FORMAT_BUFFER_SIZE], untilNextHuman[DURATION_FORMAT_BUFFER_SIZE];
+        uint64_t millisFromHour = UnixTime::millisFromNearestUtcHour(getUnixTimeMilliseconds());
+        char toleranceHuman[DURATION_FORMAT_BUFFER_SIZE], fromHourHuman[DURATION_FORMAT_BUFFER_SIZE];
         DurationFormat::humanizeDuration(toleranceMillis, toleranceHuman, sizeof(toleranceHuman));
-        if (millisSinceCurrentHour <= toleranceMillis) {
-            LOG_DEBUG("Current time is close to the current hour (within %s since hour start)", toleranceHuman);
+        DurationFormat::humanizeDuration(millisFromHour, fromHourHuman, sizeof(fromHourHuman));
+        if (millisFromHour <= toleranceMillis) {
+            LOG_DEBUG("Current time is %s from the nearest UTC hour (within %s)", fromHourHuman, toleranceHuman);
             return true;
-        } else if (millisUntilNextHour <= toleranceMillis) {
-            LOG_DEBUG("Current time is close to the next hour (within %s)", toleranceHuman);
-            return true;
-        } else {
-            DurationFormat::humanizeDuration(millisSinceCurrentHour, sinceHourHuman, sizeof(sinceHourHuman));
-            DurationFormat::humanizeDuration(millisUntilNextHour, untilNextHuman, sizeof(untilNextHuman));
-            LOG_DEBUG("Current time is not close to any hour (since hour: %s, until next: %s)", sinceHourHuman, untilNextHuman);
-            return false;
         }
+        LOG_DEBUG("Current time is not close to any UTC hour (%s away)", fromHourHuman);
+        return false;
     }
 
-    // returns true when current UTC hour is 0
+    // True when the nearest UTC hour (the one the hourly save is stamped with) is 00
     bool isNowHourZero() {
-        struct timeval tv;
-        gettimeofday(&tv, NULL);
-        struct tm utc_tm;
-        gmtime_r(&tv.tv_sec, &utc_tm);
-        return (utc_tm.tm_hour == 0);
+        return UnixTime::nearestUtcHourSeconds(getUnixTime()) % 86400ULL == 0;
     }
 
     uint64_t getUnixTime() {
@@ -113,19 +93,9 @@ namespace CustomTime {
     }
 
     void getTimestampIsoRoundedToHour(char* buffer, size_t bufferSize) {
-        struct timeval tv;
-        gettimeofday(&tv, NULL);
-        
+        time_t rounded = (time_t)UnixTime::nearestUtcHourSeconds(getUnixTime());
         struct tm utc_tm;
-        gmtime_r(&tv.tv_sec, &utc_tm);
-        
-        // Round to the nearest hour
-        int32_t seconds = (utc_tm.tm_min * 60 + utc_tm.tm_sec);
-        if (seconds >= 1800) {
-            utc_tm.tm_hour += 1; // Round up
-        }
-        utc_tm.tm_min = 0;
-        utc_tm.tm_sec = 0;
+        gmtime_r(&rounded, &utc_tm);
 
         snprintf(buffer, bufferSize, TIMESTAMP_ISO_FORMAT,
                 utc_tm.tm_year + 1900,
@@ -135,6 +105,13 @@ namespace CustomTime {
                 utc_tm.tm_min,
                 utc_tm.tm_sec,
                 uint32_t(0)); // No milliseconds in rounded timestamp. Cast needed to match format specifier
+    }
+
+    void getDateIsoOfNearestHour(char* buffer, size_t bufferSize, int offsetDays) {
+        time_t rounded = (time_t)UnixTime::nearestUtcHourSeconds(getUnixTime()) + (time_t)offsetDays * 86400;
+        struct tm utc_tm;
+        gmtime_r(&rounded, &utc_tm);
+        snprintf(buffer, bufferSize, DATE_ISO_FORMAT, utc_tm.tm_year + 1900, utc_tm.tm_mon + 1, utc_tm.tm_mday);
     }
 
     void timestampFromUnix(time_t unixSeconds, char* buffer, size_t bufferSize) {
@@ -198,17 +175,7 @@ namespace CustomTime {
     }
 
     uint64_t getMillisecondsUntilNextHour() {
-        struct timeval tv;
-        gettimeofday(&tv, NULL);
-        
-        struct tm timeinfo;
-        localtime_r(&tv.tv_sec, &timeinfo);
-        
-        // Calculate the number of seconds until the next hour
-        int32_t secondsUntilNextHour = 3600 - (timeinfo.tm_min * 60 + timeinfo.tm_sec);
-        
-        // Convert to milliseconds
-        return (uint64_t)(secondsUntilNextHour) * 1000ULL;
+        return UnixTime::millisUntilNextUtcHour(getUnixTimeMilliseconds());
     }
 
     bool isUnixTimeValid(uint64_t unixTime, bool isMilliseconds) {
