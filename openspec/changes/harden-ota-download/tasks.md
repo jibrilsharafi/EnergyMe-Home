@@ -32,7 +32,7 @@ Each numbered group is one commit. Run the applicable tests before committing ea
 - [x] 5.3 Populate `espError`, `httpStatus`, `progress`, `heapFreeMinMax` (free/min-free/max-alloc merged into one key, keeping the pair count well clear of the `statusDetails` limit), `attempts`, `uptime` and `rssi` on the download-failure path only
 - [x] 5.4 Sample the heap figures immediately after the failing `esp_https_ota()` returns inside the retry loop, not after the loop unwinds, so they describe the moment of failure
 - [x] 5.5 Confirm the other `FAILED` reasons (`partition_error`, `sha256_read_error`, `preferences_error`, `sha256_mismatch_firmware_rollback`) report exactly as before
-- [x] 5.6 Add a DEBUG log line with the same heap figures before and after each attempt, so the same data is visible over the UDP log without waiting for the job status - implemented in 2008981 (`OTA attempt start heap` / `OTA attempt end heap` in `_performOtaUpdate`); the same commit omits `heapFreeMinMax` for post-download rejections instead of reporting `0/0/0`
+- [x] 5.6 Add a DEBUG log line with the same heap figures before and after each attempt, so the same data is visible over the UDP log without waiting for the job status - implemented in 2008981 (`OTA attempt start heap` / `OTA attempt end heap` in `_performOtaUpdate`); the same commit omits `heapFreeMinMax` for deterministic post-download rejections instead of reporting `0/0/0`
 - [x] 5.7 Run `pio run`
 
 ## 8. Make the download path testable on hardware

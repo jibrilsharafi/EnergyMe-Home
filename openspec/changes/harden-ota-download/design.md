@@ -68,14 +68,14 @@ Attempt 1 runs immediately, so the delay for attempt N is the wait *before* atte
 | `espError` | `esp_err_to_name()` of the final attempt's return |
 | `httpStatus` | from the response headers; the only field that separates a server refusal from a transport or memory failure |
 | `progress` | `"<bytesReceived>/<contentLength>"`, or `n/a` when the response did not carry firmware |
-| `heapFreeMinMax` | internal-heap triple in one key, same sources as `populateSystemDynamicInfo()`; omitted when not sampled (post-download rejections, see below) |
+| `heapFreeMinMax` | internal-heap triple in one key, same sources as `populateSystemDynamicInfo()`; omitted when not sampled (deterministic post-download rejections, see below) |
 | `attempts` | attempts made |
 | `uptime` | seconds |
 | `rssi` | dBm |
 
 Up to eight keys. `espError` and `progress` carry the most diagnostic weight: today an allocation failure, a DNS failure, a TLS reject and a 404 all collapse into the same `download_failed` string, and there is no way to tell a download that died at 5% from one that died at 95%.
 
-Heap figures are sampled immediately after the failing attempt returns, inside the loop. Sampling after the loop unwinds would record recovered heap and describe the wrong moment. They are sampled only for retryable (download) failures: a post-download rejection (signature, image descriptor, finish) happened with the full image received and already logs its specific cause, so heap figures would describe nothing, and `heapFreeMinMax` is omitted rather than reported as `0/0/0` (2008981). A DEBUG log line carries the heap figures at the start and end of every attempt, visible over UDP logs before the job status arrives.
+Heap figures are sampled immediately after the failing attempt returns, inside the loop. Sampling after the loop unwinds would record recovered heap and describe the wrong moment. They are sampled only for retryable failures (`_otaFailureRetryable`): download failures, plus transient local failures during signature verification (`hash_buffer_unavailable`, `partition_error`, `invalid_image_length`, `partition_read_error`, `hash_error`). A deterministic post-download rejection (`signature_invalid`, `pubkey_parse_error`, `image_incompatible:<verdict>`, `finish_failed`) abandons the schedule, already logs its specific cause, and has nothing for heap figures to explain, so `heapFreeMinMax` is omitted rather than reported as `0/0/0` (2008981). A DEBUG log line carries the heap figures at the start and end of every attempt, visible over UDP logs before the job status arrives.
 
 Target version, checksum, job id and device id are excluded: AWS already holds all of them.
 
