@@ -459,8 +459,171 @@ const DataHelpers = {
     }
 };
 
-// Export to global scope
-window.ChannelCache = ChannelCache;
-window.CircularBuffer = CircularBuffer;
-window.ArchiveCache = ArchiveCache;
-window.DataHelpers = DataHelpers;
+// ============================================================================
+// ENERGY AGGREGATION - cumulative readings -> per-period consumption, local time
+// ============================================================================
+// Readings are cumulative Wh counters stamped in UTC. Each interval between two
+// consecutive readings of a channel is attributed to the local-time bucket its start
+// falls in, so every interval is counted exactly once in every view: the hours of a
+// day sum to that day in the monthly view, the days to the month, and so on, in any
+// timezone (including DST days and :30/:45 offsets).
+const EnergyAggregation = {
+    MS_PER_HOUR: 3600 * 1000,
+    MS_PER_DAY: 24 * 3600 * 1000,
+
+    pad2(n) {
+        return String(n).padStart(2, '0');
+    },
+
+    localDateString(date) {
+        return `${date.getFullYear()}-${this.pad2(date.getMonth() + 1)}-${this.pad2(date.getDate())}`;
+    },
+
+    /**
+     * Bucket key of an interval starting at `date` for a view, or null when it lies
+     * outside the selected local period. Daily keys are the local start time 'HH:MM'
+     * (':00' except in half-hour-offset zones); the repeated hour of a DST fall-back
+     * day shares one key, so its energy is merged, not lost.
+     */
+    bucketKey(date, view, period) {
+        const year = String(date.getFullYear());
+        const month = this.pad2(date.getMonth() + 1);
+        if (view === 'daily') {
+            if (this.localDateString(date) !== period) return null;
+            return `${this.pad2(date.getHours())}:${this.pad2(date.getMinutes())}`;
+        }
+        if (view === 'monthly') return `${year}-${month}` === period ? this.pad2(date.getDate()) : null;
+        if (view === 'yearly') return year === period ? month : null;
+        if (view === 'total') return year;
+        return null;
+    },
+
+    /**
+     * Full local-time label of a bucket for CSV export: 'YYYY-MM-DD HH:MM', 'YYYY-MM-DD',
+     * 'YYYY-MM' or 'YYYY'.
+     */
+    csvPeriodLabel(key, view, period) {
+        if (view === 'daily') return `${period} ${key}`;
+        if (view === 'monthly' || view === 'yearly') return `${period}-${key}`;
+        return key;
+    },
+
+    /**
+     * UTC dates ('YYYY-MM-DD') whose files must be loaded to cover a local period plus
+     * the reading that closes its last interval. One day of margin on each side covers
+     * every UTC offset (-12h..+14h).
+     */
+    utcDatesForPeriod(view, period, firstYear = null, now = new Date()) {
+        let start, end;
+        if (view === 'daily') {
+            const [y, m, d] = period.split('-').map(Number);
+            start = new Date(y, m - 1, d);
+            end = new Date(y, m - 1, d + 1);
+        } else if (view === 'monthly') {
+            const [y, m] = period.split('-').map(Number);
+            start = new Date(y, m - 1, 1);
+            end = new Date(y, m, 1);
+        } else if (view === 'yearly') {
+            const y = Number(period);
+            start = new Date(y, 0, 1);
+            end = new Date(y + 1, 0, 1);
+        } else {
+            start = new Date(Number(firstYear), 0, 1);
+            end = new Date(now.getTime() + this.MS_PER_DAY);
+        }
+        const dates = [];
+        const last = new Date(end.getTime() + this.MS_PER_DAY).toISOString().substring(0, 10);
+        let cursor = new Date(start.getTime() - this.MS_PER_DAY).toISOString().substring(0, 10);
+        for (let i = 0; i < 400 * 200 && cursor <= last; i++) {
+            dates.push(cursor);
+            cursor = new Date(Date.parse(cursor + 'T00:00:00Z') + this.MS_PER_DAY).toISOString().substring(0, 10);
+        }
+        return dates;
+    },
+
+    /**
+     * Sum per-bucket consumption (kWh) for the selected local period.
+     * entries: [{timestamp, channel, activeImported, activeExported}] in Wh, any order,
+     * duplicates allowed (overlapping daily files and archives).
+     * Returns { imported: {key: {channel: kWh}}, exported: {...} }.
+     */
+    aggregate(entries, view, period) {
+        const byChannel = {};
+        entries.forEach(entry => {
+            const t = Date.parse(entry.timestamp);
+            if (isNaN(t) || isNaN(entry.activeImported)) return;
+            const channel = String(entry.channel);
+            if (!byChannel[channel]) byChannel[channel] = new Map();
+            byChannel[channel].set(t, entry);
+        });
+
+        const imported = {};
+        const exported = {};
+        const add = (target, key, channel, value) => {
+            if (!target[key]) target[key] = {};
+            target[key][channel] = (target[key][channel] || 0) + value;
+        };
+
+        Object.keys(byChannel).forEach(channel => {
+            const times = [...byChannel[channel].keys()].sort((a, b) => a - b);
+            for (let i = 1; i < times.length; i++) {
+                const a = byChannel[channel].get(times[i - 1]);
+                const b = byChannel[channel].get(times[i]);
+                // Counter reset (e.g. meter replaced or NVS cleared): no negative energy
+                const importWh = Math.max(0, b.activeImported - a.activeImported);
+                const exportWh = Math.max(0, (b.activeExported || 0) - (a.activeExported || 0));
+
+                // A gap longer than one sample is spread evenly over hourly slices, so a
+                // missing reading does not dump hours of energy into a single bucket.
+                const span = times[i] - times[i - 1];
+                const slices = Math.max(1, Math.round(span / this.MS_PER_HOUR));
+                for (let s = 0; s < slices; s++) {
+                    const key = this.bucketKey(new Date(times[i - 1] + s * span / slices), view, period);
+                    if (key === null) continue;
+                    add(imported, key, channel, importWh / slices / 1000);
+                    if (exportWh > 0) add(exported, key, channel, exportWh / slices / 1000);
+                }
+            }
+        });
+
+        return { imported, exported };
+    },
+
+    /**
+     * Add the derived 'Other' channel and drop grid/production/battery/inverter channels
+     * from the displayed set, keeping the raw per-bucket values for the balance chart.
+     */
+    finalize({ imported, exported }) {
+        const excludeFromOther = ChannelCache.excludeFromOther;
+        const displayImported = {};
+        const displayExported = {};
+        Object.keys(imported).forEach(key => {
+            const rawImport = imported[key];
+            const rawExport = exported[key] || {};
+            const display = { ...rawImport };
+            if (ChannelCache.hasGrid && DataHelpers.hasLoadSubChannels(rawImport, excludeFromOther)) {
+                display['Other'] = DataHelpers.calculateOtherConsumption(rawImport, excludeFromOther, rawExport);
+            }
+            const displayExport = { ...rawExport };
+            excludeFromOther.forEach(ch => {
+                delete display[ch];
+                delete displayExport[ch];
+            });
+            displayImported[key] = display;
+            if (Object.keys(displayExport).length > 0) displayExported[key] = displayExport;
+        });
+        return { imported: displayImported, exported: displayExported, rawImported: imported, rawExported: exported };
+    }
+};
+
+// Export to global scope (browser) or as a module (node unit tests)
+if (typeof window !== 'undefined') {
+    window.ChannelCache = ChannelCache;
+    window.CircularBuffer = CircularBuffer;
+    window.ArchiveCache = ArchiveCache;
+    window.DataHelpers = DataHelpers;
+    window.EnergyAggregation = EnergyAggregation;
+}
+if (typeof module !== 'undefined') {
+    module.exports = { ChannelCache, DataHelpers, EnergyAggregation };
+}
