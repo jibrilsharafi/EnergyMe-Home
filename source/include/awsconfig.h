@@ -57,7 +57,7 @@ constexpr const char* AWS_IOT_CORE_RULE_ALARM_HOMEPRO  = "energyme_homepro_prod_
 
 // EnergyMe-Home topic namespace (fleet-wide; change requires OTA + cloud-side update).
 // Home Pro gets its own namespace segment, picked at runtime from globalHwProfile->product
-// (see Mqtt::_topicProductSegment / _topicRuleFor in mqtt.cpp) - not compile-time, since
+// (see Mqtt::_topicProductSegment / _selectByProduct in mqtt.cpp) - not compile-time, since
 // product is a factory-NVS value, not a build flag.
 #define MQTT_TOPIC_1         "energyme"
 #define MQTT_TOPIC_2_HOME     "home"
