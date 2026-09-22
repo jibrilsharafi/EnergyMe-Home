@@ -268,9 +268,103 @@ paths:
                     type: object
                     description: |
                       Static system information (hardware, firmware version, etc.).
-                      Groups: `product`, `firmware`, `hardware`, `sdk`, `monitoring`, `device`, `factory`.
+                      Groups: `product`, `firmware`, `hardware`, `sdk`, `monitoring`, `device`, `factory`, `imageDescriptor`.
                       `factory.serialNumber` and `factory.manufacturingUnixTs` come from NVS `factory_ns`
                       and default to `"Unknown"` / `0` on community (unprovisioned) devices.
+                    properties:
+                      factory:
+                        type: object
+                        properties:
+                          serialNumber:
+                            type: string
+                            example: "Unknown"
+                          manufacturingUnixTs:
+                            type: integer
+                            example: 0
+                          productLine:
+                            type: string
+                            description: Product of the selected hardware profile (resolved from factory NVS `product_line`, absent = home)
+                            enum: [home, homepro]
+                          pcbRevision:
+                            type: string
+                            description: PCB revision of the selected hardware profile, "vMAJOR.MINOR"
+                            example: "v6.1"
+                          communityMode:
+                            type: boolean
+                            description: True when the device has no valid factory provisioning (cloud disabled, local integrations work)
+                      imageDescriptor:
+                        type: object
+                        description: |
+                          Firmware image descriptors (see lib/image_descriptor). `running` is the
+                          running image's own descriptor; `other` is the passive OTA partition's,
+                          i.e. what a rollback would activate.
+                        properties:
+                          running:
+                            type: object
+                            description: Running image descriptor (no `product` field; the device's product is `factory.productLine`)
+                            properties:
+                              psramMb:
+                                type: integer
+                                description: PSRAM class the image was built for (2 = quad, 8 = octal)
+                                example: 2
+                              fwVersion:
+                                type: string
+                                example: "2.3.3"
+                              buildEnv:
+                                type: string
+                                enum: [dev, prod]
+                              gitRev:
+                                type: string
+                                description: Short commit hash, "unknown" outside a git checkout
+                                example: "6d6f97bd"
+                              minPcbVersion:
+                                type: integer
+                                description: Lowest supported PCB version, packed major*10+minor; 0 = no lower bound
+                                example: 0
+                              maxPcbVersion:
+                                type: integer
+                                description: Highest supported PCB version, packed major*10+minor; 0 = no upper bound
+                                example: 0
+                              partitionLayoutId:
+                                type: integer
+                                description: Partition table id the image expects; 0 = unspecified
+                                example: 1
+                          other:
+                            type: object
+                            description: Passive OTA partition descriptor. Only `present` is emitted when the slot is empty, erased or holds a legacy image without a descriptor.
+                            properties:
+                              present:
+                                type: boolean
+                              product:
+                                type: string
+                                description: Product the image was built for
+                                enum: [home, homepro]
+                              psramMb:
+                                type: integer
+                                description: PSRAM class the image was built for (2 = quad, 8 = octal)
+                                example: 2
+                              fwVersion:
+                                type: string
+                                example: "2.3.3"
+                              buildEnv:
+                                type: string
+                                enum: [dev, prod]
+                              gitRev:
+                                type: string
+                                description: Short commit hash, "unknown" outside a git checkout
+                                example: "6d6f97bd"
+                              minPcbVersion:
+                                type: integer
+                                description: Lowest supported PCB version, packed major*10+minor; 0 = no lower bound
+                                example: 0
+                              maxPcbVersion:
+                                type: integer
+                                description: Highest supported PCB version, packed major*10+minor; 0 = no upper bound
+                                example: 0
+                              partitionLayoutId:
+                                type: integer
+                                description: Partition table id the image expects; 0 = unspecified
+                                example: 1
                   dynamic:
                     type: object
                     description: |
@@ -301,6 +395,34 @@ paths:
                             type: integer
                             description: Wall-clock milliseconds covered by the most recent sample window (nominally ~1000)
                             example: 1000
+                      network:
+                        type: object
+                        description: |
+                          Network state. The `eth*` fields other than `ethEnabled` are emitted only
+                          when `ethEnabled` is true (products with Ethernet).
+                        properties:
+                          activeInterface:
+                            type: string
+                            description: Interface holding the default route
+                            enum: [none, ethernet, wifi]
+                          ethEnabled:
+                            type: boolean
+                            description: Ethernet is present and initialized on this device (false on Home)
+                          ethLinkUp:
+                            type: boolean
+                          ethLocalIp:
+                            type: string
+                            example: "192.168.1.104"
+                          ethMacAddress:
+                            type: string
+                            description: Ethernet MAC (base MAC + 1)
+                            example: "14:C1:9F:4E:1B:45"
+                          ethLinkSpeedMbps:
+                            type: integer
+                            description: Negotiated link speed; 0 while the link is down
+                            example: 100
+                          ethFullDuplex:
+                            type: boolean
                       tasks:
                         type: object
                         description: |
@@ -309,7 +431,8 @@ paths:
                           iteration; `staleMs` is `now - lastTickMillis` (or 0 if the task is not
                           instrumented, e.g. one-shot tasks like `mqttOta`). A `staleMs` value
                           significantly larger than the task's expected loop interval indicates
-                          the task is starved or stuck.
+                          the task is starved or stuck. `customEth` is present only on products
+                          with Ethernet.
                         additionalProperties:
                           type: object
                           properties:
