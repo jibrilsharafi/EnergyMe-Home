@@ -96,3 +96,19 @@ The SoftAP SHALL be assigned a subnet that does not overlap any station-side sub
 - **WHEN** the AP is up on a Pro device and Ethernet obtains an address that overlaps the AP subnet
 - **THEN** the AP is torn down (the device is wire-reachable anyway), never left routing ambiguously
 - **AND** subnet selection for a future AP raise accounts for the Ethernet subnet - lease and configured static - alongside the STA subnet
+
+## ADDED Requirements
+
+### Requirement: Provisioning carve-outs require a peer inside the SoftAP subnet
+
+Every test that treats a request as arriving over the SoftAP (the unauthenticated provisioning carve-out, the provisioning-session read carve-out, and the AP-origin widening of the default-password allowlist) SHALL require both that the request was addressed to the SoftAP address AND that the peer address lies inside the SoftAP subnet (and is not the AP address itself). The destination address alone is not proof of arrival interface: with Ethernet up, lwIP accepts a wired packet addressed to the SoftAP address and routes the reply back out Ethernet.
+
+#### Scenario: LAN host addresses the SoftAP address over Ethernet
+
+- **WHEN** an unprovisioned Pro device has its SoftAP raised and a host on the wired LAN sends a request to the SoftAP address
+- **THEN** the request is not treated as a provisioning-origin request and runs the full authentication chain
+
+#### Scenario: Real SoftAP client
+
+- **WHEN** a client associated to the SoftAP, holding an address the SoftAP leased, requests the provisioning page while unprovisioned
+- **THEN** the carve-out applies exactly as before

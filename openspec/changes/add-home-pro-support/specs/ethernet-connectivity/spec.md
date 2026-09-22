@@ -27,7 +27,7 @@ On a product whose profile declares Ethernet, the system SHALL bring up the Ethe
 
 ### Requirement: Ethernet IP configuration is persistent, safe, and recoverable without a UI
 
-The system SHALL support static IP configuration for Ethernet (address, gateway, subnet, DNS) set via the web interface, persisted independently of the WiFi configuration, and applied at boot. Validation SHALL reject a static address inside the SoftAP subnet. A static configuration that prevents the device from coming up SHALL be abandoned for DHCP after a bounded number of failed boots - counting only boots where the link was up; a cable-out boot proves nothing about the config and SHALL NOT count. A long press of the device button SHALL reset network configuration to DHCP.
+The system SHALL support static IP configuration for Ethernet (address, gateway, subnet, DNS) set via the web interface, persisted independently of the WiFi configuration, and applied at boot. Validation SHALL reject a static address inside the SoftAP subnet, a non-contiguous subnet mask, a gateway outside the address's network, an address equal to the gateway, and (for masks shorter than /31) the network or broadcast address of its subnet - each of these would still count as serviceable once the link is up, so no AP would rise and the device would sit unreachable. A static configuration that prevents the device from coming up SHALL be abandoned for DHCP after a bounded number of failed boots - counting only boots where the link was up; a cable-out boot proves nothing about the config and SHALL NOT count. A long press of the device button SHALL reset network configuration to DHCP.
 
 #### Scenario: Static IP applied after restart
 
@@ -49,6 +49,11 @@ The system SHALL support static IP configuration for Ethernet (address, gateway,
 - **WHEN** the user submits a static Ethernet address inside the SoftAP subnet
 - **THEN** the configuration is rejected with an explanatory error
 
+#### Scenario: Static address that can never carry traffic
+
+- **WHEN** the user submits a static Ethernet address equal to the gateway, or equal to the network or broadcast address of the configured subnet
+- **THEN** the configuration is rejected and not persisted
+
 #### Scenario: Button network reset
 
 - **WHEN** the user long-presses the button (the existing WiFi-reset tier)
@@ -63,7 +68,8 @@ When both interfaces are available, Ethernet SHALL carry the default route. On E
 #### Scenario: Cable pulled with WiFi configured
 
 - **WHEN** the Ethernet link drops on a device with associated STA
-- **THEN** the established MQTT/InfluxDB connections are actively dropped and reconnect over WiFi, rather than waiting out TCP keepalive on a dead path
+- **THEN** the established cloud MQTT and custom MQTT connections are actively dropped and reconnect over WiFi, rather than waiting out TCP keepalive on a dead path
+- **AND** InfluxDB, which opens a new HTTP connection for every write, uses the new default route from its next write without needing a drop
 
 #### Scenario: Cable restored
 
