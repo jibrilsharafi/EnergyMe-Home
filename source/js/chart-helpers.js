@@ -245,7 +245,7 @@ const ChartHelpers = {
      */
     formatLabels(periods, viewType) {
         if (viewType === 'daily') {
-            return periods.map(hour => `${hour}:00`);
+            return periods; // already local 'HH:MM'
         } else if (viewType === 'monthly') {
             return periods.map(day => day);
         } else if (viewType === 'total') {

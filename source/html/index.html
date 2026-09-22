@@ -573,500 +573,129 @@
     // holding only its header): not a failure, so it gets a neutral message, not the red one.
     class NoEnergyDataError extends Error {}
 
-    async function loadAndDisplayCharts() {
-        if (currentView === 'daily' && !currentDate) return;
-        if (currentView === 'monthly' && !currentMonth) return;
-        if (currentView === 'yearly' && !currentYear) return;
+    // Bumped per load so a slow load finishing after the user switched period is discarded
+    let chartLoadSeq = 0;
 
+    async function loadAndDisplayCharts() {
+        const periods = { daily: currentDate, monthly: currentMonth, yearly: currentYear, total: 'all time' };
+        if (currentView !== 'total' && !periods[currentView]) return;
+
+        const view = currentView;
+        const seq = ++chartLoadSeq;
         try {
             ChartHelpers.showLoadingMessage(currentChartType);
-            
-            if (currentView === 'daily') await loadDailyCharts();
-            else if (currentView === 'monthly') await loadMonthlyCharts();
-            else if (currentView === 'yearly') await loadYearlyCharts();
-            else if (currentView === 'total') await loadTotalCharts();
-            
+            const period = view === 'total' ? null : periods[view];
+            const utcDates = EnergyAggregation.utcDatesForPeriod(view, period, availableYears[0]);
+            const entries = await loadEnergyEntries(utcDates);
+            if (seq !== chartLoadSeq) return;
+
+            const result = EnergyAggregation.finalize(EnergyAggregation.aggregate(entries, view, period));
+            if (Object.keys(result.imported).length === 0) throw new NoEnergyDataError();
+            displayCharts(result, view);
         } catch (error) {
-            const periods = { daily: currentDate, monthly: currentMonth, yearly: currentYear, total: 'all time' };
+            if (seq !== chartLoadSeq) return;
             if (error instanceof NoEnergyDataError) {
-                ChartHelpers.setChartMessage('📊', `No energy data yet for ${periods[currentView]}. It appears once the first hourly values are recorded.`);
+                ChartHelpers.setChartMessage('📊', `No energy data yet for ${periods[view]}. It appears once the first hourly values are recorded.`);
                 return;
             }
             console.error('Error loading charts:', error);
-            ChartHelpers.showErrorMessage(`Failed to load energy data for ${periods[currentView]}`);
+            ChartHelpers.showErrorMessage(`Failed to load energy data for ${periods[view]}`);
         }
     }
-    
-    async function loadDailyCharts() {
-        const selectedLocalDate = new Date(currentDate + 'T00:00:00');
-        const localEndOfDay = new Date(selectedLocalDate);
-        localEndOfDay.setDate(localEndOfDay.getDate() + 1);
-        
-        const utcDatesNeeded = new Set();
-        utcDatesNeeded.add(selectedLocalDate.toISOString().substring(0, 10));
-        utcDatesNeeded.add(localEndOfDay.toISOString().substring(0, 10));
-        const prevDay = new Date(selectedLocalDate);
-        prevDay.setDate(prevDay.getDate() - 1);
-        utcDatesNeeded.add(prevDay.toISOString().substring(0, 10));
-        
-        let allEnergyData = [];
-        for (const utcDate of utcDatesNeeded) {
-            try {
-                const csvData = await DataHelpers.loadDailyCsvData(utcDate);
-                allEnergyData = allEnergyData.concat(DataHelpers.parseCsvEnergyData(csvData));
-            } catch (e) { /* Date may not exist */ }
-        }
-        
-        if (allEnergyData.length === 0) throw new NoEnergyDataError();
-        
-        const nextLocalDate = new Date(currentDate + 'T00:00:00');
-        nextLocalDate.setDate(nextLocalDate.getDate() + 1);
-        const nextLocalDateStr = nextLocalDate.toLocaleDateString('sv-SE');
-        
-        const energyData = allEnergyData.filter(entry => {
-            const entryDate = new Date(entry.timestamp);
-            const entryLocalDate = entryDate.toLocaleDateString('sv-SE');
-            if (entryLocalDate === currentDate) return true;
-            if (entryLocalDate === nextLocalDateStr && entryDate.getHours() === 0) return true;
-            return false;
-        });
-        
-        if (energyData.length === 0) throw new NoEnergyDataError();
-        
-        const hourlyData = calculateHourlyConsumption(energyData, currentDate);
-        const totalConsumption = calculateTotalConsumption(energyData.filter(entry => {
-            return new Date(entry.timestamp).toLocaleDateString('sv-SE') === currentDate;
-        }));
-        
-        ChartHelpers.restoreChartCanvases(currentChartType);
-        
-        ChartHelpers.updateConsumptionChart(hourlyData.imported, 'daily', hourlyData.exported, channelData, currentChartType);
-        ChartHelpers.updateConsumptionSharing(hourlyData.imported, 'daily', channelData, currentChartType);
-        hasBalanceCapability = ChannelCache.production.length > 0 || ChannelCache.battery.length > 0 || ChannelCache.inverter.length > 0;
-        balanceData = ChartHelpers.updateBalanceChart(hourlyData.rawHourlyImport, 'daily', hourlyData.rawHourlyImport, hourlyData.rawHourlyExport, hasBalanceCapability);
-        ChartHelpers.updateBalanceKPIView(balanceData, hasBalanceCapability);
-        
-        setupCsvDownload(hourlyData.imported, 'daily');
-    }
-    
-    async function loadMonthlyCharts() {
-        let allEnergyData = [];
 
-        // Load monthly archive (DataHelpers falls back to yearly archive)
-        try {
-            const csvData = await DataHelpers.loadMonthlyCsvData(currentMonth);
-            allEnergyData = DataHelpers.parseCsvEnergyData(csvData);
-        } catch (error) { /* No data for this month */ }
+    // Readings for the given UTC dates: the daily file where the device still has one,
+    // otherwise that month's archive (which itself falls back to the yearly archive).
+    // Overlaps are harmless: EnergyAggregation dedupes by channel and timestamp.
+    async function loadEnergyEntries(utcDates) {
+        const currentUtcMonth = new Date().toISOString().substring(0, 7);
+        const archiveMonths = new Set();
+        let entries = [];
 
-        // For current month: also load daily files for fresh intraday data
-        const now = new Date();
-        const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-        if (currentMonth === currentYearMonth) {
-            for (const date of ArchiveCache.dailyFilesSet) {
-                if (date.startsWith(currentMonth)) {
-                    try {
-                        const csvData = await DataHelpers.loadDailyCsvData(date);
-                        allEnergyData = allEnergyData.concat(DataHelpers.parseCsvEnergyData(csvData));
-                    } catch (error) { /* Daily file may not exist */ }
-                }
-            }
-        }
-
-        if (allEnergyData.length === 0) throw new NoEnergyDataError();
-        
-        const dailyConsumptions = {};
-        const monthlyRawImported = {};
-        const monthlyRawExported = {};
-        const dailyRawImport = {};
-        const dailyRawExport = {};
-        const dailyExported = {};
-        
-        const dataByDate = groupByPeriod(allEnergyData, entry => entry.timestamp.substring(0, 10));
-        
-        Object.keys(dataByDate).sort().forEach(date => {
-            const dayData = dataByDate[date];
-            const dailyData = calculateTotalConsumption(dayData);
-            const day = date.substring(8, 10);
-            dailyConsumptions[day] = dailyData.imported;
-            if (Object.keys(dailyData.exported).length > 0) dailyExported[day] = dailyData.exported;
-            dailyRawImport[day] = dailyData.rawImported;
-            dailyRawExport[day] = dailyData.rawExported;
-            
-            Object.keys(dailyData.rawImported).forEach(channel => {
-                if (!monthlyRawImported[channel]) monthlyRawImported[channel] = 0;
-                monthlyRawImported[channel] += dailyData.rawImported[channel];
-            });
-            Object.keys(dailyData.rawExported).forEach(channel => {
-                if (!monthlyRawExported[channel]) monthlyRawExported[channel] = 0;
-                monthlyRawExported[channel] += dailyData.rawExported[channel];
-            });
-        });
-        
-        ChartHelpers.restoreChartCanvases(currentChartType);
-        
-        ChartHelpers.updateConsumptionChart(dailyConsumptions, 'monthly', dailyExported, channelData, currentChartType);
-        ChartHelpers.updateConsumptionSharing(dailyConsumptions, 'monthly', channelData, currentChartType);
-        hasBalanceCapability = ChannelCache.production.length > 0 || ChannelCache.battery.length > 0 || ChannelCache.inverter.length > 0;
-        balanceData = ChartHelpers.updateBalanceChart(dailyRawImport, 'monthly', dailyRawImport, dailyRawExport, hasBalanceCapability);
-        ChartHelpers.updateBalanceKPIView(balanceData, hasBalanceCapability);
-        
-        setupCsvDownload(dailyConsumptions, 'monthly');
-    }
-
-    async function loadYearlyCharts() {
-        let allEnergyData = [];
-
-        // Load yearly archive (contains all completed months for this year)
-        try {
-            const csvData = await DataHelpers.loadYearlyCsvData(currentYear);
-            allEnergyData = DataHelpers.parseCsvEnergyData(csvData);
-        } catch (error) { /* No yearly archive */ }
-
-        // For current year: also load current month + today's daily file
-        const now = new Date();
-        if (parseInt(currentYear) === now.getFullYear()) {
-            const currentYearMonth = `${currentYear}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-
-            // Load monthly archive for current month
-            try {
-                const csvData = await DataHelpers.loadMonthlyCsvData(currentYearMonth);
-                allEnergyData = allEnergyData.concat(DataHelpers.parseCsvEnergyData(csvData));
-            } catch (error) { /* No monthly file yet */ }
-
-            // Load today's daily files for fresh intraday data
-            for (const date of ArchiveCache.dailyFilesSet) {
-                if (date.startsWith(currentYearMonth)) {
-                    try {
-                        const csvData = await DataHelpers.loadDailyCsvData(date);
-                        allEnergyData = allEnergyData.concat(DataHelpers.parseCsvEnergyData(csvData));
-                    } catch (error) { /* Daily file may not exist */ }
-                }
-            }
-        }
-
-        if (allEnergyData.length === 0) throw new NoEnergyDataError();
-        
-        const monthlyConsumptions = {};
-        const monthlyExported = {};
-        const yearlyRawImported = {};
-        const yearlyRawExported = {};
-        const monthlyRawImport = {};
-        const monthlyRawExport = {};
-        
-        const dataByMonth = groupByPeriod(allEnergyData, entry => entry.timestamp.substring(5, 7));
-        
-        Object.keys(dataByMonth).sort().forEach(month => {
-            const monthData = dataByMonth[month];
-            const monthConsumptionData = calculateTotalConsumption(monthData);
-            monthlyConsumptions[month] = monthConsumptionData.imported;
-            if (Object.keys(monthConsumptionData.exported).length > 0) monthlyExported[month] = monthConsumptionData.exported;
-            monthlyRawImport[month] = monthConsumptionData.rawImported;
-            monthlyRawExport[month] = monthConsumptionData.rawExported;
-            
-            Object.keys(monthConsumptionData.rawImported).forEach(channel => {
-                if (!yearlyRawImported[channel]) yearlyRawImported[channel] = 0;
-                yearlyRawImported[channel] += monthConsumptionData.rawImported[channel];
-            });
-            Object.keys(monthConsumptionData.rawExported).forEach(channel => {
-                if (!yearlyRawExported[channel]) yearlyRawExported[channel] = 0;
-                yearlyRawExported[channel] += monthConsumptionData.rawExported[channel];
-            });
-        });
-        
-        ChartHelpers.restoreChartCanvases(currentChartType);
-        
-        ChartHelpers.updateConsumptionChart(monthlyConsumptions, 'yearly', monthlyExported, channelData, currentChartType);
-        ChartHelpers.updateConsumptionSharing(monthlyConsumptions, 'yearly', channelData, currentChartType);
-        hasBalanceCapability = ChannelCache.production.length > 0 || ChannelCache.battery.length > 0 || ChannelCache.inverter.length > 0;
-        balanceData = ChartHelpers.updateBalanceChart(monthlyRawImport, 'yearly', monthlyRawImport, monthlyRawExport, hasBalanceCapability);
-        ChartHelpers.updateBalanceKPIView(balanceData, hasBalanceCapability);
-        
-        setupCsvDownload(monthlyConsumptions, 'yearly');
-    }
-
-    async function loadTotalCharts() {
-        let allEnergyData = [];
-
-        const now = new Date();
-        const currentYearStr = String(now.getFullYear());
-
-        for (const year of availableYears) {
-            // Load yearly archive
-            try {
-                const csvData = await DataHelpers.loadYearlyCsvData(year);
-                allEnergyData = allEnergyData.concat(DataHelpers.parseCsvEnergyData(csvData));
-            } catch (error) { /* No yearly archive for this year */ }
-
-            // For current year: also load current month + daily files
-            if (year === currentYearStr) {
-                const currentYearMonth = `${year}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-
+        for (const date of utcDates) {
+            if (ArchiveCache.dailyFilesSet.has(date)) {
                 try {
-                    const csvData = await DataHelpers.loadMonthlyCsvData(currentYearMonth);
-                    allEnergyData = allEnergyData.concat(DataHelpers.parseCsvEnergyData(csvData));
-                } catch (error) { /* No monthly file yet */ }
-
-                for (const date of ArchiveCache.dailyFilesSet) {
-                    if (date.startsWith(currentYearMonth)) {
-                        try {
-                            const csvData = await DataHelpers.loadDailyCsvData(date);
-                            allEnergyData = allEnergyData.concat(DataHelpers.parseCsvEnergyData(csvData));
-                        } catch (error) { /* Daily file may not exist */ }
-                    }
-                }
+                    entries = entries.concat(DataHelpers.parseCsvEnergyData(await DataHelpers.loadDailyCsvData(date)));
+                    continue;
+                } catch (e) { /* fall back to the archive */ }
             }
+            if (date.substring(0, 7) <= currentUtcMonth) archiveMonths.add(date.substring(0, 7));
         }
 
-        if (allEnergyData.length === 0) throw new NoEnergyDataError();
+        for (const yearMonth of archiveMonths) {
+            try {
+                entries = entries.concat(DataHelpers.parseCsvEnergyData(await DataHelpers.loadMonthlyCsvData(yearMonth)));
+            } catch (e) { /* No data for this month */ }
+        }
+        return entries;
+    }
 
-        const yearlyConsumptions = {};
-        const yearlyExported = {};
-        const totalRawImported = {};
-        const totalRawExported = {};
-        const yearlyRawImport = {};
-        const yearlyRawExport = {};
-
-        const dataByYear = groupByPeriod(allEnergyData, entry => entry.timestamp.substring(0, 4));
-
-        Object.keys(dataByYear).sort().forEach(year => {
-            const yearData = dataByYear[year];
-            const yearConsumptionData = calculateTotalConsumption(yearData);
-            yearlyConsumptions[year] = yearConsumptionData.imported;
-            if (Object.keys(yearConsumptionData.exported).length > 0) yearlyExported[year] = yearConsumptionData.exported;
-            yearlyRawImport[year] = yearConsumptionData.rawImported;
-            yearlyRawExport[year] = yearConsumptionData.rawExported;
-
-            Object.keys(yearConsumptionData.rawImported).forEach(channel => {
-                if (!totalRawImported[channel]) totalRawImported[channel] = 0;
-                totalRawImported[channel] += yearConsumptionData.rawImported[channel];
-            });
-            Object.keys(yearConsumptionData.rawExported).forEach(channel => {
-                if (!totalRawExported[channel]) totalRawExported[channel] = 0;
-                totalRawExported[channel] += yearConsumptionData.rawExported[channel];
-            });
-        });
-
+    function displayCharts(result, view) {
         ChartHelpers.restoreChartCanvases(currentChartType);
 
-        ChartHelpers.updateConsumptionChart(yearlyConsumptions, 'total', yearlyExported, channelData, currentChartType);
-        ChartHelpers.updateConsumptionSharing(yearlyConsumptions, 'total', channelData, currentChartType);
+        ChartHelpers.updateConsumptionChart(result.imported, view, result.exported, channelData, currentChartType);
+        ChartHelpers.updateConsumptionSharing(result.imported, view, channelData, currentChartType);
         hasBalanceCapability = ChannelCache.production.length > 0 || ChannelCache.battery.length > 0 || ChannelCache.inverter.length > 0;
-        balanceData = ChartHelpers.updateBalanceChart(yearlyRawImport, 'total', yearlyRawImport, yearlyRawExport, hasBalanceCapability);
+        balanceData = ChartHelpers.updateBalanceChart(result.rawImported, view, result.rawImported, result.rawExported, hasBalanceCapability);
         ChartHelpers.updateBalanceKPIView(balanceData, hasBalanceCapability);
 
-        setupCsvDownload(yearlyConsumptions, 'total');
-    }
-
-    // ============================================================================
-    // DATA PROCESSING
-    // ============================================================================
-    function calculateHourlyConsumption(energyData, targetLocalDate) {
-        const sortedData = energyData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-        
-        const channelSequences = {};
-        sortedData.forEach(entry => {
-            if (!channelSequences[entry.channel]) channelSequences[entry.channel] = [];
-            const date = new Date(entry.timestamp);
-            channelSequences[entry.channel].push({
-                timestamp: entry.timestamp,
-                energyImported: entry.activeImported,
-                energyExported: entry.activeExported || 0,
-                hour: date.getHours().toString().padStart(2, '0'),
-                localDate: date.toLocaleDateString('sv-SE')
-            });
-        });
-        
-        const consumption = {};
-        const exportData = {};
-        
-        Object.keys(channelSequences).forEach(channel => {
-            const sequence = channelSequences[channel];
-            
-            for (let i = 1; i < sequence.length; i++) {
-                const current = sequence[i];
-                const previous = sequence[i - 1];
-                
-                if (targetLocalDate && previous.localDate !== targetLocalDate) continue;
-                
-                const hourlyImport = Math.max(0, (current.energyImported - previous.energyImported) / 1000);
-                const hourlyExport = Math.max(0, (current.energyExported - previous.energyExported) / 1000);
-                
-                if (!consumption[previous.hour]) consumption[previous.hour] = {};
-                if (!exportData[previous.hour]) exportData[previous.hour] = {};
-                
-                consumption[previous.hour][channel] = hourlyImport;
-                if (hourlyExport > 0) exportData[previous.hour][channel] = hourlyExport;
-            }
-        });
-        
-        const excludeFromOther = ChannelCache.excludeFromOther;
-        const hasGridChannel = ChannelCache.hasGrid;
-        const hasLoads = DataHelpers.hasLoadSubChannels(channelSequences, excludeFromOther);
-        
-        const rawHourlyImport = {};
-        const rawHourlyExport = {};
-        Object.keys(consumption).forEach(hour => {
-            const hourNum = parseInt(hour);
-            if (hourNum >= 0 && hourNum <= 23) {
-                rawHourlyImport[hour] = { ...consumption[hour] };
-                rawHourlyExport[hour] = exportData[hour] ? { ...exportData[hour] } : {};
-            }
-        });
-        
-        Object.keys(consumption).forEach(hour => {
-            const hourNum = parseInt(hour);
-            if (hourNum < 0 || hourNum > 23) return;
-            
-            if (hasGridChannel && hasLoads) {
-                consumption[hour]['Other'] = DataHelpers.calculateOtherConsumption(consumption[hour], excludeFromOther, exportData[hour] || {});
-            }
-            
-            excludeFromOther.forEach(ch => delete consumption[hour][ch]);
-            if (exportData[hour]) {
-                excludeFromOther.forEach(ch => delete exportData[hour][ch]);
-            }
-        });
-        
-        const filteredConsumption = {};
-        const filteredExport = {};
-        
-        Object.keys(consumption).forEach(hour => {
-            const hourNum = parseInt(hour);
-            if (hourNum >= 0 && hourNum <= 23) {
-                filteredConsumption[hour] = consumption[hour];
-                if (exportData[hour]) filteredExport[hour] = exportData[hour];
-            }
-        });
-        
-        return { imported: filteredConsumption, exported: filteredExport, rawHourlyImport, rawHourlyExport };
-    }
-
-    // Bucket readings by period, also appending each channel's first reading of the next
-    // period: consumption is last-minus-first, so without it the hour spanning the period
-    // boundary (e.g. 23:00->00:00) is counted nowhere.
-    function groupByPeriod(energyData, keyFn) {
-        const sorted = [...energyData].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-        const groups = {};
-        const lastKeyByChannel = {};
-        sorted.forEach(entry => {
-            const key = keyFn(entry);
-            if (!groups[key]) groups[key] = [];
-            groups[key].push(entry);
-            const prevKey = lastKeyByChannel[entry.channel];
-            if (prevKey !== undefined && prevKey !== key) groups[prevKey].push(entry);
-            lastKeyByChannel[entry.channel] = key;
-        });
-        return groups;
-    }
-
-    function calculateTotalConsumption(energyData) {
-        const latestData = {};
-        const firstData = {};
-        const latestExportData = {};
-        const firstExportData = {};
-        
-        energyData.forEach(entry => {
-            if (!firstData[entry.channel]) firstData[entry.channel] = entry.activeImported;
-            latestData[entry.channel] = entry.activeImported;
-            
-            if (entry.activeExported !== undefined) {
-                if (!firstExportData[entry.channel]) firstExportData[entry.channel] = entry.activeExported;
-                latestExportData[entry.channel] = entry.activeExported;
-            }
-        });
-        
-        const rawConsumption = {};
-        Object.keys(latestData).forEach(channel => {
-            const dailyConsumption = (latestData[channel] - (firstData[channel] || 0)) / 1000;
-            if (dailyConsumption > 0) rawConsumption[channel] = dailyConsumption;
-        });
-        
-        const rawExported = {};
-        Object.keys(latestExportData).forEach(channel => {
-            const dailyExport = (latestExportData[channel] - (firstExportData[channel] || 0)) / 1000;
-            if (dailyExport > 0) rawExported[channel] = dailyExport;
-        });
-        
-        const totalConsumption = { ...rawConsumption };
-        const totalExported = { ...rawExported };
-        
-        const excludeFromOther = ChannelCache.excludeFromOther;
-        const hasGridChannel = ChannelCache.hasGrid;
-        const hasLoads = DataHelpers.hasLoadSubChannels(totalConsumption, excludeFromOther);
-        
-        if (hasGridChannel && hasLoads) {
-            totalConsumption['Other'] = DataHelpers.calculateOtherConsumption(totalConsumption, excludeFromOther, rawExported);
-        }
-        
-        excludeFromOther.forEach(ch => delete totalConsumption[ch]);
-        excludeFromOther.forEach(ch => delete totalExported[ch]);
-
-        return { imported: totalConsumption, exported: totalExported, rawImported: rawConsumption, rawExported: rawExported };
+        setupCsvDownload(result.imported, view);
     }
 
     // ============================================================================
     // CSV DOWNLOAD
     // ============================================================================
+    const CSV_PERIOD_HEADERS = { daily: 'Local time', monthly: 'Date', yearly: 'Month', total: 'Year' };
+
+    function csvField(value) {
+        const text = String(value);
+        return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    }
+
+    // Blob instead of a data: URI, so a '#' in a channel label cannot truncate the file
+    function downloadCsv(filename, rows) {
+        const csv = rows.map(row => row.map(csvField).join(',')).join('\n') + '\n';
+        const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }
+
     function setupCsvDownload(consumptionData, viewType) {
-        const downloadBtn = document.getElementById('download-csv');
-        downloadBtn.onclick = function() {
+        const period = { daily: currentDate, monthly: currentMonth, yearly: currentYear, total: null }[viewType];
+        const fileSuffix = `${viewType}_${period || 'all'}`;
+
+        document.getElementById('download-csv').onclick = function() {
             const periods = Object.keys(consumptionData).sort();
             const channels = new Set();
-            periods.forEach(period => Object.keys(consumptionData[period]).forEach(ch => channels.add(ch)));
-            
+            periods.forEach(key => Object.keys(consumptionData[key]).forEach(ch => channels.add(ch)));
+
             const channelArray = [...channels].sort((a, b) => {
                 if (a === 'Other') return 1;
                 if (b === 'Other') return -1;
                 return parseInt(a) - parseInt(b);
             });
-            
-            let csvContent = "data:text/csv;charset=utf-8,";
-            const periodLabels = { daily: 'Hour', monthly: 'Day', yearly: 'Month', total: 'Year' };
-            const periodLabel = periodLabels[viewType] || 'Period';
-            csvContent += periodLabel + "," + channelArray.map(ch => ChartHelpers.getChannelLabel(ch, channelData)).join(",") + "\n";
-            
-            periods.forEach(period => {
-                const periodDisplay = viewType === 'daily' ? period + ":00" : period;
-                const row = [periodDisplay, ...channelArray.map(ch => (consumptionData[period][ch] || 0).toFixed(3))];
-                csvContent += row.join(",") + "\n";
+
+            const rows = [[CSV_PERIOD_HEADERS[viewType], ...channelArray.map(ch => ChartHelpers.getChannelLabel(ch, channelData))]];
+            periods.forEach(key => {
+                rows.push([EnergyAggregation.csvPeriodLabel(key, viewType, period),
+                    ...channelArray.map(ch => (consumptionData[key][ch] || 0).toFixed(3))]);
             });
-            
-            const link = document.createElement("a");
-            const dateStrs = { daily: currentDate, monthly: currentMonth, yearly: currentYear, total: 'all' };
-            const dateStr = dateStrs[viewType] || 'data';
-            link.setAttribute("href", encodeURI(csvContent));
-            link.setAttribute("download", `energy_consumption_${viewType}_${dateStr}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            downloadCsv(`energy_consumption_${fileSuffix}.csv`, rows);
         };
-        
-        // Setup balance CSV download
-        const balanceDownloadBtn = document.getElementById('download-balance-csv');
-        balanceDownloadBtn.onclick = function() {
+
+        document.getElementById('download-balance-csv').onclick = function() {
             if (!balanceData) return;
-            
-            let csvContent = "data:text/csv;charset=utf-8,";
-            const balancePeriodLabels = { daily: 'Hour', monthly: 'Day', yearly: 'Month', total: 'Year' };
-            const periodLabel = balancePeriodLabels[viewType] || 'Period';
-            csvContent += [periodLabel, 'Grid Import (kWh)', 'Grid Export (kWh)', 'PV (kWh)', 'Battery Discharge (kWh)', 'Battery Charge (kWh)', 'Home (kWh)'].join(",") + "\n";
-            
-            // Label rows by their actual period keys: an index-based label shifts every
-            // row after a gap (e.g. a reboot-skipped hour), making the last one look cut.
-            const labels = ChartHelpers.formatLabels(balanceData.periods, viewType);
-            for (let i = 0; i < balanceData.gridImport.length; i++) {
-                csvContent += [labels[i], balanceData.gridImport[i].toFixed(3), balanceData.gridExport[i].toFixed(3), balanceData.pv[i].toFixed(3), 
-                    balanceData.batteryDischarge[i].toFixed(3), balanceData.batteryCharge[i].toFixed(3), balanceData.homeConsumption[i].toFixed(3)].join(",") + "\n";
-            }
-            
-            const link = document.createElement("a");
-            const balanceDateStrs = { daily: currentDate, monthly: currentMonth, yearly: currentYear, total: 'all' };
-            const dateStr = balanceDateStrs[viewType] || 'data';
-            link.setAttribute("href", encodeURI(csvContent));
-            link.setAttribute("download", `energy_balance_${viewType}_${dateStr}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+
+            const rows = [[CSV_PERIOD_HEADERS[viewType], 'Grid Import (kWh)', 'Grid Export (kWh)', 'PV (kWh)', 'Battery Discharge (kWh)', 'Battery Charge (kWh)', 'Home (kWh)']];
+            balanceData.periods.forEach((key, i) => {
+                rows.push([EnergyAggregation.csvPeriodLabel(key, viewType, period),
+                    ...['gridImport', 'gridExport', 'pv', 'batteryDischarge', 'batteryCharge', 'homeConsumption'].map(series => balanceData[series][i].toFixed(3))]);
+            });
+            downloadCsv(`energy_balance_${fileSuffix}.csv`, rows);
         };
     }
 
