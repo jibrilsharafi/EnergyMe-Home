@@ -1816,6 +1816,7 @@ namespace Mqtt
 
     static bool _performOtaUpdate() {
         LOG_DEBUG("Starting OTA update from URL: %.100s...", _otaCurrentUrl); // Truncate long URLs in logs
+        LOG_DEBUG("OTA attempt start heap: free %lu, maxAlloc %lu", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
 
         // Reset per attempt: a retry whose response carries no Content-Length
         // would otherwise inherit the previous attempt's counters.
@@ -1935,6 +1936,7 @@ namespace Mqtt
 
         if (result == ESP_OK) {
             LOG_INFO("OTA update downloaded, signature verified, and activated (not yet post-reboot validated)");
+            LOG_DEBUG("OTA attempt end heap: free %lu, minFree %lu", ESP.getFreeHeap(), ESP.getMinFreeHeap());
             return true;
         }
 
@@ -3363,11 +3365,14 @@ namespace Mqtt
             }
 
             // One key rather than three: it is read as a triple anyway, and it
-            // keeps the map well clear of the statusDetails pair limit.
-            setDetail(
-                "heapFreeMinMax", "%lu/%lu/%lu",
-                _otaAttempt.freeHeap, _otaAttempt.minFreeHeap, _otaAttempt.maxAlloc
-            );
+            // keeps the map well clear of the statusDetails pair limit. Only sampled
+            // on a download failure: a post-download rejection would report 0/0/0.
+            if (_otaAttempt.freeHeap != 0) {
+                setDetail(
+                    "heapFreeMinMax", "%lu/%lu/%lu",
+                    _otaAttempt.freeHeap, _otaAttempt.minFreeHeap, _otaAttempt.maxAlloc
+                );
+            }
 
             setDetail("attempts", "%u", attemptsMade);
             setDetail("uptime", "%llu", millis64() / 1000);
