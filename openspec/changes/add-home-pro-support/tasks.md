@@ -17,8 +17,8 @@
 
 ## 3. Interface arbitration logic (host-testable)
 
-- [x] 3.1 Create `lib/interface_arbitration`: pure state machine - inputs (eth link up + valid address [DHCP lease or applied static], sta associated, hold-down timer), outputs (preferred interface, ap-raise-allowed, transition events); includes flap debounce
-- [x] 3.2 Unity tests: cable pull → STA, cable return after hold-down → ETH, flap sequences don't thrash, static-address ETH preferred, link-up-without-address is not serviceable, Home inputs → outputs identical to current behavior, no-interface → AP allowed
+- [x] 3.1 Create `lib/interface_arbitration`: pure state machine - inputs (eth link up + valid address [DHCP lease or applied static], sta associated, hold-down timer), outputs (`Decision{preferred, switchRequired}`); includes flap debounce. AP raise/teardown is not an arbitration output: it lives in `lib/wifi_provisioning` (`shouldRaiseAp()` / `shouldTearDownAp()` take the wired inputs), see 7.1
+- [x] 3.2 Unity tests: cable pull → STA, cable return after hold-down → ETH, flap sequences don't thrash, static-address ETH preferred, link-up-without-address is not serviceable, Home inputs → outputs identical to current behavior, no interface → preferred NONE (the AP-raise side is covered by the provisioning tests, 7.3)
 - [x] 3.3 Run `pio test -e native` from WSL - green before any firmware wiring
 
 ## 4. Ethernet driver verification
@@ -33,11 +33,11 @@
 - [x] 5.2 `EthConfiguration` struct + `eth_ns` persistence: DHCP/static, ip/gw/subnet/dns, config module pattern (get/set/toJson/fromJson/validate) with mutex; validation rejects a static IP inside the SoftAP subnet; `eth_ns` is created lazily on first write (never on Home), cleared by factory reset, included in config backup/restore on Pro
 - [x] 5.3 Boot-fail backstop for static ETH config: counter increments only when the link is up and the static config fails to become serviceable; no-link boots are neutral; independent of (and non-interacting with) the WiFi backstop
 - [x] 5.4 Wire into `main.cpp`: ETH init after profile selection, product-gated; boot network wait accepts ETH and stays bounded by the existing `SETUP_NETWORK_WAIT_TIMEOUT_MS`
-- [x] 5.5 On default-route change, actively drop MQTT/custom-MQTT/InfluxDB connections so they reconnect on the new interface (no waiting on TCP keepalive timeouts); reapply DNS servers and restart NTP sync for the active interface
+- [x] 5.5 On default-route change, actively drop MQTT/custom-MQTT connections so they reconnect on the new interface (no waiting on TCP keepalive timeouts); reapply DNS servers and restart NTP sync for the active interface - note: InfluxDB has no drop-on-failover callback and needs none, it builds a fresh `HTTPClient` per send, so every write opens a new socket on the current route
 
 ## 6. Predicate generalization (one module per task/commit)
 
-- [x] 6.1 Generalize network-readiness predicates ("any serviceable interface"): thin network-level predicate both customwifi and custometh feed; health-check tolerance for failover = hold-down + reconnect window, restart deadline re-arms when both interfaces are lost
+- [x] 6.1 Generalize network-readiness predicates ("any serviceable interface"): thin network-level predicate (`CustomNet`) both customwifi and custometh feed. No dedicated restart deadline re-arms when both interfaces are lost: the health check's consecutive-failure counter covers it (fails while `CustomNet::isNetworkServiceable()` is false, 5 x 30 s before a restart, reset on the first success), which also tolerates the hold-down + reconnect window of a failover
 - [x] 6.2 Convert mqtt.cpp gates to the generalized predicate
 - [x] 6.3 Convert custommqtt.cpp gates
 - [x] 6.4 Convert influxdbclient.cpp gates
@@ -45,12 +45,12 @@
 - [x] 6.6 Convert customlog.cpp + telemetry gates
 - [x] 6.7 Convert maintenance/health-check gates
 - [x] 6.8 Modbus TCP: ETH counts as trusted interface (accept), SoftAP still blocked
-- [x] 6.9 mDNS: advertise the active interface's IP, re-announce on failover
+- [ ] 6.9 mDNS: advertise the active interface's IP, re-announce on failover - BENCH-PENDING: the firmware does not rebuild or re-announce on failover (the rebuild check is keyed to `WiFi.localIP()`); it relies on the ESP-IDF responder serving every predefined netif (`CONFIG_MDNS_PREDEF_NETIF_ETH` / `_STA` / `_AP` set in the core sdkconfig). Needs a bench check that `energyme.local` resolves to the active interface's address across a cable pull and return
 - [x] 6.10 Build both dev envs + run full native test suite
 
 ## 7. SoftAP raise conditions (product-gated)
 
-- [x] 7.1 Feed ETH state into the AP raise/teardown predicates via the arbitration lib; Home path evaluates identically to today; link-up-without-address counts as unreachable (AP may rise after the DHCP wait)
+- [x] 7.1 Feed ETH state into the AP raise/teardown predicates in `lib/wifi_provisioning` (`shouldRaiseAp()` / `shouldTearDownAp()` gain `wiredReachable` / `wiredLinkUp` / `wiredPresent` inputs, sourced from custometh's arbitration state); Home path evaluates identically to today; link-up-without-address counts as unreachable (AP may rise after the DHCP wait)
 - [x] 7.2 DNS responder confinement and AP-subnet collision checks account for ETH (responder stops when ETH is serviceable; AP subnet never overlaps the ETH subnet)
 - [x] 7.3 Unity tests on the provisioning logic: cabled Pro never raises AP, ETH recovery tears AP down, no-interface Pro raises AP, link-but-no-lease raises AP, all existing Home scenarios unchanged
 
@@ -63,6 +63,15 @@
 - [x] 8.5 Product-aware manual OTA upload gate in `_initializeOtaUpload`: filename must match the running product's artifact token, checked unambiguously (Pro token checked before the Home token, since `energyme_home` is a substring of `energyme_homepro`); reject before any flash write
 - [x] 8.6 GitHub release asset picker (`_fetchGitHubReleaseInfo`) becomes product-aware with the same unambiguous matching
 - [x] 8.7 Cloud OTA job document gains a `product` field verified on-device before download starts (absent field = home for fleet compatibility); coordinate the job-creation side in the infra repo
+
+## 8b. Post-review hardening (2026-09-22)
+
+- [x] 8b.1 Open-source telemetry ping moved to a bounded one-shot task (`CustomWifi::sendOpenSourceTelemetry()` spawns `_telemetryTask` per attempt): explicit 10 s connect/handshake timeouts, at most `TELEMETRY_MAX_ATTEMPTS` (5) per boot, 10 min apart, so neither the WiFi task nor the eth task tick is stalled on a firewalled or LAN-only network
+- [x] 8b.2 Eth task reported in system info: `customEth` entry in the dynamic task list, only on products with Ethernet (`globalHwProfile->hasEthernet`)
+- [x] 8b.3 Provisioning carve-outs (UNPROVISIONED bypass, GRACE read session, AP-origin allowlist widening) require the peer to be inside the SoftAP subnet (`CustomWifi::isApConnection(local, remote)`), not only the destination to be the AP address: with Ethernet up, lwIP accepts a wired packet addressed to the AP address
+- [x] 8b.4 DNS list written under the lwIP core lock (`LOCK_TCPIP_CORE()`), every slot up to `DNS_MAX_SERVERS` rewritten; Ethernet status reports Ethernet's own captured DNS servers, not lwIP's global list
+- [x] 8b.5 Static Ethernet validation rejects an IP equal to the gateway and (masks shorter than /31) the subnet's network or broadcast address
+- [x] 8b.6 A failed `Network.setDefaultInterface()` rolls the arbitration decision back so the next tick retries; the Ethernet SPI bus is freed when the W5500 fails to start
 
 ## 9. Hardware bring-up (BLOCKED on Pro board) - covers all hardware-only spec scenarios
 
