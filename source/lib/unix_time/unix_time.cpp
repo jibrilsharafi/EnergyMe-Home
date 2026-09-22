@@ -12,4 +12,18 @@ bool isValid(uint64_t unixTime, bool isMilliseconds) {
     return unixTime >= MIN_SECONDS && unixTime <= MAX_SECONDS;
 }
 
+uint64_t millisUntilNextUtcHour(uint64_t unixMs) {
+    return MS_PER_HOUR - (unixMs % MS_PER_HOUR);
+}
+
+uint64_t millisFromNearestUtcHour(uint64_t unixMs) {
+    uint64_t sinceHour = unixMs % MS_PER_HOUR;
+    uint64_t untilHour = MS_PER_HOUR - sinceHour;
+    return sinceHour < untilHour ? sinceHour : untilHour;
+}
+
+uint64_t nearestUtcHourSeconds(uint64_t unixSeconds) {
+    return (unixSeconds + 1800ULL) / 3600ULL * 3600ULL;
+}
+
 } // namespace UnixTime
