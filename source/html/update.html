@@ -394,7 +394,8 @@
                     .then(data => {
                         document.getElementById('loading-overlay').style.display = 'none';
 
-                        if (data.success || data.message) {
+                        // A failed finalize answers 200 with success:false and a message
+                        if (data.success === true) {
                             document.getElementById("submit").value = "Update successful";
                             document.getElementById("submit").style.backgroundColor = '#28a74550';
 
