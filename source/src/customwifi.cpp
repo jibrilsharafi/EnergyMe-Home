@@ -1432,6 +1432,22 @@ namespace CustomWifi
     }
   }
 
+  // Network of a configured (not necessarily live) static address. False when no usable
+  // address is set; an empty or non-contiguous mask falls back to /24.
+  static bool _configuredSubnet(const char *ip, const char *subnet, WifiProvisioning::Subnet &out)
+  {
+    IPAddress parsed;
+    if (ip[0] == '\0' || !parsed.fromString(ip)) return false;
+    out.address = _toHostOrder(parsed);
+    out.cidr = 24;
+    IPAddress parsedMask;
+    if (subnet[0] != '\0' && parsedMask.fromString(subnet)) {
+      uint8_t derived = WifiProvisioning::cidrFromNetmask(_toHostOrder(parsedMask));
+      if (derived != 0) out.cidr = derived;
+    }
+    return true;
+  }
+
   // Raise the SoftAP on a subnet that cannot collide with the STA subnet. lwIP's ip4_route
   // returns the FIRST matching netif and netif_add prepends, so an AP raised after STA wins
   // every ambiguous match - an overlapping AP subnet silently blackholes LAN traffic (D5).
@@ -1467,28 +1483,15 @@ namespace CustomWifi
       LOG_WARNING("Could not read the network configuration - ignoring the static IP for overlap checks");
     }
 
-    bool staticValid = false;
-    uint32_t staticAddr = 0;
-    uint8_t staticCidr = 24;
-    if (haveConfig && config.useStaticIp && config.ip[0] != '\0') {
-      IPAddress parsed;
-      if (parsed.fromString(config.ip)) {
-        staticValid = true;
-        staticAddr = _toHostOrder(parsed);
-        IPAddress parsedMask;
-        if (config.subnet[0] != '\0' && parsedMask.fromString(config.subnet)) {
-          uint8_t derived = WifiProvisioning::cidrFromNetmask(_toHostOrder(parsedMask));
-          if (derived != 0) staticCidr = derived;
-        }
-      }
-    }
-
     // On products with Ethernet the wire's networks count too: live lease and
     // configured static, for the same restored-backup reason as the WiFi static.
     WifiProvisioning::Subnet occupied[4];
     size_t occupiedCount = 0;
-    if (staValid)    occupied[occupiedCount++] = {staAddr, staCidr};
-    if (staticValid) occupied[occupiedCount++] = {staticAddr, staticCidr};
+    if (staValid) occupied[occupiedCount++] = {staAddr, staCidr};
+    if (haveConfig && config.useStaticIp &&
+        _configuredSubnet(config.ip, config.subnet, occupied[occupiedCount])) {
+      occupiedCount++;
+    }
     if (CustomEth::isEnabled()) {
       IPAddress ethIp = ETH.localIP();
       if (ethIp != IPAddress(0, 0, 0, 0)) {
@@ -1496,17 +1499,9 @@ namespace CustomWifi
         occupied[occupiedCount++] = {_toHostOrder(ethIp), (uint8_t)(ethCidr != 0 ? ethCidr : 24)};
       }
       EthConfiguration ethConfig;
-      if (CustomEth::getConfiguration(ethConfig) && ethConfig.useStaticIp && ethConfig.ip[0] != '\0') {
-        IPAddress parsed;
-        if (parsed.fromString(ethConfig.ip)) {
-          uint8_t ethStaticCidr = 24;
-          IPAddress parsedMask;
-          if (ethConfig.subnet[0] != '\0' && parsedMask.fromString(ethConfig.subnet)) {
-            uint8_t derived = WifiProvisioning::cidrFromNetmask(_toHostOrder(parsedMask));
-            if (derived != 0) ethStaticCidr = derived;
-          }
-          occupied[occupiedCount++] = {_toHostOrder(parsed), ethStaticCidr};
-        }
+      if (CustomEth::getConfiguration(ethConfig) && ethConfig.useStaticIp &&
+          _configuredSubnet(ethConfig.ip, ethConfig.subnet, occupied[occupiedCount])) {
+        occupiedCount++;
       }
     }
 
