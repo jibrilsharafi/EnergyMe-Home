@@ -21,11 +21,14 @@
 - [x] 4.1 Cloud OTA: validate after signature verification, before `esp_https_ota_finish()`; deterministic failure `image_incompatible:<verdict>`, scrub like signature failure
 - [x] 4.2 Manual upload: first-chunk early reject when the chunk covers the descriptor region
 - [x] 4.3 Manual upload: authoritative check in `_finalizeOtaUpload()` before `Update.end(true)`
+- [x] 4.4 Rollback: `attemptFirmwareRollback()` (API/MQTT `firmware_rollback`) validates the passive slot before `esp_ota_set_boot_partition()` and returns `INVALID_IMAGE` on a reject verdict
+- [x] 4.5 Crash ladder: `CrashMonitor::_handleCounters()` validates the passive slot before `Update.rollBack()` and falls through to factory reset on a reject verdict
+- [x] 4.6 Report running + passive-slot descriptors in `/api/v1/system/info` (`static.imageDescriptor`) and the reported shadow (`image_*`, `other_image_*`)
 
 ## 5. Verification
 
 - [x] 5.1 Native tests green (WSL)
-- [x] 5.2 Both env binaries carry correct descriptors at 0x120 (hexdump check)
+- [x] 5.2 Both env binaries carry correct descriptors at 0x120 (hexdump check) - note: only the dev envs (`esp32s3-dev`, `esp32s3-dev-pro`) were hexdumped; the prod envs share the same emitting TU and differ only in `buildEnv`
 - [x] 5.3 `esp32s3-dev` and `esp32s3-dev-pro` build clean
 
 ## 6. Hardware-blocked (bench, when a device is available)
