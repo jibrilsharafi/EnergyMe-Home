@@ -681,12 +681,7 @@
         const dailyRawExport = {};
         const dailyExported = {};
         
-        const dataByDate = {};
-        allEnergyData.forEach(entry => {
-            const date = entry.timestamp.substring(0, 10);
-            if (!dataByDate[date]) dataByDate[date] = [];
-            dataByDate[date].push(entry);
-        });
+        const dataByDate = groupByPeriod(allEnergyData, entry => entry.timestamp.substring(0, 10));
         
         Object.keys(dataByDate).sort().forEach(date => {
             const dayData = dataByDate[date];
@@ -758,12 +753,7 @@
         const monthlyRawImport = {};
         const monthlyRawExport = {};
         
-        const dataByMonth = {};
-        allEnergyData.forEach(entry => {
-            const month = entry.timestamp.substring(5, 7);
-            if (!dataByMonth[month]) dataByMonth[month] = [];
-            dataByMonth[month].push(entry);
-        });
+        const dataByMonth = groupByPeriod(allEnergyData, entry => entry.timestamp.substring(5, 7));
         
         Object.keys(dataByMonth).sort().forEach(month => {
             const monthData = dataByMonth[month];
@@ -836,12 +826,7 @@
         const yearlyRawImport = {};
         const yearlyRawExport = {};
 
-        const dataByYear = {};
-        allEnergyData.forEach(entry => {
-            const year = entry.timestamp.substring(0, 4);
-            if (!dataByYear[year]) dataByYear[year] = [];
-            dataByYear[year].push(entry);
-        });
+        const dataByYear = groupByPeriod(allEnergyData, entry => entry.timestamp.substring(0, 4));
 
         Object.keys(dataByYear).sort().forEach(year => {
             const yearData = dataByYear[year];
@@ -956,6 +941,24 @@
         return { imported: filteredConsumption, exported: filteredExport, rawHourlyImport, rawHourlyExport };
     }
 
+    // Bucket readings by period, also appending each channel's first reading of the next
+    // period: consumption is last-minus-first, so without it the hour spanning the period
+    // boundary (e.g. 23:00->00:00) is counted nowhere.
+    function groupByPeriod(energyData, keyFn) {
+        const sorted = [...energyData].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+        const groups = {};
+        const lastKeyByChannel = {};
+        sorted.forEach(entry => {
+            const key = keyFn(entry);
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(entry);
+            const prevKey = lastKeyByChannel[entry.channel];
+            if (prevKey !== undefined && prevKey !== key) groups[prevKey].push(entry);
+            lastKeyByChannel[entry.channel] = key;
+        });
+        return groups;
+    }
+
     function calculateTotalConsumption(energyData) {
         const latestData = {};
         const firstData = {};
@@ -1057,7 +1060,7 @@
                 else if (viewType === 'monthly') periodDisplay = String(i + 1).padStart(2, '0');
                 else if (viewType === 'total') periodDisplay = balancePeriodKeys ? balancePeriodKeys[i] : String(i);
                 else periodDisplay = monthNames[i] || String(i + 1);
-                
+
                 csvContent += [periodDisplay, balanceData.gridImport[i].toFixed(3), balanceData.gridExport[i].toFixed(3), balanceData.pv[i].toFixed(3), 
                     balanceData.batteryDischarge[i].toFixed(3), balanceData.batteryCharge[i].toFixed(3), balanceData.homeConsumption[i].toFixed(3)].join(",") + "\n";
             }
