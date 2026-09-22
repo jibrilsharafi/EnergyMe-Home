@@ -45,9 +45,13 @@ class RebootWait {
      *   different address (e.g. a static IP change).
      * @param {string} [options.baseUrl] - Origin to poll health against, when different from
      *   the current page's origin (paired with a cross-origin redirectTo).
+     * @param {boolean} [options.requireFailureFirst] - Only treat the device as back after a
+     *   failed poll (it went down). Default true; false on "Check again", where the device may
+     *   already be back and every poll succeeds.
      */
     show(options = {}) {
         const redirectTo = options.redirectTo || '/';
+        const requireFailureFirst = options.requireFailureFirst !== false;
         const baseUrl = (options.baseUrl || '').replace(/\/$/, '');
         const token = ++this._pollToken;
 
@@ -57,15 +61,15 @@ class RebootWait {
         this._startElapsedTimer();
         this._startTrivia();
 
-        this._runPollLoop(token, baseUrl, redirectTo);
+        this._runPollLoop(token, baseUrl, redirectTo, requireFailureFirst);
     }
 
-    async _runPollLoop(token, baseUrl, redirectTo) {
+    async _runPollLoop(token, baseUrl, redirectTo, requireFailureFirst) {
         await this._delay(900);
         if (token !== this._pollToken) return;
         this._setStatus("It's off rebooting somewhere, hang tight!");
 
-        let sawFailure = false;
+        let sawFailure = !requireFailureFirst;
         const startTime = Date.now();
 
         while (Date.now() - startTime < this.MAX_WAIT_MS) {
@@ -176,7 +180,7 @@ class RebootWait {
         this._els.fallback.style.display = 'block';
         this._els.retryBtn.onclick = () => {
             this._pollToken++; // invalidate anything left of the old loop, just in case
-            this.show({ redirectTo, baseUrl: baseUrl || undefined });
+            this.show({ redirectTo, baseUrl: baseUrl || undefined, requireFailureFirst: false });
         };
     }
 
@@ -234,4 +238,6 @@ class RebootWait {
     }
 }
 
-window.rebootWait = new RebootWait();
+// Browser singleton, or a module for the node unit tests
+if (typeof window !== 'undefined') window.rebootWait = new RebootWait();
+if (typeof module !== 'undefined') module.exports = { RebootWait };
