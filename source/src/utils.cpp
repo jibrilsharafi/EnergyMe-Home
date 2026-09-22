@@ -274,6 +274,7 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
     info.buttonHandlerTaskInfo = ButtonHandler::getTaskInfo();
     info.udpLogTaskInfo = CustomLog::getTaskInfo();
     info.customWifiTaskInfo = CustomWifi::getTaskInfo();
+    if (globalHwProfile->hasEthernet) info.customEthTaskInfo = CustomEth::getTaskInfo();
     info.ade7953MeterReadingTaskInfo = Ade7953::getMeterReadingTaskInfo();
     info.ade7953EnergySaveTaskInfo = Ade7953::getEnergySaveTaskInfo();
     info.ade7953HourlyCsvTaskInfo = Ade7953::getHourlyCsvTaskInfo();
@@ -472,6 +473,7 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument &doc) {
     addTask("buttonHandler", info.buttonHandlerTaskInfo);
     addTask("udpLog", info.udpLogTaskInfo);
     addTask("customWifi", info.customWifiTaskInfo);
+    if (globalHwProfile->hasEthernet) addTask("customEth", info.customEthTaskInfo);
     addTask("ade7953MeterReading", info.ade7953MeterReadingTaskInfo);
     addTask("ade7953EnergySave", info.ade7953EnergySaveTaskInfo);
     addTask("ade7953HourlyCsv", info.ade7953HourlyCsvTaskInfo);

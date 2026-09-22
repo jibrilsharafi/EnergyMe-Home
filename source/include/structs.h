@@ -274,6 +274,7 @@ struct SystemDynamicInfo {
     TaskInfo buttonHandlerTaskInfo;
     TaskInfo udpLogTaskInfo;
     TaskInfo customWifiTaskInfo;
+    TaskInfo customEthTaskInfo;
     TaskInfo ade7953MeterReadingTaskInfo;
     TaskInfo ade7953EnergySaveTaskInfo;
     TaskInfo ade7953HourlyCsvTaskInfo;
