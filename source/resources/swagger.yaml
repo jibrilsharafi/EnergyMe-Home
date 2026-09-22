@@ -401,6 +401,25 @@ paths:
                           Network state. The `eth*` fields other than `ethEnabled` are emitted only
                           when `ethEnabled` is true (products with Ethernet).
                         properties:
+                          wifiConnected:
+                            type: boolean
+                          wifiSsid:
+                            type: string
+                          wifiMacAddress:
+                            type: string
+                          wifiLocalIp:
+                            type: string
+                          wifiGatewayIp:
+                            type: string
+                          wifiSubnetMask:
+                            type: string
+                          wifiDnsIp:
+                            type: string
+                          wifiBssid:
+                            type: string
+                          wifiRssi:
+                            type: integer
+                            description: dBm
                           activeInterface:
                             type: string
                             description: Interface holding the default route
@@ -412,11 +431,11 @@ paths:
                             type: boolean
                           ethLocalIp:
                             type: string
-                            example: "192.168.1.104"
+                            example: "192.168.1.50"
                           ethMacAddress:
                             type: string
                             description: Ethernet MAC (base MAC + 1)
-                            example: "14:C1:9F:4E:1B:45"
+                            example: "AA:BB:CC:DD:EE:02"
                           ethLinkSpeedMbps:
                             type: integer
                             description: Negotiated link speed; 0 while the link is down
