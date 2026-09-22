@@ -661,7 +661,9 @@
         function isServedOverEthernet() {
             var net = currentNetwork || {};
             if (!net.ethLinkUp || !net.ethLocalIp || net.ethLocalIp === "0.0.0.0") return false;
-            return location.hostname !== net.wifiLocalIp;
+            // Only a page opened at the Ethernet address is known to be wired: a hostname
+            // (energyme.local) may resolve to the WiFi address that is about to go away
+            return location.hostname === net.ethLocalIp;
         }
 
         function updateWiredTexts() {
