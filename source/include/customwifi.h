@@ -159,6 +159,9 @@ namespace CustomWifi
     // inside a request filter: a plain volatile load and a compare, with no esp_netif call,
     // unlike WiFi.softAPIP(). Always false while no AP is up.
     bool isApAddress(const IPAddress &address);
+    // isApAddress(local) and the peer is inside the SoftAP subnet: a connection that
+    // really came through the AP, not a LAN host that addressed the AP address
+    bool isApConnection(const IPAddress &localAddress, const IPAddress &remoteAddress);
 
     // Lock-free snapshot of the provisioning state. Safe to call from any task, including
     // the AsyncTCP task inside a request filter: it is a plain load of a uint8_t-backed
