@@ -164,8 +164,8 @@ const ArchiveCache = {
     yearly: {},
     dailyFilesSet: new Set(),
 
-    // Archives the device actually has, filled by the page from the folder listings.
-    // null = not listed yet: nothing is known, so the fetch is attempted.
+    // Archives the device actually has (Map of name -> size), filled by the page from the
+    // folder listings. null = not listed yet: nothing is known, so the fetch is attempted.
     archiveFiles: { monthly: null, yearly: null },
 
     // localStorage cache configuration
@@ -188,12 +188,13 @@ const ArchiveCache = {
         return parseInt(year) < new Date().getUTCFullYear();
     },
 
-    saveToLocalCache(key, data, completed) {
+    saveToLocalCache(key, data, completed, size) {
         try {
             const cacheEntry = {
                 data: data,
                 timestamp: Date.now(),
-                completed: completed
+                completed: completed,
+                size: size
             };
             localStorage.setItem(this.CONFIG.PREFIX + key, JSON.stringify(cacheEntry));
         } catch (e) {
@@ -207,12 +208,18 @@ const ArchiveCache = {
         } catch (e) { /* storage unavailable */ }
     },
 
-    loadFromLocalCache(key) {
+    // expectedSize: the listed file size, when known. A different size means the file was
+    // replaced (restore from backup, a month merged in), whatever the TTL says.
+    loadFromLocalCache(key, expectedSize) {
         try {
             const cached = localStorage.getItem(this.CONFIG.PREFIX + key);
             if (!cached) return null;
 
             const entry = JSON.parse(cached);
+            if (expectedSize !== undefined && entry.size !== expectedSize) {
+                localStorage.removeItem(this.CONFIG.PREFIX + key);
+                return null;
+            }
             const age = Date.now() - entry.timestamp;
             // Long TTL only for data saved after its period closed: a copy taken while the
             // period was current is partial however old the period is now.
@@ -241,21 +248,23 @@ const ArchiveCache = {
             throw new Error(`No ${type} archive for ${key}`);
         }
 
-        if (this[type][key]) {
-            return this[type][key];
+        const size = known ? known.get(key) : undefined;
+        const memory = this[type][key];
+        if (memory && (size === undefined || memory.size === size)) {
+            return memory.data;
         }
 
-        let data = this.loadFromLocalCache(cacheKey);
+        let data = this.loadFromLocalCache(cacheKey, size);
         if (data) {
-            this[type][key] = data;
+            this[type][key] = { data, size };
             return data;
         }
 
         const isCompleted = type === 'monthly' ? this.isCompletedMonth(key) : this.isCompletedYear(key);
         const filename = `energy/${type}/${key}.csv.gz`;
         data = await DataHelpers.decompressGzipFile(filename);
-        this[type][key] = data;
-        this.saveToLocalCache(cacheKey, data, isCompleted);
+        this[type][key] = { data, size };
+        this.saveToLocalCache(cacheKey, data, isCompleted, size);
         return data;
     }
 };
@@ -661,5 +670,5 @@ if (typeof window !== 'undefined') {
     window.EnergyAggregation = EnergyAggregation;
 }
 if (typeof module !== 'undefined') {
-    module.exports = { ChannelCache, DataHelpers, EnergyAggregation };
+    module.exports = { ChannelCache, ArchiveCache, DataHelpers, EnergyAggregation };
 }

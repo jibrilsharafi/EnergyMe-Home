@@ -359,7 +359,7 @@
 
             const monthlyFiles = await energyApi.getFileList('energy/monthly') || {};
             const monthlyArchives = Object.keys(monthlyFiles).filter(f => f.endsWith('.csv.gz')).map(f => f.replace('.csv.gz', ''));
-            ArchiveCache.archiveFiles.monthly = new Set(monthlyArchives);
+            ArchiveCache.archiveFiles.monthly = new Map(monthlyArchives.map(key => [key, monthlyFiles[key + '.csv.gz']]));
             monthlyArchives.forEach(yearMonth => {
                 if (yearMonth < utcMonth) daysOfUtcMonth(yearMonth).forEach(d => utcDates.add(d));
                 else if (yearMonth === utcMonth) daysOfUtcMonth(yearMonth, now.getUTCDate()).forEach(d => utcDates.add(d));
@@ -368,7 +368,7 @@
             // A yearly archive holds the year's completed months
             const yearlyFiles = await energyApi.getFileList('energy/yearly') || {};
             const yearlyArchives = Object.keys(yearlyFiles).filter(f => f.endsWith('.csv.gz')).map(f => f.replace('.csv.gz', ''));
-            ArchiveCache.archiveFiles.yearly = new Set(yearlyArchives);
+            ArchiveCache.archiveFiles.yearly = new Map(yearlyArchives.map(key => [key, yearlyFiles[key + '.csv.gz']]));
             yearlyArchives.forEach(year => {
                 const lastMonth = year < utcYear ? 12 : year === utcYear ? now.getUTCMonth() : 0;
                 for (let month = 1; month <= lastMonth; month++) {
