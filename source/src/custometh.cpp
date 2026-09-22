@@ -385,13 +385,10 @@ namespace CustomEth
                     mdnsEnsured = CustomWifi::ensureMdnsStarted();
                 }
 
-                // Same story as mDNS above: the WiFi connect path sends the one-shot
+                // Same story as mDNS above: the WiFi connect path requests the one-shot
                 // telemetry ping itself, which an Ethernet-only device never runs.
-                // Called every tick, not gated on a local one-shot flag: the function
-                // requires a real connectivity probe to pass (not just link-up), which
-                // can fail on the first few ticks - self-guarded by its own
-                // once-per-boot flag once it actually succeeds, so this is a cheap
-                // no-op after that.
+                // Cheap to call every tick: it only spawns the telemetry task, rate-
+                // limited and capped per boot inside CustomWifi.
                 CustomWifi::sendOpenSourceTelemetry();
 
                 // Backstop clear: the static config has held the interface serviceable
