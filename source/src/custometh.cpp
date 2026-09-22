@@ -9,6 +9,7 @@
 #include <WiFi.h>
 #include <esp_mac.h>
 #include <lwip/dns.h>
+#include <lwip/tcpip.h>
 
 #include "customwifi.h"
 #include "wifi_provisioning.h"
@@ -151,6 +152,9 @@ namespace CustomEth
                        globalHwProfile->ethCsPin, globalHwProfile->ethIrqPin,
                        globalHwProfile->ethRstPin, *_spi, ETH_SPI_FREQ_MHZ)) {
             LOG_ERROR("W5500 initialization failed - Ethernet unavailable this boot");
+            _spi->end();
+            delete _spi;
+            _spi = nullptr;
             return false;
         }
 
@@ -436,10 +440,20 @@ namespace CustomEth
 
         // Route change first, then DNS, then the consumers drop their sessions
         // so they reconnect on the new path immediately.
+        bool routed = true;
         if (decision.preferred == InterfaceArbitration::Interface::ETHERNET) {
-            Network.setDefaultInterface(ETH);
+            routed = Network.setDefaultInterface(ETH);
         } else if (decision.preferred == InterfaceArbitration::Interface::WIFI_STATION) {
-            Network.setDefaultInterface(WiFi.STA);
+            routed = Network.setDefaultInterface(WiFi.STA);
+        }
+        if (!routed) {
+            // Not switched: roll the decision back so the next tick tries again
+            LOG_WARNING("Failed to set %s as default interface", InterfaceArbitration::interfaceName(decision.preferred));
+            if (acquireMutex(&_ctxMutex)) {
+                _arbCtx.active = previous;
+                releaseMutex(&_ctxMutex);
+            }
+            return;
         }
 
         _applyDnsForActiveInterface(decision.preferred);
@@ -483,13 +497,16 @@ namespace CustomEth
         IPAddress dns1, dns2;
         if (!_dnsServersOf(active, dns1, dns2)) return; // Leave the list as it is
 
-        // Both slots, an empty secondary included: one left over from the other
-        // interface may not be reachable from this one.
-        for (int i = 0; i < 2; i++) {
-            IPAddress dns = (i == 0) ? dns1 : dns2;
+        // Every slot, empty ones included: one left over from the other interface may
+        // not be reachable from this one. Under the core lock: the tcpip thread writes
+        // the same list on DHCP leases (CONFIG_LWIP_TCPIP_CORE_LOCKING=y).
+        LOCK_TCPIP_CORE();
+        for (int i = 0; i < DNS_MAX_SERVERS; i++) {
+            IPAddress dns = (i == 0) ? dns1 : (i == 1) ? dns2 : IPAddress(0, 0, 0, 0);
             ip_addr_t addr = IPADDR4_INIT((uint32_t)dns); // Fully initialized - no garbage union bytes
             dns_setserver((u8_t)i, &addr);
         }
+        UNLOCK_TCPIP_CORE();
         LOG_DEBUG("DNS reapplied for %s: %s / %s", InterfaceArbitration::interfaceName(active),
                   dns1.toString().c_str(), dns2.toString().c_str());
     }
@@ -620,8 +637,10 @@ namespace CustomEth
         jsonDocument["ip"] = ETH.localIP().toString();
         jsonDocument["gateway"] = ETH.gatewayIP().toString();
         jsonDocument["subnet"] = ETH.subnetMask().toString();
-        jsonDocument["dns1"] = ETH.dnsIP(0).toString();
-        jsonDocument["dns2"] = ETH.dnsIP(1).toString();
+        // Ethernet's own servers: ETH.dnsIP() reads lwIP's single global list, which holds
+        // WiFi's servers while WiFi has the route
+        jsonDocument["dns1"] = IPAddress(_ethDns[0]).toString();
+        jsonDocument["dns2"] = IPAddress(_ethDns[1]).toString();
         jsonDocument["mac"] = ETH.macAddress();
     }
 
@@ -772,6 +791,17 @@ namespace CustomEth
         }
         if ((ipHost & maskHost) != (gatewayHost & maskHost)) {
             LOG_WARNING("Gateway %s is outside the network of %s/%s - rejected", config.gateway, config.ip, config.subnet);
+            return false;
+        }
+        // Each of these still counts as "serviceable" once the link is up, so no AP would
+        // rise and the device would sit unreachable
+        if (ipHost == gatewayHost) {
+            LOG_WARNING("Static IP %s equals the gateway - rejected", config.ip);
+            return false;
+        }
+        if (WifiProvisioning::cidrFromNetmask(maskHost) < 31 &&
+            ((ipHost & ~maskHost) == 0 || (ipHost | maskHost) == 0xFFFFFFFFUL)) {
+            LOG_WARNING("Static IP %s is the network or broadcast address of %s - rejected", config.ip, config.subnet);
             return false;
         }
 
