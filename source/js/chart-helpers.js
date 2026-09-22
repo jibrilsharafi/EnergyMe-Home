@@ -434,6 +434,7 @@ const ChartHelpers = {
         const periods = Object.keys(hourlyData).sort();
 
         const balanceData = {
+            periods,
             gridImport: [],
             gridExport: [],
             pv: [],
