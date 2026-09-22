@@ -1051,17 +1051,11 @@
             const periodLabel = balancePeriodLabels[viewType] || 'Period';
             csvContent += [periodLabel, 'Grid Import (kWh)', 'Grid Export (kWh)', 'PV (kWh)', 'Battery Discharge (kWh)', 'Battery Charge (kWh)', 'Home (kWh)'].join(",") + "\n";
             
-            const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-            // For total view, use the sorted year keys from the consumption data
-            const balancePeriodKeys = viewType === 'total' ? Object.keys(consumptionData).sort() : null;
+            // Label rows by their actual period keys: an index-based label shifts every
+            // row after a gap (e.g. a reboot-skipped hour), making the last one look cut.
+            const labels = ChartHelpers.formatLabels(balanceData.periods, viewType);
             for (let i = 0; i < balanceData.gridImport.length; i++) {
-                let periodDisplay;
-                if (viewType === 'daily') periodDisplay = `${i}:00`;
-                else if (viewType === 'monthly') periodDisplay = String(i + 1).padStart(2, '0');
-                else if (viewType === 'total') periodDisplay = balancePeriodKeys ? balancePeriodKeys[i] : String(i);
-                else periodDisplay = monthNames[i] || String(i + 1);
-
-                csvContent += [periodDisplay, balanceData.gridImport[i].toFixed(3), balanceData.gridExport[i].toFixed(3), balanceData.pv[i].toFixed(3), 
+                csvContent += [labels[i], balanceData.gridImport[i].toFixed(3), balanceData.gridExport[i].toFixed(3), balanceData.pv[i].toFixed(3), 
                     balanceData.batteryDischarge[i].toFixed(3), balanceData.batteryCharge[i].toFixed(3), balanceData.homeConsumption[i].toFixed(3)].join(",") + "\n";
             }
             
