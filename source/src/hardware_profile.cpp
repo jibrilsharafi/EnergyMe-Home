@@ -5,15 +5,81 @@
 
 #include <Preferences.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "constants.h"
 #include "factory_keys.h"
 
 // Known PCB hardware profiles.
-// To add support for a new PCB version: add a new entry on top of the array.
-// The first entry is treated as the "latest" and used as the ultimate fallback.
+// To add support for a new PCB version: add a new entry above the older entries of
+// the same product - within each product, entries are ordered newest-first, and the
+// first entry of a product is that product's "latest" (community fallback).
 const HardwareProfile PCB_PROFILES[] = {
     {
+        // EnergyMe Home Pro v1.0 (ESP32-S3-WROOM-1U-N16R8, W5500 Ethernet, 12 channels).
+        // Pinout extracted from the PCB netlist (energyme-home-pro-pcb, 2026-08-31);
+        // to be verified on hardware at bring-up.
+        .product = ProductLine::HOMEPRO,
+        .version = 10, // v1.0 - Pro PCB numbering restarts at v1.0
+
+        // RGB LED (same as Home v6.x)
+        .ledRedPin   = 40,
+        .ledGreenPin = 41,
+        .ledBluePin  = 39,
+
+        // Button
+        .buttonPin = 0,
+
+        // Analog multiplexer (74HC4067) select lines - same pin set as Home v6.x, different order
+        .muxS0Pin = 21,
+        .muxS1Pin = 47,
+        .muxS2Pin = 48,
+        .muxS3Pin = 38,
+
+        // ADE7953 SPI (identical to Home v6.x)
+        .ade7953SsPin        = 10,
+        .ade7953SckPin       = 13,
+        .ade7953MisoPin      = 12,
+        .ade7953MosiPin      = 11,
+        .ade7953ResetPin     = 9,
+        .ade7953InterruptPin = 14,
+
+        // Voltage sensing: ZMPT107-1 (2mA/2mA), 3x51kΩ series, 180Ω burden - same as v6.x
+        .voltageDividerR1 = 153000.0f,
+        .voltageDividerR2 = 180.0f,
+
+        // 11 mux channels wired (CT1-CT11) + 1 direct ADE7953 input (CT0) = 12 channels.
+        // Y3-Y7 are grounded/unused on this PCB; the map encodes the routed Y per CT.
+        .muxChipChannels   = 16,
+        .muxChannelCount   = 11,
+        .totalChannelCount = 12,
+        .muxChannelMap = {
+            //  logical  physical  CT label
+            15, //   0       Y15    CT1
+            14, //   1       Y14    CT2
+            13, //   2       Y13    CT3
+            12, //   3       Y12    CT4
+            11, //   4       Y11    CT5
+            2,  //   5       Y2     CT6
+            8,  //   6       Y8     CT7
+            1,  //   7       Y1     CT8
+            9,  //   8       Y9     CT9
+            0,  //   9       Y0     CT10
+            10, //  10       Y10    CT11
+            0, 0, 0, 0, 0, // unused padding to HW_PROFILE_MAX_MUX_CHANNELS
+        },
+
+        // W5500 Ethernet on a dedicated SPI bus (25 MHz crystal; INT and RST wired)
+        .hasEthernet = true,
+        .ethCsPin    = 16,
+        .ethIrqPin   = 5,
+        .ethRstPin   = 4,
+        .ethSckPin   = 15,
+        .ethMisoPin  = 7,
+        .ethMosiPin  = 6,
+    },
+    {
+        .product = ProductLine::HOME,
         .version = 61, // v6.1
 
         // RGB LED
@@ -71,6 +137,7 @@ const HardwareProfile PCB_PROFILES[] = {
         },
     },
     {
+        .product = ProductLine::HOME,
         .version = 60, // v6.0
 
         // RGB LED
@@ -109,6 +176,7 @@ const HardwareProfile PCB_PROFILES[] = {
         },
     },
     {
+        .product = ProductLine::HOME,
         .version = 50, // v5.0 (02-12-2024)
 
         // Pin assignments are wholly different from v6.x - this is not a v6 board
@@ -160,40 +228,34 @@ static const size_t PCB_PROFILES_COUNT = sizeof(PCB_PROFILES) / sizeof(PCB_PROFI
 const HardwareProfile* globalHwProfile = nullptr;
 bool globalCommunityMode = false;
 
-// Parse a pcb_revision string of the form "vMAJOR.MINOR" (e.g. "v6.1") into the
-// packed uint8_t used by HardwareProfile::version (major * 10 + minor).
-// Returns true on success; false on any parse/format error.
-static bool parsePcbRevision(const char* s, uint8_t& versionOut) {
-    if (s == nullptr || s[0] != 'v') return false;
-    unsigned int major = 0;
-    unsigned int minor = 0;
-    int matched = sscanf(s, "v%u.%u", &major, &minor);
-    if (matched != 2) return false;
-    if (major > 25 || minor > 9) return false; // keep (major*10+minor) within uint8_t
-    versionOut = static_cast<uint8_t>(major * 10 + minor);
-    return true;
+// The product a binary falls back to when factory NVS cannot answer. Pro build envs
+// pin PRODUCT_FALLBACK=1 (HOMEPRO) so a Pro binary never falls back to a Home pinout.
+static ProductLine buildFallbackProduct() {
+#ifdef PRODUCT_FALLBACK
+    // constants.h and the image descriptor read anything other than 1 as Home: a stray
+    // value would name the binary "home" and still run it on another product's profile.
+    static_assert(PRODUCT_FALLBACK == 0 || PRODUCT_FALLBACK == 1, "PRODUCT_FALLBACK must be 0 (home) or 1 (homepro)");
+    return static_cast<ProductLine>(PRODUCT_FALLBACK);
+#else
+    return ProductLine::HOME;
+#endif
 }
 
-static const HardwareProfile* findProfileByVersion(uint8_t version) {
-    for (size_t i = 0; i < PCB_PROFILES_COUNT; i++) {
-        if (PCB_PROFILES[i].version == version) return &PCB_PROFILES[i];
-    }
-    return nullptr;
-}
-
-// Select the profile used in community (unprovisioned) mode. Honours the optional
-// PCB_VERSION_FALLBACK compile-time flag; otherwise returns the latest profile.
+// Select the profile used in community (unprovisioned) mode: scoped to the build's
+// fallback product, honouring the optional PCB_VERSION_FALLBACK compile-time flag,
+// otherwise that product's latest profile.
 static const HardwareProfile* pickCommunityFallback() {
+    ProductLine product = buildFallbackProduct();
 #ifdef PCB_VERSION_FALLBACK
-    const HardwareProfile* p = findProfileByVersion(static_cast<uint8_t>(PCB_VERSION_FALLBACK));
+    const HardwareProfile* p = ProfileSelection::find(PCB_PROFILES, PCB_PROFILES_COUNT, product, static_cast<uint8_t>(PCB_VERSION_FALLBACK));
     if (p != nullptr) {
-        LOG_INFO("Community mode: using PCB_VERSION_FALLBACK=v%u", p->version);
+        LOG_INFO("Community mode: using PCB_VERSION_FALLBACK=v%u (%s)", p->version, productLineToString(product));
         return p;
     }
-    LOG_WARNING("PCB_VERSION_FALLBACK=%d does not match any known profile - using PCB_PROFILES[0] (v%u)",
-                (int)PCB_VERSION_FALLBACK, PCB_PROFILES[0].version);
+    LOG_WARNING("PCB_VERSION_FALLBACK=%d does not match any known %s profile - using that product's latest",
+                (int)PCB_VERSION_FALLBACK, productLineToString(product));
 #endif
-    return &PCB_PROFILES[0];
+    return ProfileSelection::latestForProduct(PCB_PROFILES, PCB_PROFILES_COUNT, product);
 }
 
 void initHardwareProfile() {
@@ -213,34 +275,49 @@ void initHardwareProfile() {
     }
 
     String pcbRevision = prefs.getString(FACTORY_KEY_PCB_REVISION, "");
+    String productLineStr = prefs.getString(FACTORY_KEY_PRODUCT_LINE, "");
     prefs.end();
 
-    if (pcbRevision.length() == 0) {
-        globalCommunityMode = true;
-        globalHwProfile = pickCommunityFallback();
-        LOG_INFO("pcb_revision not set in factory NVS - running in community mode, cloud disabled");
-        return;
-    }
-
+    // Absent product_line means Home: the deployed fleet predates the key and is
+    // never backfilled (factory NVS stays write-once at manufacturing).
+    const HardwareProfile* profile = nullptr;
+    ProductLine product = ProductLine::HOME;
     uint8_t version = 0;
-    if (!parsePcbRevision(pcbRevision.c_str(), version)) {
+    ProfileSelection::Result result = ProfileSelection::select(
+        pcbRevision.c_str(), productLineStr.c_str(), PCB_PROFILES, PCB_PROFILES_COUNT, profile, product, version);
+    if (result != ProfileSelection::Result::SELECTED) {
         globalCommunityMode = true;
         globalHwProfile = pickCommunityFallback();
-        LOG_WARNING("Malformed pcb_revision \"%s\" in factory NVS - running in community mode",
-                    pcbRevision.c_str());
-        return;
-    }
-
-    const HardwareProfile* profile = findProfileByVersion(version);
-    if (profile == nullptr) {
-        globalCommunityMode = true;
-        globalHwProfile = pickCommunityFallback();
-        LOG_WARNING("Unknown pcb_revision \"%s\" (v%u) - running in community mode, cloud disabled",
-                    pcbRevision.c_str(), version);
+        switch (result) {
+            case ProfileSelection::Result::NO_REVISION:
+                LOG_INFO("pcb_revision not set in factory NVS - running in community mode, cloud disabled");
+                break;
+            case ProfileSelection::Result::UNKNOWN_PRODUCT:
+                LOG_WARNING("Unknown product_line \"%s\" in factory NVS - running in community mode",
+                            productLineStr.c_str());
+                break;
+            case ProfileSelection::Result::MALFORMED_REVISION:
+                LOG_WARNING("Malformed pcb_revision \"%s\" in factory NVS - running in community mode",
+                            pcbRevision.c_str());
+                break;
+            default:
+                LOG_WARNING("Unknown pcb_revision \"%s\" (v%u) for product %s - running in community mode, cloud disabled",
+                            pcbRevision.c_str(), version, productLineToString(product));
+                break;
+        }
         return;
     }
 
     globalHwProfile = profile;
     globalCommunityMode = false;
-    LOG_INFO("Hardware profile selected: v%u (pcb_revision=\"%s\")", version, pcbRevision.c_str());
+    LOG_INFO("Hardware profile selected: %s v%u (pcb_revision=\"%s\")",
+             productLineToString(product), version, pcbRevision.c_str());
+
+    // The board decides the pinout, so the factory product stands. But the build's name,
+    // PSRAM mode and image descriptor all say the other product, and the upload gates will
+    // refuse every image until a build for this board is flashed over serial.
+    if (product != buildFallbackProduct()) {
+        LOG_ERROR("This firmware is built for %s but the board is a %s - flash the right build over serial",
+                  productLineToString(buildFallbackProduct()), productLineToString(product));
+    }
 }

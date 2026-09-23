@@ -60,7 +60,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        env: [ esp32s3-dev, esp32s3-prod ]
+        env: [ esp32s3-dev, esp32s3-prod, esp32s3-dev-pro, esp32s3-prod-pro ]
 
     steps:
     - name: Checkout code
@@ -91,6 +91,10 @@ jobs:
         VERSION=$(grep -oP 'FIRMWARE_BUILD_VERSION_MAJOR "\K\w+' include/constants.h).$(grep -oP 'FIRMWARE_BUILD_VERSION_MINOR "\K\w+' include/constants.h).$(grep -oP 'FIRMWARE_BUILD_VERSION_PATCH "\K\w+' include/constants.h)
         echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
         echo "📌 Detected version: $VERSION"
+        # The artifact name carries the product token the firmware's upload gate and
+        # release picker match on (FIRMWARE_ARTIFACT_TOKEN_* in hardware_profile.h).
+        if [[ "${{ matrix.env }}" == *-pro ]]; then TOKEN=energyme_homepro; else TOKEN=energyme_home; fi
+        echo "TOKEN=$TOKEN" >> $GITHUB_OUTPUT
 
     - name: Build firmware (${{ matrix.env }})
       working-directory: source
@@ -103,8 +107,8 @@ jobs:
       working-directory: source
       run: |
         mkdir -p artifacts/${{ matrix.env }}
-        cp .pio/build/${{ matrix.env }}/firmware.bin artifacts/${{ matrix.env }}/energyme_home_${{ steps.version.outputs.VERSION }}.bin
-        cp .pio/build/${{ matrix.env }}/firmware.elf artifacts/${{ matrix.env }}/energyme_home_${{ steps.version.outputs.VERSION }}.elf
+        cp .pio/build/${{ matrix.env }}/firmware.bin artifacts/${{ matrix.env }}/${{ steps.version.outputs.TOKEN }}_${{ steps.version.outputs.VERSION }}.bin
+        cp .pio/build/${{ matrix.env }}/firmware.elf artifacts/${{ matrix.env }}/${{ steps.version.outputs.TOKEN }}_${{ steps.version.outputs.VERSION }}.elf
         cp .pio/build/${{ matrix.env }}/partitions.bin artifacts/${{ matrix.env }}/partitions.bin
         cp .pio/build/${{ matrix.env }}/bootloader.bin artifacts/${{ matrix.env }}/bootloader.bin
 
@@ -126,7 +130,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        env: [ esp32s3-dev, esp32s3-prod ]
+        env: [ esp32s3-dev, esp32s3-prod, esp32s3-dev-pro, esp32s3-prod-pro ]
 
     steps:
     - name: Checkout code
@@ -157,6 +161,10 @@ jobs:
         VERSION=$(grep -oP 'FIRMWARE_BUILD_VERSION_MAJOR "\K\w+' include/constants.h).$(grep -oP 'FIRMWARE_BUILD_VERSION_MINOR "\K\w+' include/constants.h).$(grep -oP 'FIRMWARE_BUILD_VERSION_PATCH "\K\w+' include/constants.h)
         echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
         echo "📌 Detected version: $VERSION"
+        # The artifact name carries the product token the firmware's upload gate and
+        # release picker match on (FIRMWARE_ARTIFACT_TOKEN_* in hardware_profile.h).
+        if [[ "${{ matrix.env }}" == *-pro ]]; then TOKEN=energyme_homepro; else TOKEN=energyme_home; fi
+        echo "TOKEN=$TOKEN" >> $GITHUB_OUTPUT
 
     - name: Build firmware (${{ matrix.env }})
       working-directory: source
@@ -169,8 +177,8 @@ jobs:
       working-directory: source
       run: |
         mkdir -p artifacts/${{ matrix.env }}
-        cp .pio/build/${{ matrix.env }}/firmware.bin artifacts/${{ matrix.env }}/energyme_home_${{ steps.version.outputs.VERSION }}.bin
-        cp .pio/build/${{ matrix.env }}/firmware.elf artifacts/${{ matrix.env }}/energyme_home_${{ steps.version.outputs.VERSION }}.elf
+        cp .pio/build/${{ matrix.env }}/firmware.bin artifacts/${{ matrix.env }}/${{ steps.version.outputs.TOKEN }}_${{ steps.version.outputs.VERSION }}.bin
+        cp .pio/build/${{ matrix.env }}/firmware.elf artifacts/${{ matrix.env }}/${{ steps.version.outputs.TOKEN }}_${{ steps.version.outputs.VERSION }}.elf
         cp .pio/build/${{ matrix.env }}/partitions.bin artifacts/${{ matrix.env }}/partitions.bin
         cp .pio/build/${{ matrix.env }}/bootloader.bin artifacts/${{ matrix.env }}/bootloader.bin
 
@@ -192,7 +200,7 @@ jobs:
         echo "✅ Firmware built successfully" >> $GITHUB_STEP_SUMMARY
         echo "📦 Artifact: \`firmware-${{ matrix.env }}-${{ steps.version.outputs.VERSION }}-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
         echo "📄 Files:" >> $GITHUB_STEP_SUMMARY
-        echo "  - \`energyme_home_${{ steps.version.outputs.VERSION }}.bin\`" >> $GITHUB_STEP_SUMMARY
-        echo "  - \`energyme_home_${{ steps.version.outputs.VERSION }}.elf\`" >> $GITHUB_STEP_SUMMARY
+        echo "  - \`${{ steps.version.outputs.TOKEN }}_${{ steps.version.outputs.VERSION }}.bin\`" >> $GITHUB_STEP_SUMMARY
+        echo "  - \`${{ steps.version.outputs.TOKEN }}_${{ steps.version.outputs.VERSION }}.elf\`" >> $GITHUB_STEP_SUMMARY
         echo "  - \`partitions.bin\`" >> $GITHUB_STEP_SUMMARY
         echo "⏱️ Retention: 30 days" >> $GITHUB_STEP_SUMMARY

@@ -73,6 +73,9 @@ paths:
                     description: True when this request arrived on the device's own SoftAP
                   username:
                     type: string
+                  productName:
+                    type: string
+                    description: Product name for the page texts, e.g. "Home" or "Home Pro"
 
   /api/v1/auth/change-password:
     post:
@@ -265,39 +268,215 @@ paths:
                     type: object
                     description: |
                       Static system information (hardware, firmware version, etc.).
-                      Groups: `product`, `firmware`, `hardware`, `sdk`, `monitoring`, `device`, `factory`.
+                      Groups: `product`, `firmware`, `hardware`, `sdk`, `monitoring`, `device`, `factory`, `imageDescriptor`.
                       `factory.serialNumber` and `factory.manufacturingUnixTs` come from NVS `factory_ns`
                       and default to `"Unknown"` / `0` on community (unprovisioned) devices.
+                    properties:
+                      factory:
+                        type: object
+                        properties:
+                          serialNumber:
+                            type: string
+                            example: "Unknown"
+                          manufacturingUnixTs:
+                            type: integer
+                            example: 0
+                          productLine:
+                            type: string
+                            description: Product of the selected hardware profile (resolved from factory NVS `product_line`, absent = home)
+                            enum: [home, homepro]
+                          pcbRevision:
+                            type: string
+                            description: PCB revision of the selected hardware profile, "vMAJOR.MINOR"
+                            example: "v6.1"
+                          communityMode:
+                            type: boolean
+                            description: True when the device has no valid factory provisioning (cloud disabled, local integrations work)
+                      imageDescriptor:
+                        type: object
+                        description: |
+                          Firmware image descriptors (see lib/image_descriptor). `running` is the
+                          running image's own descriptor; `other` is the passive OTA partition's,
+                          i.e. what a rollback would activate.
+                        properties:
+                          running:
+                            type: object
+                            description: Running image descriptor (no `product` field; the device's product is `factory.productLine`)
+                            properties:
+                              psramMb:
+                                type: integer
+                                description: PSRAM class the image was built for (2 = quad, 8 = octal)
+                                example: 2
+                              fwVersion:
+                                type: string
+                                example: "2.3.3"
+                              buildEnv:
+                                type: string
+                                enum: [dev, prod]
+                              gitRev:
+                                type: string
+                                description: Short commit hash, "unknown" outside a git checkout
+                                example: "6d6f97bd"
+                              minPcbVersion:
+                                type: integer
+                                description: Lowest supported PCB version, packed major*10+minor; 0 = no lower bound
+                                example: 0
+                              maxPcbVersion:
+                                type: integer
+                                description: Highest supported PCB version, packed major*10+minor; 0 = no upper bound
+                                example: 0
+                              partitionLayoutId:
+                                type: integer
+                                description: Partition table id the image expects; 0 = unspecified
+                                example: 1
+                          other:
+                            type: object
+                            description: Passive OTA partition descriptor. Only `present` is emitted when the slot is empty, erased or holds a legacy image without a descriptor.
+                            properties:
+                              present:
+                                type: boolean
+                              product:
+                                type: string
+                                description: Product the image was built for
+                                enum: [home, homepro]
+                              psramMb:
+                                type: integer
+                                description: PSRAM class the image was built for (2 = quad, 8 = octal)
+                                example: 2
+                              fwVersion:
+                                type: string
+                                example: "2.3.3"
+                              buildEnv:
+                                type: string
+                                enum: [dev, prod]
+                              gitRev:
+                                type: string
+                                description: Short commit hash, "unknown" outside a git checkout
+                                example: "6d6f97bd"
+                              minPcbVersion:
+                                type: integer
+                                description: Lowest supported PCB version, packed major*10+minor; 0 = no lower bound
+                                example: 0
+                              maxPcbVersion:
+                                type: integer
+                                description: Highest supported PCB version, packed major*10+minor; 0 = no upper bound
+                                example: 0
+                              partitionLayoutId:
+                                type: integer
+                                description: Partition table id the image expects; 0 = unspecified
+                                example: 1
                   dynamic:
                     type: object
                     description: |
                       Dynamic system information (uptime, memory usage, temperature, etc.).
-                      Includes a `cpu` block with auto-calibrated per-core load %, and per-task
+                      Includes a `cpu` block with per-core load statistics, and per-task
                       heartbeat fields (`lastTickMillis`, `loopCount`, `staleMs`) under each
                       entry in `tasks` for starvation/stuck-task diagnosis.
                     properties:
                       cpu:
                         type: object
                         description: |
-                          Per-core CPU load %, auto-calibrated by the FreeRTOS idle-hook profiler.
-                          Each core's "100% idle" baseline is the highest idle-tick rate ever
-                          observed; load = `100 * (1 - currentRate / baselineRate)`. Reports 0
-                          before the first sample window completes (~1 s after boot).
+                          Per-core CPU load %, auto-calibrated by the FreeRTOS idle-hook profiler:
+                          each core's "100% idle" baseline is the highest idle-tick rate observed.
+                          Sampled every 1 s and aggregated over the last 60 s on dev builds, the
+                          last 3600 s on prod builds. All values are 0 before the first sample
+                          completes (~1 s after boot) or when the stats could not be read.
                         properties:
-                          core0Percent:
+                          core0: &cpuCoreStats
+                            type: object
+                            properties:
+                              current:
+                                type: integer
+                                description: Most recent 1 s load %
+                                example: 38
+                              min:
+                                type: integer
+                                description: Minimum load % in the window
+                                example: 20
+                              max:
+                                type: integer
+                                description: Maximum load % in the window
+                                example: 85
+                              avg:
+                                type: integer
+                                description: Mean load % in the window
+                                example: 35
+                              p50:
+                                type: integer
+                                description: Median load % in the window
+                                example: 34
+                              p90:
+                                type: integer
+                                description: 90th percentile load %
+                                example: 60
+                              p95:
+                                type: integer
+                                description: 95th percentile load %
+                                example: 70
+                              p99:
+                                type: integer
+                                description: 99th percentile load %
+                                example: 84
+                              samplesInWindow:
+                                type: integer
+                                description: 1 s samples aggregated in the window
+                                example: 60
+                              samplesAboveThreshold:
+                                type: integer
+                                description: Samples at or above the 80% spike threshold
+                                example: 1
+                              windowSeconds:
+                                type: integer
+                                description: Samples actually in the window, 1 per second (shorter than nominal shortly after boot, or when samples were skipped)
+                                example: 60
+                          core1: *cpuCoreStats
+                      network:
+                        type: object
+                        description: |
+                          Network state. The `eth*` fields other than `ethEnabled` are emitted only
+                          when `ethEnabled` is true (products with Ethernet).
+                        properties:
+                          wifiConnected:
+                            type: boolean
+                          wifiSsid:
+                            type: string
+                          wifiMacAddress:
+                            type: string
+                          wifiLocalIp:
+                            type: string
+                          wifiGatewayIp:
+                            type: string
+                          wifiSubnetMask:
+                            type: string
+                          wifiDnsIp:
+                            type: string
+                          wifiBssid:
+                            type: string
+                          wifiRssi:
                             type: integer
-                            minimum: 0
-                            maximum: 100
-                            example: 38
-                          core1Percent:
+                            description: dBm
+                          activeInterface:
+                            type: string
+                            description: Interface holding the default route
+                            enum: [none, ethernet, wifi]
+                          ethEnabled:
+                            type: boolean
+                            description: Ethernet is present and initialized on this device (false on Home)
+                          ethLinkUp:
+                            type: boolean
+                          ethLocalIp:
+                            type: string
+                            example: "192.168.1.50"
+                          ethMacAddress:
+                            type: string
+                            description: Ethernet MAC (base MAC + 1)
+                            example: "AA:BB:CC:DD:EE:02"
+                          ethLinkSpeedMbps:
                             type: integer
-                            minimum: 0
-                            maximum: 100
-                            example: 12
-                          sampleWindowMs:
-                            type: integer
-                            description: Wall-clock milliseconds covered by the most recent sample window (nominally ~1000)
-                            example: 1000
+                            description: Negotiated link speed; 0 while the link is down
+                            example: 100
+                          ethFullDuplex:
+                            type: boolean
                       tasks:
                         type: object
                         description: |
@@ -306,7 +485,8 @@ paths:
                           iteration; `staleMs` is `now - lastTickMillis` (or 0 if the task is not
                           instrumented, e.g. one-shot tasks like `mqttOta`). A `staleMs` value
                           significantly larger than the task's expected loop interval indicates
-                          the task is starved or stuck.
+                          the task is starved or stuck. `customEth` is present only on products
+                          with Ethernet.
                         additionalProperties:
                           type: object
                           properties:
@@ -1274,6 +1454,9 @@ paths:
                       WiFi driver. The submission endpoint answers as soon as the request is
                       queued, so its 200 does not mean the credentials were stored; this is
                       where that outcome is reported.
+                  productName:
+                    type: string
+                    description: Product name for the page texts, e.g. "Home" or "Home Pro"
 
   /api/v1/network/wifi/diagnostics:
     get:
@@ -1501,6 +1684,197 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Success'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/network/ethernet/status:
+    get:
+      summary: Get Ethernet status
+      description: |
+        Live Ethernet state: link, active interface and the addresses in use.
+        Only available on products with Ethernet (Home Pro); other products answer 404.
+        When `enabled` is false only `enabled` and `activeInterface` are present.
+      tags:
+        - Network
+      responses:
+        '200':
+          description: Current Ethernet status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                    description: Ethernet hardware is present and initialized
+                  activeInterface:
+                    type: string
+                    enum: [none, ethernet, wifi]
+                    description: Interface currently serving as the default route
+                  linkUp: { type: boolean }
+                  serviceable: { type: boolean }
+                  staticApplied:
+                    type: boolean
+                    description: The stored static IP configuration is applied (false means DHCP)
+                  ip: { type: string, example: "192.168.1.51" }
+                  gateway: { type: string, example: "192.168.1.1" }
+                  subnet: { type: string, example: "255.255.255.0" }
+                  dns1: { type: string, example: "192.168.1.1" }
+                  dns2: { type: string, example: "0.0.0.0" }
+                  mac: { type: string, example: "DE:AD:BE:EF:FE:ED" }
+        '404':
+          description: Ethernet is not available on this product
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/network/ethernet/config:
+    get:
+      summary: Get Ethernet configuration
+      description: |
+        Retrieve the current Ethernet configuration (static IP).
+        Only available on products with Ethernet (Home Pro); other products answer 404.
+      tags:
+        - Network
+      responses:
+        '200':
+          description: Current Ethernet configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EthernetConfiguration'
+        '404':
+          description: Ethernet is not available on this product
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      summary: Update Ethernet configuration (full update)
+      description: |
+        Replace the full Ethernet configuration. All fields are required.
+        The device restarts to apply the new settings, so it will be temporarily unavailable.
+        Only available on products with Ethernet (Home Pro); other products answer 404.
+
+        **Warning:** A misconfigured static IP can make the device unreachable over Ethernet.
+        Recover over WiFi or with the network reset button gesture.
+      tags:
+        - Network
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EthernetConfiguration'
+            examples:
+              static_ip:
+                summary: Static IP
+                value:
+                  useStaticIp: true
+                  ip: "192.168.1.51"
+                  gateway: "192.168.1.1"
+                  subnet: "255.255.255.0"
+                  dns1: "8.8.8.8"
+                  dns2: "1.1.1.1"
+              dhcp:
+                summary: DHCP (default)
+                value:
+                  useStaticIp: false
+                  ip: ""
+                  gateway: ""
+                  subnet: ""
+                  dns1: ""
+                  dns2: ""
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          description: >
+            Invalid Ethernet configuration. With a static IP the address, gateway and subnet
+            mask must be valid and non-zero, the mask must be contiguous, the gateway must be
+            inside the address's network, and the address must not fall inside 172.31.42.0/24,
+            which is reserved for the recovery access point.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Ethernet is not available on this product
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    patch:
+      summary: Update Ethernet configuration (partial update)
+      description: |
+        Update one or more Ethernet configuration fields. At least one valid field is required.
+        Cross-field rules still apply (enabling static IP requires valid ip/gateway/subnet).
+        The device restarts to apply the new settings.
+        Only available on products with Ethernet (Home Pro); other products answer 404.
+      tags:
+        - Network
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EthernetConfiguration'
+            examples:
+              enable_static_ip:
+                summary: Switch to a static IP
+                value:
+                  useStaticIp: true
+                  ip: "192.168.1.51"
+                  gateway: "192.168.1.1"
+                  subnet: "255.255.255.0"
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          description: >
+            Invalid Ethernet configuration. With a static IP the address, gateway and subnet
+            mask must be valid and non-zero, the mask must be contiguous, the gateway must be
+            inside the address's network, and the address must not fall inside 172.31.42.0/24,
+            which is reserved for the recovery access point.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Ethernet is not available on this product
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/network/ethernet/config/reset:
+    post:
+      summary: Reset Ethernet configuration
+      description: |
+        Reset the Ethernet configuration to defaults (DHCP). The device restarts to apply.
+        Only available on products with Ethernet (Home Pro); other products answer 404.
+      tags:
+        - Network
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '404':
+          description: Ethernet is not available on this product
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           description: Internal server error
           content:
@@ -1854,6 +2228,8 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Success'
+        '503':
+          description: The log file is busy (a log rotation is in progress). Retry in a few seconds.
 
   /api/v1/logs-udp-destination:
     get:
@@ -3605,6 +3981,46 @@ components:
             static-IP boots the device ignores the static IP at startup and comes up on DHCP, so a
             bad static IP can never permanently lock you out. Recommended to keep enabled.
           example: true
+
+    EthernetConfiguration:
+      type: object
+      required:
+        - useStaticIp
+        - ip
+        - gateway
+        - subnet
+        - dns1
+        - dns2
+      properties:
+        useStaticIp:
+          type: boolean
+          description: Use a static IP address instead of DHCP
+          example: false
+        ip:
+          type: string
+          description: Static IPv4 address (required when useStaticIp is true)
+          example: "192.168.1.51"
+          maxLength: 15
+        gateway:
+          type: string
+          description: Default gateway IPv4 address (required when useStaticIp is true)
+          example: "192.168.1.1"
+          maxLength: 15
+        subnet:
+          type: string
+          description: Subnet mask (required when useStaticIp is true)
+          example: "255.255.255.0"
+          maxLength: 15
+        dns1:
+          type: string
+          description: Primary DNS server (optional). When empty, defaults to the gateway address.
+          example: "8.8.8.8"
+          maxLength: 15
+        dns2:
+          type: string
+          description: Secondary DNS server (optional, empty string to omit)
+          example: "1.1.1.1"
+          maxLength: 15
 
     InfluxDbConfiguration:
       type: object

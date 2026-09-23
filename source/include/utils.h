@@ -28,6 +28,7 @@
 #include "buttonhandler.h"
 #include "constants.h"
 #include "factory_keys.h"
+#include "image_descriptor.h"
 #include "customlog.h"
 #include "customtime.h"
 #include "customwifi.h"
@@ -113,6 +114,16 @@ inline bool isStringLengthValid(const char* str, size_t minLength, size_t maxLen
     return len >= minLength && len <= maxLength;
 }
 
+// Dotted-quad IPv4 validation. allowZero accepts "0.0.0.0" (an optional field
+// left unset); without it 0.0.0.0 is rejected like any other non-address.
+inline bool isValidIpv4(const char* str, bool allowZero) {
+    if (str == nullptr || str[0] == '\0') return false;
+    IPAddress addr;
+    if (!addr.fromString(str)) return false;
+    if (!allowZero && addr == IPAddress(0, 0, 0, 0)) return false;
+    return true;
+}
+
 // Numeric range validation utilities
 inline bool isValueInRange(float value, float min, float max) {
     return value >= min && value <= max;
@@ -137,6 +148,11 @@ inline double roundToDecimals(double value, uint8_t decimals = 3) {
 
 // Device identification
 void getDeviceId(char* deviceId, size_t maxLength);
+
+// Plain TCP connect-and-close over the default route: the lightweight internet
+// probe every connectivity check ends with. Interface-agnostic - the socket
+// follows whichever interface holds the default route (WiFi or Ethernet).
+bool probeTcp(const char* host, uint16_t port, uint32_t timeoutMs);
 
 // Fills out with a 16-char lowercase-hex random token (e.g. for an event/correlation
 // id) plus null terminator; outSize must be >= 17, else out is left untouched.
@@ -165,7 +181,6 @@ void printDeviceStatusDynamic();
 void stopTaskGracefully(TaskHandle_t* taskHandle, const char* taskName);
 void startMaintenanceTask();
 void stopMaintenanceTask();
-size_t getLogFileSize();
 
 // Task information utilities
 inline TaskInfo getTaskInfoSafely(TaskHandle_t taskHandle, uint32_t stackSize, const TaskHeartbeat* heartbeat = nullptr)
@@ -205,6 +220,21 @@ void sha256BytesToHex(const uint8_t sha256[32], char* out, size_t outSize); // o
 bool getRunningPartitionSha256(char* out, size_t outSize);
 bool getOtherPartitionSha256(char* out, size_t outSize);
 
+// Reads the passive/"other" OTA partition's image descriptor without executing
+// it. False when unreadable or the image carries no valid descriptor (legacy
+// pre-2.4 image, erased/partial slot).
+bool getOtherPartitionImageDescriptor(ImageDescriptor::Descriptor& out);
+
+// One flash sector: erasing the image header is enough to make a rejected
+// image fail esp_image_verify, so it can never become a rollback target.
+#define OTA_PARTITION_SCRUB_SIZE 4096
+
+// Erase the header of a complete-but-rejected staged OTA image. Both OTA
+// write paths call this on a post-download rejection (signature or image
+// descriptor); the rollback consumers are not descriptor-gated, so a rejected
+// image left intact could be activated later and brick the device.
+bool scrubOtaImageHeader(const esp_partition_t* partition);
+
 // Switch the boot partition to the passive slot and restart. Validation is
 // esp_ota_set_boot_partition's own image_validate - deliberately NOT
 // Update.canRollBack(), whose only check is flash[0] == 0xE9 (true even for a
@@ -224,6 +254,11 @@ inline const char* getResetReasonString(esp_reset_reason_t reason) {
         case ESP_RST_DEEPSLEEP: return "Deep sleep";
         case ESP_RST_BROWNOUT: return "Brownout";
         case ESP_RST_SDIO: return "SDIO";
+        case ESP_RST_USB: return "USB peripheral";
+        case ESP_RST_JTAG: return "JTAG";
+        case ESP_RST_EFUSE: return "eFuse error";
+        case ESP_RST_PWR_GLITCH: return "Power glitch";
+        case ESP_RST_CPU_LOCKUP: return "CPU lockup";
         default: return "Undefined";
     }
 }

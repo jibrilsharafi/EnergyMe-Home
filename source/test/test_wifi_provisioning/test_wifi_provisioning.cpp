@@ -450,14 +450,16 @@ void test_wider_network_containing_narrower_overlaps(void) {
 
 void test_default_candidate_is_chosen_on_a_typical_lan(void) {
     Subnet chosen{};
-    TEST_ASSERT_TRUE(selectApSubnet(true, ip(192, 168, 1, 50), 24, false, 0, 0, chosen));
+    Subnet lan[1] = {{ip(192, 168, 1, 50), 24}};
+    TEST_ASSERT_TRUE(selectApSubnetAvoiding(lan, 1, chosen));
     TEST_ASSERT_EQUAL_UINT32(ip(172, 31, 42, 1), chosen.address);
     TEST_ASSERT_EQUAL_UINT8(24, chosen.cidr);
 }
 
 void test_colliding_lan_advances_to_the_next_candidate(void) {
     Subnet chosen{};
-    TEST_ASSERT_TRUE(selectApSubnet(true, ip(172, 31, 42, 10), 24, false, 0, 0, chosen));
+    Subnet lan[1] = {{ip(172, 31, 42, 10), 24}};
+    TEST_ASSERT_TRUE(selectApSubnetAvoiding(lan, 1, chosen));
     TEST_ASSERT_EQUAL_UINT32(ip(172, 31, 43, 1), chosen.address);
 }
 
@@ -465,13 +467,15 @@ void test_foreign_restored_static_ip_is_avoided(void) {
     // wifi_ns is backed up and restored, and restore runs before WiFi comes up, so
     // a backup from another LAN pushes an address the live STA lease never shows.
     Subnet chosen{};
-    TEST_ASSERT_TRUE(selectApSubnet(false, 0, 0, true, ip(172, 31, 42, 7), 24, chosen));
+    Subnet foreignStatic[1] = {{ip(172, 31, 42, 7), 24}};
+    TEST_ASSERT_TRUE(selectApSubnetAvoiding(foreignStatic, 1, chosen));
     TEST_ASSERT_EQUAL_UINT32(ip(172, 31, 43, 1), chosen.address);
 }
 
 void test_static_ip_and_live_lease_are_both_avoided(void) {
     Subnet chosen{};
-    TEST_ASSERT_TRUE(selectApSubnet(true, ip(172, 31, 42, 10), 24, true, ip(172, 31, 43, 9), 24, chosen));
+    Subnet both[2] = {{ip(172, 31, 42, 10), 24}, {ip(172, 31, 43, 9), 24}};
+    TEST_ASSERT_TRUE(selectApSubnetAvoiding(both, 2, chosen));
     TEST_ASSERT_EQUAL_UINT32(ip(10, 42, 42, 1), chosen.address);
 }
 
@@ -480,7 +484,8 @@ void test_lan_wider_than_a_slash_24_is_not_ignored(void) {
     // compare against. A home LAN on a /16 is ordinary, and skipping the comparison
     // because its prefix is "out of range" would hand back a colliding subnet.
     Subnet chosen{};
-    TEST_ASSERT_TRUE(selectApSubnet(true, ip(172, 31, 0, 1), 16, false, 0, 0, chosen));
+    Subnet wideLan[1] = {{ip(172, 31, 0, 1), 16}};
+    TEST_ASSERT_TRUE(selectApSubnetAvoiding(wideLan, 1, chosen));
     TEST_ASSERT_EQUAL_UINT32(ip(10, 42, 42, 1), chosen.address);
 }
 
@@ -490,7 +495,269 @@ void test_every_candidate_blocked_fails_closed(void) {
     // traffic out of the AP, because lwIP takes the first matching netif and
     // netif_add prepends the interface raised last.
     Subnet chosen{};
-    TEST_ASSERT_FALSE(selectApSubnet(true, ip(10, 0, 0, 0), 8, true, ip(128, 0, 0, 0), 1, chosen));
+    Subnet halves[2] = {{ip(10, 0, 0, 0), 8}, {ip(128, 0, 0, 0), 1}};
+    TEST_ASSERT_FALSE(selectApSubnetAvoiding(halves, 2, chosen));
+}
+
+void test_avoiding_four_networks_finds_the_free_candidate(void) {
+    // The Pro shape: live STA, WiFi static, live ETH lease, ETH static - four
+    // occupied networks blocking the first three candidates.
+    Subnet occupied[4] = {
+        {ip(172, 31, 42, 10), 24},  // live STA
+        {ip(172, 31, 43, 9), 24},   // WiFi static
+        {ip(10, 42, 42, 7), 24},    // live ETH lease
+        {ip(192, 168, 1, 5), 24},   // ETH static (does not collide with any candidate)
+    };
+    Subnet chosen{};
+    TEST_ASSERT_TRUE(selectApSubnetAvoiding(occupied, 4, chosen));
+    TEST_ASSERT_EQUAL_UINT32(ip(192, 168, 242, 1), chosen.address);
+}
+
+void test_avoiding_with_no_networks_picks_the_default(void) {
+    Subnet chosen{};
+    TEST_ASSERT_TRUE(selectApSubnetAvoiding(nullptr, 0, chosen));
+    TEST_ASSERT_EQUAL_UINT32(ip(172, 31, 42, 1), chosen.address);
+}
+
+void test_avoiding_all_candidates_fails_closed(void) {
+    Subnet occupied[2] = {
+        {ip(10, 0, 0, 0), 8},
+        {ip(128, 0, 0, 0), 1},
+    };
+    Subnet chosen{};
+    TEST_ASSERT_FALSE(selectApSubnetAvoiding(occupied, 2, chosen));
+}
+
+void test_avoiding_skips_malformed_comparison_prefixes(void) {
+    // A cidr of 0 is not a usable comparison network and must be ignored, not
+    // treated as "overlaps everything".
+    Subnet occupied[1] = {{ip(172, 31, 42, 10), 0}};
+    Subnet chosen{};
+    TEST_ASSERT_TRUE(selectApSubnetAvoiding(occupied, 1, chosen));
+    TEST_ASSERT_EQUAL_UINT32(ip(172, 31, 42, 1), chosen.address);
+}
+
+
+// ============================================================================
+// Ethernet commissioning and wired-reachability inputs (Home Pro)
+// ============================================================================
+
+void test_commissioned_device_without_credentials_is_not_unprovisioned(void) {
+    Context context;
+    init(context, false, 0, true); // no WiFi credentials, but wire-commissioned
+    TEST_ASSERT_TRUE(context.state != State::UNPROVISIONED);
+    TEST_ASSERT_FALSE(context.apRaised);
+}
+
+// Regression (found on the first Pro bring-up): the firmware never starts an STA
+// attempt without credentials, so nothing feeds STA_ATTEMPT_FAILED. The commissioned
+// device must reach its recovery AP through shouldRaiseAp() alone - at boot and again
+// after a wire-driven teardown - and never through UNPROVISIONED, which would hand the
+// credentials carve-out to anyone in radio range.
+void test_commissioned_device_wire_loss_lands_in_ap_assist_with_auth(void) {
+    Context context;
+    init(context, false, 0, true, true);
+    TEST_ASSERT_EQUAL(State::AP_ASSIST, context.state);
+    TEST_ASSERT_FALSE(context.apRaised);
+
+    TEST_ASSERT_FALSE(shouldRaiseAp(context, kMinute, true, true, true));      // on the wire
+    TEST_ASSERT_TRUE(shouldRaiseAp(context, 2 * kMinute, false, false, true)); // cable pulled
+    raiseAp(context, 2 * kMinute);
+    TEST_ASSERT_FALSE(isAuthBypassAllowed(context.state, true, false));        // full auth
+
+    TEST_ASSERT_TRUE(shouldTearDownAp(context, 3 * kMinute, true));            // cable back
+    tearDownAp(context, 3 * kMinute);
+    TEST_ASSERT_EQUAL(State::AP_ASSIST, context.state);
+    TEST_ASSERT_TRUE(shouldRaiseAp(context, 4 * kMinute, false, false, true)); // and again
+}
+
+void test_commissioned_device_stray_attempt_failure_keeps_ap_assist(void) {
+    Context context;
+    init(context, false, 0, true, true);
+
+    // Below the raise threshold a failure used to demote to STA_CONNECTING, a state
+    // nothing retries out of when there are no credentials.
+    onEvent(context, Event::STA_ATTEMPT_FAILED, kMinute);
+    TEST_ASSERT_EQUAL(State::AP_ASSIST, context.state);
+    TEST_ASSERT_TRUE(shouldRaiseAp(context, 2 * kMinute, false, false, true));
+}
+
+// Regression (review of the bring-up fixes): the firmware feeds ONE failure for a
+// submission the core will not retry (AUTH_FAIL), not five. The device must not be left
+// in STA_CONNECTING, which shouldRaiseAp() does not cover.
+void test_commissioned_device_single_failed_submission_stays_recoverable(void) {
+    Context context;
+    init(context, false, 0, true, true);
+    onEvent(context, Event::CREDENTIALS_SUBMITTED, kMinute);
+    onEvent(context, Event::STA_ATTEMPT_FAILED, kMinute);
+
+    TEST_ASSERT_EQUAL(State::AP_ASSIST, context.state);
+    TEST_ASSERT_FALSE(context.apRaised);                                       // wire still serving
+    TEST_ASSERT_FALSE(shouldRaiseAp(context, 2 * kMinute, true, true, true));
+    TEST_ASSERT_TRUE(shouldRaiseAp(context, 2 * kMinute, false, false, true)); // cable pulled
+    TEST_ASSERT_FALSE(isAuthBypassAllowed(context.state, true, false));
+}
+
+void test_commissioned_device_failing_submitted_credentials_land_in_ap_assist(void) {
+    Context context;
+    init(context, false, 0, true, true);
+    onEvent(context, Event::CREDENTIALS_SUBMITTED, kMinute);
+
+    for (int i = 0; i < WIFI_PROVISIONING_AP_RAISE_THRESHOLD; i++) {
+        onEvent(context, Event::STA_ATTEMPT_FAILED, kMinute);
+        TEST_ASSERT_TRUE(context.state != State::UNPROVISIONED);
+    }
+    TEST_ASSERT_EQUAL(State::AP_ASSIST, context.state);
+    TEST_ASSERT_TRUE(context.apRaised);
+    TEST_ASSERT_FALSE(isAuthBypassAllowed(context.state, true, false));
+}
+
+// First-boot window: a factory-fresh wired device is commissioned during its first boot.
+// Pulling the cable before the first restart must raise an authenticated AP, not one
+// with the carve-out open.
+void test_wired_commissioning_closes_the_carve_out_within_the_same_boot(void) {
+    Context context;
+    init(context, false, 0, false, true);
+    TEST_ASSERT_EQUAL(State::UNPROVISIONED, context.state);
+
+    onEvent(context, Event::WIRED_COMMISSIONED, kMinute);
+    TEST_ASSERT_TRUE(context.commissioned);
+    TEST_ASSERT_EQUAL(State::AP_ASSIST, context.state);
+    TEST_ASSERT_FALSE(context.apRaised); // The wire serves: the event itself raises nothing
+
+    // Cable pulled later in the same boot.
+    TEST_ASSERT_TRUE(shouldRaiseAp(context, 2 * kMinute, false, false, true));
+    raiseAp(context, 2 * kMinute);
+    TEST_ASSERT_EQUAL(State::AP_ASSIST, context.state);
+    TEST_ASSERT_FALSE(isAuthBypassAllowed(context.state, true, false));
+
+    // And a WiFi reset in that boot must not reopen it either.
+    onEvent(context, Event::CREDENTIALS_CLEARED, 3 * kMinute);
+    TEST_ASSERT_EQUAL(State::AP_ASSIST, context.state);
+}
+
+void test_wired_commissioning_leaves_a_connected_device_alone(void) {
+    Context context = provisionedContext();
+    State before = context.state;
+    onEvent(context, Event::WIRED_COMMISSIONED, kMinute);
+    TEST_ASSERT_TRUE(context.commissioned);
+    TEST_ASSERT_EQUAL(before, context.state);
+    TEST_ASSERT_FALSE(context.apRaised);
+}
+
+void test_wired_commissioning_mid_submission_fails_into_ap_assist(void) {
+    Context context;
+    init(context, false, 0, false, true);
+    onEvent(context, Event::CREDENTIALS_SUBMITTED, kMinute);
+    onEvent(context, Event::WIRED_COMMISSIONED, kMinute);
+    TEST_ASSERT_EQUAL(State::STA_CONNECTING, context.state);
+
+    onEvent(context, Event::STA_ATTEMPT_FAILED, 2 * kMinute);
+    TEST_ASSERT_EQUAL(State::AP_ASSIST, context.state);
+    TEST_ASSERT_FALSE(isAuthBypassAllowed(context.state, true, false));
+}
+
+void test_wired_product_unprovisioned_boot_does_not_raise_in_init(void) {
+    Context context;
+    init(context, false, 0, false, true);
+    TEST_ASSERT_EQUAL(State::UNPROVISIONED, context.state);
+    TEST_ASSERT_FALSE(context.apRaised);
+}
+
+void test_wired_present_holds_raise_until_link_detect_window_ends(void) {
+    Context context;
+    init(context, false, 0, false, true);
+    TEST_ASSERT_FALSE(shouldRaiseAp(context, WIFI_PROVISIONING_WIRED_LINK_DETECT_MS - 1, false, false, true));
+    // No link by the end of the window: no cable, raise.
+    TEST_ASSERT_TRUE(shouldRaiseAp(context, WIFI_PROVISIONING_WIRED_LINK_DETECT_MS, false, false, true));
+    // Link seen: the DHCP grace takes over...
+    TEST_ASSERT_FALSE(shouldRaiseAp(context, WIFI_PROVISIONING_WIRED_LINK_DETECT_MS, false, true, true));
+    TEST_ASSERT_TRUE(shouldRaiseAp(context, WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS, false, true, true));
+    // ...and a lease means no AP at all.
+    TEST_ASSERT_FALSE(shouldRaiseAp(context, WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS, true, true, true));
+}
+
+// Regression (Pro bench): a dev boot spent 9 s in the core's pre-setup report, so the
+// state machine started at ~10 s of uptime. With power-on-relative windows the hold-back
+// had already expired and a cabled device blipped its AP for 4 s.
+void test_wired_windows_count_from_init_not_from_power_on(void) {
+    const uint64_t lateStartMs = 20UL * 1000UL;
+    Context context;
+    init(context, false, lateStartMs, true, true);
+
+    TEST_ASSERT_TRUE(insideWiredBootWindows(context, lateStartMs));
+    TEST_ASSERT_FALSE(shouldRaiseAp(context, lateStartMs, false, false, true));
+    TEST_ASSERT_FALSE(shouldRaiseAp(context, lateStartMs + WIFI_PROVISIONING_WIRED_LINK_DETECT_MS - 1, false, false, true));
+    TEST_ASSERT_TRUE(shouldRaiseAp(context, lateStartMs + WIFI_PROVISIONING_WIRED_LINK_DETECT_MS, false, false, true));
+    TEST_ASSERT_FALSE(shouldRaiseAp(context, lateStartMs + WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS - 1, false, true, true));
+    TEST_ASSERT_TRUE(shouldRaiseAp(context, lateStartMs + WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS, false, true, true));
+    TEST_ASSERT_FALSE(insideWiredBootWindows(context, lateStartMs + WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS));
+}
+
+void test_home_init_is_unchanged_by_wired_parameter_default(void) {
+    Context a, b;
+    init(a, false, 5);
+    init(b, false, 5, false, false);
+    TEST_ASSERT_EQUAL(a.state, b.state);
+    TEST_ASSERT_TRUE(a.apRaised && b.apRaised);
+
+    // The link-detect hold-back must never apply without a wired interface.
+    Context c;
+    init(c, false, 0);
+    tearDownAp(c, 1);
+    TEST_ASSERT_TRUE(shouldRaiseAp(c, 2));
+}
+
+void test_commissioned_device_credentials_cleared_stays_provisioned(void) {
+    Context context;
+    init(context, true, 0, true);
+    onEvent(context, Event::STA_CONNECTED, kMinute);
+
+    // A WiFi reset on an in-service wired device must not reopen the carve-out:
+    // only a factory reset decommissions.
+    onEvent(context, Event::CREDENTIALS_CLEARED, 2 * kMinute);
+    TEST_ASSERT_EQUAL(State::AP_ASSIST, context.state);
+    TEST_ASSERT_TRUE(context.apRaised);
+    TEST_ASSERT_FALSE(isAuthBypassAllowed(context.state, true, false));
+}
+
+void test_uncommissioned_credentials_cleared_still_reopens_provisioning(void) {
+    Context context = provisionedContext();
+    onEvent(context, Event::CREDENTIALS_CLEARED, kMinute);
+    TEST_ASSERT_EQUAL(State::UNPROVISIONED, context.state); // Home behavior unchanged
+}
+
+void test_wired_reachable_suppresses_ap_raise(void) {
+    Context context = unprovisionedContext();
+    tearDownAp(context, kMinute);
+    TEST_ASSERT_TRUE(shouldRaiseAp(context, 2 * kMinute));
+    TEST_ASSERT_FALSE(shouldRaiseAp(context, 2 * kMinute, true /* wiredReachable */));
+}
+
+void test_wired_reachable_tears_ap_down(void) {
+    Context context = unprovisionedContext();
+    TEST_ASSERT_TRUE(context.apRaised);
+    TEST_ASSERT_FALSE(shouldTearDownAp(context, kMinute));
+    TEST_ASSERT_TRUE(shouldTearDownAp(context, kMinute, true /* wiredReachable */));
+}
+
+void test_wired_link_without_address_holds_raise_only_during_boot_grace(void) {
+    Context context = unprovisionedContext();
+    tearDownAp(context, 0);
+
+    // Cable in, DHCP negotiating: no AP blip inside the boot grace window...
+    TEST_ASSERT_FALSE(shouldRaiseAp(context, WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS - 1, false, true));
+    // ...but a link that never leases counts as unreachable after it.
+    TEST_ASSERT_TRUE(shouldRaiseAp(context, WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS, false, true));
+}
+
+void test_wired_inputs_default_to_home_behavior(void) {
+    // The default arguments are the Home code path: identical to pre-Ethernet.
+    Context context = unprovisionedContext();
+    tearDownAp(context, kMinute);
+    TEST_ASSERT_EQUAL(shouldRaiseAp(context, 2 * kMinute), shouldRaiseAp(context, 2 * kMinute, false, false));
+    raiseAp(context, 3 * kMinute);
+    TEST_ASSERT_EQUAL(shouldTearDownAp(context, 4 * kMinute), shouldTearDownAp(context, 4 * kMinute, false));
 }
 
 void test_candidates_all_sit_in_the_supported_cidr_range(void) {
@@ -568,6 +835,36 @@ void test_prefix_lengths_convert_to_netmasks(void) {
     TEST_ASSERT_EQUAL_UINT32(0xFFFFFFF0u, netmaskFromCidr(28));
     TEST_ASSERT_EQUAL_UINT32(0xFFFF0000u, netmaskFromCidr(16));
     TEST_ASSERT_EQUAL_UINT32(0xFFFFFFFFu, netmaskFromCidr(32));
+}
+
+// 192.168.4.1/24 AP, as host-order values
+static const uint32_t AP_IP = 0xC0A80401u;
+
+void test_ap_peer_leased_client_is_accepted(void) {
+    TEST_ASSERT_TRUE(isApPeer(AP_IP, 0xC0A80402u, AP_IP, 24));
+    TEST_ASSERT_TRUE(isApPeer(AP_IP, 0xC0A804FEu, AP_IP, 24));
+}
+
+void test_ap_peer_wired_host_addressing_the_ap_is_rejected(void) {
+    // A LAN host (192.168.2.198) that routes to the AP address over Ethernet
+    TEST_ASSERT_FALSE(isApPeer(AP_IP, 0xC0A802C6u, AP_IP, 24));
+}
+
+void test_ap_peer_requires_the_ap_as_destination(void) {
+    // Same-subnet source, but the request was addressed to the Ethernet IP
+    TEST_ASSERT_FALSE(isApPeer(0xC0A80250u, 0xC0A80402u, AP_IP, 24));
+}
+
+void test_ap_peer_rejects_no_ap_self_and_zero_mask(void) {
+    TEST_ASSERT_FALSE(isApPeer(0u, 0xC0A80402u, 0u, 24));
+    TEST_ASSERT_FALSE(isApPeer(AP_IP, AP_IP, AP_IP, 24));
+    TEST_ASSERT_FALSE(isApPeer(AP_IP, 0xC0A80402u, AP_IP, 0));
+}
+
+void test_ap_peer_honours_a_narrower_ap_subnet(void) {
+    // /28 AP: .1-.14 are inside, .20 is not
+    TEST_ASSERT_TRUE(isApPeer(AP_IP, 0xC0A8040Eu, AP_IP, 28));
+    TEST_ASSERT_FALSE(isApPeer(AP_IP, 0xC0A80414u, AP_IP, 28));
 }
 
 void test_cidr_zero_does_not_shift_by_the_operand_width(void) {
@@ -650,6 +947,28 @@ int main(int, char **) {
     RUN_TEST(test_static_ip_and_live_lease_are_both_avoided);
     RUN_TEST(test_lan_wider_than_a_slash_24_is_not_ignored);
     RUN_TEST(test_every_candidate_blocked_fails_closed);
+    RUN_TEST(test_avoiding_four_networks_finds_the_free_candidate);
+    RUN_TEST(test_avoiding_with_no_networks_picks_the_default);
+    RUN_TEST(test_avoiding_all_candidates_fails_closed);
+    RUN_TEST(test_avoiding_skips_malformed_comparison_prefixes);
+    RUN_TEST(test_commissioned_device_without_credentials_is_not_unprovisioned);
+    RUN_TEST(test_commissioned_device_wire_loss_lands_in_ap_assist_with_auth);
+    RUN_TEST(test_commissioned_device_stray_attempt_failure_keeps_ap_assist);
+    RUN_TEST(test_commissioned_device_single_failed_submission_stays_recoverable);
+    RUN_TEST(test_commissioned_device_failing_submitted_credentials_land_in_ap_assist);
+    RUN_TEST(test_wired_commissioning_closes_the_carve_out_within_the_same_boot);
+    RUN_TEST(test_wired_commissioning_leaves_a_connected_device_alone);
+    RUN_TEST(test_wired_commissioning_mid_submission_fails_into_ap_assist);
+    RUN_TEST(test_wired_product_unprovisioned_boot_does_not_raise_in_init);
+    RUN_TEST(test_wired_present_holds_raise_until_link_detect_window_ends);
+    RUN_TEST(test_wired_windows_count_from_init_not_from_power_on);
+    RUN_TEST(test_home_init_is_unchanged_by_wired_parameter_default);
+    RUN_TEST(test_commissioned_device_credentials_cleared_stays_provisioned);
+    RUN_TEST(test_uncommissioned_credentials_cleared_still_reopens_provisioning);
+    RUN_TEST(test_wired_reachable_suppresses_ap_raise);
+    RUN_TEST(test_wired_reachable_tears_ap_down);
+    RUN_TEST(test_wired_link_without_address_holds_raise_only_during_boot_grace);
+    RUN_TEST(test_wired_inputs_default_to_home_behavior);
     RUN_TEST(test_candidates_all_sit_in_the_supported_cidr_range);
     RUN_TEST(test_out_of_range_index_returns_empty_subnet);
 
@@ -662,6 +981,11 @@ int main(int, char **) {
     RUN_TEST(test_prefix_lengths_convert_to_netmasks);
     RUN_TEST(test_cidr_zero_does_not_shift_by_the_operand_width);
     RUN_TEST(test_netmask_and_cidr_round_trip);
+    RUN_TEST(test_ap_peer_leased_client_is_accepted);
+    RUN_TEST(test_ap_peer_wired_host_addressing_the_ap_is_rejected);
+    RUN_TEST(test_ap_peer_requires_the_ap_as_destination);
+    RUN_TEST(test_ap_peer_rejects_no_ap_self_and_zero_mask);
+    RUN_TEST(test_ap_peer_honours_a_narrower_ap_subnet);
 
     RUN_TEST(test_every_state_has_a_distinct_wire_name);
     RUN_TEST(test_out_of_range_state_falls_back_to_unprovisioned);

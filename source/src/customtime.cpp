@@ -2,7 +2,9 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "customtime.h"
+#include "customnet.h"
 #include "duration_format.h"
+#include "unix_time.h"
 
 namespace CustomTime {
     // Static variables to maintain state
@@ -34,42 +36,21 @@ namespace CustomTime {
     }
 
     bool isNowCloseToHour(uint64_t toleranceMillis) {
-        struct timeval tv;
-        gettimeofday(&tv, NULL);
-        
-        struct tm timeinfo;
-        localtime_r(&tv.tv_sec, &timeinfo);
-        
-        // Calculate milliseconds since the current hour started (minutes and seconds)
-        uint64_t millisSinceCurrentHour = ((uint64_t)(timeinfo.tm_min) * 60ULL + (uint64_t)(timeinfo.tm_sec)) * 1000ULL;
-        
-        // Calculate milliseconds until the next hour
-        uint64_t millisUntilNextHour = 3600000ULL - millisSinceCurrentHour;
-
-        // Check if we're close to either the current hour (just passed) or the next hour (approaching)
-        char toleranceHuman[DURATION_FORMAT_BUFFER_SIZE], sinceHourHuman[DURATION_FORMAT_BUFFER_SIZE], untilNextHuman[DURATION_FORMAT_BUFFER_SIZE];
+        uint64_t millisFromHour = UnixTime::millisFromNearestUtcHour(getUnixTimeMilliseconds());
+        char toleranceHuman[DURATION_FORMAT_BUFFER_SIZE], fromHourHuman[DURATION_FORMAT_BUFFER_SIZE];
         DurationFormat::humanizeDuration(toleranceMillis, toleranceHuman, sizeof(toleranceHuman));
-        if (millisSinceCurrentHour <= toleranceMillis) {
-            LOG_DEBUG("Current time is close to the current hour (within %s since hour start)", toleranceHuman);
+        DurationFormat::humanizeDuration(millisFromHour, fromHourHuman, sizeof(fromHourHuman));
+        if (millisFromHour <= toleranceMillis) {
+            LOG_DEBUG("Current time is %s from the nearest UTC hour (within %s)", fromHourHuman, toleranceHuman);
             return true;
-        } else if (millisUntilNextHour <= toleranceMillis) {
-            LOG_DEBUG("Current time is close to the next hour (within %s)", toleranceHuman);
-            return true;
-        } else {
-            DurationFormat::humanizeDuration(millisSinceCurrentHour, sinceHourHuman, sizeof(sinceHourHuman));
-            DurationFormat::humanizeDuration(millisUntilNextHour, untilNextHuman, sizeof(untilNextHuman));
-            LOG_DEBUG("Current time is not close to any hour (since hour: %s, until next: %s)", sinceHourHuman, untilNextHuman);
-            return false;
         }
+        LOG_DEBUG("Current time is not close to any UTC hour (%s away)", fromHourHuman);
+        return false;
     }
 
-    // returns true when current UTC hour is 0
+    // True when the nearest UTC hour (the one the hourly save is stamped with) is 00
     bool isNowHourZero() {
-        struct timeval tv;
-        gettimeofday(&tv, NULL);
-        struct tm utc_tm;
-        gmtime_r(&tv.tv_sec, &utc_tm);
-        return (utc_tm.tm_hour == 0);
+        return UnixTime::nearestUtcHourSeconds(getUnixTime()) % 86400ULL == 0;
     }
 
     uint64_t getUnixTime() {
@@ -112,19 +93,9 @@ namespace CustomTime {
     }
 
     void getTimestampIsoRoundedToHour(char* buffer, size_t bufferSize) {
-        struct timeval tv;
-        gettimeofday(&tv, NULL);
-        
+        time_t rounded = (time_t)UnixTime::nearestUtcHourSeconds(getUnixTime());
         struct tm utc_tm;
-        gmtime_r(&tv.tv_sec, &utc_tm);
-        
-        // Round to the nearest hour
-        int32_t seconds = (utc_tm.tm_min * 60 + utc_tm.tm_sec);
-        if (seconds >= 1800) {
-            utc_tm.tm_hour += 1; // Round up
-        }
-        utc_tm.tm_min = 0;
-        utc_tm.tm_sec = 0;
+        gmtime_r(&rounded, &utc_tm);
 
         snprintf(buffer, bufferSize, TIMESTAMP_ISO_FORMAT,
                 utc_tm.tm_year + 1900,
@@ -134,6 +105,13 @@ namespace CustomTime {
                 utc_tm.tm_min,
                 utc_tm.tm_sec,
                 uint32_t(0)); // No milliseconds in rounded timestamp. Cast needed to match format specifier
+    }
+
+    void getDateIsoOfNearestHour(char* buffer, size_t bufferSize, int offsetDays) {
+        time_t rounded = (time_t)UnixTime::nearestUtcHourSeconds(getUnixTime()) + (time_t)offsetDays * 86400;
+        struct tm utc_tm;
+        gmtime_r(&rounded, &utc_tm);
+        snprintf(buffer, bufferSize, DATE_ISO_FORMAT, utc_tm.tm_year + 1900, utc_tm.tm_mon + 1, utc_tm.tm_mday);
     }
 
     void timestampFromUnix(time_t unixSeconds, char* buffer, size_t bufferSize) {
@@ -197,17 +175,7 @@ namespace CustomTime {
     }
 
     uint64_t getMillisecondsUntilNextHour() {
-        struct timeval tv;
-        gettimeofday(&tv, NULL);
-        
-        struct tm timeinfo;
-        localtime_r(&tv.tv_sec, &timeinfo);
-        
-        // Calculate the number of seconds until the next hour
-        int32_t secondsUntilNextHour = 3600 - (timeinfo.tm_min * 60 + timeinfo.tm_sec);
-        
-        // Convert to milliseconds
-        return (uint64_t)(secondsUntilNextHour) * 1000ULL;
+        return UnixTime::millisUntilNextUtcHour(getUnixTimeMilliseconds());
     }
 
     bool isUnixTimeValid(uint64_t unixTime, bool isMilliseconds) {
@@ -236,10 +204,13 @@ namespace CustomTime {
 
     // Gateway first (many routers answer NTP on their own LAN IP), then the two
     // compiled-in public fallbacks. Reads the gateway fresh every call so a DHCP
-    // renewal, static IP change, or reconnect to a different network is picked up
-    // with no stale state.
+    // renewal, static IP change, interface failover (ETH<->STA on Pro), or
+    // reconnect to a different network is picked up with no stale state.
     static void _configureNtpServers() {
-        snprintf(_gatewayNtpServer, sizeof(_gatewayNtpServer), "%s", WiFi.gatewayIP().toString().c_str());
+        IPAddress gateway = (CustomEth::activeInterface() == InterfaceArbitration::Interface::ETHERNET)
+                                ? ETH.gatewayIP()
+                                : WiFi.gatewayIP();
+        snprintf(_gatewayNtpServer, sizeof(_gatewayNtpServer), "%s", gateway.toString().c_str());
         configTime(0, 0, _gatewayNtpServer, NTP_SERVER_1, NTP_SERVER_2);
     }
 
@@ -262,6 +233,15 @@ namespace CustomTime {
         return true;
     }
 
+    // A flag rather than zeroing _lastSyncAttempt: that only reads as "due" once the uptime
+    // itself exceeds the sync interval, so a failover in the first hour kept the old gateway
+    // as the NTP server. Set from the eth task, consumed here: a single-byte store.
+    static volatile bool _resyncRequested = false;
+
+    void requestResync() {
+        _resyncRequested = true;
+    }
+
     static void _checkAndSyncTime() {
         uint64_t currentTime = millis64();
 
@@ -269,11 +249,12 @@ namespace CustomTime {
         bool isTimeToSync = (currentTime - _lastSyncAttempt >= (uint64_t)TIME_SYNC_INTERVAL);
         bool needToRetry = !_isTimeSynched && (currentTime - _lastSyncAttempt >= (uint64_t)TIME_SYNC_RETRY_IF_NOT_SYNCHED);
 
-        if (isTimeToSync || needToRetry) {
-            if (!CustomWifi::isFullyConnected(true)) {
-                LOG_DEBUG("Skipping time sync - WiFi not connected");
+        if (isTimeToSync || needToRetry || _resyncRequested) {
+            if (!CustomNet::isFullyConnected(true)) {
+                LOG_DEBUG("Skipping time sync - no network connectivity");
                 return;
             }
+            _resyncRequested = false;
             _lastSyncAttempt = currentTime;
 
             // Re-configure time to trigger a new sync

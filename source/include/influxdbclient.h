@@ -13,6 +13,7 @@
 #include "globals.h"
 #include "customtime.h"
 #include "customwifi.h"
+#include "customnet.h"
 #include "utils.h"
 
 // Default configuration values
@@ -20,11 +21,11 @@
 #define INFLUXDB_SERVER_DEFAULT "localhost"
 #define INFLUXDB_PORT_DEFAULT 8086
 #define INFLUXDB_VERSION_DEFAULT 2
-#define INFLUXDB_DATABASE_DEFAULT "energyme-home"
+#define INFLUXDB_DATABASE_DEFAULT PRODUCT_SLUG
 #define INFLUXDB_USERNAME_DEFAULT ""
 #define INFLUXDB_PASSWORD_DEFAULT ""
 #define INFLUXDB_ORGANIZATION_DEFAULT "my-org"
-#define INFLUXDB_BUCKET_DEFAULT "energyme-home"
+#define INFLUXDB_BUCKET_DEFAULT PRODUCT_SLUG
 #define INFLUXDB_TOKEN_DEFAULT ""
 #define INFLUXDB_MEASUREMENT_DEFAULT "meter"
 #define INFLUXDB_FREQUENCY_DEFAULT 15

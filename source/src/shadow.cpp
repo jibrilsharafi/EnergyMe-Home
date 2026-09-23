@@ -8,7 +8,9 @@
 #include <esp_timer.h>
 
 #include "ade7953.h"
+#include "app_image_descriptor.h"
 #include "awsconfig.h"
+#include "custometh.h"
 #include "customwifi.h"
 #include "factory_keys.h"
 #include "globals.h"
@@ -470,6 +472,28 @@ static void _reportInfo(JsonDocument& doc) {
         rep["other_partition_sha256"] = nullptr;
     }
 
+    // Running image's own descriptor: fleet-wide PSRAM/build inventory without
+    // per-device polling.
+    rep["image_psram_mb"] = ENERGYME_APP_DESC.psramMb;
+    rep["image_build_env"] = ENERGYME_APP_DESC.buildEnv;
+    rep["image_git_rev"] = ENERGYME_APP_DESC.gitRev;
+    rep["image_partition_layout_id"] = ENERGYME_APP_DESC.partitionLayoutId;
+
+    // Passive/"other" partition's descriptor: what firmware_rollback or the
+    // crash ladder would actually activate. null when the slot holds no valid
+    // descriptor (empty, erased, or a legacy pre-2.4 image).
+    ImageDescriptor::Descriptor otherDesc;
+    if (getOtherPartitionImageDescriptor(otherDesc)) {
+        // otherDesc is a non-const local, so ArduinoJson copies these (parse NUL-terminates them)
+        rep["other_image_product"] = otherDesc.product;
+        rep["other_image_psram_mb"] = otherDesc.psramMb;
+        rep["other_image_fw_version"] = otherDesc.fwVersion;
+    } else {
+        rep["other_image_product"] = nullptr;
+        rep["other_image_psram_mb"] = nullptr;
+        rep["other_image_fw_version"] = nullptr;
+    }
+
     char serial[NAME_BUFFER_SIZE] = {0};
     char pcbRev[VERSION_BUFFER_SIZE] = {0};
     uint64_t mfgTs = 0;
@@ -525,6 +549,26 @@ static void _reportWifi(JsonDocument& doc) {
     }
     // RSSI is intentionally omitted: it's volatile (would churn the shadow
     // version) and is already on the system/dynamic telemetry topic.
+
+    // Ethernet rides in this shadow rather than its own: the cloud allowlists the
+    // six shadow names, and stores reported state opaquely. Failover forces an MQTT
+    // reconnect, which republishes every shadow; Ethernet link/IP events flag this one.
+    if (globalHwProfile == nullptr || !globalHwProfile->hasEthernet) return;
+    SpiRamAllocator allocator;
+    JsonDocument eth(&allocator);
+    CustomEth::getStatusAsJson(eth);
+    rep["active_interface"] = eth["activeInterface"];
+    JsonObject ethRep = rep["ethernet"].to<JsonObject>();
+    ethRep["enabled"] = eth["enabled"];
+    if (!eth["enabled"].as<bool>()) return;
+    ethRep["link_up"] = eth["linkUp"];
+    ethRep["static_ip"] = eth["staticApplied"];
+    ethRep["ip"] = eth["ip"];
+    ethRep["gateway"] = eth["gateway"];
+    ethRep["subnet"] = eth["subnet"];
+    ethRep["dns1"] = eth["dns1"];
+    ethRep["dns2"] = eth["dns2"];
+    ethRep["mac"] = eth["mac"];
 }
 
 // ============================================================================

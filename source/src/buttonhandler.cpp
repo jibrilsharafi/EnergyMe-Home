@@ -275,12 +275,14 @@ namespace ButtonHandler
 
     static void _handleWifiReset()
     {
-        LOG_INFO("WiFi reset initiated via button");
+        LOG_INFO("Network reset initiated via button");
         _operationInProgress = true;
 
         Led::setOrange(Led::PRIO_URGENT);
 
-        CustomWifi::resetWifi(); // This will restart the device
+        // Full network reset: WiFi credentials + WiFi static config + Ethernet static
+        // config (no-op on products without Ethernet). This will restart the device.
+        CustomWifi::resetWifi();
 
         _operationInProgress = false;
         _currentPressType = ButtonPressType::NONE;

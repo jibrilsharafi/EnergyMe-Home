@@ -19,6 +19,7 @@
 #include "factory_keys.h"
 #include "customtime.h"
 #include "customwifi.h"
+#include "customnet.h"
 #include "customlog.h"
 #include "globals.h"
 #include "structs.h"
@@ -47,7 +48,6 @@
 #define OTA_HTTPS_BUFFER_SIZE_TX (2 * 1024)
 #define OTA_PRESIGNED_URL_BUFFER_SIZE (4 * 1024) // The presigned S3 URL can be very long
 #define OTA_SIGNATURE_HASH_CHUNK_SIZE 4096 // Chunk size for streaming the downloaded partition through SHA-256 before signature verification
-#define OTA_PARTITION_SCRUB_SIZE 4096 // One flash sector: erasing the image header is enough to make a rejected image fail esp_image_verify
 #define MQTT_OTA_SIZE_REPORT_UPDATE (128 * 1024)
 
 // OTA download retry schedule. The presigned S3 URL is minted when the device
@@ -174,7 +174,7 @@
 #define MQTT_TOPIC_STATISTICS "statistics"
 #define MQTT_TOPIC_CRASH "crash"
 #define MQTT_TOPIC_LOG "log"
-#define MQTT_TOPIC_ALARM "alarm" // Routed via its own rule (AWS_IOT_CORE_RULE_ALARM, awsconfig.h); requires that rule to exist server-side
+#define MQTT_TOPIC_ALARM "alarm" // Routed via its own rule (AWS_IOT_CORE_RULE_ALARM_HOME / _HOMEPRO, awsconfig.h); requires that rule to exist server-side
 // Subscribe topics. The legacy `command` topic is retired (-> IoT Commands +
 // system shadow); only AWS IoT Jobs (OTA) and shadow/command reserved topics remain.
 #define MQTT_TOPIC_SUBSCRIBE_JOBS "jobs"
@@ -231,6 +231,12 @@ namespace Mqtt
 {
     void begin();
     void stop();
+
+    // Drops the MQTT session on the next task loop so it reconnects over the
+    // current default interface. Called on interface failover: the established
+    // TLS socket is bound to the old interface's address and would otherwise
+    // stay wedged until keepalive times out. Safe from any task (sets a flag).
+    void requestReconnect();
 
     // Cloud services methods
     void setCloudServicesEnabled(bool enabled);

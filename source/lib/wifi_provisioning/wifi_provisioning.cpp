@@ -52,19 +52,34 @@ const char *stateName(State state) {
     return STATE_NAMES[(uint8_t)state];
 }
 
-void init(Context &context, bool hasCredentials, uint64_t nowMs) {
+void init(Context &context, bool hasCredentials, uint64_t nowMs, bool commissioned, bool wiredPresent) {
     context.hasCredentials = hasCredentials;
+    context.commissioned = commissioned;
     context.staRetryAttempts = 0;
     context.apRaiseTriggers = 0;
     context.apRaised = false;
     context.apRaisedAtMs = 0;
     context.graceStartedAtMs = 0;
+    context.initAtMs = nowMs;
 
+    // A commissioned device (Ethernet has proven it in service at least once) is
+    // provisioned even with no WiFi credentials: UNPROVISIONED arms the AP auth
+    // carve-out, and an in-service device has plenty to protect. It has nothing to
+    // associate to, so the caller never starts an STA attempt and nothing would ever
+    // feed STA_ATTEMPT_FAILED: it starts directly in AP_ASSIST with the AP NOT raised,
+    // and shouldRaiseAp() raises it (full auth) exactly while the wire is unreachable -
+    // at boot after the wired windows, and again on any later wire loss. Starting in
+    // STA_CONNECTING left it there forever: once the wire-driven teardown lowered the
+    // boot AP, a pulled cable meant no interface and no AP until a power cycle.
     if (hasCredentials) {
         context.state = State::STA_CONNECTING;
+    } else if (commissioned) {
+        context.state = State::AP_ASSIST;
     } else {
         context.state = State::UNPROVISIONED;
-        raiseAp(context, nowMs);
+        // With a wired interface the raise belongs to shouldRaiseAp(): a cabled
+        // zero-touch first boot must never blip an AP.
+        if (!wiredPresent) raiseAp(context, nowMs);
     }
 }
 
@@ -120,7 +135,7 @@ State onEvent(Context &context, Event event, uint64_t nowMs) {
             // Retries driven by the periodic timer bump staRetryAttempts alone.
             context.apRaiseTriggers++;
 
-            if (!context.hasCredentials) {
+            if (!context.hasCredentials && !context.commissioned) {
                 // Still being provisioned: keep the AP up and let the user try
                 // again rather than demanding the web password mid-setup.
                 context.state = State::UNPROVISIONED;
@@ -128,6 +143,14 @@ State onEvent(Context &context, Event event, uint64_t nowMs) {
             } else if (context.apRaiseTriggers >= WIFI_PROVISIONING_AP_RAISE_THRESHOLD) {
                 context.state = State::AP_ASSIST;
                 if (!context.apRaised) raiseAp(context, nowMs);
+            } else if (context.state == State::AP_ASSIST || !context.hasCredentials) {
+                // Reaching here with !hasCredentials implies commissioned. The core stops
+                // reconnecting on AUTH_FAIL/210-212 and a single failure is all that gets
+                // fed, so STA_CONNECTING would be a state nothing leaves and shouldRaiseAp()
+                // does not cover: a later wire loss left the device dark. Park in AP_ASSIST
+                // (full auth); the AP itself is left to shouldRaiseAp(), so a device served
+                // by the wire shows no AP.
+                context.state = State::AP_ASSIST;
             } else {
                 context.state = State::STA_CONNECTING;
             }
@@ -172,7 +195,10 @@ State onEvent(Context &context, Event event, uint64_t nowMs) {
             context.staRetryAttempts = 0;
             context.apRaiseTriggers = 0;
             context.graceStartedAtMs = 0;
-            context.state = State::UNPROVISIONED;
+            // Commissioning survives a WiFi reset: the device is still in service,
+            // so the recovery AP comes up authenticated (AP_ASSIST), not with the
+            // carve-out open. Only a factory reset decommissions.
+            context.state = context.commissioned ? State::AP_ASSIST : State::UNPROVISIONED;
             if (!context.apRaised) raiseAp(context, nowMs);
             break;
 
@@ -183,6 +209,16 @@ State onEvent(Context &context, Event event, uint64_t nowMs) {
             if (context.state == State::GRACE) tearDownAp(context, nowMs);
             break;
 
+        case Event::WIRED_COMMISSIONED:
+            // Applied now rather than at the next init(): otherwise a factory-fresh wired
+            // device stays UNPROVISIONED for its whole first boot, and losing the cable
+            // before the first restart raises the AP with the auth carve-out open on a
+            // device that is already in service. The AP itself is left to shouldRaiseAp()
+            // / shouldTearDownAp(), which see the wire.
+            context.commissioned = true;
+            if (context.state == State::UNPROVISIONED) context.state = State::AP_ASSIST;
+            break;
+
         case Event::TICK:
             break;
     }
@@ -190,8 +226,13 @@ State onEvent(Context &context, Event event, uint64_t nowMs) {
     return context.state;
 }
 
-bool shouldTearDownAp(const Context &context, uint64_t nowMs) {
+bool shouldTearDownAp(const Context &context, uint64_t nowMs, bool wiredReachable) {
     if (!context.apRaised) return false;
+
+    // A serviceable wired interface satisfies "reachable" the same way an STA
+    // association does - including when the wire's subnet would collide with the
+    // AP's (wire-reachable means the AP comes down before ambiguity matters).
+    if (wiredReachable) return true;
 
     // The only timed teardown. Everywhere else the AP is up because the device cannot
     // be reached without it, and the cure is associating, not waiting.
@@ -199,15 +240,30 @@ bool shouldTearDownAp(const Context &context, uint64_t nowMs) {
            elapsedSince(context.graceStartedAtMs, nowMs) >= WIFI_PROVISIONING_GRACE_MS;
 }
 
-bool shouldRaiseAp(const Context &context, uint64_t nowMs) {
-    (void)nowMs;
-
+bool shouldRaiseAp(const Context &context, uint64_t nowMs, bool wiredReachable, bool wiredLinkUp, bool wiredPresent) {
     if (context.apRaised) return false;
+
+    // Wire-reachable is reachable: no AP.
+    if (wiredReachable) return false;
+
+    // The wired driver starts after this state machine and reports link only at its
+    // first PHY poll: until then "link down" just means "not known yet".
+    uint64_t sinceInitMs = elapsedSince(context.initAtMs, nowMs);
+    if (wiredPresent && sinceInitMs < WIFI_PROVISIONING_WIRED_LINK_DETECT_MS) return false;
+
+    // Zero-touch first boot: cable in, DHCP still negotiating. Hold the raise back
+    // briefly (init-relative window) so a normally-leasing network never sees an AP
+    // blip; after the window, link-without-address counts as unreachable.
+    if (wiredLinkUp && sinceInitMs < WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS) return false;
 
     // Both states mean "unreachable over the network": UNPROVISIONED has nothing to
     // connect to, AP_ASSIST has credentials that do not work. Neither is time-limited,
     // so a device that loses its network stays fixable in place.
     return context.state == State::UNPROVISIONED || context.state == State::AP_ASSIST;
+}
+
+bool insideWiredBootWindows(const Context &context, uint64_t nowMs) {
+    return elapsedSince(context.initAtMs, nowMs) < WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS;
 }
 
 bool isNetworkServiceable(bool staConnected, bool apServing) {
@@ -240,24 +296,21 @@ bool subnetsOverlap(uint32_t addressA, uint8_t cidrA, uint32_t addressB, uint8_t
     return (addressA & mask) == (addressB & mask);
 }
 
-bool selectApSubnet(
-    bool staValid, uint32_t staAddress, uint8_t staCidr,
-    bool staticValid, uint32_t staticAddress, uint8_t staticCidr,
-    Subnet &out) {
+bool selectApSubnetAvoiding(const Subnet *occupied, size_t occupiedCount, Subnet &out) {
     for (size_t i = 0; i < kCandidateCount; i++) {
         const Subnet &candidate = kCandidates[i];
 
         if (!candidateCidrIsUsable(candidate.cidr)) continue;
 
-        if (staValid && comparisonCidrIsUsable(staCidr) &&
-            subnetsOverlap(candidate.address, candidate.cidr, staAddress, staCidr)) {
-            continue;
+        bool collides = false;
+        for (size_t j = 0; j < occupiedCount; j++) {
+            if (!comparisonCidrIsUsable(occupied[j].cidr)) continue;
+            if (subnetsOverlap(candidate.address, candidate.cidr, occupied[j].address, occupied[j].cidr)) {
+                collides = true;
+                break;
+            }
         }
-
-        if (staticValid && comparisonCidrIsUsable(staticCidr) &&
-            subnetsOverlap(candidate.address, candidate.cidr, staticAddress, staticCidr)) {
-            continue;
-        }
+        if (collides) continue;
 
         out = candidate;
         return true;
@@ -296,6 +349,12 @@ uint32_t netmaskFromCidr(uint8_t cidr) {
     if (cidr == 0u) return 0u;           // Shifting a uint32_t by 32 is undefined, not zero
     if (cidr >= 32u) return 0xFFFFFFFFu;
     return static_cast<uint32_t>(0xFFFFFFFFu << (32u - cidr));
+}
+
+bool isApPeer(uint32_t localAddress, uint32_t remoteAddress, uint32_t apAddress, uint8_t apCidr) {
+    if (apAddress == 0u || localAddress != apAddress) return false;
+    uint32_t mask = netmaskFromCidr(apCidr);
+    return mask != 0u && remoteAddress != apAddress && (remoteAddress & mask) == (apAddress & mask);
 }
 
 }  // namespace WifiProvisioning

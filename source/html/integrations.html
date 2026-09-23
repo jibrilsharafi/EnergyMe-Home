@@ -885,6 +885,15 @@
                 await delay(DELAY_BETWEEN_REQUESTS);
 
                 await getInfluxDbConfiguration();
+                await delay(DELAY_BETWEEN_REQUESTS);
+
+                // Placeholders mirror the firmware defaults ("energyme-home" / "energyme-homepro")
+                const authStatus = await energyApi.getAuthStatus().catch(() => null);
+                if (authStatus && authStatus.productName) {
+                    const slugExample = 'e.g., energyme-' + authStatus.productName.toLowerCase().replace(/\s+/g, '');
+                    document.getElementById('influxDbDatabase').placeholder = slugExample;
+                    document.getElementById('influxDbBucket').placeholder = slugExample;
+                }
 
                 console.log("Integration configurations loaded successfully");
             } catch (error) {

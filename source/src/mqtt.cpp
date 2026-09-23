@@ -16,6 +16,7 @@ static_assert(SHA256_HEX_BUFFER_SIZE == RollbackLogic::SHA256_HEX_LEN + 1,
 #include "mqtt_energy_publish_gate.h"
 #include "crash_archive_policy.h"
 #include "backoff_schedule.h"
+#include "app_image_descriptor.h"
 #include "ota_keys.h"
 #include "ota_signature.h"
 #include "sha256_hex.h"
@@ -57,6 +58,13 @@ namespace Mqtt
     // Connection attempt tracking
     static uint32_t _mqttConnectionAttempt = 0;
     static uint64_t _nextMqttConnectionAttemptMillis = 0;
+
+    // Set from other tasks on interface failover; consumed by _handleConnectedState.
+    static volatile bool _reconnectRequested = false;
+
+    void requestReconnect() {
+        _reconnectRequested = true;
+    }
 
     // Connection state fact for the issue registry, updated once per task loop
     // (the registry tick must not call _clientMqtt.connected() cross-task)
@@ -889,7 +897,7 @@ namespace Mqtt
     {
         // Convert integer to LogLevel enum (0=VERBOSE, 1=DEBUG, 2=INFO, 3=WARNING, 4=ERROR, 5=FATAL)
         switch (_mqttLogLevelInt) {
-            case 0: _mqttMinLogLevel = LogLevel::VERBOSE; break;
+            case 0: _mqttMinLogLevel = LogLevel::VERBOSE; break; // Same as DEBUG in practice: VERBOSE never reaches the log callbacks (see main.cpp)
             case 1: _mqttMinLogLevel = LogLevel::DEBUG; break;
             case 2: _mqttMinLogLevel = LogLevel::INFO; break;
             case 3: _mqttMinLogLevel = LogLevel::WARNING; break;
@@ -1054,7 +1062,7 @@ namespace Mqtt
             TASK_HEARTBEAT(_mqttHeartbeat);
 
             bool connectedNow = false;
-            if (CustomWifi::isFullyConnected()) {
+            if (CustomNet::isFullyConnected()) {
                 if (_clientMqtt.connected()) {
                     connectedNow = true;
                     _handleConnectedState();
@@ -1094,6 +1102,16 @@ namespace Mqtt
 
     // Topic management
     // ================
+
+    // Product is a runtime (factory-NVS) value, not a build flag, so the topic
+    // namespace segment and Basic Ingest rule names are picked here rather than
+    // at compile time (see awsconfig.h).
+    static const char* _selectByProduct(const char* homeValue, const char* homeProValue) {
+        return (globalHwProfile->product == ProductLine::HOMEPRO) ? homeProValue : homeValue;
+    }
+
+    static const char* _topicProductSegment() { return _selectByProduct(MQTT_TOPIC_2_HOME, MQTT_TOPIC_2_HOMEPRO); }
+
     static void _constructMqttTopicReservedThings(const char* finalTopic, char* topicBuffer, size_t topicBufferSize) {
         // Example: $aws/things/588c81c47a5c/jobs/notify-next
         snprintf(
@@ -1116,7 +1134,7 @@ namespace Mqtt
             MQTT_BASIC_INGEST,
             ruleName,
             MQTT_TOPIC_1,
-            MQTT_TOPIC_2,
+            _topicProductSegment(),
             MQTT_TOPIC_VERSION,
             DEVICE_ID,
             finalTopic
@@ -1131,7 +1149,7 @@ namespace Mqtt
             topicBufferSize,
             "%s/%s/%s/%s/%s",
             MQTT_TOPIC_1,
-            MQTT_TOPIC_2,
+            _topicProductSegment(),
             MQTT_TOPIC_VERSION,
             DEVICE_ID,
             finalTopic
@@ -1162,14 +1180,14 @@ namespace Mqtt
         LOG_DEBUG("MQTT topics setup complete");
     }
 
-    static void _setTopicMeter() { _constructMqttTopicWithRule(AWS_IOT_CORE_RULE_METER, MQTT_TOPIC_METER, _mqttTopicMeter, sizeof(_mqttTopicMeter)); }
-    static void _setTopicGrid() { _constructMqttTopicWithRule(AWS_IOT_CORE_RULE_GRID, MQTT_TOPIC_GRID, _mqttTopicGrid, sizeof(_mqttTopicGrid)); }
-    static void _setTopicEnergy() { _constructMqttTopicWithRule(AWS_IOT_CORE_RULE_ENERGY, MQTT_TOPIC_ENERGY, _mqttTopicEnergy, sizeof(_mqttTopicEnergy)); }
+    static void _setTopicMeter() { _constructMqttTopicWithRule(_selectByProduct(AWS_IOT_CORE_RULE_METER_HOME, AWS_IOT_CORE_RULE_METER_HOMEPRO), MQTT_TOPIC_METER, _mqttTopicMeter, sizeof(_mqttTopicMeter)); }
+    static void _setTopicGrid() { _constructMqttTopicWithRule(_selectByProduct(AWS_IOT_CORE_RULE_GRID_HOME, AWS_IOT_CORE_RULE_GRID_HOMEPRO), MQTT_TOPIC_GRID, _mqttTopicGrid, sizeof(_mqttTopicGrid)); }
+    static void _setTopicEnergy() { _constructMqttTopicWithRule(_selectByProduct(AWS_IOT_CORE_RULE_ENERGY_HOME, AWS_IOT_CORE_RULE_ENERGY_HOMEPRO), MQTT_TOPIC_ENERGY, _mqttTopicEnergy, sizeof(_mqttTopicEnergy)); }
     static void _setTopicSystemDynamic() { _constructMqttTopic(MQTT_TOPIC_SYSTEM_DYNAMIC, _mqttTopicSystemDynamic, sizeof(_mqttTopicSystemDynamic)); }
     static void _setTopicStatistics() { _constructMqttTopic(MQTT_TOPIC_STATISTICS, _mqttTopicStatistics, sizeof(_mqttTopicStatistics)); }
     static void _setTopicCrash() { _constructMqttTopic(MQTT_TOPIC_CRASH, _mqttTopicCrash, sizeof(_mqttTopicCrash)); }
-    static void _setTopicLog() { _constructMqttTopicWithRule(AWS_IOT_CORE_RULE_LOG, MQTT_TOPIC_LOG, _mqttTopicLog, sizeof(_mqttTopicLog)); }
-    static void _setTopicAlarm() { _constructMqttTopicWithRule(AWS_IOT_CORE_RULE_ALARM, MQTT_TOPIC_ALARM, _mqttTopicAlarm, sizeof(_mqttTopicAlarm)); }
+    static void _setTopicLog() { _constructMqttTopicWithRule(_selectByProduct(AWS_IOT_CORE_RULE_LOG_HOME, AWS_IOT_CORE_RULE_LOG_HOMEPRO), MQTT_TOPIC_LOG, _mqttTopicLog, sizeof(_mqttTopicLog)); }
+    static void _setTopicAlarm() { _constructMqttTopicWithRule(_selectByProduct(AWS_IOT_CORE_RULE_ALARM_HOME, AWS_IOT_CORE_RULE_ALARM_HOMEPRO), MQTT_TOPIC_ALARM, _mqttTopicAlarm, sizeof(_mqttTopicAlarm)); }
 
     static void _subscribeToTopics() {
         _subscribeAwsIotJobs();
@@ -1210,6 +1228,10 @@ namespace Mqtt
         char jobAcceptedTopic[MQTT_TOPIC_BUFFER_SIZE];
         _constructMqttTopicReservedThings("jobs/+/get/accepted", jobAcceptedTopic, sizeof(jobAcceptedTopic));
 
+        // Rejected only: /update/accepted would echo every progress update back
+        char jobUpdateRejectedTopic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructMqttTopicReservedThings("jobs/+/update/rejected", jobUpdateRejectedTopic, sizeof(jobUpdateRejectedTopic));
+
         LOG_DEBUG("Attempting to subscribe to: %s", jobNotifyTopic);
         if (_clientMqtt.subscribe(jobNotifyTopic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
             LOG_DEBUG("Subscribed to AWS IoT Jobs notify topic: %s", jobNotifyTopic);
@@ -1229,6 +1251,12 @@ namespace Mqtt
             LOG_DEBUG("Subscribed to AWS IoT Job accepted topic: %s", jobAcceptedTopic);
         } else {
             LOG_WARNING("Failed to subscribe to AWS IoT Job accepted topic: %s", jobAcceptedTopic);
+        }
+
+        if (_clientMqtt.subscribe(jobUpdateRejectedTopic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
+            LOG_DEBUG("Subscribed to AWS IoT Job update rejected topic: %s", jobUpdateRejectedTopic);
+        } else {
+            LOG_WARNING("Failed to subscribe to AWS IoT Job update rejected topic: %s", jobUpdateRejectedTopic);
         }
     }
 
@@ -1728,10 +1756,11 @@ namespace Mqtt
 
         mbedtls_pk_context pk;
         mbedtls_pk_init(&pk);
+        const char* otaSigningPublicKeyPem = _selectByProduct(OTA_SIGNING_PUBLIC_KEY_PEM_HOME, OTA_SIGNING_PUBLIC_KEY_PEM_HOMEPRO);
         int parseRet = mbedtls_pk_parse_public_key(
             &pk,
-            reinterpret_cast<const unsigned char*>(OTA_SIGNING_PUBLIC_KEY_PEM),
-            strlen(OTA_SIGNING_PUBLIC_KEY_PEM) + 1); // +1: mbedtls PEM parsing requires the null terminator
+            reinterpret_cast<const unsigned char*>(otaSigningPublicKeyPem),
+            strlen(otaSigningPublicKeyPem) + 1); // +1: mbedtls PEM parsing requires the null terminator
         if (parseRet != 0) {
             LOG_ERROR("Failed to parse embedded OTA signing public key: -0x%04X", -parseRet);
             mbedtls_pk_free(&pk);
@@ -1792,18 +1821,12 @@ namespace Mqtt
     // Nothing of value is lost: the download already overwrote the previous
     // firmware that made the slot a legitimate rollback target.
     static void _scrubRejectedOtaImage() {
-        const esp_partition_t* update_partition = esp_ota_get_next_update_partition(NULL);
-        if (!update_partition) return;
-        esp_err_t err = esp_partition_erase_range(update_partition, 0, OTA_PARTITION_SCRUB_SIZE);
-        if (err != ESP_OK) {
-            LOG_ERROR("Failed to scrub rejected OTA image header: %s", esp_err_to_name(err));
-        } else {
-            LOG_INFO("Scrubbed rejected OTA image header from passive partition");
-        }
+        scrubOtaImageHeader(esp_ota_get_next_update_partition(NULL));
     }
 
     static bool _performOtaUpdate() {
         LOG_DEBUG("Starting OTA update from URL: %.100s...", _otaCurrentUrl); // Truncate long URLs in logs
+        LOG_DEBUG("OTA attempt start heap: free %lu, maxAlloc %lu", ESP.getFreeHeap(), ESP.getMaxAllocHeap());
 
         // Reset per attempt: a retry whose response carries no Content-Length
         // would otherwise inherit the previous attempt's counters.
@@ -1876,6 +1899,27 @@ namespace Mqtt
             }
 
             if (result == ESP_OK) {
+                // Hardware-compatibility gate: the signature proves the image came
+                // from us, not that this device can boot it. Read the staged image's
+                // own descriptor off the passive partition and reject before
+                // esp_https_ota_finish() can switch the boot partition - a
+                // wrong-PSRAM image fails PSRAM init before any application code
+                // runs, beyond the reach of every post-boot recovery mechanism.
+                // Deterministic for a given artifact, like a bad signature: no retry.
+                ImageDescriptor::Verdict verdict = AppImageDescriptor::validatePartition(
+                    esp_ota_get_next_update_partition(NULL), true);
+                if (!ImageDescriptor::accepts(verdict)) {
+                    LOG_ERROR("Staged OTA image rejected: %s", ImageDescriptor::verdictToString(verdict));
+                    snprintf(_otaFailureReason, sizeof(_otaFailureReason), "image_incompatible:%s",
+                             ImageDescriptor::verdictToString(verdict));
+                    result = ESP_FAIL;
+                    _otaFailureRetryable = false;
+                } else if (verdict == ImageDescriptor::Verdict::ACCEPT_LEGACY_NO_DESCRIPTOR) {
+                    LOG_WARNING("Staged OTA image carries no descriptor (pre-2.4 release) - accepted on Home");
+                }
+            }
+
+            if (result == ESP_OK) {
                 result = esp_https_ota_finish(otaHandle);
                 if (result != ESP_OK) {
                     LOG_ERROR("OTA finish failed: %s (%d)", esp_err_to_name(result), result);
@@ -1902,6 +1946,7 @@ namespace Mqtt
 
         if (result == ESP_OK) {
             LOG_INFO("OTA update downloaded, signature verified, and activated (not yet post-reboot validated)");
+            LOG_DEBUG("OTA attempt end heap: free %lu, minFree %lu", ESP.getFreeHeap(), ESP.getMinFreeHeap());
             return true;
         }
 
@@ -2123,11 +2168,16 @@ namespace Mqtt
             if (!doc["execution"]["jobDocument"]["operation"].is<const char*>()) { LOG_WARNING("Execution response missing operation, ignoring."); return false; }
             if (!doc["execution"]["jobDocument"]["firmware"].is<JsonObject>()) { LOG_WARNING("Execution response missing firmware object, ignoring."); return false; }
             if (!doc["execution"]["jobDocument"]["firmware"]["url"].is<const char*>()) { LOG_WARNING("Execution response missing firmware URL, ignoring."); return false; }
-        } else if (endsWith(topic, "/update/accepted") || endsWith(topic, "/update/rejected")) {
-            // Handle job update response topics (AWS IoT sends these automatically when we publish job status updates)
-            // These are confirmation messages that our job status updates were received - just acknowledge and ignore
+        } else if (endsWith(topic, "/update/rejected")) {
+            // AWS refused a status update we published (e.g. the job was cancelled or already
+            // terminal): the device may look locally successful while AWS never recorded it
+            LOG_ERROR("AWS IoT rejected a job status update on %s: %s - %s", topic,
+                      doc["code"].is<const char*>() ? doc["code"].as<const char*>() : "unknown",
+                      doc["message"].is<const char*>() ? doc["message"].as<const char*>() : "");
+            return false;
+        } else if (endsWith(topic, "/update/accepted")) {
             LOG_DEBUG("Received job update confirmation from AWS IoT: %s", topic);
-            return false; // Don't process these further, just acknowledge receipt
+            return false;
         } else {
             LOG_WARNING("Unrecognized AWS IoT Jobs topic pattern: %s", topic);
             return false;
@@ -2196,6 +2246,30 @@ namespace Mqtt
         if (strcmp(operation, "ota_update") != 0) {
             LOG_WARNING("Job operation '%s' is not supported, rejecting job %s.", operation, jobId);
             _publishOtaStatus(jobId, "REJECTED", "unsupported_operation");
+            return;
+        }
+
+        // Cross-product gate: the signature proves authenticity, not product, and a
+        // wrong-product image fails PSRAM init at boot (quad vs octal). Job targeting
+        // by thing attribute is cloud-side; this is the device-side defense. A job
+        // with no product declaration is treated as home so the pre-Pro job pipeline
+        // keeps working unchanged.
+        JsonVariant productVariant = doc["execution"]["jobDocument"]["firmware"]["product"];
+        ProductLine jobProduct = ProductLine::HOME;
+        if (!productVariant.isNull()) {
+            // Same type-confusion defense as `force` above: a non-string product
+            // (number, object) must reject, not silently coerce to home.
+            if (!productVariant.is<const char*>() ||
+                !parseProductLineString(productVariant.as<const char*>(), jobProduct)) {
+                LOG_WARNING("Job '%s' declares an unknown or non-string product, rejecting.", jobId);
+                _publishOtaStatus(jobId, "REJECTED", "unknown_product");
+                return;
+            }
+        }
+        if (jobProduct != globalHwProfile->product) {
+            LOG_WARNING("Job '%s' targets product '%s' but this device is '%s', rejecting before download.",
+                        jobId, productLineToString(jobProduct), productLineToString(globalHwProfile->product));
+            _publishOtaStatus(jobId, "REJECTED", "product_mismatch");
             return;
         }
 
@@ -2813,7 +2887,7 @@ namespace Mqtt
             return false;
         }
 
-        if (!CustomWifi::isFullyConnected()) { // No need to check for internet since connected() will do it anyway
+        if (!CustomNet::isFullyConnected()) { // No need to check for internet since connected() will do it anyway
             LOG_WARNING("WiFi not connected. Skipping streaming publish on %s", topic);
             statistics.mqttMessagesPublishedError++;
             return false;
@@ -2866,7 +2940,7 @@ namespace Mqtt
         LogEntry entry;
         uint32_t loops = 0;
         while (xQueueReceive(_logQueue, &entry, 0) == pdTRUE && loops < MAX_LOOP_ITERATIONS) { // Time to wait should be 0 so we don't block the publisher
-            if (CustomWifi::isFullyConnected() && _clientMqtt.connected()) {
+            if (CustomNet::isFullyConnected() && _clientMqtt.connected()) {
                 _publishLog(entry);
             } else {
                 // If not connected, put it back in the queue if there's space
@@ -2885,7 +2959,7 @@ namespace Mqtt
         uint32_t loops = 0;
         while (xQueueReceive(_alarmQueue, &entry, 0) == pdTRUE && loops < MAX_LOOP_ITERATIONS) {
             loops++;
-            if (CustomWifi::isFullyConnected() && _clientMqtt.connected()) {
+            if (CustomNet::isFullyConnected() && _clientMqtt.connected()) {
                 _publishAlarm(entry);
             } else {
                 xQueueSendToFront(_alarmQueue, &entry, 0);
@@ -2908,7 +2982,7 @@ namespace Mqtt
             _sendPowerDataEnabled && // Send only if the send power data flag is enabled (to save on data)
             _initializeMeterQueue() && 
             // Ensure connectivity again!
-            CustomWifi::isFullyConnected() &&  // Fail fast
+            CustomNet::isFullyConnected() &&  // Fail fast
             _clientMqtt.connected()
         ) {
             PayloadMeter payloadMeter;
@@ -3130,6 +3204,11 @@ namespace Mqtt
     // ===================
 
     static void _handleConnecting() {
+        // Already disconnected: a pending interface-change request has nothing to
+        // drop, and leaving it set would kill the FIRST session established over
+        // the new route for no reason.
+        _reconnectRequested = false;
+
         // Wait for time sync before attempting connection to avoid LWIP lock conflicts
         if (!CustomTime::isTimeSynched()) {
             delay(5000);
@@ -3140,14 +3219,21 @@ namespace Mqtt
         if (millis64() >= _nextMqttConnectionAttemptMillis) {
             // Small delay to allow LWIP/SNTP operations to complete
             delay(100);
-            if (CustomWifi::isFullyConnected(true)) _connectMqtt();
+            if (CustomNet::isFullyConnected(true)) _connectMqtt();
         }
     }
 
     static void _handleConnectedState() {
+        if (_reconnectRequested) {
+            _reconnectRequested = false;
+            LOG_INFO("Interface change - dropping MQTT session to reconnect on the new route");
+            _clientMqtt.disconnect();
+            return; // State machine reconnects on the next loop
+        }
+
         // MQTT connection check is sufficient - if TCP to AWS fails, we'll detect it here
         // Use vars explicitly here so later in the logs they have the same exact values
-        bool wifiOk = CustomWifi::isFullyConnected();
+        bool wifiOk = CustomNet::isFullyConnected();
         bool mqttConnected = _clientMqtt.connected();
         bool mqttLoopOk = _clientMqtt.loop(); // Also process incoming messages with loop()
 
@@ -3294,11 +3380,14 @@ namespace Mqtt
             }
 
             // One key rather than three: it is read as a triple anyway, and it
-            // keeps the map well clear of the statusDetails pair limit.
-            setDetail(
-                "heapFreeMinMax", "%lu/%lu/%lu",
-                _otaAttempt.freeHeap, _otaAttempt.minFreeHeap, _otaAttempt.maxAlloc
-            );
+            // keeps the map well clear of the statusDetails pair limit. Only sampled
+            // on a download failure: a post-download rejection would report 0/0/0.
+            if (_otaAttempt.freeHeap != 0) {
+                setDetail(
+                    "heapFreeMinMax", "%lu/%lu/%lu",
+                    _otaAttempt.freeHeap, _otaAttempt.minFreeHeap, _otaAttempt.maxAlloc
+                );
+            }
 
             setDetail("attempts", "%u", attemptsMade);
             setDetail("uptime", "%llu", millis64() / 1000);
@@ -3353,7 +3442,8 @@ namespace Mqtt
         }
     }
 
-    static void _otaValidationTask(void* parameter) {
+    // Every outcome ends the pending state; the caller clears it once
+    static void _validateOtaUpdate() {
         LOG_INFO("OTA validation task started - monitoring stability for %d seconds", OTA_VALIDATION_TIMEOUT / 1000);
         
         uint64_t validationStartTime = millis64();
@@ -3373,9 +3463,6 @@ namespace Mqtt
         Preferences prefs;
         if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
             LOG_ERROR("Failed to open preferences for SHA256 validation");
-            clearOtaPendingState();
-            _otaValidationTaskHandle = nullptr;
-            vTaskDelete(nullptr);
             return;
         }
         
@@ -3386,18 +3473,12 @@ namespace Mqtt
 
         if (!RollbackLogic::isValidSha256Hex(expectedSha256)) {
             LOG_ERROR("Invalid expected SHA256 in preferences (length: %d)", strlen(expectedSha256));
-            clearOtaPendingState();
-            _otaValidationTaskHandle = nullptr;
-            vTaskDelete(nullptr);
             return;
         }
 
         char currentSha256[SHA256_HEX_BUFFER_SIZE];
         if (!getRunningPartitionSha256(currentSha256, sizeof(currentSha256))) {
             LOG_ERROR("Failed to get current partition description");
-            clearOtaPendingState();
-            _otaValidationTaskHandle = nullptr;
-            vTaskDelete(nullptr);
             return;
         }
 
@@ -3405,17 +3486,17 @@ namespace Mqtt
         if (!RollbackLogic::sha256HexEquals(expectedSha256, currentSha256)) {
             LOG_ERROR("OTA validation failed - SHA256 mismatch (expected: %s, current: %s) - firmware rolled back", expectedSha256, currentSha256);
             _publishOtaStatus(_otaCurrentJobId, "FAILED", "sha256_mismatch_firmware_rollback");
-            clearOtaPendingState();
-            _otaValidationTaskHandle = nullptr;
-            vTaskDelete(nullptr);
             return;
         }
         
         LOG_INFO("OTA validation successful - SHA256 verified: %s", currentSha256);
         _publishOtaStatus(_otaCurrentJobId, "SUCCEEDED", "validated after successful boot and stability period");
-        clearOtaPendingState();
         LOG_INFO("OTA update completed and validated successfully");
+    }
 
+    static void _otaValidationTask(void* parameter) {
+        _validateOtaUpdate();
+        clearOtaPendingState();
         _otaValidationTaskHandle = nullptr;
         vTaskDelete(nullptr);
     }

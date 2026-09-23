@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "crashmonitor.h"
+#include "app_image_descriptor.h"
 #include "duration_format.h"
 
 #include <LittleFS.h>
@@ -85,13 +86,22 @@ namespace CrashMonitor
     RTC_NOINIT_ATTR bool _crashResetReasonValid = false;
 
     bool isLastResetDueToCrash() {
-        // Only case in which it is not crash is when the reset reason is not
-        // due to software reset (ESP.restart()), power on, or deep sleep (unused here)
-        esp_reset_reason_t _hwResetReason = esp_reset_reason();
-
-        return (uint32_t)_hwResetReason != ESP_RST_SW && 
-                (uint32_t)_hwResetReason != ESP_RST_POWERON && 
-                (uint32_t)_hwResetReason != ESP_RST_DEEPSLEEP;
+        // Deliberate resets are not crashes. USB/JTAG matter on the native
+        // USB-Serial-JTAG: the host toggling DTR/RTS (serial monitor open/close,
+        // esptool hard reset after flashing) resets the chip as ESP_RST_USB, and
+        // counting those walked the crash ladder into rollback/factory reset.
+        switch (esp_reset_reason()) {
+            case ESP_RST_SW:        // ESP.restart()
+            case ESP_RST_POWERON:
+            case ESP_RST_DEEPSLEEP: // unused here
+            case ESP_RST_EXT:       // reset pin
+            case ESP_RST_USB:       // USB-Serial-JTAG host-initiated reset
+            case ESP_RST_JTAG:      // debugger
+                return false;
+            default:
+                // Unknown/new reasons fail safe as crashes
+                return true;
+        }
     }
 
     void clearConsecutiveCrashCount() {
@@ -410,8 +420,16 @@ namespace CrashMonitor
             _consecutiveResetCount = 0;
             _quickRestartCount = 0; // Also clear quick restart counter
 
-            // Try rollback first (if available and not already tried)
-            if (Update.canRollBack() && !_rollbackTried) {
+            // Try rollback first (if available and not already tried). Never onto an image of
+            // the other product: canRollBack() only looks at the first byte, and such an image
+            // dies at PSRAM init, where nothing can bring the device back.
+            bool rollbackPossible = Update.canRollBack() && !_rollbackTried;
+            ImageDescriptor::Verdict passiveVerdict = rollbackPossible
+                ? AppImageDescriptor::validatePartition(esp_ota_get_next_update_partition(NULL), false)
+                : ImageDescriptor::Verdict::ACCEPT;
+            if (!ImageDescriptor::accepts(passiveVerdict)) {
+                LOG_WARNING("Rollback image is not compatible with this device (%s)", ImageDescriptor::verdictToString(passiveVerdict));
+            } else if (rollbackPossible) {
                 LOG_WARNING("Attempting firmware rollback...");
                 if (Update.rollBack()) {
                     _rollbackTried = true;
@@ -586,7 +604,7 @@ namespace CrashMonitor
             return;
         }
 
-        LOG_WARNING("Crash: Reason=%s(%d) | Crashes=%lu (consecutive=%lu) | Task=%s",
+        LOG_WARNING("Crash: Reason=%s(%d) | Crashes=%lu (consecutive=%lu) | Task=%s | PC=0x%08lx",
                     getResetReasonString(resetReason), (int32_t)resetReason,
                     _crashCount, _consecutiveCrashCount,
                     summary->exc_task, (uint32_t)summary->exc_pc);

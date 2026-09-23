@@ -33,6 +33,10 @@ The web UI SHALL stop polling automatically after a fixed maximum wait and prese
 - **WHEN** the device does not respond to health polls within 90 seconds of the reboot being triggered
 - **THEN** the wait screen stops auto-polling and shows a manual fallback instead of spinning forever
 
+#### Scenario: Manual retry when the device is already back
+- **WHEN** the fallback is shown and the user chooses to check again while the device is already back online
+- **THEN** the retry polls without requiring an observed failure first, so the first successful poll redirects instead of the retry spinning until the cap again
+
 ### Requirement: The wait screen only claims states that are actually observable
 The wait screen SHALL only display status text for states the polling can actually distinguish: the triggering request was accepted, the device is unreachable/waiting, and the device is back online. It SHALL NOT display an intermediate step (e.g. "applying configuration", "verifying firmware") that the web UI has no way to observe once the device has dropped off the network.
 

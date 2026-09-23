@@ -2159,8 +2159,13 @@ namespace Ade7953
         bool suppressed = (_zxtoLastTriggerMs != 0) && ((nowMs - _zxtoLastTriggerMs) < ADE7953_ZXTO_SUPPRESS_MS);
 
         if (suppressed) {
+            #ifdef ENV_DEV // Bench boards often run with no voltage input connected: keep this out of the DEBUG stream
+            LOG_VERBOSE("Blackout still ongoing (suppressed, %llums since last alert, count=%llu)",
+                       (unsigned long long)(nowMs - _zxtoLastTriggerMs), statistics.ade7953ZxtoInterrupts);
+            #else
             LOG_DEBUG("Blackout still ongoing (suppressed, %llums since last alert, count=%llu)",
                        (unsigned long long)(nowMs - _zxtoLastTriggerMs), statistics.ade7953ZxtoInterrupts);
+            #endif
             return;
         }
 
@@ -2591,7 +2596,7 @@ namespace Ade7953
 
                             // Create filename for yesterday's CSV file (UTC date)
                             char yesterdayIso[TIMESTAMP_BUFFER_SIZE];
-                            CustomTime::getDateIsoOffset(yesterdayIso, sizeof(yesterdayIso), -1);
+                            CustomTime::getDateIsoOfNearestHour(yesterdayIso, sizeof(yesterdayIso), -1);
                             char filepath[NAME_BUFFER_SIZE + sizeof(ENERGY_CSV_DAILY_PREFIX) + 4];
                             snprintf(filepath, sizeof(filepath), "%s/%s.csv", ENERGY_CSV_DAILY_PREFIX, yesterdayIso);
 
@@ -2600,7 +2605,7 @@ namespace Ade7953
                                 
                                 // Get today's date to exclude from consolidation
                                 char todayIso[TIMESTAMP_BUFFER_SIZE];
-                                CustomTime::getCurrentDateIso(todayIso, sizeof(todayIso));
+                                CustomTime::getDateIsoOfNearestHour(todayIso, sizeof(todayIso));
                                 
                                 // Check if we crossed a month boundary (if today is day 01, yesterday was last day of prev month)
                                 if (todayIso[8] == '0' && todayIso[9] == '1') {
@@ -3724,9 +3729,9 @@ namespace Ade7953
         char timestampRoundedHour[TIMESTAMP_ISO_BUFFER_SIZE];
         CustomTime::getTimestampIsoRoundedToHour(timestampRoundedHour, sizeof(timestampRoundedHour));
         
-        // Create filename for today's CSV file (UTC date)
+        // The file of the stamped hour: a save a moment before 00:00Z belongs to the new day
         char filename[NAME_BUFFER_SIZE];
-        CustomTime::getCurrentDateIso(filename, sizeof(filename));
+        CustomTime::getDateIsoOfNearestHour(filename, sizeof(filename));
 
         char filepath[NAME_BUFFER_SIZE + sizeof(ENERGY_CSV_DAILY_PREFIX) + 4]; // Added space for prefix plus "/.csv"
         snprintf(filepath, sizeof(filepath), "%s/%s.csv", ENERGY_CSV_DAILY_PREFIX, filename);
