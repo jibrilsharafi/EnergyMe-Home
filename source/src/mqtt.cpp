@@ -3442,7 +3442,8 @@ namespace Mqtt
         }
     }
 
-    static void _otaValidationTask(void* parameter) {
+    // Every outcome ends the pending state; the caller clears it once
+    static void _validateOtaUpdate() {
         LOG_INFO("OTA validation task started - monitoring stability for %d seconds", OTA_VALIDATION_TIMEOUT / 1000);
         
         uint64_t validationStartTime = millis64();
@@ -3462,9 +3463,6 @@ namespace Mqtt
         Preferences prefs;
         if (!prefs.begin(PREFERENCES_NAMESPACE_MQTT, true)) {
             LOG_ERROR("Failed to open preferences for SHA256 validation");
-            clearOtaPendingState();
-            _otaValidationTaskHandle = nullptr;
-            vTaskDelete(nullptr);
             return;
         }
         
@@ -3475,18 +3473,12 @@ namespace Mqtt
 
         if (!RollbackLogic::isValidSha256Hex(expectedSha256)) {
             LOG_ERROR("Invalid expected SHA256 in preferences (length: %d)", strlen(expectedSha256));
-            clearOtaPendingState();
-            _otaValidationTaskHandle = nullptr;
-            vTaskDelete(nullptr);
             return;
         }
 
         char currentSha256[SHA256_HEX_BUFFER_SIZE];
         if (!getRunningPartitionSha256(currentSha256, sizeof(currentSha256))) {
             LOG_ERROR("Failed to get current partition description");
-            clearOtaPendingState();
-            _otaValidationTaskHandle = nullptr;
-            vTaskDelete(nullptr);
             return;
         }
 
@@ -3494,17 +3486,17 @@ namespace Mqtt
         if (!RollbackLogic::sha256HexEquals(expectedSha256, currentSha256)) {
             LOG_ERROR("OTA validation failed - SHA256 mismatch (expected: %s, current: %s) - firmware rolled back", expectedSha256, currentSha256);
             _publishOtaStatus(_otaCurrentJobId, "FAILED", "sha256_mismatch_firmware_rollback");
-            clearOtaPendingState();
-            _otaValidationTaskHandle = nullptr;
-            vTaskDelete(nullptr);
             return;
         }
         
         LOG_INFO("OTA validation successful - SHA256 verified: %s", currentSha256);
         _publishOtaStatus(_otaCurrentJobId, "SUCCEEDED", "validated after successful boot and stability period");
-        clearOtaPendingState();
         LOG_INFO("OTA update completed and validated successfully");
+    }
 
+    static void _otaValidationTask(void* parameter) {
+        _validateOtaUpdate();
+        clearOtaPendingState();
         _otaValidationTaskHandle = nullptr;
         vTaskDelete(nullptr);
     }
