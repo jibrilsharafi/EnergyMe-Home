@@ -19,8 +19,8 @@ try:
         stderr=subprocess.DEVNULL,
     )
     rev = out.decode().strip() or "unknown"
-except Exception:
-    pass
+except Exception as e:
+    print(f"inject_git_rev: git revision unavailable ({e}), image descriptor will say 'unknown'")
 
 gen_dir = os.path.join(env.subst("$BUILD_DIR"), "generated")
 header = os.path.join(gen_dir, "git_rev.h")
