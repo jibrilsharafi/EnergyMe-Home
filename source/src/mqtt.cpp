@@ -1228,6 +1228,10 @@ namespace Mqtt
         char jobAcceptedTopic[MQTT_TOPIC_BUFFER_SIZE];
         _constructMqttTopicReservedThings("jobs/+/get/accepted", jobAcceptedTopic, sizeof(jobAcceptedTopic));
 
+        // Rejected only: /update/accepted would echo every progress update back
+        char jobUpdateRejectedTopic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructMqttTopicReservedThings("jobs/+/update/rejected", jobUpdateRejectedTopic, sizeof(jobUpdateRejectedTopic));
+
         LOG_DEBUG("Attempting to subscribe to: %s", jobNotifyTopic);
         if (_clientMqtt.subscribe(jobNotifyTopic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
             LOG_DEBUG("Subscribed to AWS IoT Jobs notify topic: %s", jobNotifyTopic);
@@ -1247,6 +1251,12 @@ namespace Mqtt
             LOG_DEBUG("Subscribed to AWS IoT Job accepted topic: %s", jobAcceptedTopic);
         } else {
             LOG_WARNING("Failed to subscribe to AWS IoT Job accepted topic: %s", jobAcceptedTopic);
+        }
+
+        if (_clientMqtt.subscribe(jobUpdateRejectedTopic, MQTT_TOPIC_SUBSCRIBE_QOS)) {
+            LOG_DEBUG("Subscribed to AWS IoT Job update rejected topic: %s", jobUpdateRejectedTopic);
+        } else {
+            LOG_WARNING("Failed to subscribe to AWS IoT Job update rejected topic: %s", jobUpdateRejectedTopic);
         }
     }
 
@@ -2158,11 +2168,16 @@ namespace Mqtt
             if (!doc["execution"]["jobDocument"]["operation"].is<const char*>()) { LOG_WARNING("Execution response missing operation, ignoring."); return false; }
             if (!doc["execution"]["jobDocument"]["firmware"].is<JsonObject>()) { LOG_WARNING("Execution response missing firmware object, ignoring."); return false; }
             if (!doc["execution"]["jobDocument"]["firmware"]["url"].is<const char*>()) { LOG_WARNING("Execution response missing firmware URL, ignoring."); return false; }
-        } else if (endsWith(topic, "/update/accepted") || endsWith(topic, "/update/rejected")) {
-            // Handle job update response topics (AWS IoT sends these automatically when we publish job status updates)
-            // These are confirmation messages that our job status updates were received - just acknowledge and ignore
+        } else if (endsWith(topic, "/update/rejected")) {
+            // AWS refused a status update we published (e.g. the job was cancelled or already
+            // terminal): the device may look locally successful while AWS never recorded it
+            LOG_ERROR("AWS IoT rejected a job status update on %s: %s - %s", topic,
+                      doc["code"].is<const char*>() ? doc["code"].as<const char*>() : "unknown",
+                      doc["message"].is<const char*>() ? doc["message"].as<const char*>() : "");
+            return false;
+        } else if (endsWith(topic, "/update/accepted")) {
             LOG_DEBUG("Received job update confirmation from AWS IoT: %s", topic);
-            return false; // Don't process these further, just acknowledge receipt
+            return false;
         } else {
             LOG_WARNING("Unrecognized AWS IoT Jobs topic pattern: %s", topic);
             return false;
