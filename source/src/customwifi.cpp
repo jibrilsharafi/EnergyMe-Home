@@ -308,14 +308,8 @@ namespace CustomWifi
 
   bool isApConnection(const IPAddress &localAddress, const IPAddress &remoteAddress)
   {
-    uint32_t apAddress = _apAddressHostOrder;
-    if (apAddress == 0 || _toHostOrder(localAddress) != apAddress) return false;
-    // The destination alone is not proof of arrival interface: with Ethernet up, lwIP
-    // accepts a wired packet addressed to the AP address and routes the reply back out
-    // ETH. A real AP client always has an address the SoftAP leased, inside its subnet.
-    uint32_t mask = WifiProvisioning::netmaskFromCidr(_apCidr);
-    uint32_t remote = _toHostOrder(remoteAddress);
-    return mask != 0 && remote != apAddress && (remote & mask) == (apAddress & mask);
+    return WifiProvisioning::isApPeer(_toHostOrder(localAddress), _toHostOrder(remoteAddress),
+                                      _apAddressHostOrder, _apCidr);
   }
 
   WifiProvisioning::State getProvisioningState()

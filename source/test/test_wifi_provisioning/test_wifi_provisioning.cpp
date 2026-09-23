@@ -837,6 +837,36 @@ void test_prefix_lengths_convert_to_netmasks(void) {
     TEST_ASSERT_EQUAL_UINT32(0xFFFFFFFFu, netmaskFromCidr(32));
 }
 
+// 192.168.4.1/24 AP, as host-order values
+static const uint32_t AP_IP = 0xC0A80401u;
+
+void test_ap_peer_leased_client_is_accepted(void) {
+    TEST_ASSERT_TRUE(isApPeer(AP_IP, 0xC0A80402u, AP_IP, 24));
+    TEST_ASSERT_TRUE(isApPeer(AP_IP, 0xC0A804FEu, AP_IP, 24));
+}
+
+void test_ap_peer_wired_host_addressing_the_ap_is_rejected(void) {
+    // A LAN host (192.168.2.198) that routes to the AP address over Ethernet
+    TEST_ASSERT_FALSE(isApPeer(AP_IP, 0xC0A802C6u, AP_IP, 24));
+}
+
+void test_ap_peer_requires_the_ap_as_destination(void) {
+    // Same-subnet source, but the request was addressed to the Ethernet IP
+    TEST_ASSERT_FALSE(isApPeer(0xC0A80250u, 0xC0A80402u, AP_IP, 24));
+}
+
+void test_ap_peer_rejects_no_ap_self_and_zero_mask(void) {
+    TEST_ASSERT_FALSE(isApPeer(0u, 0xC0A80402u, 0u, 24));
+    TEST_ASSERT_FALSE(isApPeer(AP_IP, AP_IP, AP_IP, 24));
+    TEST_ASSERT_FALSE(isApPeer(AP_IP, 0xC0A80402u, AP_IP, 0));
+}
+
+void test_ap_peer_honours_a_narrower_ap_subnet(void) {
+    // /28 AP: .1-.14 are inside, .20 is not
+    TEST_ASSERT_TRUE(isApPeer(AP_IP, 0xC0A8040Eu, AP_IP, 28));
+    TEST_ASSERT_FALSE(isApPeer(AP_IP, 0xC0A80414u, AP_IP, 28));
+}
+
 void test_cidr_zero_does_not_shift_by_the_operand_width(void) {
     // 0xFFFFFFFF << 32 is undefined behaviour, and on x86 the shift count is taken mod 32,
     // so a naive implementation returns 0xFFFFFFFF here instead of 0.
@@ -951,6 +981,11 @@ int main(int, char **) {
     RUN_TEST(test_prefix_lengths_convert_to_netmasks);
     RUN_TEST(test_cidr_zero_does_not_shift_by_the_operand_width);
     RUN_TEST(test_netmask_and_cidr_round_trip);
+    RUN_TEST(test_ap_peer_leased_client_is_accepted);
+    RUN_TEST(test_ap_peer_wired_host_addressing_the_ap_is_rejected);
+    RUN_TEST(test_ap_peer_requires_the_ap_as_destination);
+    RUN_TEST(test_ap_peer_rejects_no_ap_self_and_zero_mask);
+    RUN_TEST(test_ap_peer_honours_a_narrower_ap_subnet);
 
     RUN_TEST(test_every_state_has_a_distinct_wire_name);
     RUN_TEST(test_out_of_range_state_falls_back_to_unprovisioned);

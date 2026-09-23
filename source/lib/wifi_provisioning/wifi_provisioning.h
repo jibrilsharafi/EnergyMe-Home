@@ -215,4 +215,10 @@ uint8_t cidrFromNetmask(uint32_t netmask);
 // this handles that case explicitly.
 uint32_t netmaskFromCidr(uint8_t cidr);
 
+// Whether a connection (host-order addresses) really came in over the SoftAP. The
+// destination alone is not proof of arrival interface: with Ethernet up, lwIP accepts a
+// wired packet addressed to the AP address and routes the reply back out ETH. A real AP
+// client always has an address the SoftAP leased, inside its subnet. apAddress 0 = no AP.
+bool isApPeer(uint32_t localAddress, uint32_t remoteAddress, uint32_t apAddress, uint8_t apCidr);
+
 }  // namespace WifiProvisioning
