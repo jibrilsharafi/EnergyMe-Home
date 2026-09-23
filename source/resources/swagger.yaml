@@ -369,32 +369,67 @@ paths:
                     type: object
                     description: |
                       Dynamic system information (uptime, memory usage, temperature, etc.).
-                      Includes a `cpu` block with auto-calibrated per-core load %, and per-task
+                      Includes a `cpu` block with per-core load statistics, and per-task
                       heartbeat fields (`lastTickMillis`, `loopCount`, `staleMs`) under each
                       entry in `tasks` for starvation/stuck-task diagnosis.
                     properties:
                       cpu:
                         type: object
                         description: |
-                          Per-core CPU load %, auto-calibrated by the FreeRTOS idle-hook profiler.
-                          Each core's "100% idle" baseline is the highest idle-tick rate ever
-                          observed; load = `100 * (1 - currentRate / baselineRate)`. Reports 0
-                          before the first sample window completes (~1 s after boot).
+                          Per-core CPU load %, auto-calibrated by the FreeRTOS idle-hook profiler:
+                          each core's "100% idle" baseline is the highest idle-tick rate observed.
+                          Sampled every 1 s and aggregated over the last 60 s on dev builds, the
+                          last 3600 s on prod builds. All values are 0 before the first sample
+                          completes (~1 s after boot).
                         properties:
-                          core0Percent:
-                            type: integer
-                            minimum: 0
-                            maximum: 100
-                            example: 38
-                          core1Percent:
-                            type: integer
-                            minimum: 0
-                            maximum: 100
-                            example: 12
-                          sampleWindowMs:
-                            type: integer
-                            description: Wall-clock milliseconds covered by the most recent sample window (nominally ~1000)
-                            example: 1000
+                          core0: &cpuCoreStats
+                            type: object
+                            properties:
+                              current:
+                                type: integer
+                                description: Most recent 1 s load %
+                                example: 38
+                              min:
+                                type: integer
+                                description: Minimum load % in the window
+                                example: 20
+                              max:
+                                type: integer
+                                description: Maximum load % in the window
+                                example: 85
+                              avg:
+                                type: integer
+                                description: Mean load % in the window
+                                example: 35
+                              p50:
+                                type: integer
+                                description: Median load % in the window
+                                example: 34
+                              p90:
+                                type: integer
+                                description: 90th percentile load %
+                                example: 60
+                              p95:
+                                type: integer
+                                description: 95th percentile load %
+                                example: 70
+                              p99:
+                                type: integer
+                                description: 99th percentile load %
+                                example: 84
+                              samplesInWindow:
+                                type: integer
+                                description: 1 s samples aggregated in the window
+                                example: 60
+                              samplesAboveThreshold:
+                                type: integer
+                                description: Samples at or above the 80% spike threshold
+                                example: 1
+                              windowSeconds:
+                                type: integer
+                                description: Seconds actually covered by the window (shorter than nominal shortly after boot)
+                                example: 60
+                          core1: *cpuCoreStats
                       network:
                         type: object
                         description: |
