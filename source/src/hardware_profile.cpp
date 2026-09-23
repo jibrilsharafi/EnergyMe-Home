@@ -228,40 +228,6 @@ static const size_t PCB_PROFILES_COUNT = sizeof(PCB_PROFILES) / sizeof(PCB_PROFI
 const HardwareProfile* globalHwProfile = nullptr;
 bool globalCommunityMode = false;
 
-const char* productLineToString(ProductLine product) {
-    switch (product) {
-        case ProductLine::HOME:     return PRODUCT_LINE_HOME_STR;
-        case ProductLine::HOMEPRO: return PRODUCT_LINE_HOMEPRO_STR;
-    }
-    return PRODUCT_LINE_HOME_STR;
-}
-
-bool productFromArtifactName(const char* name, ProductLine& productOut) {
-    if (name == nullptr) return false;
-    if (strstr(name, FIRMWARE_ARTIFACT_TOKEN_HOMEPRO) != nullptr) {
-        productOut = ProductLine::HOMEPRO;
-        return true;
-    }
-    if (strstr(name, FIRMWARE_ARTIFACT_TOKEN_HOME) != nullptr) {
-        productOut = ProductLine::HOME;
-        return true;
-    }
-    return false;
-}
-
-bool parseProductLineString(const char* s, ProductLine& productOut) {
-    if (s == nullptr) return false;
-    if (strcmp(s, PRODUCT_LINE_HOME_STR) == 0) {
-        productOut = ProductLine::HOME;
-        return true;
-    }
-    if (strcmp(s, PRODUCT_LINE_HOMEPRO_STR) == 0) {
-        productOut = ProductLine::HOMEPRO;
-        return true;
-    }
-    return false;
-}
-
 // The product a binary falls back to when factory NVS cannot answer. Pro build envs
 // pin PRODUCT_FALLBACK=1 (HOMEPRO) so a Pro binary never falls back to a Home pinout.
 static ProductLine buildFallbackProduct() {
@@ -275,43 +241,13 @@ static ProductLine buildFallbackProduct() {
 #endif
 }
 
-// Parse a pcb_revision string of the form "vMAJOR.MINOR" (e.g. "v6.1") into the
-// packed uint8_t used by HardwareProfile::version (major * 10 + minor).
-// Returns true on success; false on any parse/format error.
-static bool parsePcbRevision(const char* s, uint8_t& versionOut) {
-    if (s == nullptr || s[0] != 'v') return false;
-    unsigned int major = 0;
-    unsigned int minor = 0;
-    int matched = sscanf(s, "v%u.%u", &major, &minor);
-    if (matched != 2) return false;
-    if (major > 25 || minor > 9) return false; // keep (major*10+minor) within uint8_t
-    versionOut = static_cast<uint8_t>(major * 10 + minor);
-    return true;
-}
-
-static const HardwareProfile* findProfile(ProductLine product, uint8_t version) {
-    for (size_t i = 0; i < PCB_PROFILES_COUNT; i++) {
-        if (PCB_PROFILES[i].product == product && PCB_PROFILES[i].version == version) return &PCB_PROFILES[i];
-    }
-    return nullptr;
-}
-
-// First (= latest) profile of the given product. Entries are ordered newest-first
-// within each product, so the first product match is that product's latest.
-static const HardwareProfile* latestProfileForProduct(ProductLine product) {
-    for (size_t i = 0; i < PCB_PROFILES_COUNT; i++) {
-        if (PCB_PROFILES[i].product == product) return &PCB_PROFILES[i];
-    }
-    return &PCB_PROFILES[0];
-}
-
 // Select the profile used in community (unprovisioned) mode: scoped to the build's
 // fallback product, honouring the optional PCB_VERSION_FALLBACK compile-time flag,
 // otherwise that product's latest profile.
 static const HardwareProfile* pickCommunityFallback() {
     ProductLine product = buildFallbackProduct();
 #ifdef PCB_VERSION_FALLBACK
-    const HardwareProfile* p = findProfile(product, static_cast<uint8_t>(PCB_VERSION_FALLBACK));
+    const HardwareProfile* p = ProfileSelection::find(PCB_PROFILES, PCB_PROFILES_COUNT, product, static_cast<uint8_t>(PCB_VERSION_FALLBACK));
     if (p != nullptr) {
         LOG_INFO("Community mode: using PCB_VERSION_FALLBACK=v%u (%s)", p->version, productLineToString(product));
         return p;
@@ -319,7 +255,7 @@ static const HardwareProfile* pickCommunityFallback() {
     LOG_WARNING("PCB_VERSION_FALLBACK=%d does not match any known %s profile - using that product's latest",
                 (int)PCB_VERSION_FALLBACK, productLineToString(product));
 #endif
-    return latestProfileForProduct(product);
+    return ProfileSelection::latestForProduct(PCB_PROFILES, PCB_PROFILES_COUNT, product);
 }
 
 void initHardwareProfile() {
@@ -342,39 +278,33 @@ void initHardwareProfile() {
     String productLineStr = prefs.getString(FACTORY_KEY_PRODUCT_LINE, "");
     prefs.end();
 
-    if (pcbRevision.length() == 0) {
-        globalCommunityMode = true;
-        globalHwProfile = pickCommunityFallback();
-        LOG_INFO("pcb_revision not set in factory NVS - running in community mode, cloud disabled");
-        return;
-    }
-
     // Absent product_line means Home: the deployed fleet predates the key and is
     // never backfilled (factory NVS stays write-once at manufacturing).
+    const HardwareProfile* profile = nullptr;
     ProductLine product = ProductLine::HOME;
-    if (productLineStr.length() > 0 && !parseProductLineString(productLineStr.c_str(), product)) {
-        globalCommunityMode = true;
-        globalHwProfile = pickCommunityFallback();
-        LOG_WARNING("Unknown product_line \"%s\" in factory NVS - running in community mode",
-                    productLineStr.c_str());
-        return;
-    }
-
     uint8_t version = 0;
-    if (!parsePcbRevision(pcbRevision.c_str(), version)) {
+    ProfileSelection::Result result = ProfileSelection::select(
+        pcbRevision.c_str(), productLineStr.c_str(), PCB_PROFILES, PCB_PROFILES_COUNT, profile, product, version);
+    if (result != ProfileSelection::Result::SELECTED) {
         globalCommunityMode = true;
         globalHwProfile = pickCommunityFallback();
-        LOG_WARNING("Malformed pcb_revision \"%s\" in factory NVS - running in community mode",
-                    pcbRevision.c_str());
-        return;
-    }
-
-    const HardwareProfile* profile = findProfile(product, version);
-    if (profile == nullptr) {
-        globalCommunityMode = true;
-        globalHwProfile = pickCommunityFallback();
-        LOG_WARNING("Unknown pcb_revision \"%s\" (v%u) for product %s - running in community mode, cloud disabled",
-                    pcbRevision.c_str(), version, productLineToString(product));
+        switch (result) {
+            case ProfileSelection::Result::NO_REVISION:
+                LOG_INFO("pcb_revision not set in factory NVS - running in community mode, cloud disabled");
+                break;
+            case ProfileSelection::Result::UNKNOWN_PRODUCT:
+                LOG_WARNING("Unknown product_line \"%s\" in factory NVS - running in community mode",
+                            productLineStr.c_str());
+                break;
+            case ProfileSelection::Result::MALFORMED_REVISION:
+                LOG_WARNING("Malformed pcb_revision \"%s\" in factory NVS - running in community mode",
+                            pcbRevision.c_str());
+                break;
+            default:
+                LOG_WARNING("Unknown pcb_revision \"%s\" (v%u) for product %s - running in community mode, cloud disabled",
+                            pcbRevision.c_str(), version, productLineToString(product));
+                break;
+        }
         return;
     }
 

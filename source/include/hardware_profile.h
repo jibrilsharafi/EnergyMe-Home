@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#include "product_line.h"
 #include "structs.h"
 
 // Physical 74HC4067 chip maximum: 16 channels (Y0-Y15).
@@ -17,37 +18,6 @@
 // Use this ONLY for static array sizing (e.g. _meterValues[MAX_CHANNEL_COUNT]).
 // For runtime iteration use globalHwProfile->totalChannelCount.
 #define MAX_CHANNEL_COUNT (HW_PROFILE_MAX_MUX_CHANNELS + 1)
-
-// Product line, read from factory NVS (factory_ns::product_line) at boot.
-// Absent key -> HOME, permanently: the deployed fleet predates the key.
-// PCB versions are numbered independently per product (Home Pro restarts at v1.0),
-// so profile lookup is always keyed by (product, version), never version alone.
-enum class ProductLine : uint8_t {
-    HOME = 0,
-    HOMEPRO = 1,
-};
-
-#define PRODUCT_LINE_HOME_STR     "home"
-#define PRODUCT_LINE_HOMEPRO_STR "homepro"
-
-const char* productLineToString(ProductLine product);
-
-// Parse a product string ("home" / "homepro") into the enum.
-// Returns false for any unknown value, leaving productOut untouched.
-bool parseProductLineString(const char* s, ProductLine& productOut);
-
-// Firmware artifact name tokens. Home and Pro binaries are NOT interchangeable
-// (quad vs octal PSRAM, fixed at compile time), so every delivery path checks
-// the artifact against the running product before flashing.
-#define FIRMWARE_ARTIFACT_TOKEN_HOME     "energyme_home"
-#define FIRMWARE_ARTIFACT_TOKEN_HOMEPRO "energyme_homepro"
-
-// Identify the product a firmware artifact name was built for. The Home token is
-// a substring of the Pro token, so the Pro token is matched FIRST - a plain
-// substring check on the Home token alone would accept Pro images on Home.
-// Returns false when the name carries no recognizable token (e.g. a self-built
-// community image), which callers treat as "unknown", not as a mismatch.
-bool productFromArtifactName(const char* name, ProductLine& productOut);
 
 // Hardware profile for a specific (product, PCB version) pair.
 // Add a new entry to PCB_PROFILES[] in hardware_profile.cpp to support a new version.
