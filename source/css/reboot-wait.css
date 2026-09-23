@@ -23,6 +23,11 @@
     box-sizing: border-box;
 }
 
+/* Focused programmatically so keyboard users start inside the dialog */
+.reboot-wait-box:focus {
+    outline: none;
+}
+
 .reboot-wait-spinner {
     width: 28px;
     height: 28px;
