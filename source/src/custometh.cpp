@@ -12,6 +12,7 @@
 #include <lwip/tcpip.h>
 
 #include "customwifi.h"
+#include "shadow.h"
 #include "wifi_provisioning.h"
 
 namespace CustomEth
@@ -301,8 +302,11 @@ namespace CustomEth
                 _updateEthState(false, false);
                 break;
             default:
-                break;
+                return;
         }
+        // The cloud copy of the Ethernet state lives in the wifi shadow. A standby link
+        // changing state forces no MQTT reconnect, so flag it here (flag only, any task).
+        Shadow::requestReport("wifi");
     }
 
     static void _updateEthState(bool linkUp, bool hasAddress)
@@ -628,8 +632,13 @@ namespace CustomEth
     void getStatusAsJson(JsonDocument &jsonDocument)
     {
         jsonDocument["enabled"] = _enabled;
+        if (!_enabled) {
+            // No eth task runs arbitration (W5500 failed to start), so WiFi is all there is
+            jsonDocument["activeInterface"] = InterfaceArbitration::interfaceName(
+                WiFi.isConnected() ? InterfaceArbitration::Interface::WIFI_STATION : InterfaceArbitration::Interface::NONE);
+            return;
+        }
         jsonDocument["activeInterface"] = InterfaceArbitration::interfaceName(activeInterface());
-        if (!_enabled) return;
 
         jsonDocument["linkUp"] = isLinkUp();
         jsonDocument["serviceable"] = isServiceable();
