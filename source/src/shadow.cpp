@@ -10,6 +10,7 @@
 #include "ade7953.h"
 #include "app_image_descriptor.h"
 #include "awsconfig.h"
+#include "custometh.h"
 #include "customwifi.h"
 #include "factory_keys.h"
 #include "globals.h"
@@ -548,6 +549,26 @@ static void _reportWifi(JsonDocument& doc) {
     }
     // RSSI is intentionally omitted: it's volatile (would churn the shadow
     // version) and is already on the system/dynamic telemetry topic.
+
+    // Ethernet rides in this shadow rather than its own: the cloud allowlists the
+    // six shadow names, and stores reported state opaquely. Failover forces an MQTT
+    // reconnect, which republishes every shadow, so active_interface stays current.
+    if (globalHwProfile == nullptr || !globalHwProfile->hasEthernet) return;
+    SpiRamAllocator allocator;
+    JsonDocument eth(&allocator);
+    CustomEth::getStatusAsJson(eth);
+    rep["active_interface"] = eth["activeInterface"];
+    JsonObject ethRep = rep["ethernet"].to<JsonObject>();
+    ethRep["enabled"] = eth["enabled"];
+    if (!eth["enabled"].as<bool>()) return;
+    ethRep["link_up"] = eth["linkUp"];
+    ethRep["static_ip"] = eth["staticApplied"];
+    ethRep["ip"] = eth["ip"];
+    ethRep["gateway"] = eth["gateway"];
+    ethRep["subnet"] = eth["subnet"];
+    ethRep["dns1"] = eth["dns1"];
+    ethRep["dns2"] = eth["dns2"];
+    ethRep["mac"] = eth["mac"];
 }
 
 // ============================================================================
