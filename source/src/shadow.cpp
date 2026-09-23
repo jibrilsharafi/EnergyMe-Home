@@ -552,7 +552,7 @@ static void _reportWifi(JsonDocument& doc) {
 
     // Ethernet rides in this shadow rather than its own: the cloud allowlists the
     // six shadow names, and stores reported state opaquely. Failover forces an MQTT
-    // reconnect, which republishes every shadow, so active_interface stays current.
+    // reconnect, which republishes every shadow; Ethernet link/IP events flag this one.
     if (globalHwProfile == nullptr || !globalHwProfile->hasEthernet) return;
     SpiRamAllocator allocator;
     JsonDocument eth(&allocator);
