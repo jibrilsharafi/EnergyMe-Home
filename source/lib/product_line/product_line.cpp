@@ -46,7 +46,7 @@ bool parsePcbRevision(const char* s, uint8_t& versionOut) {
     unsigned int minor = 0;
     int matched = sscanf(s, "v%u.%u", &major, &minor);
     if (matched != 2) return false;
-    if (major > 25 || minor > 9) return false; // keep (major*10+minor) within uint8_t
+    if (major > 25 || minor > 9 || major * 10 + minor > UINT8_MAX) return false; // v25.6+ would wrap
     versionOut = static_cast<uint8_t>(major * 10 + minor);
     return true;
 }
