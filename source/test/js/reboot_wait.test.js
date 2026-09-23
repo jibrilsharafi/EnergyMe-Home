@@ -15,6 +15,7 @@ function runLoop(answers, requireFailureFirst) {
     const wait = new RebootWait();
     wait.MAX_WAIT_MS = 200;
     wait.POLL_INTERVAL_MS = 1;
+    wait.MIN_POLL_MS = 1;
     wait._delay = () => new Promise(resolve => setTimeout(resolve, 1));
     wait._setStatus = () => {};
     wait._stopElapsedTimer = () => {};
@@ -64,5 +65,6 @@ test('the fallback appears no later than the cap, counted from the trigger', asy
     wait._showFallback = () => { fallbackAt = clock; };
     const token = ++wait._pollToken;
     await wait._runPollLoop(token, '', '/', true, clock + wait.MAX_WAIT_MS);
-    assert.equal(fallbackAt, wait.MAX_WAIT_MS);
+    // Never past the cap, and no poll is started too short to succeed
+    assert.ok(fallbackAt <= wait.MAX_WAIT_MS && fallbackAt > wait.MAX_WAIT_MS - wait.MIN_POLL_MS, String(fallbackAt));
 });

@@ -13,6 +13,7 @@ class RebootWait {
     constructor() {
         this.POLL_INTERVAL_MS = 2000;
         this.POLL_TIMEOUT_MS = 2500;
+        this.MIN_POLL_MS = 1000; // a shorter last poll could time out on a device that is back
         this.MAX_WAIT_MS = 90000;
         this.TRIVIA_INTERVAL_MS = 4200;
 
@@ -75,7 +76,7 @@ class RebootWait {
 
         let sawFailure = !requireFailureFirst;
 
-        while (remaining() > 0) {
+        while (remaining() >= this.MIN_POLL_MS) {
             if (token !== this._pollToken) return;
 
             const ok = await this._pollHealth(baseUrl, Math.min(this.POLL_TIMEOUT_MS, remaining()));
@@ -152,9 +153,6 @@ class RebootWait {
                 </div>
             </div>`;
         document.body.appendChild(scrim);
-        // The scrim only blocks the pointer: inert keeps Tab and screen readers off the page
-        // underneath. The screen is never dismissed (it ends in a navigation), so this is not undone.
-        Array.from(document.body.children).forEach(el => { if (el !== scrim) el.inert = true; });
 
         this._els = {
             scrim,
@@ -179,6 +177,10 @@ class RebootWait {
     }
 
     _showWaitContent() {
+        // The scrim only blocks the pointer: inert keeps Tab and screen readers off the page
+        // underneath (re-applied per show, for toasts added since). Never undone: the screen
+        // ends in a navigation.
+        Array.from(document.body.children).forEach(el => { if (el !== this._els.scrim) el.inert = true; });
         this._els.scrim.style.display = 'flex';
         this._els.waitContent.style.display = 'block';
         this._els.fallback.style.display = 'none';
