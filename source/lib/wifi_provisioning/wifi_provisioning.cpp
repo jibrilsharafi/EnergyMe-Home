@@ -351,4 +351,10 @@ uint32_t netmaskFromCidr(uint8_t cidr) {
     return static_cast<uint32_t>(0xFFFFFFFFu << (32u - cidr));
 }
 
+bool isApPeer(uint32_t localAddress, uint32_t remoteAddress, uint32_t apAddress, uint8_t apCidr) {
+    if (apAddress == 0u || localAddress != apAddress) return false;
+    uint32_t mask = netmaskFromCidr(apCidr);
+    return mask != 0u && remoteAddress != apAddress && (remoteAddress & mask) == (apAddress & mask);
+}
+
 }  // namespace WifiProvisioning
