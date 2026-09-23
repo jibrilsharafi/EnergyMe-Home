@@ -54,6 +54,9 @@ class RebootWait {
         const requireFailureFirst = options.requireFailureFirst !== false;
         const baseUrl = (options.baseUrl || '').replace(/\/$/, '');
         const token = ++this._pollToken;
+        // The cap counts from the trigger, so neither the pre-delay nor a pending poll pushes
+        // the fallback past it
+        const deadline = this._now() + this.MAX_WAIT_MS;
 
         this._mount();
         this._showWaitContent();
@@ -61,21 +64,21 @@ class RebootWait {
         this._startElapsedTimer();
         this._startTrivia();
 
-        this._runPollLoop(token, baseUrl, redirectTo, requireFailureFirst);
+        this._runPollLoop(token, baseUrl, redirectTo, requireFailureFirst, deadline);
     }
 
-    async _runPollLoop(token, baseUrl, redirectTo, requireFailureFirst) {
-        await this._delay(900);
+    async _runPollLoop(token, baseUrl, redirectTo, requireFailureFirst, deadline = this._now() + this.MAX_WAIT_MS) {
+        const remaining = () => Math.max(0, deadline - this._now());
+        await this._delay(Math.min(900, remaining()));
         if (token !== this._pollToken) return;
         this._setStatus("It's off rebooting somewhere, hang tight!");
 
         let sawFailure = !requireFailureFirst;
-        const startTime = Date.now();
 
-        while (Date.now() - startTime < this.MAX_WAIT_MS) {
+        while (remaining() > 0) {
             if (token !== this._pollToken) return;
 
-            const ok = await this._pollHealth(baseUrl);
+            const ok = await this._pollHealth(baseUrl, Math.min(this.POLL_TIMEOUT_MS, remaining()));
             if (token !== this._pollToken) return;
 
             if (ok && sawFailure) {
@@ -89,15 +92,15 @@ class RebootWait {
             }
             if (!ok) sawFailure = true;
 
-            await this._delay(this.POLL_INTERVAL_MS);
+            await this._delay(Math.min(this.POLL_INTERVAL_MS, remaining()));
         }
 
         if (token === this._pollToken) this._showFallback(token, baseUrl, redirectTo);
     }
 
-    _pollHealth(baseUrl) {
+    _pollHealth(baseUrl, timeoutMs) {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), this.POLL_TIMEOUT_MS);
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
         // no-cors: the device sends no Access-Control-Allow-Origin header, so a same-origin
         // restart still works in normal mode but a cross-origin one (static IP / DHCP address
         // change) would have every poll rejected by the browser's CORS check regardless of
@@ -108,6 +111,10 @@ class RebootWait {
             .then(() => true)
             .catch(() => false)
             .finally(() => clearTimeout(timeoutId));
+    }
+
+    _now() {
+        return Date.now();
     }
 
     _delay(ms) {
@@ -122,10 +129,10 @@ class RebootWait {
         const scrim = document.createElement('div');
         scrim.className = 'reboot-wait-scrim';
         scrim.innerHTML = `
-            <div class="reboot-wait-box">
+            <div class="reboot-wait-box" role="dialog" aria-modal="true" aria-label="Device restarting" tabindex="-1">
                 <div class="reboot-wait-wait-content">
                     <div class="reboot-wait-spinner"></div>
-                    <p class="reboot-wait-status"></p>
+                    <p class="reboot-wait-status" aria-live="polite"></p>
                     <p class="reboot-wait-elapsed"><span class="reboot-wait-elapsed-value">0s</span> and counting</p>
                     <div class="reboot-wait-trivia">
                         <button type="button" class="reboot-wait-trivia-arrow" data-dir="-1" aria-label="Previous fact">‹</button>
@@ -145,6 +152,9 @@ class RebootWait {
                 </div>
             </div>`;
         document.body.appendChild(scrim);
+        // The scrim only blocks the pointer: inert keeps Tab and screen readers off the page
+        // underneath. The screen is never dismissed (it ends in a navigation), so this is not undone.
+        Array.from(document.body.children).forEach(el => { if (el !== scrim) el.inert = true; });
 
         this._els = {
             scrim,
@@ -154,7 +164,8 @@ class RebootWait {
             triviaText: scrim.querySelector('.reboot-wait-trivia-text'),
             fallback: scrim.querySelector('.reboot-wait-fallback'),
             retryBtn: scrim.querySelector('.reboot-wait-retry'),
-            homeBtn: scrim.querySelector('.reboot-wait-home')
+            homeBtn: scrim.querySelector('.reboot-wait-home'),
+            box: scrim.querySelector('.reboot-wait-box')
         };
 
         scrim.querySelectorAll('.reboot-wait-trivia-arrow').forEach(btn => {
@@ -171,6 +182,7 @@ class RebootWait {
         this._els.scrim.style.display = 'flex';
         this._els.waitContent.style.display = 'block';
         this._els.fallback.style.display = 'none';
+        this._els.box.focus();
     }
 
     _showFallback(token, baseUrl, redirectTo) {

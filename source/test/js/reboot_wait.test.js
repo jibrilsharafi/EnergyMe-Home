@@ -51,3 +51,18 @@ test('the retry button re-polls without the went-down gate', () => {
     wait._els.retryBtn.onclick();
     assert.equal(options.requireFailureFirst, false);
 });
+
+test('the fallback appears no later than the cap, counted from the trigger', async () => {
+    global.window = { location: { href: '/update' } };
+    const wait = new RebootWait();
+    let clock = 0;
+    wait._now = () => clock;
+    wait._delay = async ms => { clock += ms; };
+    wait._pollHealth = async (baseUrl, timeoutMs) => { clock += timeoutMs; return false; };
+    wait._setStatus = () => {};
+    let fallbackAt = null;
+    wait._showFallback = () => { fallbackAt = clock; };
+    const token = ++wait._pollToken;
+    await wait._runPollLoop(token, '', '/', true, clock + wait.MAX_WAIT_MS);
+    assert.equal(fallbackAt, wait.MAX_WAIT_MS);
+});
