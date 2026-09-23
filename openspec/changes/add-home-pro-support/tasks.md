@@ -72,6 +72,7 @@
 - [x] 8b.4 DNS list written under the lwIP core lock (`LOCK_TCPIP_CORE()`), every slot up to `DNS_MAX_SERVERS` rewritten; Ethernet status reports Ethernet's own captured DNS servers, not lwIP's global list
 - [x] 8b.5 Static Ethernet validation rejects an IP equal to the gateway and (masks shorter than /31) the subnet's network or broadcast address
 - [x] 8b.6 A failed `Network.setDefaultInterface()` rolls the arbitration decision back so the next tick retries; the Ethernet SPI bus is freed when the W5500 fails to start
+- [x] 8b.7 Ethernet state in the cloud: the `wifi` named shadow carries `active_interface` and an `ethernet` object on hardware with Ethernet (no seventh shadow: the cloud allowlists the six names and stores reported state opaquely)
 
 ## 9. Hardware bring-up (BLOCKED on Pro board) - covers all hardware-only spec scenarios
 
