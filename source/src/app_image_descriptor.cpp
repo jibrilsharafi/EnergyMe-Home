@@ -10,6 +10,9 @@
 #include "hardware_profile.h"
 #include "sdkconfig.h"
 
+#if __has_include("git_rev.h")
+#include "git_rev.h"
+#endif
 #ifndef GIT_REV
 #define GIT_REV "unknown"
 #endif
