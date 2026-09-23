@@ -45,7 +45,7 @@
 - [x] 6.6 Convert customlog.cpp + telemetry gates
 - [x] 6.7 Convert maintenance/health-check gates
 - [x] 6.8 Modbus TCP: ETH counts as trusted interface (accept), SoftAP still blocked
-- [ ] 6.9 mDNS: advertise the active interface's IP, re-announce on failover - BENCH-PENDING: the firmware does not rebuild or re-announce on failover (the rebuild check is keyed to `WiFi.localIP()`); it relies on the ESP-IDF responder serving every predefined netif (`CONFIG_MDNS_PREDEF_NETIF_ETH` / `_STA` / `_AP` set in the core sdkconfig). Needs a bench check that `energyme.local` resolves to the active interface's address across a cable pull and return
+- [x] 6.9 mDNS: advertise the active interface's IP, re-announce on failover - no firmware rebuild on failover: the ESP-IDF responder serves every predefined netif (`CONFIG_MDNS_PREDEF_NETIF_ETH` / `_STA` / `_AP`). Bench-verified 2026-09-23 on the Pro (.80 eth / .70 wifi): with both up, both A records are answered; after a cable pull only the WiFi address is answered within ~6 s and the UI stays reachable on it; on replug the ETH record returns within ~5 s and arbitration switches back after the 10 s hold-down. The `wifi` shadow followed (active_interface ethernet -> wifi -> ethernet)
 - [x] 6.10 Build both dev envs + run full native test suite
 
 ## 7. SoftAP raise conditions (product-gated)
