@@ -380,7 +380,7 @@ paths:
                           each core's "100% idle" baseline is the highest idle-tick rate observed.
                           Sampled every 1 s and aggregated over the last 60 s on dev builds, the
                           last 3600 s on prod builds. All values are 0 before the first sample
-                          completes (~1 s after boot).
+                          completes (~1 s after boot) or when the stats could not be read.
                         properties:
                           core0: &cpuCoreStats
                             type: object
@@ -427,7 +427,7 @@ paths:
                                 example: 1
                               windowSeconds:
                                 type: integer
-                                description: Seconds actually covered by the window (shorter than nominal shortly after boot)
+                                description: Samples actually in the window, 1 per second (shorter than nominal shortly after boot, or when samples were skipped)
                                 example: 60
                           core1: *cpuCoreStats
                       network:
