@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#include "product_line.h"
 #include "structs.h"
 
 // Physical 74HC4067 chip maximum: 16 channels (Y0-Y15).
@@ -18,10 +19,11 @@
 // For runtime iteration use globalHwProfile->totalChannelCount.
 #define MAX_CHANNEL_COUNT (HW_PROFILE_MAX_MUX_CHANNELS + 1)
 
-// Hardware profile for a specific PCB version.
+// Hardware profile for a specific (product, PCB version) pair.
 // Add a new entry to PCB_PROFILES[] in hardware_profile.cpp to support a new version.
 struct HardwareProfile {
-    uint8_t version; // PCB version number (e.g. 61 for v6.1)
+    ProductLine product; // Product line this PCB belongs to
+    uint8_t version;     // PCB version number within the product line (e.g. 61 for v6.1, 10 for Pro v1.0)
 
     // RGB LED pins
     uint8_t ledRedPin;
@@ -83,6 +85,17 @@ struct HardwareProfile {
     //
     // Only the first muxChannelCount entries are valid. Array sized to HW_PROFILE_MAX_MUX_CHANNELS.
     uint8_t muxChannelMap[HW_PROFILE_MAX_MUX_CHANNELS];
+
+    // Ethernet controller (W5500 on a dedicated SPI bus, separate from the ADE7953 bus).
+    // Declared last so profiles without Ethernet simply omit these fields
+    // (designated-initializer omission -> value-initialized: hasEthernet=false, pins 0).
+    bool hasEthernet;
+    uint8_t ethCsPin;
+    uint8_t ethIrqPin;  // W5500 INTn (event-driven driver)
+    uint8_t ethRstPin;  // W5500 RSTn
+    uint8_t ethSckPin;
+    uint8_t ethMisoPin;
+    uint8_t ethMosiPin;
 };
 
 // Active hardware profile, set once by initHardwareProfile(). Always valid after that call.
@@ -92,14 +105,17 @@ extern const HardwareProfile* globalHwProfile;
 // In community mode, cloud (MQTT / AWS) is disabled. All local integrations still work.
 extern bool globalCommunityMode;
 
-// Read pcb_revision from NVS factory namespace, select the matching hardware profile,
-// and set globalHwProfile and globalCommunityMode. Must be called before any hardware
-// initialization in setup().
+// Read product_line and pcb_revision from NVS factory namespace, select the matching
+// hardware profile, and set globalHwProfile and globalCommunityMode. Must be called
+// before any hardware initialization in setup().
 //
 // Selection order:
-//   1. NVS factory_ns::pcb_revision parses to a known profile -> use it (provisioned).
-//   2. NVS missing / malformed / unknown version:
-//      - if PCB_VERSION_FALLBACK is defined at build time and matches a profile -> use it
-//      - else -> PCB_PROFILES[0] (latest).
-//      In both sub-cases globalCommunityMode is set to true.
+//   1. NVS factory_ns::product_line (absent -> HOME) + pcb_revision parse to a known
+//      (product, version) profile -> use it (provisioned).
+//   2. NVS missing / malformed / unknown product or version -> community mode:
+//      - fallback product = PRODUCT_FALLBACK if defined at build time, else HOME.
+//        Every Pro build env pins PRODUCT_FALLBACK so a Pro binary never falls back
+//        to a Home pinout (different mux order, no Ethernet).
+//      - within that product: PCB_VERSION_FALLBACK if defined and matching, else the
+//        product's latest profile.
 void initHardwareProfile();

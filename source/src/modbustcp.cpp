@@ -15,6 +15,7 @@ namespace ModbusTcp
     static ModbusMessage _handleReadHoldingRegisters(ModbusMessage request);
 
     static bool _running = false;
+    static bool _workerRegistered = false;
 
     void begin()
     {
@@ -22,7 +23,17 @@ namespace ModbusTcp
 
         LOG_DEBUG("Initializing Modbus TCP");
 
-        _mbServer.registerWorker(MODBUS_TCP_SERVER_ID, READ_HOLD_REGISTER, &_handleReadHoldingRegisters);
+        // registerWorker() writes into ModbusServer's internal workerMap (a std::map the
+        // library never mutex-protects - it assumes this runs once, before the async
+        // server task exists). begin()/stop() cycle on every LAN transition while
+        // _mbServer is a single reused instance, so re-registering on every restart raced
+        // the still-draining async task's concurrent getWorker() reads and corrupted the
+        // map (Exception/panic inside _Rb_tree_insert_and_rebalance on the bench, 2026-09-21).
+        // Registering once, ever, means later restarts only touch start()/stop().
+        if (!_workerRegistered) {
+            _mbServer.registerWorker(MODBUS_TCP_SERVER_ID, READ_HOLD_REGISTER, &_handleReadHoldingRegisters);
+            _workerRegistered = true;
+        }
         _mbServer.start(MODBUS_TCP_PORT, MODBUS_TCP_MAX_CLIENTS, MODBUS_TCP_TIMEOUT);
         _running = true;
 
@@ -53,10 +64,10 @@ namespace ModbusTcp
     {
         bool shouldRun = staConnected && !apServing;
         if (shouldRun && !_running) {
-            LOG_DEBUG("STA link up, no SoftAP broadcasting - starting Modbus TCP");
+            LOG_DEBUG("LAN link up (WiFi STA or Ethernet), no SoftAP broadcasting - starting Modbus TCP");
             begin();
         } else if (!shouldRun && _running) {
-            LOG_DEBUG("SoftAP broadcasting or no STA link - stopping Modbus TCP so it is not exposed on it");
+            LOG_DEBUG("SoftAP broadcasting or no LAN link - stopping Modbus TCP so it is not exposed on it");
             stop();
         }
     }

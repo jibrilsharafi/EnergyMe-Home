@@ -140,6 +140,35 @@ struct SystemStaticInfo {
     char serialNumber[NAME_BUFFER_SIZE];
     uint64_t manufacturingUnixTs;
 
+    // Selected hardware profile (always valid after initHardwareProfile())
+    char productLine[NAME_BUFFER_SIZE];  // "home" | "homepro"
+    char pcbRevision[NAME_BUFFER_SIZE];  // e.g. "v6.1", from the selected profile
+    bool communityMode;
+
+    // Running image's own descriptor (see lib/image_descriptor) - always present,
+    // compiled into this binary.
+    uint32_t imgDescPsramMb;
+    char imgDescFwVersion[VERSION_BUFFER_SIZE];
+    char imgDescBuildEnv[NAME_BUFFER_SIZE];
+    char imgDescGitRev[NAME_BUFFER_SIZE];
+    uint16_t imgDescMinPcbVersion;
+    uint16_t imgDescMaxPcbVersion;
+    uint32_t imgDescPartitionLayoutId;
+
+    // Passive/"other" OTA partition's descriptor - what would activate on the
+    // next rollback or a completed-but-not-yet-rebooted OTA. Present is false
+    // when the slot is empty, erased, or holds a legacy pre-2.4 image with no
+    // valid descriptor; the other* fields are then meaningless.
+    bool otherImgDescPresent;
+    char otherImgDescProduct[NAME_BUFFER_SIZE];
+    uint32_t otherImgDescPsramMb;
+    char otherImgDescFwVersion[VERSION_BUFFER_SIZE];
+    char otherImgDescBuildEnv[NAME_BUFFER_SIZE];
+    char otherImgDescGitRev[NAME_BUFFER_SIZE];
+    uint16_t otherImgDescMinPcbVersion;
+    uint16_t otherImgDescMaxPcbVersion;
+    uint32_t otherImgDescPartitionLayoutId;
+
     SystemStaticInfo() {
         // Initialize with safe defaults
         memset(this, 0, sizeof(*this));
@@ -223,6 +252,15 @@ struct SystemDynamicInfo {
     char wifiSubnetMask[IP_ADDRESS_BUFFER_SIZE];
     char wifiDnsIp[IP_ADDRESS_BUFFER_SIZE];
     char wifiBssid[MAC_ADDRESS_BUFFER_SIZE];
+
+    // Ethernet / interface arbitration (eth* meaningful only when ethEnabled)
+    char activeInterface[NAME_BUFFER_SIZE]; // "none" | "ethernet" | "wifi"
+    bool ethEnabled;
+    bool ethLinkUp;
+    char ethLocalIp[IP_ADDRESS_BUFFER_SIZE];
+    char ethMacAddress[MAC_ADDRESS_BUFFER_SIZE];
+    uint16_t ethLinkSpeedMbps;
+    bool ethFullDuplex;
     
     // Tasks
     TaskInfo mqttTaskInfo;
@@ -236,6 +274,7 @@ struct SystemDynamicInfo {
     TaskInfo buttonHandlerTaskInfo;
     TaskInfo udpLogTaskInfo;
     TaskInfo customWifiTaskInfo;
+    TaskInfo customEthTaskInfo;
     TaskInfo ade7953MeterReadingTaskInfo;
     TaskInfo ade7953EnergySaveTaskInfo;
     TaskInfo ade7953HourlyCsvTaskInfo;
@@ -252,6 +291,9 @@ struct SystemDynamicInfo {
         snprintf(wifiSubnetMask, sizeof(wifiSubnetMask), "0.0.0.0");
         snprintf(wifiDnsIp, sizeof(wifiDnsIp), "0.0.0.0");
         snprintf(wifiBssid, sizeof(wifiBssid), "00:00:00:00:00:00");
+        snprintf(activeInterface, sizeof(activeInterface), "none");
+        snprintf(ethLocalIp, sizeof(ethLocalIp), "0.0.0.0");
+        snprintf(ethMacAddress, sizeof(ethMacAddress), "00:00:00:00:00:00");
     }
 };
 

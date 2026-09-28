@@ -476,6 +476,12 @@
             });
         });
 
+        // "Home Pro" -> "homepro", so a log export says which product it came from.
+        let productFileToken = 'home';
+        window.energyApi.getAuthStatus().then(status => {
+            if (status && status.productName) productFileToken = status.productName.toLowerCase().replace(/\s+/g, '');
+        }).catch(() => {});
+
         document.getElementById('download-csv').addEventListener('click', function () {
             const csvContent = ["data:text/csv;charset=utf-8,"];
             csvContent.push("Row,Timestamp,Elapsed,Level,Core,File,Function,Message");
@@ -499,7 +505,7 @@
             const link = document.createElement("a");
             const timestamp = new Date().toISOString().replace(/[:.-]/g, "_");
             link.setAttribute("href", encodedUri);
-            link.setAttribute("download", `energyme_home_log_${timestamp}.csv`);
+            link.setAttribute("download", `energyme_${productFileToken}_log_${timestamp}.csv`);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);

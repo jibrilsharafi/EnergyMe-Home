@@ -8,7 +8,7 @@ Defines how the firmware behaves when an OTA download fails: how many times and 
 
 The system SHALL attempt the OTA download up to 5 times before reporting the job execution as `FAILED`. Between attempts it SHALL wait an exponentially increasing delay, starting at 2 minutes, doubling each attempt, and capped at 15 minutes, giving delays of 2, 4, 8 and 15 minutes and a cumulative wait of 29 minutes. The system SHALL NOT abandon the schedule on an elapsed-time budget. A retry SHALL reuse the presigned URL from the job document without requesting a new one. On the first attempt that succeeds, the system SHALL stop retrying and proceed with the existing post-download flow unchanged.
 
-The system SHALL stop retrying early, and report the failure immediately, when the server refused the request with a 4xx HTTP status, since that outcome cannot change on a later attempt with the same URL. It SHALL also stop retrying when the MQTT module is shutting down. A restart of the MQTT task on its own, such as a cloud-services configuration change, SHALL NOT abandon the schedule.
+The system SHALL stop retrying early, and report the failure immediately, when the server refused the request with a 4xx HTTP status, since that outcome cannot change on a later attempt with the same URL. It SHALL also stop retrying when the MQTT module is shutting down, and when a fully received image was rejected deterministically (`signature_invalid`, `pubkey_parse_error`, `image_incompatible:<verdict>`, `finish_failed`), since the same artifact fails identically on every retry. A restart of the MQTT task on its own, such as a cloud-services configuration change, SHALL NOT abandon the schedule.
 
 #### Scenario: First attempt succeeds
 
@@ -37,7 +37,7 @@ The system SHALL stop retrying early, and report the failure immediately, when t
 
 ### Requirement: A failed OTA download reports device-side diagnostics
 
-When reporting an OTA job execution as `FAILED` after a download failure, the system SHALL include device-side diagnostics that cannot be derived server-side, as discrete name-value pairs in the job execution status details: the platform error name from the failing download call, the HTTP status of the response, download progress in bytes received against total content length, the internal-heap figures (free, minimum free, and largest contiguous allocation), the number of attempts made, device uptime, and WiFi signal strength. Values SHALL be captured at the moment the final attempt fails, not after the retry loop unwinds. The existing `reason` detail SHALL retain its current value so existing consumers are unaffected. The number of pairs SHALL stay within the job service's limit with headroom. The system SHALL NOT include data the job already carries or that is derivable server-side, such as the target firmware version, its checksum, the job identifier, or the device identifier.
+When reporting an OTA job execution as `FAILED` after a download failure, the system SHALL include device-side diagnostics that cannot be derived server-side, as discrete name-value pairs in the job execution status details: the platform error name from the failing download call, the HTTP status of the response, download progress in bytes received against total content length, the internal-heap figures (free, minimum free, and largest contiguous allocation), the number of attempts made, device uptime, and WiFi signal strength. Values SHALL be captured at the moment the final attempt fails, not after the retry loop unwinds. The `reason` detail SHALL be kept: it SHALL hold `download_failed` for a generic download failure, as before this change, and `incomplete_download` when the connection closed before the full image was received (a truncated transfer, retried like any other download failure). The internal-heap figures SHALL be reported for every retryable failure, where they are sampled; a deterministic post-download rejection (`signature_invalid`, `pubkey_parse_error`, `image_incompatible:<verdict>`, `finish_failed`) SHALL omit them rather than report zeros. A transient local failure after the full image arrived during signature verification (`hash_buffer_unavailable`, `partition_error`, `invalid_image_length`, `partition_read_error`, `hash_error`) is retryable and does report them. The number of pairs SHALL stay within the job service's limit with headroom. The system SHALL NOT include data the job already carries or that is derivable server-side, such as the target firmware version, its checksum, the job identifier, or the device identifier.
 
 Because the platform's download call reports every 4xx and 5xx response as the same generic error, the HTTP status SHALL be the field that distinguishes a server refusal from a transport or memory failure. Byte progress SHALL be reported only for a response that actually carried firmware; for any other response the system SHALL report progress as unavailable rather than describing the error body's length as a completed download.
 
@@ -58,8 +58,18 @@ Because the platform's download call reports every 4xx and 5xx response as the s
 
 #### Scenario: Existing reason value preserved
 
-- **WHEN** any download failure is reported
-- **THEN** the `reason` detail still holds the value it held before this change
+- **WHEN** a generic download failure (transport, TLS, memory, HTTP refusal) is reported
+- **THEN** the `reason` detail still holds `download_failed`
+
+#### Scenario: Truncated download
+
+- **WHEN** the final attempt ends with the connection closed before the full image was received
+- **THEN** the `reason` detail holds `incomplete_download`
+
+#### Scenario: Deterministic post-download rejection omits heap figures
+
+- **WHEN** a job fails because the fully received image was rejected deterministically, such as an invalid signature or an image-descriptor mismatch
+- **THEN** the retry schedule is abandoned, and the status details carry the rejection's own reason and no `heapFreeMinMax` key
 
 #### Scenario: Failures other than download are unchanged
 

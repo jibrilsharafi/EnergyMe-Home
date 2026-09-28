@@ -2,6 +2,8 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "customserver.h"
+#include "app_image_descriptor.h"
+#include "custometh.h"
 #include "modbustcp.h" // Local integrations are started/stopped to follow the STA link
 #include "taskprofiler.h"
 #include "duration_format.h"
@@ -51,6 +53,14 @@ namespace CustomServer
     // OTA timeout task variables
     static TaskHandle_t _otaTimeoutTaskHandle = NULL;
     static bool _otaTimeoutTaskShouldRun = false;
+
+    // The request that owns the firmware upload in progress, and whether Update.end(true) went
+    // through for it. The upload callback runs for every client and before authentication, so state
+    // that is not tied to a request let any host on the LAN reset somebody else's upload: the
+    // remaining chunks were skipped and the completion handler still answered "success".
+    // Only touched from the AsyncTCP task.
+    static AsyncWebServerRequest *_otaOwner = nullptr;
+    static bool _otaFinalized = false;
 
     // API request synchronization
     static SemaphoreHandle_t _apiMutex = NULL;
@@ -140,13 +150,14 @@ namespace CustomServer
     static bool _initializeOtaUpload(AsyncWebServerRequest *request, const String& filename);
     static void _setupOtaMd5Verification(AsyncWebServerRequest *request);
     static bool _writeOtaChunk(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index);
-    static void _finalizeOtaUpload(AsyncWebServerRequest *request);
+    static bool _finalizeOtaUpload(AsyncWebServerRequest *request);
     
     // Logging helper functions
     static bool _parseLogLevel(const char *levelStr, LogLevel &level);
     
     // HTTP method validation helper
     static bool _validateRequest(AsyncWebServerRequest *request, const char *expectedMethod, size_t maxContentLength = 0);
+    static bool _requireEthernet(AsyncWebServerRequest *request);
     static bool _isPartialUpdate(AsyncWebServerRequest *request);
     
     // ETag validation helper
@@ -168,9 +179,18 @@ namespace CustomServer
         }
         LOG_DEBUG("API mutex created successfully");
 
+        // Route registration makes hundreds of small, permanent allocations (one handler
+        // object plus its URI and std::function per route), all below the PSRAM malloc
+        // threshold, so they would pin tens of KB of internal RAM for good. They are only
+        // walked on the AsyncTCP task while matching a request, which PSRAM is fine for:
+        // lower the threshold for the registration only. It is a global switch, so other
+        // tasks' malloc() calls land in PSRAM too during these few tens of ms - harmless,
+        // anything that needs internal or DMA memory asks for it explicitly via heap_caps.
+        heap_caps_malloc_extmem_enable(WEBSERVER_ROUTE_ALLOC_PSRAM_THRESHOLD);
         _setupMiddleware();
         _serveStaticContent();
         _serveApi();
+        heap_caps_malloc_extmem_enable(CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL);
 
         server.begin();
 
@@ -380,7 +400,7 @@ namespace CustomServer
         if (client == nullptr) return false;
 
         // False whenever no AP is up, so there is nothing to carve out until one exists.
-        return CustomWifi::isApAddress(client->localIP());
+        return CustomWifi::isApConnection(client->localIP(), client->remoteIP());
     }
 
     // Same origin test, but also true during GRACE: the window right after credentials are
@@ -401,7 +421,7 @@ namespace CustomServer
         AsyncClient *client = request->client();
         if (client == nullptr) return false;
 
-        return CustomWifi::isApAddress(client->localIP());
+        return CustomWifi::isApConnection(client->localIP(), client->remoteIP());
     }
 
     // True whenever the request was addressed to the device's own SoftAP, in ANY provisioning
@@ -438,7 +458,7 @@ namespace CustomServer
         if (client == nullptr) return false;
 
         // False whenever no AP is up.
-        return CustomWifi::isApAddress(client->localIP());
+        return CustomWifi::isApConnection(client->localIP(), client->remoteIP());
     }
 
     // Registers a route twice: an open handler that only matches provisioning-origin
@@ -473,9 +493,22 @@ namespace CustomServer
     }
 
     // Helper functions for common response patterns
+    // The stream buffer starts at 1460 bytes of internal RAM and is re-created one size up on
+    // every write that does not fit, so a multi-KB document churned internal RAM on every
+    // request. Size it once from the document instead, and always above the PSRAM malloc
+    // threshold (malloc() keeps sizes up to and INCLUDING the threshold internal), so the
+    // buffer is a single PSRAM allocation.
+    static AsyncResponseStream *_beginJsonResponseStream(AsyncWebServerRequest *request, const JsonDocument &doc)
+    {
+        const size_t minPsramSize = (size_t)CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL + 1;
+        size_t size = measureJson(doc);
+        if (size < minPsramSize) size = minPsramSize;
+        return request->beginResponseStream("application/json", size);
+    }
+
     static void _sendJsonResponse(AsyncWebServerRequest *request, const JsonDocument &doc, int32_t statusCode)
     {
-        AsyncResponseStream *response = request->beginResponseStream("application/json");
+        AsyncResponseStream *response = _beginJsonResponseStream(request, doc);
         response->setCode(statusCode);
         serializeJson(doc, *response);
         request->send(response);
@@ -536,6 +569,16 @@ namespace CustomServer
             return false;
             
         return true;
+    }
+
+    // 404 for the Ethernet surface on products without the hardware. Runs after
+    // the middleware chain, so auth still comes first - an unauthenticated scanner
+    // cannot fingerprint the product.
+    static bool _requireEthernet(AsyncWebServerRequest *request)
+    {
+        if (globalHwProfile->hasEthernet) return true;
+        _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, "Ethernet is not available on this product");
+        return false;
     }
 
     // Helper function to validate HTTP method
@@ -705,7 +748,7 @@ namespace CustomServer
         // COUNTERS_RESET_TIMEOUT so the consecutive-reset counter never clears. About
         // 25 minutes of that reaches MAX_RESET_COUNT, which rolls the firmware back
         // and wipes the user's NVS.
-        if (!CustomWifi::isNetworkServiceable())
+        if (!CustomNet::isNetworkServiceable())
         {
             LOG_DEBUG("Health check: no serviceable network interface");
             return false;
@@ -715,7 +758,7 @@ namespace CustomServer
         // the periodic health-check task rather than from the WiFi task so customwifi keeps
         // no knowledge of the services layered on top of it. Idempotent, so the worst case
         // is Modbus appearing up to one check interval after STA comes up.
-        ModbusTcp::syncWithNetwork(CustomWifi::isFullyConnected(), CustomWifi::isApServing());
+        ModbusTcp::syncWithNetwork(CustomNet::isFullyConnected(), CustomWifi::isApServing());
 
         // Perform a simple HTTP self-request to verify server responsiveness
         WiFiClient client;
@@ -1214,7 +1257,9 @@ namespace CustomServer
             // straight back to the gate - so offering it there would be a dead end.
             doc["apOrigin"] = _isApOrigin(request);
             doc["username"] = WEBSERVER_DEFAULT_USERNAME;
-            
+            // For the pages that show the product name before (or without) a system-info fetch.
+            doc["productName"] = PRODUCT_NAME;
+
             _sendJsonResponse(request, doc);
         });
     }
@@ -1314,17 +1359,27 @@ namespace CustomServer
     static void _handleOtaUploadComplete(AsyncWebServerRequest *request)
     {
         // Handle the completion of the upload
+        bool isOwner = (request == _otaOwner);
+        if (isOwner) _otaOwner = nullptr;
+
         if (request->getResponse()) return;  // Response already set due to error
+
+        // No file part at all, or not the request whose image was written: nothing here says
+        // an update happened, so never answer success (or restart) on its behalf.
+        if (!isOwner) {
+            _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "No firmware image was received");
+            return;
+        }
 
         // Stop OTA timeout task since OTA process is completing
         _stopOtaTimeoutTask();
 
-        if (Update.hasError()) {
+        if (Update.hasError() || !_otaFinalized) {
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
 
             doc["success"] = false;
-            doc["message"] = Update.errorString();
+            doc["message"] = Update.hasError() ? Update.errorString() : "Firmware upload did not complete";
             _sendJsonResponse(request, doc);
             
             LOG_ERROR("OTA update failed: %s", Update.errorString());
@@ -1412,15 +1467,29 @@ namespace CustomServer
         return false;
     }
 
+    // The owner's connection closed. After a completed upload the completion handler has
+    // already let go; anything else is a transfer that died half way.
+    static void _releaseOtaOwner(AsyncWebServerRequest *request)
+    {
+        if (request != _otaOwner) return;
+        _otaOwner = nullptr;
+        if (_otaFinalized) return;
+        LOG_WARNING("Firmware upload connection closed before completion - aborting the update");
+        Update.abort();
+        _stopOtaTimeoutTask();
+    }
+
     static void _handleOtaUploadData(AsyncWebServerRequest *request, const String& filename,
                                    size_t index, uint8_t *data, size_t len, bool final)
     {
-        static bool otaInitialized = false;
-
         if (!index) {
             // Before Update.begin() erases anything. See _rejectUploadIfNotPermitted().
-            if (_rejectUploadIfNotPermitted(request)) {
-                otaInitialized = false;
+            // A refused request never touches the upload in progress.
+            if (_rejectUploadIfNotPermitted(request)) return;
+
+            if (_otaOwner != nullptr) {
+                LOG_WARNING("Refused a firmware upload while another one is in progress");
+                _sendErrorResponse(request, HTTP_CODE_CONFLICT, "Another firmware upload is in progress");
                 return;
             }
 
@@ -1428,22 +1497,40 @@ namespace CustomServer
             if (!_initializeOtaUpload(request, filename)) {
                 return;
             }
-            otaInitialized = true;
+            _otaOwner = request;
+            _otaFinalized = false;
+            request->onDisconnect([request]() { _releaseOtaOwner(request); });
+
+            // Fail fast when the first chunk already covers the descriptor
+            // region (it normally does): a wrong-hardware image is rejected
+            // before a single byte is written. The authoritative re-check in
+            // _finalizeOtaUpload() covers a first chunk too small for this.
+            if (ImageDescriptor::coversDescriptor(len)) {
+                ImageDescriptor::Verdict verdict = AppImageDescriptor::validateImageBuffer(data, len, false);
+                if (!ImageDescriptor::accepts(verdict)) {
+                    LOG_ERROR("Firmware image rejected on first chunk: %s", ImageDescriptor::verdictToString(verdict));
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Firmware image is not compatible with this device");
+                    Update.abort();
+                    _stopOtaTimeoutTask();
+                    _otaOwner = nullptr;
+                    return;
+                }
+            }
         }
-        
+
+        // Refused on its first chunk, already failed, or not the upload in progress
+        if (request != _otaOwner) return;
+
         // Write chunk to flash
-        if (len && otaInitialized) {
+        if (len) {
             if (!_writeOtaChunk(request, data, len, index)) {
-                otaInitialized = false;
+                _otaOwner = nullptr;
                 return;
             }
         }
-        
-        // Final chunk - complete the update
-        if (final && otaInitialized) {
-            _finalizeOtaUpload(request);
-            otaInitialized = false;
-        }
+
+        // Final chunk - complete the update. Ownership is released by the completion handler.
+        if (final) _otaFinalized = _finalizeOtaUpload(request);
     }
 
     static bool _initializeOtaUpload(AsyncWebServerRequest *request, const String& filename)
@@ -1454,6 +1541,19 @@ namespace CustomServer
         if (!filename.endsWith(".bin")) {
             LOG_ERROR("Invalid file type. Only .bin files are supported");
             _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "File must be in .bin format");
+            return false;
+        }
+
+        // Cross-product gate: a wrong-product image fails PSRAM init at boot (quad vs
+        // octal, fixed at compile time). A positive token mismatch is rejected before
+        // any flash write; a name with no token (self-built image) passes as today.
+        ProductLine artifactProduct;
+        if (productFromArtifactName(filename.c_str(), artifactProduct) &&
+            artifactProduct != globalHwProfile->product) {
+            LOG_ERROR("Firmware artifact %s is built for %s but this device is %s - rejected",
+                      filename.c_str(), productLineToString(artifactProduct),
+                      productLineToString(globalHwProfile->product));
+            _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Firmware image is built for a different product");
             return false;
         }
         
@@ -1556,7 +1656,8 @@ namespace CustomServer
         return true;
     }
 
-    static void _finalizeOtaUpload(AsyncWebServerRequest *request)
+    // True only when the staged image passed every check and Update.end(true) activated it.
+    static bool _finalizeOtaUpload(AsyncWebServerRequest *request)
     {
         LOG_DEBUG("Finalizing OTA update...");
 
@@ -1566,7 +1667,7 @@ namespace CustomServer
             _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "No firmware data received");
             Update.abort();
             _stopOtaTimeoutTask(); // Stop timeout task on failure
-            return;
+            return false;
         }
 
         // Validate minimum size
@@ -1575,7 +1676,33 @@ namespace CustomServer
             _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Firmware file too small");
             Update.abort();
             _stopOtaTimeoutTask(); // Stop timeout task on failure
-            return;
+            return false;
+        }
+
+        // Authoritative compatibility gate: read the staged image's descriptor
+        // back off the passive partition before Update.end(true) activates it.
+        // A wrong-PSRAM image fails PSRAM init before any application code runs,
+        // so nothing post-boot can recover from activating one.
+        const esp_partition_t* stagedPartition = esp_ota_get_next_update_partition(NULL);
+        ImageDescriptor::Verdict verdict = AppImageDescriptor::validatePartition(stagedPartition, false);
+        if (!ImageDescriptor::accepts(verdict)) {
+            LOG_ERROR("Staged firmware image rejected: %s", ImageDescriptor::verdictToString(verdict));
+            _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Firmware image is not compatible with this device");
+            Update.abort();
+            // The rejected image is complete and structurally valid in the passive
+            // slot; Update.abort() does not touch flash. Scrub it or the rollback
+            // consumers - none of which are descriptor-gated - could later activate
+            // it and brick the device. (Not done on the first-chunk reject: nothing
+            // was written there and the passive slot still holds a legitimate
+            // rollback target.)
+            scrubOtaImageHeader(stagedPartition);
+            _stopOtaTimeoutTask();
+            return false;
+        }
+        if (verdict == ImageDescriptor::Verdict::ACCEPT_DEV_ON_PROD) {
+            LOG_WARNING("Accepting a dev-built image on a prod device via manual upload");
+        } else if (verdict == ImageDescriptor::Verdict::ACCEPT_LEGACY_NO_DESCRIPTOR) {
+            LOG_WARNING("Staged image carries no descriptor (pre-2.4 release or self-built) - accepted on Home");
         }
 
         // Reset watchdog before flash verification and finalization
@@ -1590,6 +1717,7 @@ namespace CustomServer
             Led::blinkGreenFast(Led::PRIO_CRITICAL, 3000ULL);
             // Note: timeout task will be stopped in _handleOtaUploadComplete
         }
+        return success;
     }
 
     static void _handleFileUploadData(AsyncWebServerRequest *request, const String& filename, 
@@ -1740,7 +1868,7 @@ namespace CustomServer
     static bool _fetchGitHubReleaseInfo(JsonDocument &doc)
     {
         // Check internet connectivity before attempting API call
-        if (!CustomWifi::isFullyConnected(true)) {
+        if (!CustomNet::isFullyConnected(true)) {
             LOG_DEBUG("Cannot fetch GitHub release info: no internet connectivity");
             return false;
         }
@@ -1793,9 +1921,19 @@ namespace CustomServer
         const char* changelog = release["html_url"].as<const char*>();
         const char* downloadUrl = nullptr;
 
+        // Releases carry one .bin per product: pick the asset whose token matches the
+        // running product, never simply the first match (the Home token is a substring
+        // of the Pro token, so productFromArtifactName resolves Pro first).
         for (JsonObject asset : release["assets"].as<JsonArray>()) {
             const char* name = asset["name"].as<const char*>();
-            if (name && strstr(name, ".bin") != nullptr && strstr(name, "energyme_home") != nullptr) {
+            if (name == nullptr) continue;
+            // The application image only: a release also carries <name>_bootloader.bin and
+            // <name>_partitions.bin under the same product token.
+            size_t nameLength = strlen(name);
+            if (nameLength < 4 || strcmp(name + nameLength - 4, ".bin") != 0) continue;
+            if (strstr(name, "bootloader") != nullptr || strstr(name, "partitions") != nullptr) continue;
+            ProductLine assetProduct;
+            if (productFromArtifactName(name, assetProduct) && assetProduct == globalHwProfile->product) {
                 downloadUrl = asset["browser_download_url"].as<const char*>();
                 break;
             }
@@ -1833,7 +1971,7 @@ namespace CustomServer
 
             // In non-community mode, we assume updates are handled via app/cloud, so we consider it always up to date            
             if (!globalCommunityMode) doc["isLatest"] = true; 
-            else if (CustomWifi::isFullyConnected(true)) { // Check internet connectivity before checking anything            
+            else if (CustomNet::isFullyConnected(true)) { // Check internet connectivity before checking anything            
                 // Fetch from GitHub API in community mode
                 bool githubInfoFetched = _fetchGitHubReleaseInfo(doc);
                 
@@ -2161,6 +2299,7 @@ namespace CustomServer
             // any of the authenticated endpoints are reachable. Nothing sensitive: the
             // device id is already the SoftAP's SSID suffix.
             doc["deviceId"] = DEVICE_ID;
+            doc["productName"] = PRODUCT_NAME;
             doc["firmwareVersion"] = FIRMWARE_BUILD_VERSION;
             doc["uptime"] = millis64();
 
@@ -2277,8 +2416,12 @@ namespace CustomServer
         });
 
         // Set network configuration (full PUT or partial PATCH). The device restarts to apply.
+        // Exact match, here and on every JSON handler whose URL has sub-routes: a plain string
+        // also matches "<url>/...", so this handler used to take POST <url>/reset whenever the
+        // request carried a JSON content type (the web UI always sends one) and answer 400 for
+        // the missing body, before the reset route registered after it was ever consulted.
         static AsyncCallbackJsonWebHandler *setNetworkConfigHandler = new AsyncCallbackJsonWebHandler(
-            "/api/v1/network/config",
+            AsyncURIMatcher::exact("/api/v1/network/config"),
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
                 bool isPartialUpdate = _isPartialUpdate(request);
@@ -2308,6 +2451,64 @@ namespace CustomServer
                 setRestartSystem("Restart to apply network configuration reset");
             } else {
                 _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to reset network configuration");
+            }
+        });
+
+        // === Ethernet (Home Pro) ===
+        // Mirrors the wifi config surface. On products without Ethernet every route
+        // answers 4xx and touches no NVS - the feature does not exist there.
+
+        server.on("/api/v1/network/ethernet/status", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            if (!_requireEthernet(request)) return;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            CustomEth::getStatusAsJson(doc);
+            _sendJsonResponse(request, doc);
+        });
+
+        server.on("/api/v1/network/ethernet/config", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            if (!_requireEthernet(request)) return;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            if (CustomEth::getConfigurationAsJson(doc)) _sendJsonResponse(request, doc);
+            else _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to get Ethernet configuration");
+        });
+
+        // Set Ethernet configuration (full PUT or partial PATCH). The device restarts to apply.
+        static AsyncCallbackJsonWebHandler *setEthConfigHandler = new AsyncCallbackJsonWebHandler(
+            AsyncURIMatcher::exact("/api/v1/network/ethernet/config"),
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (!_requireEthernet(request)) return;
+                bool isPartialUpdate = _isPartialUpdate(request);
+                if (!_validateRequest(request, isPartialUpdate ? "PATCH" : "PUT", HTTP_MAX_CONTENT_LENGTH_NETWORK)) return;
+
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
+                doc.set(json);
+
+                if (CustomEth::setConfigurationFromJson(doc, isPartialUpdate)) {
+                    LOG_INFO("Ethernet configuration %s via API", isPartialUpdate ? "partially updated" : "updated");
+                    _sendSuccessResponse(request, "Ethernet configuration updated successfully. The device will restart to apply the new settings.");
+                    setRestartSystem("Restart to apply new Ethernet configuration");
+                } else {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid Ethernet configuration");
+                }
+            });
+        server.addHandler(setEthConfigHandler);
+
+        server.on("/api/v1/network/ethernet/config/reset", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
+            if (!_requireEthernet(request)) return;
+            if (!_validateRequest(request, "POST")) return;
+
+            if (CustomEth::resetConfiguration()) {
+                _sendSuccessResponse(request, "Ethernet configuration reset successfully. The device will restart to apply the defaults.");
+                setRestartSystem("Restart to apply Ethernet configuration reset");
+            } else {
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to reset Ethernet configuration");
             }
         });
     }
@@ -2406,7 +2607,10 @@ namespace CustomServer
                   {
             if (!_validateRequest(request, "POST")) return;
 
-            AdvancedLogger::clearLog();
+            if (!AdvancedLogger::clearLog()) {
+                _sendErrorResponse(request, HTTP_CODE_SERVICE_UNAVAILABLE, "Log file is busy (rotation in progress), retry in a few seconds");
+                return;
+            }
             _sendSuccessResponse(request, "Logs cleared successfully");
             LOG_INFO("Logs cleared via API");
         });
@@ -2894,7 +3098,7 @@ namespace CustomServer
 
         // Set ADE7953 configuration (PUT/PATCH)
         static AsyncCallbackJsonWebHandler *setAde7953ConfigHandler = new AsyncCallbackJsonWebHandler(
-            "/api/v1/ade7953/config",
+            AsyncURIMatcher::exact("/api/v1/ade7953/config"),
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
                 bool isPartialUpdate = _isPartialUpdate(request);
@@ -3008,7 +3212,7 @@ namespace CustomServer
 
                 // Data has changed or no cached version, send full response with ETag
                 if (Ade7953::getAllChannelDataAsJson(doc)) {
-                    AsyncResponseStream *response = request->beginResponseStream("application/json");
+                    AsyncResponseStream *response = _beginJsonResponseStream(request, doc);
                     serializeJson(doc, *response);
                     _sendResponseWithEtag(request, response, etag);
                 } else {
@@ -3261,7 +3465,7 @@ namespace CustomServer
 
         // Set energy values for a specific channel
         static AsyncCallbackJsonWebHandler *setEnergyValuesHandler = new AsyncCallbackJsonWebHandler(
-            "/api/v1/ade7953/energy",
+            AsyncURIMatcher::exact("/api/v1/ade7953/energy"),
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
                 if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_ADE7953_ENERGY)) return;
@@ -3324,7 +3528,7 @@ namespace CustomServer
         });
 
         static AsyncCallbackJsonWebHandler *setCustomMqttHandler = new AsyncCallbackJsonWebHandler(
-            "/api/v1/custom-mqtt/config",
+            AsyncURIMatcher::exact("/api/v1/custom-mqtt/config"),
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {                
                 bool isPartialUpdate = _isPartialUpdate(request);
@@ -3361,8 +3565,9 @@ namespace CustomServer
             JsonDocument doc(&allocator);
             
             // Add runtime status information
-            char statusBuffer[STATUS_BUFFER_SIZE];
-            char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+            // Zeroed: getRuntimeStatus() leaves them untouched while the module is not set up
+            char statusBuffer[STATUS_BUFFER_SIZE] = "";
+            char timestampBuffer[TIMESTAMP_BUFFER_SIZE] = "";
             CustomMqtt::getRuntimeStatus(statusBuffer, sizeof(statusBuffer), timestampBuffer, sizeof(timestampBuffer));
             doc["status"] = statusBuffer;
             doc["statusTimestamp"] = timestampBuffer;
@@ -3538,7 +3743,7 @@ namespace CustomServer
 
         // Set InfluxDB configuration
         static AsyncCallbackJsonWebHandler *setInfluxDbHandler = new AsyncCallbackJsonWebHandler(
-            "/api/v1/influxdb/config",
+            AsyncURIMatcher::exact("/api/v1/influxdb/config"),
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
                 bool isPartialUpdate = _isPartialUpdate(request);
@@ -3576,8 +3781,9 @@ namespace CustomServer
             JsonDocument doc(&allocator);
             
             // Add runtime status information
-            char statusBuffer[STATUS_BUFFER_SIZE];
-            char timestampBuffer[TIMESTAMP_BUFFER_SIZE];
+            // Zeroed: getRuntimeStatus() leaves them untouched while the module is not set up
+            char statusBuffer[STATUS_BUFFER_SIZE] = "";
+            char timestampBuffer[TIMESTAMP_BUFFER_SIZE] = "";
             InfluxDbClient::getRuntimeStatus(statusBuffer, sizeof(statusBuffer), timestampBuffer, sizeof(timestampBuffer));
             doc["status"] = statusBuffer;
             doc["statusTimestamp"] = timestampBuffer;

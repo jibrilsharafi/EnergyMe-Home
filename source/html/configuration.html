@@ -180,6 +180,25 @@
         .config-input.field-loading {
             opacity: 0.5;
         }
+
+        /* WiFi network picker - same look as wifi-setup.html */
+        .wifi-list-header { display: flex; justify-content: space-between; align-items: center; margin: 15px 0 6px; font-weight: 600; }
+        .wifi-scan-button { background: none; border: 1px solid #ccc; border-radius: 5px; padding: 4px 10px; cursor: pointer; font-size: 0.85em; color: inherit; }
+        .wifi-scan-button:hover:not(:disabled) { background: #f0f0f0; }
+        .wifi-scan-button:disabled { opacity: 0.6; cursor: default; }
+        .wifi-network-list { list-style: none; margin: 0 0 12px; padding: 0; border: 1px solid #ddd; border-radius: 8px; overflow-y: auto; max-height: 260px; }
+        .wifi-network-list li { display: flex; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer; border-bottom: 1px solid #eee; }
+        .wifi-network-list li:last-child { border-bottom: none; }
+        .wifi-network-list li:hover, .wifi-network-list li.selected { background: #f0f0f0; }
+        .wifi-network-list li.wifi-list-note { cursor: default; color: #777; font-style: italic; background: none; }
+        .wifi-network-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .wifi-network-meta { flex: none; display: flex; align-items: center; gap: 7px; font-size: 0.8em; color: #666; }
+        .wifi-bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 13px; }
+        .wifi-bars i { display: block; width: 3px; background: #d0d0d0; border-radius: 1px; }
+        .wifi-bars i.on { background: var(--green, #2e7d32); }
+        .wifi-bars i:nth-child(1) { height: 5px; }
+        .wifi-bars i:nth-child(2) { height: 9px; }
+        .wifi-bars i:nth-child(3) { height: 13px; }
     </style>
 </head>
 
@@ -282,13 +301,13 @@
     </div>
 
     <div class="section-box">
-        <h2>Network Configuration</h2>
-        <p><i>Advanced network settings. By default the device uses DHCP. Changing these requires a restart to take effect.</i></p>
+        <h2>WiFi Configuration</h2>
+        <p><i>Advanced WiFi network settings. By default the device uses DHCP. Changing these requires a restart to take effect.</i></p>
 
         <!-- Current network (live, read-only) so the user knows the starting point -->
         <div id="currentNetworkBox"
             style="background-color: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px 15px; margin: 12px 0;">
-            <div style="font-weight: 600; margin-bottom: 8px;">Current network</div>
+            <div style="font-weight: 600; margin-bottom: 8px;">Current WiFi network</div>
             <div style="display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; font-size: 0.9em;">
                 <span style="color: #666;">Status</span><span id="curStatus">Loading...</span>
                 <span style="color: #666;">Mode</span><span id="curMode">-</span>
@@ -321,7 +340,7 @@
             </div>
             <div>
                 <label for="staticGateway">Gateway (your router):</label>
-                <input type="text" id="staticGateway" class="config-input" inputmode="decimal" placeholder="e.g. 192.168.1.1" maxlength="15" onblur="prefillDnsFromGateway()" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+                <input type="text" id="staticGateway" class="config-input" inputmode="decimal" placeholder="e.g. 192.168.1.1" maxlength="15" onblur="prefillDnsFromGateway('staticGateway', 'staticDns1')" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
             </div>
             <div>
                 <label for="staticSubnet">Subnet Mask:</label>
@@ -358,13 +377,82 @@
         <button class="buttonForm" onclick="setNetworkConfiguration()" id="setNetworkConfigButton">🌐 Apply & restart</button>
     </div>
 
+    <!-- Ethernet (Home Pro only) - stays hidden unless the status endpoint reports Ethernet is available -->
+    <div class="section-box" id="ethernetSection" style="display: none;">
+        <h2>Ethernet Configuration</h2>
+        <p><i>Wired network settings. By default the device uses DHCP. Changing these requires a restart to take effect.</i></p>
+
+        <!-- Current Ethernet state (live, read-only) so the user knows the starting point -->
+        <div id="currentEthernetBox"
+            style="background-color: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 8px; padding: 12px 15px; margin: 12px 0;">
+            <div style="font-weight: 600; margin-bottom: 8px;">Current Ethernet</div>
+            <div style="display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; font-size: 0.9em;">
+                <span style="color: #666;">Link</span><span id="curEthLink">Loading...</span>
+                <span style="color: #666;">Active interface</span><span id="curEthActiveInterface">-</span>
+                <span style="color: #666;">Mode</span><span id="curEthMode">-</span>
+                <span style="color: #666;">IP address</span><span id="curEthIp">-</span>
+                <span style="color: #666;">Gateway</span><span id="curEthGateway">-</span>
+                <span style="color: #666;">Subnet mask</span><span id="curEthSubnet">-</span>
+                <span style="color: #666;">DNS</span><span id="curEthDns">-</span>
+                <span style="color: #666;">MAC address</span><span id="curEthMac">-</span>
+            </div>
+        </div>
+
+        <!-- Explicit either/or choice: DHCP vs Static IP -->
+        <fieldset style="border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px 15px 10px; margin: 12px 0;">
+            <legend style="padding: 0 6px; font-weight: 600;">IP address mode</legend>
+            <label style="display: block; padding: 6px 0; cursor: pointer;">
+                <input type="radio" name="ethIpMode" value="dhcp" onchange="onEthIpModeChange()" checked>
+                Automatic (DHCP) - recommended
+            </label>
+            <label style="display: block; padding: 6px 0; cursor: pointer;">
+                <input type="radio" name="ethIpMode" value="static" onchange="onEthIpModeChange()">
+                Static IP - set the address manually
+            </label>
+        </fieldset>
+
+        <div id="ethStaticIpFields" style="display: none; flex-direction: column; gap: 10px; margin: 15px 0;">
+            <div>
+                <label for="ethStaticIp">IP Address:</label>
+                <input type="text" id="ethStaticIp" class="config-input" inputmode="decimal" placeholder="e.g. 192.168.1.51" maxlength="15" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+            </div>
+            <div>
+                <label for="ethStaticGateway">Gateway (your router):</label>
+                <input type="text" id="ethStaticGateway" class="config-input" inputmode="decimal" placeholder="e.g. 192.168.1.1" maxlength="15" onblur="prefillDnsFromGateway('ethStaticGateway', 'ethStaticDns1')" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+            </div>
+            <div>
+                <label for="ethStaticSubnet">Subnet Mask:</label>
+                <input type="text" id="ethStaticSubnet" class="config-input" inputmode="decimal" placeholder="e.g. 255.255.255.0" maxlength="15" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+            </div>
+            <div>
+                <label for="ethStaticDns1">Primary DNS:</label>
+                <input type="text" id="ethStaticDns1" class="config-input" inputmode="decimal" placeholder="defaults to your gateway" maxlength="15" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+                <small style="color: #666;">Leave blank to use your gateway, or set a specific server (e.g. 8.8.8.8).</small>
+            </div>
+            <div>
+                <label for="ethStaticDns2">Secondary DNS (optional):</label>
+                <input type="text" id="ethStaticDns2" class="config-input" inputmode="decimal" placeholder="e.g. 1.1.1.1" maxlength="15" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+            </div>
+        </div>
+
+        <button class="buttonForm" onclick="setEthernetConfiguration()" id="setEthConfigButton">🔌 Apply & restart</button>
+        <button class="buttonForm" onclick="resetEthernetConfiguration()" id="resetEthConfigButton">↩️ Reset to DHCP & restart</button>
+    </div>
+
     <div class="section-box">
         <h2>Switch WiFi Network</h2>
-        <p><i>Enter new WiFi credentials to switch to a different network. The device will save the credentials and restart to connect to the new network.</i></p>
+        <p><i>Pick a network from the list, or type the name of a hidden one. The device saves the credentials and joins the new network without restarting.</i></p>
+        <div class="wifi-list-header">
+            <span>Nearby networks</span>
+            <button type="button" class="wifi-scan-button" onclick="scanWifi()" id="scanWifi">↻ Scan</button>
+        </div>
+        <ul id="wifiNetworkList" class="wifi-network-list">
+            <li class="wifi-list-note">Press Scan to list the networks the device can see.</li>
+        </ul>
         <div style="display: flex; flex-direction: column; gap: 10px; margin: 15px 0;">
             <div>
                 <label for="newWifiSsid">Network Name (SSID):</label>
-                <input type="text" id="newWifiSsid" class="config-input" placeholder="Enter WiFi network name" maxlength="32" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
+                <input type="text" id="newWifiSsid" class="config-input" placeholder="Pick from the list above, or type it" maxlength="32" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px;">
             </div>
             <div>
                 <label for="newWifiPassword">Password:</label>
@@ -373,15 +461,15 @@
         </div>
         <div class="warning-box"
             style="background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; margin: 10px 0;"> ⚠️
-            Warning: The device will restart to apply the new credentials. You will temporarily lose access.
+            <span id="switchWifiWarning">Warning: The device leaves this network to join the new one. You will lose access at this address.</span>
         </div>
         <button class="buttonForm" onclick="switchWifi()" id="switchWifi">📶 Switch Network</button>
     </div>
 
     <div class="section-box">
         <h2>Disconnect from WiFi</h2>
-        <p><i>This will erase the WiFi credentials.</i></p>
-        <p><i>The device will create a password-protected WiFi network called "EnergyMe-XXXXXXXXXX"
+        <p><i>This will erase the WiFi credentials, reset the IP settings to automatic (DHCP) and restart the device.</i></p>
+        <p id="disconnectWifiApHelp"><i>The device will create a password-protected WiFi network called "EnergyMe-XXXXXXXXXX"
                 (where XXXXXXXXXX is the device ID). The password is printed on the device.
                 Connect to that network and navigate to <a href="http://172.31.42.1"
                     target="_blank">http://172.31.42.1</a>
@@ -389,7 +477,7 @@
                 You can then configure the device to connect to your WiFi network.</i></p>
         <div class="warning-box"
             style="background-color: #fff3cd; color: #856404; padding: 10px; border-radius: 5px; margin: 10px 0;"> ⚠️
-            Warning: You will lose access to the device until you reconnect it to WiFi.
+            <span id="disconnectWifiWarning">Warning: You will lose access to the device until you reconnect it to WiFi.</span>
         </div>
         <button class="buttonForm" onclick="disconnectWifi()" id="disconnect">📶 Disconnect</button>
     </div>
@@ -518,7 +606,13 @@
                 return;
             }
 
-            const userConfirmed = window.confirm("Are you sure you want to switch to WiFi network '" + ssid + "'? The device will restart to apply the new credentials.");
+            // The snapshot is missing when the system info request failed at page load; without
+            // it a wired device would silently take the WiFi-only flow below.
+            if (!currentNetwork) await loadCurrentNetwork();
+            const wired = isServedOverEthernet();
+            const userConfirmed = window.confirm(wired
+                ? "Switch WiFi to '" + ssid + "'? The device stays reachable over Ethernet."
+                : "Are you sure you want to switch to WiFi network '" + ssid + "'? The device will leave this network and you will lose access at this address.");
             if (!userConfirmed) {
                 return;
             }
@@ -534,12 +628,26 @@
                 document.getElementById("newWifiSsid").value = "";
                 document.getElementById("newWifiPassword").value = "";
 
+                if (wired) {
+                    waitForWifiOutcome(button);
+                    return;
+                }
+
+                // Browsing the WiFi address of a wired device: that address is going away, but
+                // the device does not restart and keeps answering on the wire. Continue there.
+                var net = currentNetwork || {};
+                if (net.ethLinkUp && net.ethLocalIp && net.ethLocalIp !== "0.0.0.0") {
+                    showStatus("WiFi is switching. Continuing on the Ethernet address " + net.ethLocalIp + "...", 'info');
+                    setTimeout(function () { location.href = "http://" + net.ethLocalIp + "/configuration"; }, 2000);
+                    return;
+                }
+
                 // No way to know the device's new address in advance (unlike the static-IP
                 // case). Best-effort poll energyme.local, same target the DHCP branch of
                 // network-config-apply uses; if the new network doesn't overlap with this
                 // one, the wait screen's own timeout and fallback cover it.
                 window.rebootWait.show({ redirectTo: "http://energyme.local", baseUrl: "http://energyme.local" });
-                // Don't restore button - page will become unreachable after restart
+                // Don't restore button - the device leaves this network, so the page goes unreachable
             } catch (error) {
                 button.disabled = false;
                 button.classList.remove('loading');
@@ -547,8 +655,173 @@
             }
         }
 
+        // True when this page is reached over the wire, so a WiFi change does not cut the
+        // session. Browsing the WiFi address of a wired device still counts as WiFi.
+        // Always false on products without Ethernet, which keeps their flow unchanged.
+        function isServedOverEthernet() {
+            var net = currentNetwork || {};
+            if (!net.ethLinkUp || !net.ethLocalIp || net.ethLocalIp === "0.0.0.0") return false;
+            // Only a page opened at the Ethernet address is known to be wired: a hostname
+            // (energyme.local) may resolve to the WiFi address that is about to go away
+            return location.hostname === net.ethLocalIp;
+        }
+
+        function updateWiredTexts() {
+            if (!isServedOverEthernet()) return;
+            document.getElementById("switchWifiWarning").textContent =
+                "The device stays reachable over Ethernet while WiFi switches. The result is reported here.";
+            document.getElementById("disconnectWifiApHelp").style.display = "none";
+            document.getElementById("disconnectWifiWarning").textContent =
+                "The device stays reachable over Ethernet after the restart. If a static Ethernet IP was set, it comes back on a DHCP address.";
+        }
+
+        // Messages live inside the list itself, so the feedback is where the user is looking.
+        function setWifiListNote(message) {
+            var list = document.getElementById("wifiNetworkList");
+            list.innerHTML = "";
+            var note = document.createElement("li");
+            note.className = "wifi-list-note";
+            note.textContent = message;
+            list.appendChild(note);
+        }
+
+        function wifiSignalBars(rssi) {
+            var filled = rssi >= -60 ? 3 : (rssi >= -72 ? 2 : 1);
+            var bars = document.createElement("span");
+            bars.className = "wifi-bars";
+            bars.title = rssi + " dBm";
+            for (var i = 1; i <= 3; i++) {
+                var bar = document.createElement("i");
+                if (i <= filled) bar.className = "on";
+                bars.appendChild(bar);
+            }
+            return bars;
+        }
+
+        // Strongest first, one row per SSID (mesh and repeaters announce the same name many times)
+        function renderWifiNetworks(networks) {
+            var list = document.getElementById("wifiNetworkList");
+            list.innerHTML = "";
+            var seen = Object.create(null); // SSIDs are attacker-controlled: "constructor" must not read as already seen
+            networks.sort(function (a, b) { return b.rssi - a.rssi; }).forEach(function (network) {
+                if (!network.ssid || seen[network.ssid]) return;
+                seen[network.ssid] = true;
+
+                var item = document.createElement("li");
+                var name = document.createElement("span");
+                name.className = "wifi-network-name";
+                name.textContent = network.ssid;
+                var meta = document.createElement("span");
+                meta.className = "wifi-network-meta";
+                if (network.secure) {
+                    var lock = document.createElement("span");
+                    lock.textContent = "🔒";
+                    lock.title = "Password protected";
+                    meta.appendChild(lock);
+                }
+                meta.appendChild(wifiSignalBars(network.rssi));
+                item.appendChild(name);
+                item.appendChild(meta);
+
+                item.addEventListener("click", function () {
+                    var previous = list.querySelector(".selected");
+                    if (previous) previous.classList.remove("selected");
+                    item.classList.add("selected");
+                    document.getElementById("newWifiSsid").value = network.ssid;
+                    var password = document.getElementById("newWifiPassword");
+                    password.value = "";
+                    if (network.secure) password.focus();
+                });
+                list.appendChild(item);
+            });
+            if (!list.children.length) setWifiListNote("No networks found. Scan again, or type the network name below.");
+        }
+
+        // The scan is async on the device, so poll until it ends.
+        function scanWifi() {
+            const button = document.getElementById("scanWifi");
+            button.disabled = true;
+            button.textContent = "Scanning...";
+            setWifiListNote("Looking for networks...");
+
+            var startedAt = Date.now();
+            var done = false;
+            var finish = function (errorNote) {
+                if (done) return;
+                done = true;
+                clearInterval(timer);
+                button.disabled = false;
+                button.textContent = "↻ Scan again";
+                if (errorNote) setWifiListNote(errorNote);
+            };
+            var poll = function (refresh) {
+                energyApi.scanWifiNetworks(refresh).then(function (data) {
+                    if (done || data.status === 'running') return;
+                    if (data.status === 'unavailable') {
+                        finish("Could not scan right now. Type the network name below, or scan again.");
+                        return;
+                    }
+                    renderWifiNetworks(data.networks || []);
+                    finish();
+                }).catch(function () {
+                    // A dropped request during scanning is normal on a busy radio.
+                });
+                if (Date.now() - startedAt > 25000) finish("Scanning is taking too long. Type the network name below, or scan again.");
+            };
+            var timer = setInterval(function () { poll(false); }, 1500);
+            poll(true);
+        }
+
+        // Wired only: the session survives the WiFi change, so report how it ended instead of
+        // sending the browser somewhere else. Same verdict rules as wifi-setup.html.
+        function waitForWifiOutcome(button) {
+            showStatus("Credentials saved. Joining the new network...", 'info');
+
+            var startedAt = Date.now();
+            var done = false;
+            var finish = function (message, kind) {
+                if (done) return;
+                done = true;
+                clearInterval(timer);
+                button.disabled = false;
+                button.classList.remove('loading');
+                showStatus(message, kind, 10000);
+                loadCurrentNetwork();
+            };
+            var timer = setInterval(function () {
+                var elapsed = Date.now() - startedAt;
+                // The first seconds can still report the previous association.
+                if (elapsed < 4000) return;
+
+                energyApi.getWifiStatus().then(function (d) {
+                    if (d.credentialWriteFailed) {
+                        finish("The device could not store the credentials. Try again.", 'error');
+                    } else if (d.connected) {
+                        finish("WiFi connected to '" + d.ssid + "' (" + d.ip + ").", 'success');
+                    } else if (d.state === 0 || d.state === 2) {
+                        // Back to unprovisioned or assist means the attempt was given up on.
+                        energyApi.getWifiDiagnostics()
+                            .then(function (diag) { return diag && diag.reason; })
+                            .catch(function () { return null; })
+                            .then(function (reason) {
+                                finish("WiFi could not join that network" + (reason ? " (" + reason + ")" : "")
+                                    + ". Check the network name and password.", 'error');
+                            });
+                    } else if (elapsed > 60000) {
+                        finish("WiFi has not connected yet. The device keeps trying: check the network name and password.", 'error');
+                    }
+                }).catch(function () {
+                    if (elapsed > 60000) finish("Lost contact with the device while WiFi was switching.", 'error');
+                });
+            }, 2000);
+        }
+
         async function disconnectWifi() {
-            const confirm = window.confirm("Are you sure you want to disconnect from WiFi? You will lose access to the device until you reconnect it to WiFi.");
+            if (!currentNetwork) await loadCurrentNetwork();
+            const wired = isServedOverEthernet();
+            const confirm = window.confirm(wired
+                ? "Erase the WiFi credentials? All IP settings go back to DHCP and the device restarts. It stays reachable over Ethernet."
+                : "Are you sure you want to disconnect from WiFi? You will lose access to the device until you reconnect it to WiFi.");
             if (!confirm) {
                 return;
             }
@@ -561,6 +834,14 @@
                 showStatus("Disconnecting from WiFi...", 'info');
 
                 await energyApi.resetWifi();
+
+                if (wired) {
+                    // The reset also puts Ethernet back on DHCP: a static address this page
+                    // was loaded from is gone after the restart.
+                    var wasStatic = currentEthernet && currentEthernet.staticApplied;
+                    window.rebootWait.show(wasStatic ? { redirectTo: "http://energyme.local", baseUrl: "http://energyme.local" } : {});
+                    return;
+                }
 
                 showStatus("WiFi credentials erased. Connect to the 'EnergyMe-<device id>' network (password is printed on the device) and open http://172.31.42.1", 'success', 10000);
             } catch (error) {
@@ -930,44 +1211,54 @@
         // Live network snapshot, used to prefill static fields with the working values.
         var currentNetwork = null;
 
-        function getSelectedIpMode() {
-            var checked = document.querySelector('input[name="ipMode"]:checked');
+        function getSelectedIpMode(groupName) {
+            var checked = document.querySelector('input[name="' + groupName + '"]:checked');
             return checked ? checked.value : "dhcp";
         }
 
-        function setSelectedIpMode(mode) {
-            var radio = document.querySelector('input[name="ipMode"][value="' + mode + '"]');
+        function setSelectedIpMode(groupName, mode) {
+            var radio = document.querySelector('input[name="' + groupName + '"][value="' + mode + '"]');
             if (radio) radio.checked = true;
         }
 
         function updateRiskWarning() {
-            var show = getSelectedIpMode() === "static" && !document.getElementById("fallbackToDhcp").checked;
+            var show = getSelectedIpMode("ipMode") === "static" && !document.getElementById("fallbackToDhcp").checked;
             document.getElementById("networkRiskWarning").style.display = show ? "block" : "none";
         }
 
-        function prefillDnsFromGateway() {
-            var gateway = document.getElementById("staticGateway").value.trim();
-            var dns1 = document.getElementById("staticDns1");
+        function prefillDnsFromGateway(gwId, dnsId) {
+            var gateway = document.getElementById(gwId).value.trim();
+            var dns1 = document.getElementById(dnsId);
             if (gateway && !dns1.value.trim()) dns1.value = gateway;
         }
 
-        // When switching to static with empty fields, seed them from the current working
-        // network so "static" becomes "pin my current address" - the safe, common case.
+        // Seed empty static fields from the current working addresses so "static"
+        // becomes "pin my current address" - the safe, common case.
+        // values: { ip, gateway, subnet, dns1 }; idPrefix: "static" or "ethStatic".
+        function prefillStaticFields(values, idPrefix) {
+            var valid = function (v) { return v && v !== "0.0.0.0"; };
+            var seed = function (idSuffix, val) {
+                var field = document.getElementById(idPrefix + idSuffix);
+                if (!field.value.trim() && valid(val)) field.value = val;
+            };
+            seed("Ip", values.ip);
+            seed("Gateway", values.gateway);
+            seed("Subnet", values.subnet);
+            seed("Dns1", values.dns1);
+        }
+
         function prefillStaticFromCurrent() {
             if (!currentNetwork || !currentNetwork.wifiConnected) return;
-            var ip = document.getElementById("staticIp");
-            var gw = document.getElementById("staticGateway");
-            var sn = document.getElementById("staticSubnet");
-            var d1 = document.getElementById("staticDns1");
-            var valid = function (v) { return v && v !== "0.0.0.0"; };
-            if (!ip.value.trim() && valid(currentNetwork.wifiLocalIp)) ip.value = currentNetwork.wifiLocalIp;
-            if (!gw.value.trim() && valid(currentNetwork.wifiGatewayIp)) gw.value = currentNetwork.wifiGatewayIp;
-            if (!sn.value.trim() && valid(currentNetwork.wifiSubnetMask)) sn.value = currentNetwork.wifiSubnetMask;
-            if (!d1.value.trim() && valid(currentNetwork.wifiDnsIp)) d1.value = currentNetwork.wifiDnsIp;
+            prefillStaticFields({
+                ip: currentNetwork.wifiLocalIp,
+                gateway: currentNetwork.wifiGatewayIp,
+                subnet: currentNetwork.wifiSubnetMask,
+                dns1: currentNetwork.wifiDnsIp
+            }, "static");
         }
 
         function onIpModeChange() {
-            var isStatic = getSelectedIpMode() === "static";
+            var isStatic = getSelectedIpMode("ipMode") === "static";
             document.getElementById("staticIpFields").style.display = isStatic ? "flex" : "none";
             if (isStatic) prefillStaticFromCurrent();
             updateRiskWarning();
@@ -993,6 +1284,7 @@
                     set("curDns", net.wifiDnsIp);
                     document.getElementById("curRssi").textContent =
                         net.wifiRssi ? (net.wifiRssi + " dBm " + signalQualityLabel(net.wifiRssi)) : "N/A";
+                    updateWiredTexts();
                 })
                 .catch(error => {
                     document.getElementById("curStatus").textContent = "Unavailable";
@@ -1022,7 +1314,7 @@
         function getNetworkConfiguration() {
             return energyApi.getNetworkConfig()
                 .then(data => {
-                    setSelectedIpMode(data.useStaticIp ? "static" : "dhcp");
+                    setSelectedIpMode("ipMode", data.useStaticIp ? "static" : "dhcp");
                     document.getElementById("curMode").textContent = data.useStaticIp ? "Static IP" : "DHCP (automatic)";
                     document.getElementById("staticIp").value = data.ip || "";
                     document.getElementById("staticGateway").value = data.gateway || "";
@@ -1033,14 +1325,27 @@
                     onIpModeChange();
                 })
                 .catch(error => {
-                    setSelectedIpMode("dhcp");
+                    setSelectedIpMode("ipMode", "dhcp");
                     onIpModeChange();
                     console.log("Error getting network configuration. Response: " + error.message);
                 });
         }
 
+        // The firmware refuses 0.0.0.0 for the address, the gateway and the subnet mask.
+        function isUsableIpv4(value) {
+            return isValidIpv4(value) && value !== "0.0.0.0";
+        }
+
+        // Where the wait screen should look for the device after a restart that changes the
+        // address of ONE interface. When this page is served over the other interface its
+        // address does not change, so stay on this origin (empty options = same-origin defaults).
+        function rebootWaitTarget(changesEthernet, newUrl) {
+            if (isServedOverEthernet() !== changesEthernet) return {};
+            return { redirectTo: newUrl, baseUrl: newUrl };
+        }
+
         async function setNetworkConfiguration() {
-            const useStaticIp = getSelectedIpMode() === "static";
+            const useStaticIp = getSelectedIpMode("ipMode") === "static";
             const ip = document.getElementById("staticIp").value.trim();
             const gateway = document.getElementById("staticGateway").value.trim();
             const subnet = document.getElementById("staticSubnet").value.trim();
@@ -1051,14 +1356,14 @@
             const fallbackToDhcp = document.getElementById("fallbackToDhcp").checked;
 
             if (useStaticIp) {
-                if (!isValidIpv4(ip)) { showStatus('Please enter a valid IP address.', 'error'); return; }
-                if (!isValidIpv4(gateway)) { showStatus('Please enter a valid gateway address.', 'error'); return; }
-                if (!isValidIpv4(subnet)) { showStatus('Please enter a valid subnet mask.', 'error'); return; }
+                if (!isUsableIpv4(ip)) { showStatus('Please enter a valid IP address.', 'error'); return; }
+                if (!isUsableIpv4(gateway)) { showStatus('Please enter a valid gateway address.', 'error'); return; }
+                if (!isUsableIpv4(subnet)) { showStatus('Please enter a valid subnet mask.', 'error'); return; }
                 if (!isValidIpv4(dns1)) { showStatus('Primary DNS is not a valid IP address.', 'error'); return; }
                 if (dns2 && !isValidIpv4(dns2)) { showStatus('Secondary DNS is not a valid IP address.', 'error'); return; }
             }
 
-            const userConfirmed = window.confirm("Apply network configuration? The device will restart and may be reachable at a different address.");
+            const userConfirmed = window.confirm("Apply WiFi configuration? The device will restart and may be reachable at a different address.");
             if (!userConfirmed) return;
 
             const button = document.getElementById("setNetworkConfigButton");
@@ -1066,7 +1371,7 @@
             button.classList.add('loading');
 
             try {
-                showStatus("Applying network configuration...", 'info');
+                showStatus("Applying WiFi configuration...", 'info');
 
                 await energyApi.setNetworkConfig({
                     useStaticIp: useStaticIp,
@@ -1083,13 +1388,158 @@
                 // it whatever lease it gets. Poll and redirect against that new address, not the
                 // one this page was loaded from.
                 const targetUrl = useStaticIp ? ("http://" + ip) : "http://energyme.local";
-                window.rebootWait.show({ redirectTo: targetUrl, baseUrl: targetUrl });
+                window.rebootWait.show(rebootWaitTarget(false, targetUrl));
                 // Don't restore button - the device is restarting
             } catch (error) {
                 button.disabled = false;
                 button.classList.remove('loading');
-                showStatus("Error setting network configuration: " + error.message, 'error');
+                showStatus("Error setting WiFi configuration: " + error.message, 'error');
             }
+        }
+
+        // Ethernet (Home Pro only). Live status snapshot, used to prefill static fields
+        // with the working values; null while the section is hidden.
+        var currentEthernet = null;
+
+        function prefillEthStaticFromCurrent() {
+            if (!currentEthernet || !currentEthernet.linkUp) return;
+            prefillStaticFields(currentEthernet, "ethStatic");
+        }
+
+        function onEthIpModeChange() {
+            var isStatic = getSelectedIpMode("ethIpMode") === "static";
+            document.getElementById("ethStaticIpFields").style.display = isStatic ? "flex" : "none";
+            if (isStatic) prefillEthStaticFromCurrent();
+        }
+
+        // Reveals the Ethernet section only when the device actually has Ethernet
+        // (404 or enabled:false means it does not; the catch keeps the section
+        // hidden on transient errors too - this page loads once, no retry cycle).
+        async function loadEthernet() {
+            // Already known from the system info: no Ethernet, so no request (and no 404).
+            if (currentNetwork && currentNetwork.ethEnabled === false) return;
+            try {
+                var status = await energyApi.getEthernetStatusIfAvailable();
+                if (!status) return;
+                currentEthernet = status;
+
+                document.getElementById("ethernetSection").style.display = "block";
+
+                var set = function (id, val) { document.getElementById(id).textContent = val || "N/A"; };
+                var link = document.getElementById("curEthLink");
+                link.textContent = status.linkUp ? "Up" : "Down";
+                link.style.color = status.linkUp ? "var(--green, #2e7d32)" : "#c62828";
+                set("curEthActiveInterface", formatInterfaceName(status.activeInterface));
+                set("curEthIp", status.ip);
+                set("curEthGateway", status.gateway);
+                set("curEthSubnet", status.subnet);
+                set("curEthDns", status.dns1);
+                set("curEthMac", status.mac);
+
+                var config;
+                try {
+                    config = await energyApi.getEthernetConfig();
+                } catch (error) {
+                    // The form below would show DHCP with empty fields, and applying that
+                    // would overwrite a stored static configuration.
+                    document.getElementById("setEthConfigButton").disabled = true;
+                    document.getElementById("resetEthConfigButton").disabled = true;
+                    showStatus("Could not load the Ethernet configuration. Reload the page to change it.", 'error');
+                    return;
+                }
+                setSelectedIpMode("ethIpMode", config.useStaticIp ? "static" : "dhcp");
+                // The boot-fail backstop can keep a static configuration stored but unused.
+                document.getElementById("curEthMode").textContent = !config.useStaticIp ? "DHCP (automatic)"
+                    : (status.staticApplied ? "Static IP" : "Static IP (not applied, using DHCP)");
+                document.getElementById("ethStaticIp").value = config.ip || "";
+                document.getElementById("ethStaticGateway").value = config.gateway || "";
+                document.getElementById("ethStaticSubnet").value = config.subnet || "";
+                document.getElementById("ethStaticDns1").value = config.dns1 || "";
+                document.getElementById("ethStaticDns2").value = config.dns2 || "";
+                onEthIpModeChange();
+            } catch (error) {
+                console.log("Error getting Ethernet status. Response: " + error.message);
+            }
+        }
+
+        // Shared confirm -> disable button -> API call -> reboot-wait scaffold for the
+        // Ethernet actions. After the restart the device may answer at a new address,
+        // so poll and redirect against targetUrl, not the one this page was loaded from.
+        async function ethApplyAndReboot(buttonId, confirmMsg, pendingMsg, apiCall, targetUrl, errorPrefix) {
+            if (!window.confirm(confirmMsg)) return;
+
+            const button = document.getElementById(buttonId);
+            button.disabled = true;
+            button.classList.add('loading');
+
+            try {
+                showStatus(pendingMsg, 'info');
+                await apiCall();
+                window.rebootWait.show(rebootWaitTarget(true, targetUrl));
+                // Don't restore button - the device is restarting
+            } catch (error) {
+                button.disabled = false;
+                button.classList.remove('loading');
+                showStatus(errorPrefix + error.message, 'error');
+            }
+        }
+
+        async function setEthernetConfiguration() {
+            const useStaticIp = getSelectedIpMode("ethIpMode") === "static";
+            const ip = document.getElementById("ethStaticIp").value.trim();
+            const gateway = document.getElementById("ethStaticGateway").value.trim();
+            const subnet = document.getElementById("ethStaticSubnet").value.trim();
+            // Primary DNS must never be empty for a static config (empty DNS breaks name resolution),
+            // so default it to the gateway when the user leaves it blank.
+            const dns1 = document.getElementById("ethStaticDns1").value.trim() || gateway;
+            const dns2 = document.getElementById("ethStaticDns2").value.trim();
+
+            if (useStaticIp) {
+                if (!isUsableIpv4(ip)) { showStatus('Please enter a valid IP address.', 'error'); return; }
+                if (!isUsableIpv4(gateway)) { showStatus('Please enter a valid gateway address.', 'error'); return; }
+                if (!isUsableIpv4(subnet)) { showStatus('Please enter a valid subnet mask.', 'error'); return; }
+                if (!isValidIpv4(dns1)) { showStatus('Primary DNS is not a valid IP address.', 'error'); return; }
+                if (dns2 && !isValidIpv4(dns2)) { showStatus('Secondary DNS is not a valid IP address.', 'error'); return; }
+                // Same rules as the firmware. A wrong static address is not caught at run time
+                // (the link alone makes it "up"), so catch what can be caught here.
+                if (ip.indexOf("172.31.42.") === 0) { showStatus('172.31.42.x is reserved for the recovery access point. Please pick another address.', 'error'); return; }
+                var toInt = function (a) { return a.split(".").reduce(function (acc, part) { return acc * 256 + parseInt(part, 10); }, 0); };
+                var mask = toInt(subnet);
+                var inverted = 4294967295 - mask; // A valid mask is ones then zeros, so its inverse is 2^n - 1
+                if ((inverted & (inverted + 1)) !== 0) { showStatus('The subnet mask is not valid (example: 255.255.255.0).', 'error'); return; }
+                if (((toInt(ip) & mask) >>> 0) !== ((toInt(gateway) & mask) >>> 0)) { showStatus('The gateway must be inside the same network as the IP address.', 'error'); return; }
+            }
+
+            // For a static IP the new address is the one the user just entered; for DHCP
+            // the mDNS name (energyme.local) follows the device whatever lease it gets.
+            await ethApplyAndReboot(
+                "setEthConfigButton",
+                "Apply Ethernet configuration? The device will restart and may be reachable at a different address.",
+                "Applying Ethernet configuration...",
+                () => energyApi.setEthernetConfig({
+                    useStaticIp: useStaticIp,
+                    ip: ip,
+                    gateway: gateway,
+                    subnet: subnet,
+                    dns1: dns1,
+                    dns2: dns2
+                }),
+                useStaticIp ? ("http://" + ip) : "http://energyme.local",
+                "Error setting Ethernet configuration: "
+            );
+        }
+
+        async function resetEthernetConfiguration() {
+            // Back on DHCP after the restart, so poll the mDNS name rather than
+            // whatever static address this page may have been loaded from.
+            await ethApplyAndReboot(
+                "resetEthConfigButton",
+                "Reset Ethernet configuration to DHCP? The device will restart and may be reachable at a different address.",
+                "Resetting Ethernet configuration...",
+                () => energyApi.resetEthernetConfig(),
+                "http://energyme.local",
+                "Error resetting Ethernet configuration: "
+            );
         }
 
         function checkHasSecrets() {
@@ -1151,6 +1601,9 @@
                 await delay(DELAY_BETWEEN_REQUESTS);
 
                 await getNetworkConfiguration();
+                await delay(DELAY_BETWEEN_REQUESTS);
+
+                await loadEthernet();
                 await delay(DELAY_BETWEEN_REQUESTS);
 
                 await checkHasSecrets();

@@ -16,9 +16,21 @@
 
 // Product info
 #define COMPANY_NAME "EnergyMe"
+// Compile-time on purpose: every Pro env pins PRODUCT_FALLBACK=1 and the image descriptor keeps a
+// Pro binary off Home hardware (and vice versa), so the build's product is the running product.
+// PRODUCT_SLUG names things the user sees on their own network/servers (DHCP hostname, InfluxDB
+// defaults). Cloud-facing identifiers (MQTT topics, rule names) are NOT derived from it.
+#if defined(PRODUCT_FALLBACK) && PRODUCT_FALLBACK == 1
+#define PRODUCT_NAME "Home Pro"
+#define FULL_PRODUCT_NAME "EnergyMe - Home Pro"
+#define PRODUCT_SLUG "energyme-homepro"
+#define PRODUCT_DESCRIPTION "An open-source energy monitoring system with Ethernet, capable of monitoring up to 12 circuits."
+#else
 #define PRODUCT_NAME "Home"
 #define FULL_PRODUCT_NAME "EnergyMe - Home"
+#define PRODUCT_SLUG "energyme-home"
 #define PRODUCT_DESCRIPTION "An open-source energy monitoring system for home use, capable of monitoring up to 16 circuits."
+#endif
 #define GITHUB_URL "https://github.com/jibrilsharafi/EnergyMe-Home"
 #define GITHUB_API_LATEST_RELEASE_URL "https://api.github.com/repos/jibrilsharafi/EnergyMe-Home/releases/latest"
 #define AUTHOR "Jibril Sharafi"
@@ -26,6 +38,12 @@
 
 // Serial
 #define SERIAL_BAUDRATE 115200 // Most common baudrate for ESP32
+// HWCDC blocks up to this long per write (per CHAR on the core-log path) when a USB host is attached
+// but not draining the port. Core default is 100 ms: in dev builds the core's pre-setup chip report
+// alone then takes ~280 s (measured: 292 s to first Ethernet reachability after a USB reset with the
+// COM port left closed, vs 7 s with a reader). Applied from getArduinoSetupWaitTime_ms() in main.cpp.
+// Must be >= 2: at 0 or 1 the core retry counter marks the port disconnected on healthy multi-chunk writes.
+#define SERIAL_TX_TIMEOUT_MS 3
 
 // While loops
 #define MAX_LOOP_ITERATIONS 1000 // The maximum number of iterations for any while loop to avoid infinite loops
@@ -79,7 +97,6 @@
 
 // Logger
 #define LOG_PATH "/log.txt"
-#define MAXIMUM_LOG_FILE_SIZE (200 * 1024)
 
 // UDP Log configuration
 #define PREFERENCES_KEY_UDP_DESTINATION "udp_dest"
@@ -123,6 +140,7 @@
 // Server used ports (here to ensure no conflicts)
 #define MODBUS_TCP_PORT 502
 #define WEBSERVER_PORT 80
+#define WEBSERVER_ROUTE_ALLOC_PSRAM_THRESHOLD 16 // malloc() PSRAM threshold (bytes) while the routes are registered - see CustomServer::begin()
 
 // Useful constants
 #define MAGIC_WORD_RTC 0xDEADBEEF // This is crucial to ensure that the RTC variables used have sensible values or it is just some garbage after reboot

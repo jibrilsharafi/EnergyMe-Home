@@ -9,6 +9,7 @@
 #include <esp_system.h>
 #include <esp_wifi.h>
 #include <ESPmDNS.h>
+#include <lwip/dns.h>
 #include <mbedtls/sha256.h>
 #include <DNSServer.h>
 #include <WiFi.h>
@@ -27,13 +28,19 @@
 #define WIFI_TASK_PRIORITY 5
 
 #define WIFI_CONFIG_PORTAL_SSID "EnergyMe"
-#define WIFI_HOSTNAME_PREFIX "energyme-home"
+#define WIFI_HOSTNAME_PREFIX PRODUCT_SLUG // DHCP hostname on WiFi and Ethernet: <slug>-<device id>
+#define WIFI_HOSTNAME_DEVICE_ID_LENGTH 12 // The device id is a MAC as hex; bounding it keeps the longest slug inside the 32-byte netif hostname
+#define WIFI_HOSTNAME_BUFFER_SIZE 32
+static_assert(sizeof(WIFI_HOSTNAME_PREFIX) + 1 + WIFI_HOSTNAME_DEVICE_ID_LENGTH <= WIFI_HOSTNAME_BUFFER_SIZE, "hostname does not fit the netif limit");
 
 #define WIFI_CONNECT_TIMEOUT_SECONDS 10
 #define WIFI_CONNECT_TIMEOUT_POWER_RESET_SECONDS (5 * 60)  // Extended timeout for the FIRST attempt after a power reset only (router likely rebooting)
 #define WIFI_CREDENTIAL_WRITE_RETRY_DELAY_MS 250    // Settle time between a disconnect and retrying esp_wifi_set_config(), which is refused while the STA is connecting
+#define WIFI_STA_DISCONNECT_SETTLE_POLL_MS 10       // Poll step while waiting for the association bit to clear before a new attempt (Ethernet products only)
+#define WIFI_STA_DISCONNECT_SETTLE_MAX_MS 500       // Bound of that wait: esp_wifi_disconnect() is asynchronous, normally settled within a few ms
 #define WIFI_DISCONNECT_DELAY (15 * 1000)           // Delay after WiFi disconnected to allow automatic reconnection
 #define WIFI_AP_LIFECYCLE_TICK_MS (10 * 1000)       // How often the AP lifetime/grace predicates are evaluated while the SoftAP is up
+#define WIFI_AP_PENDING_TICK_MS (1 * 1000)          // Tick while a deferred AP raise waits on the wired boot windows (Ethernet products only)
 #define WIFI_SCAN_MS_PER_CHANNEL 120                // Per-channel dwell. The default (~300 ms) makes a full scan long enough that a phone on the SoftAP times out waiting
 #define WIFI_SCAN_MAX_RESULTS 30                    // Cap the JSON response; a dense apartment block can see far more than a user will scroll
 #define WIFI_SCAN_RESULTS_TTL_MS (2 * 60 * 1000)    // How long a completed result set is served before it is freed and re-scanned. The driver holds the full set in internal RAM, so it must not be kept for the rest of the uptime
@@ -107,15 +114,34 @@ struct WifiConfiguration {
 // =====================
 // NOTE: Build-time flag ENABLE_OPEN_SOURCE_TELEMETRY controls whether telemetry is sent.
 //       Set -DENABLE_OPEN_SOURCE_TELEMETRY=0 or remove the define to disable.
+// Product is a runtime (factory-NVS) value, not a build flag, so the endpoint is picked
+// at the call site via globalHwProfile->product, like the AWS IoT topics/rules.
 #ifdef ENV_DEV
-#define TELEMETRY_URL "5jyfvyfmubfr6rw7tx7ozb4foq0hstkk.lambda-url.eu-west-1.on.aws"
+#define TELEMETRY_URL_HOME "5jyfvyfmubfr6rw7tx7ozb4foq0hstkk.lambda-url.eu-west-1.on.aws"
+#define TELEMETRY_URL_HOMEPRO "7vamemex2tdwqgp5qfiytsb37m0tcwhr.lambda-url.eu-west-1.on.aws"
 #else
-#define TELEMETRY_URL "vd2obqbugurdyhbf4iaxrzmk4i0njltb.lambda-url.eu-west-1.on.aws"
+#define TELEMETRY_URL_HOME "vd2obqbugurdyhbf4iaxrzmk4i0njltb.lambda-url.eu-west-1.on.aws"
+#define TELEMETRY_URL_HOMEPRO "26jgpjiel7qdotp3rkpa7dvui40ynllt.lambda-url.eu-west-1.on.aws"
 #endif
 #define TELEMETRY_PORT 443
 #define TELEMETRY_PATH "/"
 #define TELEMETRY_TIMEOUT_MS (1 * 1000) // Very short timeout since we don't really care about the response
 #define TELEMETRY_JSON_BUFFER_SIZE 512 // Sufficient for {hashed_device_id, firmware_version, sketch_md5}
+#define TELEMETRY_CONNECT_TIMEOUT_MS (10 * 1000) // TCP connect and TLS handshake each
+#define TELEMETRY_MAX_ATTEMPTS 5 // Per boot; a LAN-only install stops trying after these
+#define TELEMETRY_RETRY_INTERVAL_MS (10 * 60 * 1000)
+#define TELEMETRY_TASK_NAME "telemetry_task"
+#define TELEMETRY_TASK_STACK_SIZE (8 * 1024) // One TLS handshake; the MQTT task uses ~6 KB for its own
+#define TELEMETRY_TASK_PRIORITY 1
+
+// One entry of lwIP's resolver list as a raw IPAddress dword, 0 when empty or not IPv4. The
+// list is global (not per netif). A plain memory read, so it is safe from an event callback,
+// where the esp_netif getters behind dnsIP() are not.
+static inline uint32_t lwipDnsServer(uint8_t index)
+{
+    const ip_addr_t *server = dns_getserver(index);
+    return (server != nullptr && IP_IS_V4(server)) ? ip_2_ip4(server)->addr : 0;
+}
 
 namespace CustomWifi
 {
@@ -133,12 +159,9 @@ namespace CustomWifi
     // inside a request filter: a plain volatile load and a compare, with no esp_netif call,
     // unlike WiFi.softAPIP(). Always false while no AP is up.
     bool isApAddress(const IPAddress &address);
-
-    // STA connected OR serving on the SoftAP. This, not isFullyConnected(), is what
-    // callers should gate on when the question is "can anyone reach this device":
-    // a device serving on the AP with no upstream network is working as intended,
-    // and treating it as unhealthy restarts it every ~150 s.
-    bool isNetworkServiceable();
+    // isApAddress(local) and the peer is inside the SoftAP subnet: a connection that
+    // really came through the AP, not a LAN host that addressed the AP address
+    bool isApConnection(const IPAddress &localAddress, const IPAddress &remoteAddress);
 
     // Lock-free snapshot of the provisioning state. Safe to call from any task, including
     // the AsyncTCP task inside a request filter: it is a plain load of a uint8_t-backed
@@ -168,6 +191,25 @@ namespace CustomWifi
     void getDisconnectDiagnosticsAsJson(JsonDocument &jsonDocument);
     bool testConnectivity(); // Test actual network connectivity (check gateway and DNS)
     void forceReconnect();   // Force immediate WiFi reconnection
+    void notifyWiredStateChanged(); // Wake the WiFi task so the AP/LED follow an Ethernet change at once
+
+    // DNS servers the station last brought (lease or static config), 0.0.0.0 when unknown.
+    // Lock-free. lwIP's resolver list is global, so the live WiFi.STA.dnsIP() cannot answer this.
+    void getStaDnsServers(IPAddress &dns1, IPAddress &dns2);
+
+    // Starts the mDNS responder if it is not already running. The WiFi connect path
+    // does this itself; an Ethernet-only device (Pro with no credentials) has no
+    // such path, so custometh calls this when the wire becomes serviceable. The
+    // ESP-IDF responder answers on every netif once running, ETH included.
+    bool ensureMdnsStarted();
+
+    // Sends the one-shot anonymous usage ping (hashed device id, firmware version,
+    // sketch MD5) if not already sent this boot. Same story as ensureMdnsStarted:
+    // the WiFi connect path calls this itself; an Ethernet-only device (Pro with
+    // no credentials) has no such path, so custometh calls this when the wire
+    // becomes serviceable. Idempotent and a no-op once ENABLE_OPEN_SOURCE_TELEMETRY
+    // is off or the ping has already gone out.
+    void sendOpenSourceTelemetry();
 
     void resetWifi();
     bool setCredentials(const char* ssid, const char* password); // Set new WiFi credentials and trigger reconnection

@@ -15,6 +15,7 @@
 #include "constants.h"
 #include "customtime.h"
 #include "customwifi.h"
+#include "customnet.h"
 #include "globals.h"
 #include "utils.h"
 #include "structs.h"
@@ -24,7 +25,7 @@
 #define DEFAULT_IS_CUSTOM_MQTT_ENABLED false
 #define MQTT_CUSTOM_SERVER_DEFAULT "test.mosquitto.org"
 #define MQTT_CUSTOM_PORT_DEFAULT 1883
-#define MQTT_CUSTOM_CLIENTID_DEFAULT "energyme-home"
+#define MQTT_CUSTOM_CLIENTID_DEFAULT PRODUCT_SLUG
 #define MQTT_CUSTOM_TOPIC_DEFAULT "energyme"
 #define MQTT_CUSTOM_FREQUENCY_SECONDS_DEFAULT 15
 #define MQTT_CUSTOM_USE_CREDENTIALS_DEFAULT false
@@ -83,6 +84,10 @@ namespace CustomMqtt
     // Lifecycle management
     void begin();
     void stop();
+
+    // Drops the local MQTT session on the next task loop so it reconnects over
+    // the current default interface (see Mqtt::requestReconnect). Safe from any task.
+    void requestReconnect();
 
     // Configuration management - direct struct operations
     bool getConfiguration(CustomMqttConfiguration &config);
