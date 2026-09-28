@@ -51,9 +51,9 @@ class RebootWait {
      *   already be back and every poll succeeds.
      */
     show(options = {}) {
-        const redirectTo = options.redirectTo || '/';
+        const redirectTo = this._sanitizeUrl(options.redirectTo) || '/';
         const requireFailureFirst = options.requireFailureFirst !== false;
-        const baseUrl = (options.baseUrl || '').replace(/\/$/, '');
+        const baseUrl = this._sanitizeUrl(options.baseUrl).replace(/\/$/, '');
         const token = ++this._pollToken;
         // The cap counts from the trigger, so neither the pre-delay nor a pending poll pushes
         // the fallback past it
@@ -112,6 +112,19 @@ class RebootWait {
             .then(() => true)
             .catch(() => false)
             .finally(() => clearTimeout(timeoutId));
+    }
+
+    // Callers build these URLs from form input; re-parse so only a plain http(s) URL (or a
+    // same-origin path) can reach window.location / fetch (blocks javascript: and data: schemes)
+    _sanitizeUrl(url) {
+        if (!url) return '';
+        try {
+            const parsed = new URL(url, window.location.origin);
+            if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+            return parsed.href;
+        } catch (e) {
+            return '';
+        }
     }
 
     _now() {
