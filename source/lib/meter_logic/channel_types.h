@@ -19,7 +19,7 @@ enum ChannelRole : uint8_t {
     CHANNEL_ROLE_PV       = 2, // PV/Solar production (+ generation, negatives clamped to 0)
     CHANNEL_ROLE_BATTERY  = 3, // Battery (+ discharge, - charge)
     CHANNEL_ROLE_INVERTER = 4, // Hybrid inverter: PV + battery DC-coupled, AC output (negatives allowed)
-    CHANNEL_ROLE_BIDIRECTIONAL = 5, // Line with flow both ways (e.g. sub-panel feed with PV/battery behind it): + import, - export, never clamped. Counted with the loads by its net value
+    CHANNEL_ROLE_BIDIRECTIONAL = 5, // Two-way line (e.g. sub-panel with PV/battery behind it): + import, - export, never clamped; counted with loads
     CHANNEL_ROLE_COUNT    = 6  // Total number of roles
 };
 

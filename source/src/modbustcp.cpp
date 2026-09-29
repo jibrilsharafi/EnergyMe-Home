@@ -369,7 +369,7 @@ namespace ModbusTcp
         // Meter values: 100-103
         if (address >= 100 && address <= 103) return true;
 
-        // Role-based aggregated values: 200-217, 300-317, 400-417, 500-517, 600-617, 700-717
+        // Role-based aggregated values (200-717, 100 per role)
         if ((address >= 200 && address <= 217) ||  // Grid
             (address >= 300 && address <= 317) ||  // Load
             (address >= 400 && address <= 417) ||  // PV
