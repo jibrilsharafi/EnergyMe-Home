@@ -38,7 +38,8 @@ def get_register_definitions() -> Dict[str, Dict[str, Any]]:
         "Load": 300,
         "PV": 400,
         "Battery": 500,
-        "Inverter": 600
+        "Inverter": 600,
+        "Bidirectional": 700
     }
 
     metrics = [
