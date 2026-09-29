@@ -287,7 +287,7 @@
                 <li><code>102-103</code>: Grid frequency (float32)</li>
             </ul>
 
-            <h4>Aggregated Values - Role Based (200-617)</h4>
+            <h4>Aggregated Values - Role Based (200-717)</h4>
             <p>Power and energy values aggregated by channel role. Each role has 18 registers (9 values × 2 registers each).</p>
 
             <h5>Grid (200-217)</h5>
@@ -353,6 +353,19 @@
                 <li><code>612-613</code>: Inverter reactive energy imported (float32, VARh)</li>
                 <li><code>614-615</code>: Inverter reactive energy exported (float32, VARh)</li>
                 <li><code>616-617</code>: Inverter apparent energy (float32, VAh)</li>
+            </ul>
+
+            <h5>Bidirectional (700-717)</h5>
+            <ul>
+                <li><code>700-701</code>: Bidirectional active power (float32, W)</li>
+                <li><code>702-703</code>: Bidirectional reactive power (float32, VAR)</li>
+                <li><code>704-705</code>: Bidirectional apparent power (float32, VA)</li>
+                <li><code>706-707</code>: Bidirectional power factor (float32)</li>
+                <li><code>708-709</code>: Bidirectional active energy imported (float32, Wh)</li>
+                <li><code>710-711</code>: Bidirectional active energy exported (float32, Wh)</li>
+                <li><code>712-713</code>: Bidirectional reactive energy imported (float32, VARh)</li>
+                <li><code>714-715</code>: Bidirectional reactive energy exported (float32, VARh)</li>
+                <li><code>716-717</code>: Bidirectional apparent energy (float32, VAh)</li>
             </ul>
 
             <h4>Per-Channel Registers (1000 + channel×100 + offset)</h4>
@@ -780,7 +793,7 @@
             registerMap.push({ offset: 100, count: 2, name: "Voltage", dataType: "float32", unit: "V" });
             registerMap.push({ offset: 102, count: 2, name: "Grid frequency", dataType: "float32", unit: "Hz" });
 
-            // Role-based Aggregated Values (200-617)
+            // Role-based Aggregated Values (200-717)
             // Grid (200-217)
             registerMap.push({ offset: 200, count: 2, name: "Grid active power", dataType: "float32", unit: "W" });
             registerMap.push({ offset: 202, count: 2, name: "Grid reactive power", dataType: "float32", unit: "VAR" });
@@ -835,6 +848,17 @@
             registerMap.push({ offset: 612, count: 2, name: "Inverter reactive energy imported", dataType: "float32", unit: "VARh" });
             registerMap.push({ offset: 614, count: 2, name: "Inverter reactive energy exported", dataType: "float32", unit: "VARh" });
             registerMap.push({ offset: 616, count: 2, name: "Inverter apparent energy", dataType: "float32", unit: "VAh" });
+
+            // Bidirectional (700-717)
+            registerMap.push({ offset: 700, count: 2, name: "Bidirectional active power", dataType: "float32", unit: "W" });
+            registerMap.push({ offset: 702, count: 2, name: "Bidirectional reactive power", dataType: "float32", unit: "VAR" });
+            registerMap.push({ offset: 704, count: 2, name: "Bidirectional apparent power", dataType: "float32", unit: "VA" });
+            registerMap.push({ offset: 706, count: 2, name: "Bidirectional power factor", dataType: "float32", unit: "" });
+            registerMap.push({ offset: 708, count: 2, name: "Bidirectional active energy imported", dataType: "float32", unit: "Wh" });
+            registerMap.push({ offset: 710, count: 2, name: "Bidirectional active energy exported", dataType: "float32", unit: "Wh" });
+            registerMap.push({ offset: 712, count: 2, name: "Bidirectional reactive energy imported", dataType: "float32", unit: "VARh" });
+            registerMap.push({ offset: 714, count: 2, name: "Bidirectional reactive energy exported", dataType: "float32", unit: "VARh" });
+            registerMap.push({ offset: 716, count: 2, name: "Bidirectional apparent energy", dataType: "float32", unit: "VAh" });
 
             // Per-Channel Registers (1000 + channel×100 + offset). MAX_CHANNEL_COUNT = 17 is the firmware-side compile-time max; v6.1 advertises 16 active channels via mDNS and Modbus only validates 0..totalChannelCount-1.
             for (let channel = 0; channel <= 15; channel++) {

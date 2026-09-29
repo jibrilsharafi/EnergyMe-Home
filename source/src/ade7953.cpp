@@ -1092,6 +1092,7 @@ namespace Ade7953
             case CHANNEL_ROLE_PV:       return "pv";
             case CHANNEL_ROLE_BATTERY:  return "battery";
             case CHANNEL_ROLE_INVERTER: return "inverter";
+            case CHANNEL_ROLE_BIDIRECTIONAL: return "bidirectional";
             case CHANNEL_ROLE_LOAD:
             default:                    return "load";
         }
@@ -1102,6 +1103,7 @@ namespace Ade7953
         if (strcmp(roleStr, "pv") == 0)       return CHANNEL_ROLE_PV;
         if (strcmp(roleStr, "battery") == 0)  return CHANNEL_ROLE_BATTERY;
         if (strcmp(roleStr, "inverter") == 0) return CHANNEL_ROLE_INVERTER;
+        if (strcmp(roleStr, "bidirectional") == 0) return CHANNEL_ROLE_BIDIRECTIONAL;
         return CHANNEL_ROLE_LOAD; // Default
     }
 
@@ -1110,7 +1112,8 @@ namespace Ade7953
                 strcmp(roleStr, "grid") == 0 ||
                 strcmp(roleStr, "pv") == 0 ||
                 strcmp(roleStr, "battery") == 0 ||
-                strcmp(roleStr, "inverter") == 0);
+                strcmp(roleStr, "inverter") == 0 ||
+                strcmp(roleStr, "bidirectional") == 0);
     }
 
     // Energy data management

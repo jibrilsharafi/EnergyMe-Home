@@ -207,6 +207,7 @@ void test_clamp_allows_grid_battery_inverter_negatives(void) {
     TEST_ASSERT_FALSE(shouldClampNegative(-5.0f, CHANNEL_ROLE_GRID));
     TEST_ASSERT_FALSE(shouldClampNegative(-5.0f, CHANNEL_ROLE_BATTERY));
     TEST_ASSERT_FALSE(shouldClampNegative(-5.0f, CHANNEL_ROLE_INVERTER));
+    TEST_ASSERT_FALSE(shouldClampNegative(-5.0f, CHANNEL_ROLE_BIDIRECTIONAL));
 }
 
 void test_clamp_never_touches_positive(void) {
@@ -253,6 +254,7 @@ void test_role_priority_grid_battery_only(void) {
     TEST_ASSERT_FALSE(roleHasSchedulingPriority(CHANNEL_ROLE_LOAD));
     TEST_ASSERT_FALSE(roleHasSchedulingPriority(CHANNEL_ROLE_PV));
     TEST_ASSERT_FALSE(roleHasSchedulingPriority(CHANNEL_ROLE_INVERTER));
+    TEST_ASSERT_FALSE(roleHasSchedulingPriority(CHANNEL_ROLE_BIDIRECTIONAL));
 }
 
 void test_weight_inactive_is_zero(void) {
