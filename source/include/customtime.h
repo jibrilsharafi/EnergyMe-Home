@@ -20,7 +20,7 @@
 #define TIME_SYNC_INTERVAL (60 * 60 * 1000)
 #define TIME_SYNC_RETRY_IF_NOT_SYNCHED (60 * 1000)
 
-// PREFERENCES_NAMESPACE_TIME: the persisted half of the time floor, the latest corroborated NTP time
+// PREFERENCES_NAMESPACE_TIME: the persisted half of the time floor, the latest corroborated NTP time (lower after a manual set)
 #define TIME_FLOOR_KEY "floor_s"
 
 #define TIMESTAMP_FORMAT "%Y-%m-%d %H:%M:%S"
@@ -52,8 +52,9 @@ namespace CustomTime {
 
     bool isUnixTimeValid(uint64_t unixTime, bool isMilliseconds = true);
 
-    // Manual time sync for devices without internet connectivity. Also sets the time floor to
-    // exactly this value, lowering it if needed: the way out of a bad persisted floor.
+    // Manual time sync for devices without internet connectivity. Can only lower the time floor
+    // (the way out of a bad persisted floor); the next NTP answer that agrees with this time
+    // raises it again.
     bool setUnixTime(uint64_t unixSeconds);
 
     // Forces the next sync check to run immediately. Called on interface failover:

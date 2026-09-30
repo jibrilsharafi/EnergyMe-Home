@@ -39,6 +39,12 @@ uint32_t raisedBy(uint32_t floor, uint64_t acceptedSeconds) {
     return candidate > floor ? candidate : floor;
 }
 
+uint32_t manualFloor(uint32_t floor, uint64_t manualSeconds) {
+    uint32_t manual = toFloor(manualSeconds);
+    if (manual == 0) return floor;
+    return manual < floor ? manual : floor;
+}
+
 bool isZeroTransmitArtifact(uint64_t candidateSeconds) {
     return candidateSeconds == ZERO_TRANSMIT_SECONDS;
 }

@@ -254,11 +254,13 @@ namespace CustomTime {
             return false;
         }
 
-        // Replaces the floor outright (a sync can only raise it). Clear a pending auto-sync
-        // persist first so an older value cannot land in NVS after this one.
-        uint32_t floorSeconds = TimeFloor::toFloor(unixSeconds);
+        // Lower-only (TimeFloor::manualFloor): the value seeds the corroboration base instead, so
+        // the next NTP answer that agrees with it raises the floor. Clear a pending sync persist
+        // first so an older value cannot land in NVS after this one.
         _pendingFloorPersist.store(0);
+        uint32_t floorSeconds = TimeFloor::manualFloor(_floorSeconds.load(), unixSeconds);
         _floorSeconds.store(floorSeconds);
+        _corroborationBase.store(_packBase(TimeFloor::toFloor(unixSeconds), _uptimeSeconds()));
         _persistFloor(floorSeconds);
 
         struct timeval tv;
@@ -271,7 +273,7 @@ namespace CustomTime {
         }
         
         _isTimeSynched = true;
-        LOG_INFO("Time manually synchronized: %llu (time floor set to it)", unixSeconds);
+        LOG_INFO("Time manually synchronized: %llu (time floor %llu)", unixSeconds, (uint64_t)floorSeconds);
         return true;
     }
 

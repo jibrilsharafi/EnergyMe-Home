@@ -50,6 +50,13 @@ bool corroborates(uint32_t baseWallSeconds, uint32_t baseUptimeSeconds,
 // candidate that got in within the tolerance.
 uint32_t raisedBy(uint32_t floor, uint64_t acceptedSeconds);
 
+// Floor after a manual time set: lowered to the manual value, never raised. Lowering
+// is the way out of a wrong persisted floor; raising would let a fast browser clock
+// block NTP until real time caught up. The manual value becomes the corroboration
+// base instead, so the next NTP answer that agrees with it raises the floor. A 0
+// floor stays 0, and an implausible value leaves the floor as it is.
+uint32_t manualFloor(uint32_t floor, uint64_t manualSeconds);
+
 // What lwIP hands over for a reply with an all-zero transmit timestamp, which an
 // unsynchronized server sends and RFC 4330 says to discard. With SNTP_CHECK_RESPONSE
 // 0 (the IDF default) lwIP passes it on, decoding NTP second 0 as era 1:

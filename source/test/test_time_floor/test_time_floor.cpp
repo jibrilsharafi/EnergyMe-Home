@@ -180,6 +180,29 @@ void test_raise_ignores_implausible_answer(void) {
 }
 
 // ============================================================================
+// manualFloor
+// ============================================================================
+
+void test_manual_floor_lowers_to_an_earlier_value(void) {
+    TEST_ASSERT_EQUAL_UINT32(BUILD, manualFloor(PERSISTED, BUILD));
+}
+
+void test_manual_floor_never_raises(void) {
+    TEST_ASSERT_EQUAL_UINT32(PERSISTED, manualFloor(PERSISTED, PERSISTED + HOUR));
+    TEST_ASSERT_EQUAL_UINT32(PERSISTED, manualFloor(PERSISTED, PERSISTED));
+}
+
+void test_manual_floor_keeps_no_floor(void) {
+    TEST_ASSERT_EQUAL_UINT32(0, manualFloor(0, BUILD));
+}
+
+void test_manual_floor_ignores_implausible_value(void) {
+    TEST_ASSERT_EQUAL_UINT32(PERSISTED, manualFloor(PERSISTED, 0));
+    TEST_ASSERT_EQUAL_UINT32(PERSISTED, manualFloor(PERSISTED, UnixTime::MAX_SECONDS + 1));
+    TEST_ASSERT_EQUAL_UINT32(PERSISTED, manualFloor(PERSISTED, 1790756411000ULL)); // milliseconds
+}
+
+// ============================================================================
 // isZeroTransmitArtifact
 // ============================================================================
 
@@ -291,16 +314,48 @@ void test_rejected_answer_does_not_move_the_base(void) {
     TEST_ASSERT_EQUAL_UINT32(10, device.baseUptime);
 }
 
-void test_manual_set_may_lower_the_floor(void) {
-    // A future-dated floor rejects every genuine answer; the manual set is the escape
-    // hatch and replaces the floor outright instead of going through raisedBy.
-    uint32_t floor = effective(BUILD, 2000000000ULL); // 2033, bad persisted value
-    const uint64_t genuine = BUILD + 86400ULL;
-    TEST_ASSERT_FALSE(accepts(floor, genuine, TOLERANCE));
+// setUnixTime (src/customtime.cpp), composed from the rules above
+static void manualSet(Device &device, uint64_t value, uint32_t uptime) {
+    device.floor = manualFloor(device.floor, value);
+    device.baseWall = toFloor(value);
+    device.baseUptime = uptime;
+    device.clock = value;
+}
 
-    floor = toFloor(genuine);
-    TEST_ASSERT_EQUAL_UINT32(genuine, floor);
-    TEST_ASSERT_TRUE(accepts(floor, genuine + 3600ULL, TOLERANCE));
+void test_manual_set_lowers_a_future_floor(void) {
+    // A future-dated floor rejects every genuine answer; the manual set is the escape hatch
+    Device device = bootedDevice(2000000000ULL); // 2033, bad persisted value
+    const uint64_t genuine = BUILD + 86400ULL;
+    TEST_ASSERT_FALSE(ntpAnswer(device, genuine, 10));
+
+    manualSet(device, genuine, 20);
+    TEST_ASSERT_EQUAL_UINT32(genuine, device.floor);
+    TEST_ASSERT_TRUE(ntpAnswer(device, genuine + HOUR, 20 + HOUR));
+}
+
+void test_fast_manual_set_does_not_block_ntp(void) {
+    // A browser clock an hour fast: the floor stays, so NTP still steps the clock back
+    Device device = bootedDevice(PERSISTED);
+    const uint64_t real = PERSISTED + 86400ULL;
+    manualSet(device, real + HOUR, 10);
+    TEST_ASSERT_EQUAL_UINT32(PERSISTED, device.floor);
+
+    TEST_ASSERT_TRUE(ntpAnswer(device, real + 20ULL, 30));
+    TEST_ASSERT_EQUAL_UINT64(real + 20ULL, device.clock);
+    TEST_ASSERT_EQUAL_UINT32(PERSISTED, device.floor); // disagrees with the manual base
+
+    TEST_ASSERT_TRUE(ntpAnswer(device, real + 20ULL + HOUR, 30 + HOUR));
+    TEST_ASSERT_EQUAL_UINT32(real + 20ULL + HOUR, device.floor);
+}
+
+void test_ntp_agreeing_with_manual_set_raises_the_floor(void) {
+    Device device = bootedDevice(PERSISTED);
+    const uint64_t real = PERSISTED + 86400ULL;
+    manualSet(device, real, 10);
+    TEST_ASSERT_EQUAL_UINT32(PERSISTED, device.floor);
+
+    TEST_ASSERT_TRUE(ntpAnswer(device, real + HOUR + 2ULL, 10 + HOUR)); // browser 2 s slow
+    TEST_ASSERT_EQUAL_UINT32(real + HOUR + 2ULL, device.floor);
 }
 
 // ============================================================================
@@ -345,6 +400,11 @@ int main(int argc, char **argv) {
     RUN_TEST(test_raise_from_no_floor);
     RUN_TEST(test_raise_ignores_implausible_answer);
 
+    RUN_TEST(test_manual_floor_lowers_to_an_earlier_value);
+    RUN_TEST(test_manual_floor_never_raises);
+    RUN_TEST(test_manual_floor_keeps_no_floor);
+    RUN_TEST(test_manual_floor_ignores_implausible_value);
+
     RUN_TEST(test_zero_transmit_artifact_is_detected);
     RUN_TEST(test_zero_transmit_neighbours_are_not_the_artifact);
     RUN_TEST(test_zero_transmit_artifact_passes_the_floor_check);
@@ -355,7 +415,9 @@ int main(int argc, char **argv) {
     RUN_TEST(test_single_future_answer_heals_at_the_next_sync);
     RUN_TEST(test_zero_transmit_answer_is_rejected_and_keeps_the_base);
     RUN_TEST(test_rejected_answer_does_not_move_the_base);
-    RUN_TEST(test_manual_set_may_lower_the_floor);
+    RUN_TEST(test_manual_set_lowers_a_future_floor);
+    RUN_TEST(test_fast_manual_set_does_not_block_ntp);
+    RUN_TEST(test_ntp_agreeing_with_manual_set_raises_the_floor);
 
     return UNITY_END();
 }
