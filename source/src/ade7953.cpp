@@ -36,7 +36,7 @@ namespace Ade7953
     static float _prevActivePower[MAX_CHANNEL_COUNT] = {};   // Previous power reading for variability tracking
     static float _powerVariability[MAX_CHANNEL_COUNT] = {};  // EMA of |delta power| for variability scoring
     static uint8_t _wdrrCursor = 0;                          // Round-robin tie-break cursor for argmax
-    static uint64_t _lastForcedPickMillis[MAX_CHANNEL_COUNT] = {}; // Starvation watchdog's own throttle stamp, kept apart from lastMillis (the energy base). Guarded by _meterValuesMutex: 64-bit is not atomic on the ESP32
+    static uint64_t _lastForcedPickMillis[MAX_CHANNEL_COUNT] = {}; // Starvation watchdog throttle, apart from lastMillis (the energy base). Guarded by _meterValuesMutex (64-bit, not atomic)
     static int8_t _polarityVoteCount[MAX_CHANNEL_COUNT] = {}; // Net consistent-sign vote accumulator for CT-reversal detection (runtime only; reset on arm/decision)
     static uint16_t _polarityConductingReads[MAX_CHANNEL_COUNT] = {}; // Conducting reads since arming - bounds a sign-oscillating channel (runtime only; reset on arm/decision)
     static bool _lastConducting[MAX_CHANNEL_COUNT] = {}; // Was the channel's most recent reading conducting (pre-clamp)? Drives the CT-detection boost so a clamped reversed load/PV still gets it (meter-task only)
@@ -773,8 +773,8 @@ namespace Ade7953
 
         // Baseline lastMillis on inactive->active BEFORE the channel can be scheduled:
         // otherwise its first read integrates P over the whole inactive span from the
-        // stale pre-deactivation stamp (the watchdog no longer clamps lastMillis). It
-        // also gives the watchdog a zero point for a channel whose first read fails.
+        // stale pre-deactivation stamp. It also gives the watchdog a zero point for a
+        // channel whose first read fails.
         // Done ahead of _channelDataMutex since the two mutexes are never held together;
         // a baseline left behind by a write that then fails is harmless (still inactive).
         if (channelIndex > 0 && wasInactive && channelData.active) {
@@ -4301,7 +4301,7 @@ namespace Ade7953
         }
 
         if (apparentEnergy != 0) {
-            _meterValues[channelIndex].apparentEnergy += MeterLogic::energyIncrementWh(_meterValues[channelIndex].apparentPower, deltaMillis); // VAh (apparentPower is already >= 0)
+            _meterValues[channelIndex].apparentEnergy += MeterLogic::energyIncrementWh(_meterValues[channelIndex].apparentPower, deltaMillis); // VAh
         } else {
             LOG_VERBOSE(
                 "%s (%d): No load apparent energy reading. Setting apparent power and current to 0",
@@ -4321,8 +4321,7 @@ namespace Ade7953
         // We actually set the timestamp of the channel (used for the energy calculations)
         // only if we actually reached the end. Otherwise it would mean the point had to be
         // discarded, and the next successful read books the whole gap. Apart from the
-        // activation baseline and the energy resets this is the only writer of lastMillis
-        // (the starvation watchdog keeps its own stamp).
+        // activation baseline and the energy resets this is the only writer of lastMillis.
         statistics.ade7953ReadingCount++;
         _meterValues[channelIndex].lastMillis = millisRead;
         _meterValues[channelIndex].lastUnixTimeMilliseconds = linecycUnixTimeMillis;
@@ -4869,13 +4868,10 @@ namespace Ade7953
         for (uint8_t i = 0; i < count; i++) active[i] = _channelData[i].active;
 
         // Starvation watchdog (fix for issue #149): hard upper bound on the time
-        // between successful reads for any active mux channel. MeterLogic::
-        // pickStarvedChannel returns the lowest-index channel past CHANNEL_MAX_GAP_MS
-        // (skipping never-baselined ones) and stamps _lastForcedPickMillis, which
-        // throttles the watchdog to one fire per interval even if the read keeps
-        // failing; we reset its deficit so it does not immediately re-win the argmax.
-        // lastMillis is deliberately left alone: it is the energy-integration base,
-        // and stamping it here dropped the energy of the whole gap (issue #253).
+        // between successful reads for any active mux channel (throttling in
+        // MeterLogic::pickStarvedChannel). Reset the pick's deficit so it does not
+        // immediately re-win the argmax. lastMillis is deliberately left alone: it is
+        // the energy-integration base (issue #253).
         // Hold _meterValuesMutex around the 64-bit reads + write: a 32-bit ESP32
         // cannot atomically store a uint64_t, so a concurrent setChannelData
         // baseline write could otherwise be torn-read here.
