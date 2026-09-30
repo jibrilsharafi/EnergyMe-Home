@@ -435,8 +435,8 @@ void test_slow_manual_set_caps_the_next_raise(void) {
 }
 
 void test_no_anchor_never_engages_the_floor(void) {
-    // No build floor and nothing persisted: every answer but the zero transmit one sets the
-    // clock and nothing ever becomes a floor, as before the floor existed
+    // No build floor and nothing persisted: every valid-range answer but the zero transmit one
+    // sets the clock and nothing ever becomes a floor, as before the floor existed
     Device device = bootedDevice(0, 0);
     TEST_ASSERT_EQUAL_UINT32(0, device.anchor);
     TEST_ASSERT_TRUE(ntpAnswer(device, realAt(10), 10));

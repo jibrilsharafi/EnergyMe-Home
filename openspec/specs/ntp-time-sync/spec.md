@@ -37,7 +37,7 @@ NTP server selection SHALL NOT be exposed as user-configurable state anywhere - 
 - **THEN** it SHALL NOT change NTP server selection, since no shadow field exists for it
 
 ### Requirement: Time floor
-The device SHALL NOT let an NTP answer step the clock when it is more than 60 seconds earlier than the time floor, or when it carries an all-zero transmit timestamp (RFC 4330; lwIP decodes it as 2036-02-07T06:28:16Z), whatever the floor. The floor at boot SHALL be the later of the firmware's source commit time (build floor) and the floor persisted in NVS; with neither, no floor applies. An accepted answer SHALL raise the floor to the time it carries, but never above a ceiling of the boot floor plus the uptime. A raised floor SHALL be persisted by the energy save task within its save interval; while the meter has failed to start (no energy save task) it is not persisted, and the next boot starts from the last persisted floor. A manual time set SHALL only lower the floor, never raise it, and SHALL keep the ceiling at or below the time set. A factory reset SHALL clear the persisted floor.
+The device SHALL NOT let an NTP answer step the clock when it is more than 60 seconds earlier than the time floor, or when it carries an all-zero transmit timestamp (RFC 4330; lwIP decodes it as 2036-02-07T06:28:16Z) or a time outside the valid range (2001-09-09 to 2100-01-01; lwIP decodes answers up to 2104), whatever the floor. The floor at boot SHALL be the later of the firmware's source commit time (build floor) and the floor persisted in NVS; with neither, no floor applies. An accepted answer SHALL raise the floor to the time it carries, but never above a ceiling of the boot floor plus the uptime. A raised floor SHALL be persisted by the energy save task within its save interval; while the meter has failed to start (no energy save task) it is not persisted, and the next boot starts from the last persisted floor. A manual time set SHALL only lower the floor, never raise it, and SHALL keep the ceiling at or below the time set. A factory reset SHALL clear the persisted floor.
 
 #### Scenario: Wrong-but-plausible past answer is rejected
 - **WHEN** the floor is in 2026 and an NTP server answers with a 2023 time
@@ -45,6 +45,10 @@ The device SHALL NOT let an NTP answer step the clock when it is more than 60 se
 
 #### Scenario: Zero transmit timestamp is rejected
 - **WHEN** an unsynchronized server answers with an all-zero transmit timestamp
+- **THEN** the clock is not stepped, even when no floor applies
+
+#### Scenario: Answer past 2100 is rejected
+- **WHEN** an NTP server answers with a time lwIP decodes past 2100-01-01
 - **THEN** the clock is not stepped, even when no floor applies
 
 #### Scenario: A consistently fast source cannot poison the floor
@@ -61,5 +65,5 @@ The device SHALL NOT let an NTP answer step the clock when it is more than 60 se
 
 #### Scenario: No build floor and nothing persisted
 - **WHEN** the firmware has no commit time and NVS holds no floor
-- **THEN** every answer except the zero transmit one steps the clock, as before the floor existed
+- **THEN** every answer in the valid range except the zero transmit one steps the clock, as before the floor existed
 

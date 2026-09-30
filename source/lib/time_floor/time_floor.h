@@ -68,7 +68,8 @@ struct AnswerOutcome {
 // The sntp_sync_time override: an NTP answer checked against the floor, then raising it
 // to the answer, at most to the ceiling. A single bogus future answer still steps the
 // clock (as before the floor existed), but the floor it leaves is not past real time, so
-// the next genuine answer steps it back.
+// the next genuine answer steps it back. The zero-transmit artifact and answers outside
+// UnixTime's valid range are rejected whatever the floor.
 AnswerOutcome onAnswer(uint32_t floor, uint32_t anchorSeconds, uint32_t uptimeSeconds,
                        uint64_t candidateSeconds, uint32_t toleranceSeconds);
 
