@@ -4241,6 +4241,11 @@ namespace Ade7953
             return false;
         }
 
+        // An energy reset can rebase lastMillis while this read was in flight: book only the
+        // time since the current base, so pre-reset time never lands in the zeroed counters.
+        uint64_t currentBase = _meterValues[channelIndex].lastMillis;
+        if (currentBase != lastMillis) deltaMillis = (millisRead > currentBase) ? millisRead - currentBase : 0;
+
         _meterValues[channelIndex].voltage = voltage;
         _meterValues[channelIndex].current = current;
         _meterValues[channelIndex].activePower = activePower;
@@ -4323,7 +4328,7 @@ namespace Ade7953
         // discarded, and the next successful read books the whole gap. Apart from the
         // activation baseline and the energy resets this is the only writer of lastMillis.
         statistics.ade7953ReadingCount++;
-        _meterValues[channelIndex].lastMillis = millisRead;
+        if (millisRead > currentBase) _meterValues[channelIndex].lastMillis = millisRead;
         _meterValues[channelIndex].lastUnixTimeMilliseconds = linecycUnixTimeMillis;
         releaseMutex(&_meterValuesMutex);
         return true;
