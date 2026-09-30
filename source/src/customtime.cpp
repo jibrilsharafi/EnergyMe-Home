@@ -375,7 +375,7 @@ namespace CustomTime {
 
         if (!_isTimeSynched && _isClockValid()) {
             _isTimeSynched = true;
-            LOG_INFO("Time successfully synchronized with NTP");
+            LOG_INFO("Time synchronized (system clock is valid)"); // An NTP answer, or the clock kept across a soft reset
         }
 
         uint64_t currentTime = millis64();
