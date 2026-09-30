@@ -60,4 +60,10 @@ namespace CustomTime {
     // Forces the next sync check to run immediately. Called on interface failover:
     // the gateway-derived NTP server belongs to the old interface until then.
     void requestResync();
+
+    // Writes a floor raised by NTP to NVS. Not done in isTimeSynched(), whose callers include
+    // tasks with no stack budgeted for an NVS write: call it only from a task that already
+    // writes Preferences at least as deep (the energy save task, so the persisted floor trails
+    // by up to its interval, which only makes it more conservative).
+    void persistPendingFloor();
 }

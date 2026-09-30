@@ -2336,6 +2336,9 @@ namespace Ade7953
                 if (drain) _saveChannelDataToPreferences(i);
             }
 
+            // A raised NTP time floor: its NVS write is shallower than the channel save above
+            CustomTime::persistPendingFloor();
+
             // Resolve unset start-measuring timestamps: the first time the clock is
             // synced while a channel's value is still 0, set it to now. Covers a fresh channel, a
             // reset, and (once, on upgrade) an existing device that never had this field before.

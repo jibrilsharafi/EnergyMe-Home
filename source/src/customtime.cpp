@@ -31,8 +31,8 @@ namespace CustomTime {
 
     // Time floor state (see TimeFloor). Written from the sntp_sync_time override on the lwIP
     // tcpip thread, where NVS and the logger are off limits, so it hands its work over to task
-    // context (_handleTimeFloorEvents) through these atomics. The floor starts at the build
-    // floor so an answer landing before begin() is already guarded.
+    // context (_handleTimeFloorEvents, persistPendingFloor) through these atomics. The floor
+    // starts at the build floor so an answer landing before begin() is already guarded.
     static std::atomic<uint32_t> _floorSeconds{static_cast<uint32_t>(GIT_COMMIT_UNIX_TIME)};
     static std::atomic<uint32_t> _anchorSeconds{static_cast<uint32_t>(GIT_COMMIT_UNIX_TIME)}; // TimeFloor::ceiling
     static std::atomic<uint32_t> _pendingFloorPersist{0}; // 0: nothing to persist
@@ -322,12 +322,15 @@ namespace CustomTime {
         _resyncRequested = true;
     }
 
-    // Task-context half of the sntp_sync_time override. Consume-and-clear with exchange():
-    // isTimeSynched() runs from several tasks and each event must be handled exactly once.
-    static void _handleTimeFloorEvents() {
+    void persistPendingFloor() {
         uint32_t pendingFloor = _pendingFloorPersist.exchange(0);
         if (pendingFloor != 0) _persistFloor(pendingFloor);
+    }
 
+    // Task-context half of the sntp_sync_time override for a rejected answer (a raised floor goes
+    // through persistPendingFloor). Consume-and-clear with exchange(): isTimeSynched() runs from
+    // several tasks and each event must be handled exactly once.
+    static void _handleTimeFloorEvents() {
         if (!_rejectionPending.exchange(false)) return;
 
         uint64_t candidate = _rejectedCandidate.load();
