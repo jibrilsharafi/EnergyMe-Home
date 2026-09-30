@@ -145,4 +145,27 @@ inline SignedPowers powersFromFoldedAngle(float apparentPower, float foldedAngle
     return powers;
 }
 
+// Powers of a channel whose CT sits on a different line than the single voltage input,
+// rotated out of the P1/Q1 the chip integrates against V1. Assuming V_k = V1 * e^{j*shift}
+// (same magnitude, exact 120 deg spacing), S_k = V_k * I^* = e^{j*shift} * (P1 + jQ1).
+// shiftDeg is calculatePhaseShiftDeg(basePhase, channelPhase), the same correction
+// loadAngleFromRawDeg adds to the ANGLE register, so on a pure sine both agree exactly.
+// Linear in (p1, q1): it rotates latched energies as well as powers, and `reverse` must
+// already be applied to both inputs.
+inline SignedPowers rotatePowers(float p1, float q1, float apparent, float shiftDeg) {
+    const float a = shiftDeg * DEG_TO_RAD_F;
+    const float c = std::cos(a);
+    const float s = std::sin(a);
+
+    SignedPowers out{};
+    out.activePower = p1 * c - q1 * s;
+    out.reactivePower = q1 * c + p1 * s;
+    // Same PF convention as the energy-register path: magnitude P/S, sign of Q
+    // (positive inductive, datasheet Eq. 37).
+    out.powerFactor = apparent > 0.0f
+        ? out.activePower / apparent * (out.reactivePower >= 0.0f ? 1.0f : -1.0f)
+        : 0.0f;
+    return out;
+}
+
 } // namespace PhaseUtils
