@@ -22,7 +22,7 @@
 namespace CustomTime {
     // Static variables to maintain state
     static std::atomic<bool> _begun{false};
-    static std::atomic<bool> _clockWasValid{false}; // transition logging only; the state is the clock itself
+    static std::atomic<bool> _clockWasValid{false}; // logs the first valid reading once; the state is the clock itself
     static std::atomic<bool> _syncAttemptInProgress{false};
     static uint64_t _lastSyncAttempt = 0;
 
@@ -92,18 +92,16 @@ namespace CustomTime {
         return isTimeSynched();
     }
 
-    // Derived from the clock on every call, so a clock that leaves the valid range reads as
-    // unsynced again. False before begin(): on a soft reset the clock kept across the restart
-    // is valid, and trusting it before any NTP answer could correct it moved the startup CSV
-    // migration and start-measuring resolution ahead of the first sync.
+    // Derived from the clock on every call. Both clock setters (sntp_sync_time, setUnixTime)
+    // keep it in the valid range, so once valid it stays valid. False before begin(): the
+    // clock kept across a soft reset is valid too, and the tasks started before begin() would
+    // otherwise trust it before NTP has even been configured.
     bool isTimeSynched() {
         if (!_begun.load()) return false;
         _checkAndSyncTime();
 
         bool valid = _isClockValid();
-        bool wasValid = _clockWasValid.exchange(valid);
-        if (valid && !wasValid) LOG_INFO("Time synchronized");
-        else if (!valid && wasValid) LOG_WARNING("Time synchronization lost");
+        if (valid && !_clockWasValid.exchange(true)) LOG_INFO("Time synchronized");
         return valid;
     }
 
@@ -385,6 +383,12 @@ namespace CustomTime {
     // watchdog. configTime() only kicks SNTP; the answer lands asynchronously (sntp_sync_time)
     // and isTimeSynched() sees it on a later call.
     static void _checkAndSyncTime() {
+        // One task at a time, from the rejection hand-off to the reconfiguration: a second one
+        // acting on stale state would reinstate the regular server set and undo the gateway-free
+        // retry after a rejected answer. A busy caller just returns; the holder does the work.
+        bool idle = false;
+        if (!_syncAttemptInProgress.compare_exchange_strong(idle, true)) return;
+
         _handleRejectedAnswer();
 
         uint64_t currentTime = millis64();
@@ -392,12 +396,10 @@ namespace CustomTime {
         // Either enough time has passed since last successful sync, or we failed previously and we retry earlier
         bool isTimeToSync = (currentTime - _lastSyncAttempt >= (uint64_t)TIME_SYNC_INTERVAL);
         bool needToRetry = !_isClockValid() && (currentTime - _lastSyncAttempt >= (uint64_t)TIME_SYNC_RETRY_IF_NOT_SYNCHED);
-        if (!isTimeToSync && !needToRetry && !_resyncRequested) return;
-
-        // One task at a time: a second one entering would reconfigure the regular server set
-        // and undo the gateway-free retry after a rejected answer.
-        bool idle = false;
-        if (!_syncAttemptInProgress.compare_exchange_strong(idle, true)) return;
+        if (!isTimeToSync && !needToRetry && !_resyncRequested) {
+            _syncAttemptInProgress.store(false);
+            return;
+        }
 
         // Link only, no internet probe: it blocked every caller for up to 3 s when the uplink was
         // down, and a gateway-only LAN can still answer NTP.
