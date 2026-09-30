@@ -3995,8 +3995,9 @@ namespace Ade7953
 
         // TODO: remove after the #254 field A/B (rotation vs the old ANGLE method). It then
         // takes _readAngleRadians with it, and the ANGLE helpers in phase_utils become
-        // test-only. Costs one extra ANGLE read, and only while DEBUG is being printed.
-        if (isOffPhase && AdvancedLogger::getPrintLevel() <= LogLevel::DEBUG) {
+        // test-only. Costs one ANGLE read per off-phase reading, as the ANGLE method did.
+        // Not gated on the print level: DEBUG reaches the UDP/MQTT log sinks regardless.
+        if (isOffPhase) {
             float rawAngleDeg = _readAngleRadians(ade7953Channel) * float(RAD_TO_DEG);
             PhaseUtils::LoadAngle legacyAngle = PhaseUtils::loadAngleFromRawDeg(basePhase, channelData.phase, rawAngleDeg);
             PhaseUtils::SignedPowers legacy = PhaseUtils::powersFromFoldedAngle(
