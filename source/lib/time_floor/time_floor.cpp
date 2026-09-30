@@ -39,25 +39,34 @@ uint32_t raisedBy(uint32_t floor, uint64_t acceptedSeconds) {
     return candidate > floor ? candidate : floor;
 }
 
-uint32_t manualFloor(uint32_t floor, uint64_t manualSeconds) {
+uint32_t ceiling(uint32_t anchorSeconds, uint32_t uptimeSeconds) {
+    if (anchorSeconds == 0) return 0;
+    uint64_t sum = static_cast<uint64_t>(anchorSeconds) + uptimeSeconds;
+    return sum > UINT32_MAX ? UINT32_MAX : static_cast<uint32_t>(sum);
+}
+
+ManualOutcome onManualSet(uint32_t floor, uint32_t anchor, uint32_t uptimeSeconds, uint64_t manualSeconds) {
     uint32_t manual = toFloor(manualSeconds);
-    if (manual == 0) return floor;
-    return manual < floor ? manual : floor;
+    if (manual == 0) return {floor, anchor};
+    uint32_t manualAnchor = manual > uptimeSeconds ? manual - uptimeSeconds : 0;
+    return {manual < floor ? manual : floor, manualAnchor < anchor ? manualAnchor : anchor};
 }
 
 bool isZeroTransmitArtifact(uint64_t candidateSeconds) {
     return candidateSeconds == ZERO_TRANSMIT_SECONDS;
 }
 
-AnswerOutcome onAnswer(uint32_t floor, uint32_t baseWallSeconds, uint32_t baseUptimeSeconds,
-                       uint32_t uptimeSeconds, uint64_t candidateSeconds, uint32_t toleranceSeconds) {
+AnswerOutcome onAnswer(uint32_t floor, uint32_t anchorSeconds, uint32_t baseWallSeconds,
+                       uint32_t baseUptimeSeconds, uint32_t uptimeSeconds, uint64_t candidateSeconds,
+                       uint32_t toleranceSeconds) {
     if (isZeroTransmitArtifact(candidateSeconds) || !accepts(floor, candidateSeconds, toleranceSeconds)) {
         return {false, floor};
     }
     if (!corroborates(baseWallSeconds, baseUptimeSeconds, candidateSeconds, uptimeSeconds, toleranceSeconds)) {
         return {true, floor};
     }
-    return {true, raisedBy(floor, candidateSeconds)};
+    uint32_t cap = ceiling(anchorSeconds, uptimeSeconds);
+    return {true, raisedBy(floor, candidateSeconds < cap ? candidateSeconds : cap)};
 }
 
 } // namespace TimeFloor
