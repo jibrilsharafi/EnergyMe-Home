@@ -112,6 +112,15 @@ bool shouldClampNegative(float activePower, ChannelRole role);
 float energyDirectionFlag(float power);
 
 // ============================================================================
+// Energy integration
+// ============================================================================
+// Sample-and-hold: a successful read books |power| held over deltaMillis, the time
+// since the channel's previous SUCCESSFUL read. Only the magnitude comes from here;
+// the import/export split is the caller's (energy register sign or
+// energyDirectionFlag). NaN power yields NaN.
+float energyIncrementWh(float power, uint64_t deltaMillis);
+
+// ============================================================================
 // RMS witness (energy-path integrity)
 // ============================================================================
 // True if the base-phase reading must be discarded because the apparent power
@@ -198,13 +207,19 @@ void computeWeights(const ChannelWeightInput* in, uint8_t count, uint8_t startIn
 // firmware asserts NO_CHANNEL == its own INVALID_CHANNEL so the values stay in sync.
 constexpr uint8_t NO_CHANNEL = 255;
 
-// Lowest-index active channel whose gap (now - lastMillis) exceeds maxGap, over
-// [startIndex, count). Channels with lastMillis == 0 (never baselined) are
-// skipped. Returns NO_CHANNEL if none are starved. Pure lookup - the caller
-// updates lastMillis after forcing the read.
-uint8_t findStarvedChannel(const uint64_t* lastMillis, const bool* active,
-                           uint8_t count, uint8_t startIndex, uint64_t now,
-                           uint64_t maxGap);
+// Starvation watchdog. Returns the lowest-index active channel over
+// [startIndex, count) with now - max(lastReadMillis, lastForcedPickMillis) > maxGap,
+// and stamps its lastForcedPickMillis = now, so a channel whose forced reads keep
+// failing is re-forced at most once per maxGap. Channels with lastReadMillis == 0
+// (never baselined) are skipped. Returns NO_CHANNEL if none are starved.
+//
+// lastReadMillis is const on purpose: it is also the energy-integration base
+// (energyIncrementWh over millisRead - lastReadMillis), so only a successful read may move
+// it. Stamping it here to throttle the watchdog dropped the energy of every gap the
+// watchdog fired on (issue #253).
+uint8_t pickStarvedChannel(const uint64_t* lastReadMillis, uint64_t* lastForcedPickMillis,
+                           const bool* active, uint8_t count, uint8_t startIndex,
+                           uint64_t now, uint64_t maxGap);
 
 // Gain phase: add each active channel's weight to its deficit; zero inactive
 // channels; guard NaN; clamp symmetrically to +/- deficitBound. Operates on
