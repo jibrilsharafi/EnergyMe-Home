@@ -4,6 +4,7 @@
 #include <atomic>
 #include <sys/time.h>
 #include "esp_sntp.h"
+#include "esp_timer.h"
 
 #include "customtime.h"
 #include "customnet.h"
@@ -34,6 +35,21 @@ namespace CustomTime {
     // floor so an answer landing before begin() is already guarded.
     static std::atomic<uint32_t> _floorSeconds{static_cast<uint32_t>(GIT_COMMIT_UNIX_TIME)};
     static std::atomic<uint32_t> _pendingFloorPersist{0}; // 0: nothing to persist
+
+    // The corroboration base (TimeFloor::corroborates): wall and uptime seconds of the last
+    // accepted answer, packed (wall << 32 | uptime) into one atomic so a reader never pairs one
+    // answer's wall time with another's uptime. Wall 0: no base. Not lock-free on Xtensa: the
+    // libatomic helpers take a short critical section, fine on the tcpip thread.
+    static std::atomic<uint64_t> _corroborationBase{0};
+
+    static uint64_t _packBase(uint32_t wallSeconds, uint32_t uptimeSeconds) {
+        return (static_cast<uint64_t>(wallSeconds) << 32) | uptimeSeconds;
+    }
+
+    static uint32_t _uptimeSeconds() {
+        return static_cast<uint32_t>(esp_timer_get_time() / 1000000LL);
+    }
+
     static std::atomic<uint32_t> _rejectedCandidate{0};
     static std::atomic<bool> _rejectionPending{false};
     static std::atomic<uint32_t> _lastRejectionWarningSeconds{0}; // uptime; 0: never warned
@@ -418,6 +434,16 @@ extern "C" void sntp_sync_time(struct timeval *tv) {
         } else {
             sntp_set_sync_status(SNTP_SYNC_STATUS_IN_PROGRESS);
         }
+    }
+
+    // Every accepted answer becomes the next base; only one that agrees with the previous base
+    // may raise the floor, so a single bogus future answer never becomes it.
+    uint32_t uptimeSeconds = CustomTime::_uptimeSeconds();
+    uint64_t previousBase = CustomTime::_corroborationBase.exchange(
+        CustomTime::_packBase(TimeFloor::toFloor(candidate), uptimeSeconds));
+    if (!TimeFloor::corroborates(static_cast<uint32_t>(previousBase >> 32), static_cast<uint32_t>(previousBase),
+                                 candidate, uptimeSeconds, TIME_FLOOR_TOLERANCE_SECONDS)) {
+        return;
     }
 
     uint32_t raised = TimeFloor::raisedBy(floorSeconds, candidate);

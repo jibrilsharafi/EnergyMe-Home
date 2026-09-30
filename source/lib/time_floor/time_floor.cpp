@@ -22,6 +22,18 @@ bool accepts(uint32_t floor, uint64_t candidateSeconds, uint32_t toleranceSecond
     return candidateSeconds + toleranceSeconds >= floor;
 }
 
+bool corroborates(uint32_t baseWallSeconds, uint32_t baseUptimeSeconds,
+                  uint64_t wallSeconds, uint32_t uptimeSeconds, uint32_t toleranceSeconds) {
+    if (baseWallSeconds == 0 || toFloor(wallSeconds) == 0) return false;
+    if (uptimeSeconds < baseUptimeSeconds) return false;
+
+    int64_t wallElapsed = static_cast<int64_t>(wallSeconds) - static_cast<int64_t>(baseWallSeconds);
+    int64_t uptimeElapsed = static_cast<int64_t>(uptimeSeconds - baseUptimeSeconds);
+    int64_t skew = wallElapsed - uptimeElapsed;
+    if (skew < 0) skew = -skew;
+    return skew <= static_cast<int64_t>(toleranceSeconds);
+}
+
 uint32_t raisedBy(uint32_t floor, uint64_t acceptedSeconds) {
     uint32_t candidate = toFloor(acceptedSeconds);
     return candidate > floor ? candidate : floor;

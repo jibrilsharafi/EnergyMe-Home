@@ -10,8 +10,13 @@
 // answer (a server handing back 2023) used to be accepted, and every MQTT payload
 // was stamped with it until the next resync happened to get a good answer.
 //
-// src/customtime.cpp owns the state (an atomic floor, NVS persistence) and calls
-// these; the rules live only here so they are host-tested (test/test_time_floor).
+// A floor that is itself in the future rejects every genuine answer until real
+// time catches up, so only an answer corroborated by the previous accepted one
+// may raise it (see corroborates).
+//
+// src/customtime.cpp owns the state (an atomic floor, the corroboration base, NVS
+// persistence) and calls these; the rules live only here so they are host-tested
+// (test/test_time_floor).
 //
 // All values are unix seconds as uint32_t (enough until 2106, past
 // UnixTime::MAX_SECONDS). 0 means "no floor".
@@ -23,7 +28,7 @@ namespace TimeFloor {
 uint32_t toFloor(uint64_t unixSeconds);
 
 // Floor at boot: the later of the build floor (the source commit time) and the
-// floor persisted by the last accepted sync.
+// persisted floor.
 uint32_t effective(uint64_t buildFloor, uint64_t persistedFloor);
 
 // True when an NTP answer may set the clock. The tolerance lets a server that
@@ -31,8 +36,18 @@ uint32_t effective(uint64_t buildFloor, uint64_t persistedFloor);
 // apart) through; the bogus answers this guards against are months or years off.
 bool accepts(uint32_t floor, uint64_t candidateSeconds, uint32_t toleranceSeconds);
 
-// Floor after an accepted answer: never lowered by a sync, even for a candidate
-// that got in within the tolerance.
+// True when an accepted answer agrees with the base, the previous accepted answer
+// (wall time and uptime when it arrived): the wall time moved as far as the uptime
+// did, within the tolerance. Only then may the answer raise the floor, so a single
+// bogus future answer still steps the clock (as before the floor existed) but the
+// next genuine one undoes it instead of being rejected. A base wall of 0 is "no
+// base" (none since boot); uptime going backwards or an implausible wall never
+// corroborates.
+bool corroborates(uint32_t baseWallSeconds, uint32_t baseUptimeSeconds,
+                  uint64_t wallSeconds, uint32_t uptimeSeconds, uint32_t toleranceSeconds);
+
+// Floor after a corroborated answer: never lowered by a sync, even for a
+// candidate that got in within the tolerance.
 uint32_t raisedBy(uint32_t floor, uint64_t acceptedSeconds);
 
 // What lwIP hands over for a reply with an all-zero transmit timestamp, which an

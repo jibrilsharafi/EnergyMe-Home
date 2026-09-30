@@ -139,7 +139,9 @@
 
 // How far behind the time floor an NTP answer may be and still set the clock (TimeFloor::accepts).
 // Absorbs skew between servers on failover resyncs seconds apart; the bogus answers the floor
-// guards against are months or years off.
+// guards against are months or years off. Also how far two accepted answers may disagree with the
+// uptime between them and still corroborate each other (TimeFloor::corroborates), which absorbs
+// crystal drift and server skew.
 #define TIME_FLOOR_TOLERANCE_SECONDS 60
 
 // Server used ports (here to ensure no conflicts)

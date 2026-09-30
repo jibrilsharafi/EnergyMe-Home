@@ -20,7 +20,7 @@
 #define TIME_SYNC_INTERVAL (60 * 60 * 1000)
 #define TIME_SYNC_RETRY_IF_NOT_SYNCHED (60 * 1000)
 
-// PREFERENCES_NAMESPACE_TIME: the last accepted NTP time (or manual set), the persisted half of the time floor
+// PREFERENCES_NAMESPACE_TIME: the persisted half of the time floor, the latest corroborated NTP time
 #define TIME_FLOOR_KEY "floor_s"
 
 #define TIMESTAMP_FORMAT "%Y-%m-%d %H:%M:%S"

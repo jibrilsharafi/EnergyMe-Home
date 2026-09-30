@@ -15,7 +15,7 @@ void tearDown(void) {}
 
 static const uint32_t TOLERANCE = 60;
 static const uint32_t BUILD = 1790756411UL;      // 2026-09-30, a commit time
-static const uint32_t PERSISTED = 1791000000UL;  // ~3 days later, a last accepted sync
+static const uint32_t PERSISTED = 1791000000UL;  // ~3 days later, a last corroborated sync
 static const uint64_t BOGUS_2023 = 1690000000ULL; // the regression seen in the field
 
 // ============================================================================
@@ -98,6 +98,67 @@ void test_zero_tolerance_is_strict(void) {
 }
 
 // ============================================================================
+// corroborates
+// ============================================================================
+
+static const uint32_t BASE_UPTIME = 100;
+static const uint64_t HOUR = 3600ULL;
+
+void test_corroborates_answer_at_the_same_pace(void) {
+    TEST_ASSERT_TRUE(corroborates(PERSISTED, BASE_UPTIME, PERSISTED + HOUR, BASE_UPTIME + HOUR, TOLERANCE));
+}
+
+void test_corroborates_with_no_elapsed_time(void) {
+    TEST_ASSERT_TRUE(corroborates(PERSISTED, BASE_UPTIME, PERSISTED, BASE_UPTIME, TOLERANCE));
+}
+
+void test_no_base_never_corroborates(void) {
+    TEST_ASSERT_FALSE(corroborates(0, 0, PERSISTED, BASE_UPTIME, TOLERANCE));
+    TEST_ASSERT_FALSE(corroborates(0, BASE_UPTIME, PERSISTED + HOUR, BASE_UPTIME + HOUR, TOLERANCE));
+}
+
+void test_corroborates_exactly_tolerance_ahead_or_behind(void) {
+    TEST_ASSERT_TRUE(corroborates(PERSISTED, BASE_UPTIME, PERSISTED + HOUR + TOLERANCE, BASE_UPTIME + HOUR, TOLERANCE));
+    TEST_ASSERT_TRUE(corroborates(PERSISTED, BASE_UPTIME, PERSISTED + HOUR - TOLERANCE, BASE_UPTIME + HOUR, TOLERANCE));
+}
+
+void test_rejects_one_second_past_tolerance_ahead_or_behind(void) {
+    TEST_ASSERT_FALSE(corroborates(PERSISTED, BASE_UPTIME, PERSISTED + HOUR + TOLERANCE + 1ULL, BASE_UPTIME + HOUR, TOLERANCE));
+    TEST_ASSERT_FALSE(corroborates(PERSISTED, BASE_UPTIME, PERSISTED + HOUR - TOLERANCE - 1ULL, BASE_UPTIME + HOUR, TOLERANCE));
+}
+
+void test_wall_behind_base_corroborates_when_uptime_agrees(void) {
+    // Within tolerance of the base, slightly earlier: a server a few seconds behind
+    TEST_ASSERT_TRUE(corroborates(PERSISTED, BASE_UPTIME, PERSISTED - 5ULL, BASE_UPTIME, TOLERANCE));
+}
+
+void test_bogus_future_answer_does_not_corroborate(void) {
+    TEST_ASSERT_FALSE(corroborates(PERSISTED, BASE_UPTIME, PERSISTED + 365ULL * 86400ULL, BASE_UPTIME + HOUR, TOLERANCE));
+    TEST_ASSERT_FALSE(corroborates(PERSISTED, BASE_UPTIME, ZERO_TRANSMIT_SECONDS, BASE_UPTIME + HOUR, TOLERANCE));
+}
+
+void test_base_uptime_zero_is_a_valid_base(void) {
+    TEST_ASSERT_TRUE(corroborates(PERSISTED, 0, PERSISTED + 5ULL, 5, TOLERANCE));
+    TEST_ASSERT_TRUE(corroborates(PERSISTED, 0, PERSISTED, 0, TOLERANCE));
+}
+
+void test_uptime_going_backwards_never_corroborates(void) {
+    TEST_ASSERT_FALSE(corroborates(PERSISTED, BASE_UPTIME, PERSISTED, BASE_UPTIME - 1, TOLERANCE));
+    TEST_ASSERT_FALSE(corroborates(PERSISTED, BASE_UPTIME, PERSISTED, 0, TOLERANCE));
+}
+
+void test_implausible_wall_never_corroborates(void) {
+    TEST_ASSERT_FALSE(corroborates(PERSISTED, BASE_UPTIME, 0, BASE_UPTIME, TOLERANCE));
+    TEST_ASSERT_FALSE(corroborates(PERSISTED, BASE_UPTIME, UnixTime::MAX_SECONDS + 1, BASE_UPTIME, TOLERANCE));
+}
+
+void test_corroborates_over_a_long_uptime(void) {
+    // uint32 uptime seconds: ~136 years, a base from days ago still compares correctly
+    const uint32_t baseUptime = 30U * 86400U;
+    TEST_ASSERT_TRUE(corroborates(PERSISTED, baseUptime, PERSISTED + 7ULL * 86400ULL, baseUptime + 7U * 86400U, TOLERANCE));
+}
+
+// ============================================================================
 // raisedBy
 // ============================================================================
 
@@ -156,6 +217,80 @@ void test_floor_is_monotonic_across_syncs(void) {
     TEST_ASSERT_EQUAL_UINT32(BUILD + 7300UL, floor);
 }
 
+// The sntp_sync_time override (src/customtime.cpp), composed from the rules above
+struct Device {
+    uint32_t floor;
+    uint32_t baseWall;
+    uint32_t baseUptime;
+    uint64_t clock;
+};
+
+static Device bootedDevice(uint64_t persistedFloor) {
+    return Device{effective(BUILD, persistedFloor), 0, 0, 0};
+}
+
+static bool ntpAnswer(Device &device, uint64_t answer, uint32_t uptime) {
+    if (isZeroTransmitArtifact(answer) || !accepts(device.floor, answer, TOLERANCE)) return false;
+    device.clock = answer;
+    bool agreed = corroborates(device.baseWall, device.baseUptime, answer, uptime, TOLERANCE);
+    device.baseWall = toFloor(answer);
+    device.baseUptime = uptime;
+    if (agreed) device.floor = raisedBy(device.floor, answer);
+    return true;
+}
+
+void test_first_answer_after_boot_does_not_raise_the_floor(void) {
+    Device device = bootedDevice(0);
+    TEST_ASSERT_TRUE(ntpAnswer(device, BUILD + 86400ULL, 10));
+    TEST_ASSERT_EQUAL_UINT32(BUILD, device.floor);
+}
+
+void test_agreeing_answers_raise_the_floor(void) {
+    Device device = bootedDevice(0);
+    const uint64_t genuine = BUILD + 86400ULL;
+    TEST_ASSERT_TRUE(ntpAnswer(device, genuine, 10));
+    TEST_ASSERT_TRUE(ntpAnswer(device, genuine + HOUR, 10 + HOUR));
+    TEST_ASSERT_EQUAL_UINT32(genuine + HOUR, device.floor);
+}
+
+void test_single_future_answer_heals_at_the_next_sync(void) {
+    // A gateway answering a year ahead once: the clock steps (as it always could) but the
+    // floor stays, so the next genuine answer is accepted and steps it back
+    Device device = bootedDevice(0);
+    const uint64_t genuine = BUILD + 86400ULL;
+    TEST_ASSERT_TRUE(ntpAnswer(device, genuine, 10));
+    TEST_ASSERT_TRUE(ntpAnswer(device, genuine + HOUR + 365ULL * 86400ULL, 10 + HOUR));
+    TEST_ASSERT_EQUAL_UINT32(BUILD, device.floor);
+
+    TEST_ASSERT_TRUE(ntpAnswer(device, genuine + 2 * HOUR, 10 + 2 * HOUR));
+    TEST_ASSERT_EQUAL_UINT64(genuine + 2 * HOUR, device.clock);
+    TEST_ASSERT_EQUAL_UINT32(BUILD, device.floor); // disagrees with the bogus base
+
+    TEST_ASSERT_TRUE(ntpAnswer(device, genuine + 3 * HOUR, 10 + 3 * HOUR));
+    TEST_ASSERT_EQUAL_UINT32(genuine + 3 * HOUR, device.floor);
+}
+
+void test_zero_transmit_answer_is_rejected_and_keeps_the_base(void) {
+    Device device = bootedDevice(0);
+    const uint64_t genuine = BUILD + 86400ULL;
+    TEST_ASSERT_TRUE(ntpAnswer(device, genuine, 10));
+    TEST_ASSERT_FALSE(ntpAnswer(device, ZERO_TRANSMIT_SECONDS, 10 + HOUR));
+    TEST_ASSERT_EQUAL_UINT64(genuine, device.clock);
+    TEST_ASSERT_EQUAL_UINT32(BUILD, device.floor);
+
+    // The base is still the genuine answer, so the next genuine one corroborates it
+    TEST_ASSERT_TRUE(ntpAnswer(device, genuine + 2 * HOUR, 10 + 2 * HOUR));
+    TEST_ASSERT_EQUAL_UINT32(genuine + 2 * HOUR, device.floor);
+}
+
+void test_rejected_answer_does_not_move_the_base(void) {
+    Device device = bootedDevice(PERSISTED);
+    TEST_ASSERT_TRUE(ntpAnswer(device, PERSISTED + HOUR, 10));
+    TEST_ASSERT_FALSE(ntpAnswer(device, BOGUS_2023, 20));
+    TEST_ASSERT_EQUAL_UINT32(PERSISTED + HOUR, device.baseWall);
+    TEST_ASSERT_EQUAL_UINT32(10, device.baseUptime);
+}
+
 void test_manual_set_may_lower_the_floor(void) {
     // A future-dated floor rejects every genuine answer; the manual set is the escape
     // hatch and replaces the floor outright instead of going through raisedBy.
@@ -193,6 +328,18 @@ int main(int argc, char **argv) {
     RUN_TEST(test_zero_floor_accepts_anything);
     RUN_TEST(test_zero_tolerance_is_strict);
 
+    RUN_TEST(test_corroborates_answer_at_the_same_pace);
+    RUN_TEST(test_corroborates_with_no_elapsed_time);
+    RUN_TEST(test_no_base_never_corroborates);
+    RUN_TEST(test_corroborates_exactly_tolerance_ahead_or_behind);
+    RUN_TEST(test_rejects_one_second_past_tolerance_ahead_or_behind);
+    RUN_TEST(test_wall_behind_base_corroborates_when_uptime_agrees);
+    RUN_TEST(test_bogus_future_answer_does_not_corroborate);
+    RUN_TEST(test_base_uptime_zero_is_a_valid_base);
+    RUN_TEST(test_uptime_going_backwards_never_corroborates);
+    RUN_TEST(test_implausible_wall_never_corroborates);
+    RUN_TEST(test_corroborates_over_a_long_uptime);
+
     RUN_TEST(test_raise_moves_floor_to_later_answer);
     RUN_TEST(test_raise_never_lowers_for_answer_within_tolerance);
     RUN_TEST(test_raise_from_no_floor);
@@ -203,6 +350,11 @@ int main(int argc, char **argv) {
     RUN_TEST(test_zero_transmit_artifact_passes_the_floor_check);
 
     RUN_TEST(test_floor_is_monotonic_across_syncs);
+    RUN_TEST(test_first_answer_after_boot_does_not_raise_the_floor);
+    RUN_TEST(test_agreeing_answers_raise_the_floor);
+    RUN_TEST(test_single_future_answer_heals_at_the_next_sync);
+    RUN_TEST(test_zero_transmit_answer_is_rejected_and_keeps_the_base);
+    RUN_TEST(test_rejected_answer_does_not_move_the_base);
     RUN_TEST(test_manual_set_may_lower_the_floor);
 
     return UNITY_END();
