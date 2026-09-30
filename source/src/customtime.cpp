@@ -21,7 +21,9 @@
 
 namespace CustomTime {
     // Static variables to maintain state
-    static bool _isTimeSynched = false;
+    static std::atomic<bool> _begun{false};
+    static std::atomic<bool> _clockWasValid{false}; // transition logging only; the state is the clock itself
+    static std::atomic<bool> _syncAttemptInProgress{false};
     static uint64_t _lastSyncAttempt = 0;
 
     // Backing storage for the gateway server string passed into configTime(); must
@@ -49,6 +51,7 @@ namespace CustomTime {
     }
 
     static bool _getTime();
+    static bool _isClockValid();
     static void _checkAndSyncTime();
     static void _configureNtpServers();
 
@@ -80,18 +83,28 @@ namespace CustomTime {
         LOG_DEBUG("Time floor %llu (build %llu, persisted %llu)",
                   (uint64_t)bootFloor, (uint64_t)GIT_COMMIT_UNIX_TIME, (uint64_t)persistedFloor);
 
-        // Initial sync attempt
+        // Initial sync attempt. Waiting here is fine: the setup task is not on the task watchdog.
         _configureNtpServers();
-
         _lastSyncAttempt = millis64();
-        _isTimeSynched = _getTime();
+        _getTime();
 
-        return _isTimeSynched;
+        _begun.store(true);
+        return isTimeSynched();
     }
 
+    // Derived from the clock on every call, so a clock that leaves the valid range reads as
+    // unsynced again. False before begin(): on a soft reset the clock kept across the restart
+    // is valid, and trusting it before any NTP answer could correct it moved the startup CSV
+    // migration and start-measuring resolution ahead of the first sync.
     bool isTimeSynched() {
+        if (!_begun.load()) return false;
         _checkAndSyncTime();
-        return _isTimeSynched;
+
+        bool valid = _isClockValid();
+        bool wasValid = _clockWasValid.exchange(valid);
+        if (valid && !wasValid) LOG_INFO("Time synchronized");
+        else if (!valid && wasValid) LOG_WARNING("Time synchronization lost");
+        return valid;
     }
 
     bool isNowCloseToHour(uint64_t toleranceMillis) {
@@ -265,8 +278,7 @@ namespace CustomTime {
             LOG_ERROR("Failed to set system time");
             return false;
         }
-        
-        _isTimeSynched = true;
+
         LOG_INFO("Time manually synchronized: %llu (time floor %llu)", unixSeconds, (uint64_t)outcome.floor);
         return true;
     }
@@ -369,35 +381,35 @@ namespace CustomTime {
         return isUnixTimeValid((uint64_t)now, false);
     }
 
-    // Never waits for the answer: this runs on caller tasks, including async_tcp, which is on
-    // the 5 s task watchdog, and getLocalTime()'s 5 s poll could trip it on an unsynced device.
-    // The answer lands asynchronously (sntp_sync_time) and a later call picks it up here.
+    // Never waits: this runs on caller tasks, including async_tcp, which is on the 5 s task
+    // watchdog. configTime() only kicks SNTP; the answer lands asynchronously (sntp_sync_time)
+    // and isTimeSynched() sees it on a later call.
     static void _checkAndSyncTime() {
         _handleRejectedAnswer();
-
-        if (!_isTimeSynched && _isClockValid()) {
-            _isTimeSynched = true;
-            LOG_INFO("Time synchronized (system clock is valid)"); // An NTP answer, or the clock kept across a soft reset
-        }
 
         uint64_t currentTime = millis64();
 
         // Either enough time has passed since last successful sync, or we failed previously and we retry earlier
         bool isTimeToSync = (currentTime - _lastSyncAttempt >= (uint64_t)TIME_SYNC_INTERVAL);
-        bool needToRetry = !_isTimeSynched && (currentTime - _lastSyncAttempt >= (uint64_t)TIME_SYNC_RETRY_IF_NOT_SYNCHED);
+        bool needToRetry = !_isClockValid() && (currentTime - _lastSyncAttempt >= (uint64_t)TIME_SYNC_RETRY_IF_NOT_SYNCHED);
+        if (!isTimeToSync && !needToRetry && !_resyncRequested) return;
 
-        if (isTimeToSync || needToRetry || _resyncRequested) {
-            if (!CustomNet::isFullyConnected(true)) {
-                LOG_DEBUG("Skipping time sync - no network connectivity");
-                return;
-            }
+        // One task at a time: a second one entering would reconfigure the regular server set
+        // and undo the gateway-free retry after a rejected answer.
+        bool idle = false;
+        if (!_syncAttemptInProgress.compare_exchange_strong(idle, true)) return;
+
+        // Link only, no internet probe: it blocked every caller for up to 3 s when the uplink was
+        // down, and a gateway-only LAN can still answer NTP.
+        if (CustomNet::isFullyConnected(false)) {
             _resyncRequested = false;
             _lastSyncAttempt = currentTime;
-
-            // Re-configure time to trigger a new sync
             _configureNtpServers();
-            if (!_isTimeSynched) LOG_DEBUG("Time sync requested, waiting for an NTP answer");
+            if (!_isClockValid()) LOG_DEBUG("Time sync requested, waiting for an NTP answer");
+        } else {
+            LOG_DEBUG("Skipping time sync - no network connectivity");
         }
+        _syncAttemptInProgress.store(false);
     }
 };
 
