@@ -12,7 +12,7 @@
 #include "unix_time.h"
 
 // Fallback servers, tried after the default gateway (see CustomTime::begin/_checkAndSyncTime), and
-// used alone for the resync after a rejected answer (below the time floor, or a zero transmit timestamp) -
+// used alone for the resync after an answer rejected by the time floor -
 // NTP_SERVER_1 is a DNS-dependent public pool, NTP_SERVER_2 a raw IP so it still works if DNS fails.
 #define NTP_SERVER_1 "pool.ntp.org"
 #define NTP_SERVER_2 "162.159.200.1" // Cloudflare NTP server IP
@@ -20,7 +20,7 @@
 #define TIME_SYNC_INTERVAL (60 * 60 * 1000)
 #define TIME_SYNC_RETRY_IF_NOT_SYNCHED (60 * 1000)
 
-// PREFERENCES_NAMESPACE_TIME: the persisted half of the time floor, the latest accepted NTP time capped at the uptime ceiling (lower after a manual set)
+// PREFERENCES_NAMESPACE_TIME: the persisted time floor (see TimeFloor)
 #define TIME_FLOOR_KEY "floor_s"
 
 #define TIMESTAMP_FORMAT "%Y-%m-%d %H:%M:%S"
@@ -52,9 +52,8 @@ namespace CustomTime {
 
     bool isUnixTimeValid(uint64_t unixTime, bool isMilliseconds = true);
 
-    // Manual time sync for devices without internet connectivity. Can only lower the time floor
-    // (the way out of a bad persisted floor), and never lets NTP raise it past this time plus the
-    // uptime since. The build floor still applies after a reboot.
+    // Manual time sync for devices without internet connectivity. Only lowers the time floor
+    // (TimeFloor::onManualSet); the build floor still applies after a reboot.
     bool setUnixTime(uint64_t unixSeconds);
 
     // Forces the next sync check to run immediately. Called on interface failover:

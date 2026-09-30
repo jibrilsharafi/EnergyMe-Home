@@ -33,9 +33,8 @@ uint32_t toFloor(uint64_t unixSeconds);
 // persisted floor.
 uint32_t effective(uint64_t buildFloor, uint64_t persistedFloor);
 
-// True when an NTP answer may set the clock. The tolerance lets a server that
-// runs slightly behind the one that set the floor (failover resyncs seconds
-// apart) through; the bogus answers this guards against are months or years off.
+// True when an NTP answer may set the clock: at most the tolerance
+// (TIME_FLOOR_TOLERANCE_SECONDS) before the floor.
 bool accepts(uint32_t floor, uint64_t candidateSeconds, uint32_t toleranceSeconds);
 
 // Floor raised to a value: never lowered by a sync, even for a candidate that got
