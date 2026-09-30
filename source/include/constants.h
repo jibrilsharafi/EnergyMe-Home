@@ -137,6 +137,11 @@
 #define TASK_NOTIFY_SHUTDOWN_BIT (1 << 0)
 #define CONFIG_MUTEX_TIMEOUT_MS (1 * 1000) // Generic timeout for configuration mutexes. Long timeouts cause wdt crash (like in async tcp)
 
+// How far behind the time floor an NTP answer may be and still set the clock (TimeFloor::accepts).
+// Absorbs skew between servers on failover resyncs seconds apart, and the crystal drift of the
+// uptime ceiling; the bogus answers the floor guards against are months or years off.
+#define TIME_FLOOR_TOLERANCE_SECONDS 60
+
 // Server used ports (here to ensure no conflicts)
 #define MODBUS_TCP_PORT 502
 #define WEBSERVER_PORT 80

@@ -11,13 +11,17 @@
 #include "utils.h"
 #include "unix_time.h"
 
-// Fallback servers, tried after the default gateway (see CustomTime::begin/_checkAndSyncTime) -
+// Fallback servers, tried after the default gateway (see CustomTime::begin/_checkAndSyncTime), and
+// used alone for the resync after an answer rejected by the time floor -
 // NTP_SERVER_1 is a DNS-dependent public pool, NTP_SERVER_2 a raw IP so it still works if DNS fails.
 #define NTP_SERVER_1 "pool.ntp.org"
 #define NTP_SERVER_2 "162.159.200.1" // Cloudflare NTP server IP
 
 #define TIME_SYNC_INTERVAL (60 * 60 * 1000)
 #define TIME_SYNC_RETRY_IF_NOT_SYNCHED (60 * 1000)
+
+// PREFERENCES_NAMESPACE_TIME: the persisted time floor (see TimeFloor)
+#define TIME_FLOOR_KEY "floor_s"
 
 #define TIMESTAMP_FORMAT "%Y-%m-%d %H:%M:%S"
 #define TIMESTAMP_ISO_FORMAT "%04d-%02d-%02dT%02d:%02d:%02d.%03ldZ" // ISO 8601 format with milliseconds
@@ -48,10 +52,17 @@ namespace CustomTime {
 
     bool isUnixTimeValid(uint64_t unixTime, bool isMilliseconds = true);
 
-    // Manual time sync for devices without internet connectivity
+    // Manual time sync for devices without internet connectivity. Only lowers the time floor
+    // (TimeFloor::onManualSet); the build floor still applies after a reboot.
     bool setUnixTime(uint64_t unixSeconds);
 
     // Forces the next sync check to run immediately. Called on interface failover:
     // the gateway-derived NTP server belongs to the old interface until then.
     void requestResync();
+
+    // Writes a floor raised by NTP to NVS. Not done in isTimeSynched(), whose callers include
+    // tasks with no stack budgeted for an NVS write: call it only from a task that already
+    // writes Preferences at least as deep (the energy save task, so the persisted floor trails
+    // by up to its interval, which only makes it more conservative).
+    void persistPendingFloor();
 }
