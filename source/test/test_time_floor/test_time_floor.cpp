@@ -240,7 +240,35 @@ void test_floor_is_monotonic_across_syncs(void) {
     TEST_ASSERT_EQUAL_UINT32(BUILD + 7300UL, floor);
 }
 
-// The sntp_sync_time override (src/customtime.cpp), composed from the rules above
+// ============================================================================
+// onAnswer
+// ============================================================================
+
+void test_on_answer_rejects_below_the_floor(void) {
+    AnswerOutcome outcome = onAnswer(BUILD, BUILD, BASE_UPTIME, BASE_UPTIME + 10, BOGUS_2023, TOLERANCE);
+    TEST_ASSERT_FALSE(outcome.accept);
+    TEST_ASSERT_EQUAL_UINT32(BUILD, outcome.floor);
+}
+
+void test_on_answer_rejects_zero_transmit(void) {
+    AnswerOutcome outcome = onAnswer(0, 0, 0, 10, ZERO_TRANSMIT_SECONDS, TOLERANCE);
+    TEST_ASSERT_FALSE(outcome.accept);
+    TEST_ASSERT_EQUAL_UINT32(0, outcome.floor);
+}
+
+void test_on_answer_without_corroboration_keeps_the_floor(void) {
+    AnswerOutcome outcome = onAnswer(BUILD, 0, 0, 10, BUILD + HOUR, TOLERANCE);
+    TEST_ASSERT_TRUE(outcome.accept);
+    TEST_ASSERT_EQUAL_UINT32(BUILD, outcome.floor);
+}
+
+void test_on_answer_with_corroboration_raises_the_floor(void) {
+    AnswerOutcome outcome = onAnswer(BUILD, BUILD + HOUR, 10, 10 + HOUR, BUILD + 2 * HOUR, TOLERANCE);
+    TEST_ASSERT_TRUE(outcome.accept);
+    TEST_ASSERT_EQUAL_UINT32(BUILD + 2 * HOUR, outcome.floor);
+}
+
+// The sntp_sync_time override (src/customtime.cpp) around TimeFloor::onAnswer
 struct Device {
     uint32_t floor;
     uint32_t baseWall;
@@ -253,12 +281,12 @@ static Device bootedDevice(uint64_t persistedFloor) {
 }
 
 static bool ntpAnswer(Device &device, uint64_t answer, uint32_t uptime) {
-    if (isZeroTransmitArtifact(answer) || !accepts(device.floor, answer, TOLERANCE)) return false;
+    AnswerOutcome outcome = onAnswer(device.floor, device.baseWall, device.baseUptime, uptime, answer, TOLERANCE);
+    if (!outcome.accept) return false;
     device.clock = answer;
-    bool agreed = corroborates(device.baseWall, device.baseUptime, answer, uptime, TOLERANCE);
     device.baseWall = toFloor(answer);
     device.baseUptime = uptime;
-    if (agreed) device.floor = raisedBy(device.floor, answer);
+    device.floor = outcome.floor;
     return true;
 }
 
@@ -410,6 +438,12 @@ int main(int argc, char **argv) {
     RUN_TEST(test_zero_transmit_artifact_passes_the_floor_check);
 
     RUN_TEST(test_floor_is_monotonic_across_syncs);
+
+    RUN_TEST(test_on_answer_rejects_below_the_floor);
+    RUN_TEST(test_on_answer_rejects_zero_transmit);
+    RUN_TEST(test_on_answer_without_corroboration_keeps_the_floor);
+    RUN_TEST(test_on_answer_with_corroboration_raises_the_floor);
+
     RUN_TEST(test_first_answer_after_boot_does_not_raise_the_floor);
     RUN_TEST(test_agreeing_answers_raise_the_floor);
     RUN_TEST(test_single_future_answer_heals_at_the_next_sync);

@@ -407,8 +407,12 @@ namespace CustomTime {
 extern "C" void sntp_sync_time(struct timeval *tv) {
     uint64_t candidate = (uint64_t)tv->tv_sec;
     uint32_t floorSeconds = CustomTime::_floorSeconds.load();
-    if (TimeFloor::isZeroTransmitArtifact(candidate) ||
-        !TimeFloor::accepts(floorSeconds, candidate, TIME_FLOOR_TOLERANCE_SECONDS)) {
+    uint32_t uptimeSeconds = CustomTime::_uptimeSeconds();
+    uint64_t base = CustomTime::_corroborationBase.load();
+    TimeFloor::AnswerOutcome outcome = TimeFloor::onAnswer(
+        floorSeconds, static_cast<uint32_t>(base >> 32), static_cast<uint32_t>(base), uptimeSeconds, candidate,
+        TIME_FLOOR_TOLERANCE_SECONDS);
+    if (!outcome.accept) {
         // Clock and sync status untouched: a device that was synced keeps its running clock
         CustomTime::_rejectedCandidate.store(static_cast<uint32_t>(candidate));
         CustomTime::_rejectionPending.store(true);
@@ -438,19 +442,9 @@ extern "C" void sntp_sync_time(struct timeval *tv) {
         }
     }
 
-    // Every accepted answer becomes the next base; only one that agrees with the previous base
-    // may raise the floor, so a single bogus future answer never becomes it.
-    uint32_t uptimeSeconds = CustomTime::_uptimeSeconds();
-    uint64_t previousBase = CustomTime::_corroborationBase.exchange(
-        CustomTime::_packBase(TimeFloor::toFloor(candidate), uptimeSeconds));
-    if (!TimeFloor::corroborates(static_cast<uint32_t>(previousBase >> 32), static_cast<uint32_t>(previousBase),
-                                 candidate, uptimeSeconds, TIME_FLOOR_TOLERANCE_SECONDS)) {
-        return;
-    }
-
-    uint32_t raised = TimeFloor::raisedBy(floorSeconds, candidate);
-    if (raised != floorSeconds) {
-        CustomTime::_floorSeconds.store(raised);
-        CustomTime::_pendingFloorPersist.store(raised);
+    CustomTime::_corroborationBase.store(CustomTime::_packBase(TimeFloor::toFloor(candidate), uptimeSeconds));
+    if (outcome.floor != floorSeconds) {
+        CustomTime::_floorSeconds.store(outcome.floor);
+        CustomTime::_pendingFloorPersist.store(outcome.floor);
     }
 }

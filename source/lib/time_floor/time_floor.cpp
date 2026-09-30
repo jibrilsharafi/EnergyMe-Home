@@ -49,4 +49,15 @@ bool isZeroTransmitArtifact(uint64_t candidateSeconds) {
     return candidateSeconds == ZERO_TRANSMIT_SECONDS;
 }
 
+AnswerOutcome onAnswer(uint32_t floor, uint32_t baseWallSeconds, uint32_t baseUptimeSeconds,
+                       uint32_t uptimeSeconds, uint64_t candidateSeconds, uint32_t toleranceSeconds) {
+    if (isZeroTransmitArtifact(candidateSeconds) || !accepts(floor, candidateSeconds, toleranceSeconds)) {
+        return {false, floor};
+    }
+    if (!corroborates(baseWallSeconds, baseUptimeSeconds, candidateSeconds, uptimeSeconds, toleranceSeconds)) {
+        return {true, floor};
+    }
+    return {true, raisedBy(floor, candidateSeconds)};
+}
+
 } // namespace TimeFloor

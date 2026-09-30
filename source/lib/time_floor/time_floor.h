@@ -66,4 +66,15 @@ constexpr uint64_t ZERO_TRANSMIT_SECONDS = 2085978496ULL;
 // True for that artifact: never a genuine answer, rejected regardless of the floor.
 bool isZeroTransmitArtifact(uint64_t candidateSeconds);
 
+struct AnswerOutcome {
+    bool accept;    // the answer may set the clock
+    uint32_t floor; // the floor after it
+};
+
+// The sntp_sync_time override: an NTP answer checked against the floor, then against the
+// corroboration base (the previous accepted answer) to raise it. The caller makes every
+// accepted answer the next base.
+AnswerOutcome onAnswer(uint32_t floor, uint32_t baseWallSeconds, uint32_t baseUptimeSeconds,
+                       uint32_t uptimeSeconds, uint64_t candidateSeconds, uint32_t toleranceSeconds);
+
 } // namespace TimeFloor
