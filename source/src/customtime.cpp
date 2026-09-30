@@ -37,16 +37,6 @@ namespace CustomTime {
     static std::atomic<uint32_t> _anchorSeconds{static_cast<uint32_t>(GIT_COMMIT_UNIX_TIME)}; // TimeFloor::ceiling
     static std::atomic<uint32_t> _pendingFloorPersist{0}; // 0: nothing to persist
 
-    // The corroboration base (TimeFloor::corroborates): wall and uptime seconds of the last
-    // accepted answer, packed (wall << 32 | uptime) into one atomic so a reader never pairs one
-    // answer's wall time with another's uptime. Wall 0: no base. Not lock-free on Xtensa: the
-    // libatomic helpers take a short critical section, fine on the tcpip thread.
-    static std::atomic<uint64_t> _corroborationBase{0};
-
-    static uint64_t _packBase(uint32_t wallSeconds, uint32_t uptimeSeconds) {
-        return (static_cast<uint64_t>(wallSeconds) << 32) | uptimeSeconds;
-    }
-
     static uint32_t _uptimeSeconds() {
         return static_cast<uint32_t>(esp_timer_get_time() / 1000000LL);
     }
@@ -257,17 +247,14 @@ namespace CustomTime {
             return false;
         }
 
-        // Lower-only (TimeFloor::onManualSet): the value seeds the corroboration base instead, so
-        // the next NTP answer that agrees with it raises the floor. Clear a pending sync persist
-        // first so an older value cannot land in NVS after this one.
+        // Lower-only (TimeFloor::onManualSet). Clear a pending sync persist first so an older
+        // value cannot land in NVS after this one.
         _pendingFloorPersist.store(0);
-        uint32_t uptimeSeconds = _uptimeSeconds();
         TimeFloor::ManualOutcome outcome =
-            TimeFloor::onManualSet(_floorSeconds.load(), _anchorSeconds.load(), uptimeSeconds, unixSeconds);
+            TimeFloor::onManualSet(_floorSeconds.load(), _anchorSeconds.load(), _uptimeSeconds(), unixSeconds);
         uint32_t floorSeconds = outcome.floor;
         _anchorSeconds.store(outcome.anchor);
         _floorSeconds.store(floorSeconds);
-        _corroborationBase.store(_packBase(TimeFloor::toFloor(unixSeconds), uptimeSeconds));
         _persistFloor(floorSeconds);
 
         struct timeval tv;
@@ -414,11 +401,9 @@ namespace CustomTime {
 extern "C" void sntp_sync_time(struct timeval *tv) {
     uint64_t candidate = (uint64_t)tv->tv_sec;
     uint32_t floorSeconds = CustomTime::_floorSeconds.load();
-    uint32_t uptimeSeconds = CustomTime::_uptimeSeconds();
-    uint64_t base = CustomTime::_corroborationBase.load();
-    TimeFloor::AnswerOutcome outcome = TimeFloor::onAnswer(
-        floorSeconds, CustomTime::_anchorSeconds.load(), static_cast<uint32_t>(base >> 32),
-        static_cast<uint32_t>(base), uptimeSeconds, candidate, TIME_FLOOR_TOLERANCE_SECONDS);
+    TimeFloor::AnswerOutcome outcome =
+        TimeFloor::onAnswer(floorSeconds, CustomTime::_anchorSeconds.load(), CustomTime::_uptimeSeconds(), candidate,
+                            TIME_FLOOR_TOLERANCE_SECONDS);
     if (!outcome.accept) {
         // Clock and sync status untouched: a device that was synced keeps its running clock
         CustomTime::_rejectedCandidate.store(static_cast<uint32_t>(candidate));
@@ -449,7 +434,6 @@ extern "C" void sntp_sync_time(struct timeval *tv) {
         }
     }
 
-    CustomTime::_corroborationBase.store(CustomTime::_packBase(TimeFloor::toFloor(candidate), uptimeSeconds));
     if (outcome.floor != floorSeconds) {
         CustomTime::_floorSeconds.store(outcome.floor);
         CustomTime::_pendingFloorPersist.store(outcome.floor);

@@ -138,10 +138,8 @@
 #define CONFIG_MUTEX_TIMEOUT_MS (1 * 1000) // Generic timeout for configuration mutexes. Long timeouts cause wdt crash (like in async tcp)
 
 // How far behind the time floor an NTP answer may be and still set the clock (TimeFloor::accepts).
-// Absorbs skew between servers on failover resyncs seconds apart; the bogus answers the floor
-// guards against are months or years off. Also how far two accepted answers may disagree with the
-// uptime between them and still corroborate each other (TimeFloor::corroborates), which absorbs
-// crystal drift and server skew.
+// Absorbs skew between servers on failover resyncs seconds apart, and the crystal drift of the
+// uptime ceiling; the bogus answers the floor guards against are months or years off.
 #define TIME_FLOOR_TOLERANCE_SECONDS 60
 
 // Server used ports (here to ensure no conflicts)

@@ -11,12 +11,14 @@
 // was stamped with it until the next resync happened to get a good answer.
 //
 // A floor that is itself in the future rejects every genuine answer until real
-// time catches up, so only an answer corroborated by the previous accepted one
-// may raise it (see corroborates), and never above the ceiling.
+// time catches up, so an answer raises it at most to the ceiling (anchor + uptime),
+// which never passes real time. The price: the floor lags real time by the install
+// delay plus every power-off since, as only uptime moves the ceiling. An OTA to a
+// newer commit catches it up through the build floor.
 //
-// src/customtime.cpp owns the state (an atomic floor and anchor, the corroboration
-// base, NVS persistence) and calls these; the rules live only here so they are
-// host-tested (test/test_time_floor).
+// src/customtime.cpp owns the state (an atomic floor and anchor, NVS persistence)
+// and calls these; the rules live only here so they are host-tested
+// (test/test_time_floor).
 //
 // All values are unix seconds as uint32_t (enough until 2106, past
 // UnixTime::MAX_SECONDS). 0 means "no floor".
@@ -36,18 +38,8 @@ uint32_t effective(uint64_t buildFloor, uint64_t persistedFloor);
 // apart) through; the bogus answers this guards against are months or years off.
 bool accepts(uint32_t floor, uint64_t candidateSeconds, uint32_t toleranceSeconds);
 
-// True when an accepted answer agrees with the base, the previous accepted answer
-// (wall time and uptime when it arrived): the wall time moved as far as the uptime
-// did, within the tolerance. Only then may the answer raise the floor, so a single
-// bogus future answer still steps the clock (as before the floor existed) but the
-// next genuine one undoes it instead of being rejected. A base wall of 0 is "no
-// base" (none since boot); uptime going backwards or an implausible wall never
-// corroborates.
-bool corroborates(uint32_t baseWallSeconds, uint32_t baseUptimeSeconds,
-                  uint64_t wallSeconds, uint32_t uptimeSeconds, uint32_t toleranceSeconds);
-
-// Floor after a corroborated answer: never lowered by a sync, even for a
-// candidate that got in within the tolerance.
+// Floor raised to a value: never lowered by a sync, even for a candidate that got
+// in within the tolerance, and never raised to an implausible value.
 uint32_t raisedBy(uint32_t floor, uint64_t acceptedSeconds);
 
 // The most an answer may raise the floor to: the anchor, a lower bound of real time at
@@ -59,20 +51,6 @@ uint32_t raisedBy(uint32_t floor, uint64_t acceptedSeconds);
 // tolerance absorbs weeks of it, and a floor a few minutes ahead only blocks answers
 // until real time passes it. Anchor 0 (no build floor, nothing persisted): 0, no raise.
 uint32_t ceiling(uint32_t anchorSeconds, uint32_t uptimeSeconds);
-
-struct ManualOutcome {
-    uint32_t floor;
-    uint32_t anchor;
-};
-
-// A manual time set: the floor is lowered to the value, never raised. Lowering is the
-// way out of a wrong floor; raising would let a fast browser clock block NTP until real
-// time caught up. The value is a claim about real time, so the anchor is lowered to keep
-// the ceiling at or below it (0 when the uptime exceeds the value: no raise until the
-// next boot). The manual value becomes the corroboration base, so the next NTP answer
-// that agrees with it raises the floor. A 0 floor or anchor stays 0, and an implausible
-// value changes nothing.
-ManualOutcome onManualSet(uint32_t floor, uint32_t anchor, uint32_t uptimeSeconds, uint64_t manualSeconds);
 
 // What lwIP hands over for a reply with an all-zero transmit timestamp, which an
 // unsynchronized server sends and RFC 4330 says to discard. With SNTP_CHECK_RESPONSE
@@ -88,11 +66,23 @@ struct AnswerOutcome {
     uint32_t floor; // the floor after it
 };
 
-// The sntp_sync_time override: an NTP answer checked against the floor, then against the
-// corroboration base (the previous accepted answer) to raise it, at most to the ceiling.
-// The caller makes every accepted answer the next base.
-AnswerOutcome onAnswer(uint32_t floor, uint32_t anchorSeconds, uint32_t baseWallSeconds,
-                       uint32_t baseUptimeSeconds, uint32_t uptimeSeconds, uint64_t candidateSeconds,
-                       uint32_t toleranceSeconds);
+// The sntp_sync_time override: an NTP answer checked against the floor, then raising it
+// to the answer, at most to the ceiling. A single bogus future answer still steps the
+// clock (as before the floor existed), but the floor it leaves is not past real time, so
+// the next genuine answer steps it back.
+AnswerOutcome onAnswer(uint32_t floor, uint32_t anchorSeconds, uint32_t uptimeSeconds,
+                       uint64_t candidateSeconds, uint32_t toleranceSeconds);
+
+struct ManualOutcome {
+    uint32_t floor;
+    uint32_t anchor;
+};
+
+// A manual time set: the floor is lowered to the value, never raised. Lowering is the
+// way out of a wrong floor; raising would let a fast browser clock block NTP until real
+// time caught up. The value is a claim about real time, so the anchor is lowered to keep
+// the ceiling at or below it (0 when the uptime exceeds the value: no raise until the
+// next boot). A 0 floor or anchor stays 0, and an implausible value changes nothing.
+ManualOutcome onManualSet(uint32_t floor, uint32_t anchor, uint32_t uptimeSeconds, uint64_t manualSeconds);
 
 } // namespace TimeFloor

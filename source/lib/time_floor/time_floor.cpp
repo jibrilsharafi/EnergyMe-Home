@@ -22,18 +22,6 @@ bool accepts(uint32_t floor, uint64_t candidateSeconds, uint32_t toleranceSecond
     return candidateSeconds + toleranceSeconds >= floor;
 }
 
-bool corroborates(uint32_t baseWallSeconds, uint32_t baseUptimeSeconds,
-                  uint64_t wallSeconds, uint32_t uptimeSeconds, uint32_t toleranceSeconds) {
-    if (baseWallSeconds == 0 || toFloor(wallSeconds) == 0) return false;
-    if (uptimeSeconds < baseUptimeSeconds) return false;
-
-    int64_t wallElapsed = static_cast<int64_t>(wallSeconds) - static_cast<int64_t>(baseWallSeconds);
-    int64_t uptimeElapsed = static_cast<int64_t>(uptimeSeconds - baseUptimeSeconds);
-    int64_t skew = wallElapsed - uptimeElapsed;
-    if (skew < 0) skew = -skew;
-    return skew <= static_cast<int64_t>(toleranceSeconds);
-}
-
 uint32_t raisedBy(uint32_t floor, uint64_t acceptedSeconds) {
     uint32_t candidate = toFloor(acceptedSeconds);
     return candidate > floor ? candidate : floor;
@@ -45,28 +33,24 @@ uint32_t ceiling(uint32_t anchorSeconds, uint32_t uptimeSeconds) {
     return sum > UINT32_MAX ? UINT32_MAX : static_cast<uint32_t>(sum);
 }
 
+bool isZeroTransmitArtifact(uint64_t candidateSeconds) {
+    return candidateSeconds == ZERO_TRANSMIT_SECONDS;
+}
+
+AnswerOutcome onAnswer(uint32_t floor, uint32_t anchorSeconds, uint32_t uptimeSeconds,
+                       uint64_t candidateSeconds, uint32_t toleranceSeconds) {
+    if (isZeroTransmitArtifact(candidateSeconds) || !accepts(floor, candidateSeconds, toleranceSeconds)) {
+        return {false, floor};
+    }
+    uint32_t cap = ceiling(anchorSeconds, uptimeSeconds);
+    return {true, raisedBy(floor, candidateSeconds < cap ? candidateSeconds : cap)};
+}
+
 ManualOutcome onManualSet(uint32_t floor, uint32_t anchor, uint32_t uptimeSeconds, uint64_t manualSeconds) {
     uint32_t manual = toFloor(manualSeconds);
     if (manual == 0) return {floor, anchor};
     uint32_t manualAnchor = manual > uptimeSeconds ? manual - uptimeSeconds : 0;
     return {manual < floor ? manual : floor, manualAnchor < anchor ? manualAnchor : anchor};
-}
-
-bool isZeroTransmitArtifact(uint64_t candidateSeconds) {
-    return candidateSeconds == ZERO_TRANSMIT_SECONDS;
-}
-
-AnswerOutcome onAnswer(uint32_t floor, uint32_t anchorSeconds, uint32_t baseWallSeconds,
-                       uint32_t baseUptimeSeconds, uint32_t uptimeSeconds, uint64_t candidateSeconds,
-                       uint32_t toleranceSeconds) {
-    if (isZeroTransmitArtifact(candidateSeconds) || !accepts(floor, candidateSeconds, toleranceSeconds)) {
-        return {false, floor};
-    }
-    if (!corroborates(baseWallSeconds, baseUptimeSeconds, candidateSeconds, uptimeSeconds, toleranceSeconds)) {
-        return {true, floor};
-    }
-    uint32_t cap = ceiling(anchorSeconds, uptimeSeconds);
-    return {true, raisedBy(floor, candidateSeconds < cap ? candidateSeconds : cap)};
 }
 
 } // namespace TimeFloor
