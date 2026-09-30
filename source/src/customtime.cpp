@@ -344,6 +344,8 @@ namespace CustomTime {
             if (TimeFloor::isZeroTransmitArtifact(candidate)) {
                 LOG_WARNING("Rejected NTP time %llu: zero transmit timestamp (unsynchronized server). Keeping the current clock",
                             candidate);
+            } else if (!isUnixTimeValid(candidate, false)) {
+                LOG_WARNING("Rejected NTP time %llu: outside the valid range. Keeping the current clock", candidate);
             } else {
                 LOG_WARNING("Rejected NTP time %llu: more than %d s before the time floor %llu. Keeping the current clock",
                             candidate, TIME_FLOOR_TOLERANCE_SECONDS, floorSeconds);

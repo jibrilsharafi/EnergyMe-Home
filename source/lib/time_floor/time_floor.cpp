@@ -39,7 +39,9 @@ bool isZeroTransmitArtifact(uint64_t candidateSeconds) {
 
 AnswerOutcome onAnswer(uint32_t floor, uint32_t anchorSeconds, uint32_t uptimeSeconds,
                        uint64_t candidateSeconds, uint32_t toleranceSeconds) {
-    if (isZeroTransmitArtifact(candidateSeconds) || !accepts(floor, candidateSeconds, toleranceSeconds)) {
+    // Past UnixTime::MAX_SECONDS too: lwIP decodes era-1 NTP seconds up to 2104
+    if (isZeroTransmitArtifact(candidateSeconds) || !UnixTime::isValid(candidateSeconds, false) ||
+        !accepts(floor, candidateSeconds, toleranceSeconds)) {
         return {false, floor};
     }
     uint32_t cap = ceiling(anchorSeconds, uptimeSeconds);

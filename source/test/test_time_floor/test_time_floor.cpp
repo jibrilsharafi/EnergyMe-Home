@@ -192,6 +192,16 @@ void test_on_answer_rejects_zero_transmit(void) {
     TEST_ASSERT_FALSE(outcome.accept);
 }
 
+void test_on_answer_rejects_past_2100(void) {
+    const uint64_t YEAR_2102 = 4165603200ULL; // lwIP decodes era-1 NTP seconds up to 2104
+    AnswerOutcome outcome = onAnswer(PERSISTED, PERSISTED, 10, YEAR_2102, TOLERANCE);
+    TEST_ASSERT_FALSE(outcome.accept);
+    TEST_ASSERT_EQUAL_UINT32(PERSISTED, outcome.floor);
+
+    outcome = onAnswer(0, 0, 10, YEAR_2102, TOLERANCE); // even with no floor at all
+    TEST_ASSERT_FALSE(outcome.accept);
+}
+
 void test_on_answer_raises_the_floor_to_the_answer(void) {
     AnswerOutcome outcome = onAnswer(PERSISTED, PERSISTED, HOUR, PERSISTED + HOUR - 5, TOLERANCE);
     TEST_ASSERT_TRUE(outcome.accept);
@@ -220,17 +230,17 @@ void test_on_answer_without_anchor_never_raises(void) {
     TEST_ASSERT_EQUAL_UINT32(PERSISTED, outcome.floor);
 }
 
-void test_on_answer_garbage_high_raises_only_to_the_ceiling(void) {
+void test_on_answer_far_future_raises_only_to_the_ceiling(void) {
     // Accepted (as before the floor existed) and it steps the clock, but the floor it leaves
-    // is the ceiling, not the garbage
-    AnswerOutcome outcome = onAnswer(PERSISTED, PERSISTED, HOUR, UnixTime::MAX_SECONDS + 1000, TOLERANCE);
+    // is the ceiling, not the bogus answer
+    AnswerOutcome outcome = onAnswer(PERSISTED, PERSISTED, HOUR, UnixTime::MAX_SECONDS - 1000, TOLERANCE);
     TEST_ASSERT_TRUE(outcome.accept);
     TEST_ASSERT_EQUAL_UINT32(PERSISTED + HOUR, outcome.floor);
 }
 
-void test_on_answer_never_raises_to_an_implausible_ceiling(void) {
+void test_on_answer_implausible_answer_never_raises_a_saturated_ceiling(void) {
     AnswerOutcome outcome = onAnswer(PERSISTED, UINT32_MAX - 5U, 100, UINT32_MAX, TOLERANCE);
-    TEST_ASSERT_TRUE(outcome.accept);
+    TEST_ASSERT_FALSE(outcome.accept);
     TEST_ASSERT_EQUAL_UINT32(PERSISTED, outcome.floor);
 }
 
@@ -482,12 +492,13 @@ int main(int argc, char **argv) {
 
     RUN_TEST(test_on_answer_rejects_below_the_floor);
     RUN_TEST(test_on_answer_rejects_zero_transmit);
+    RUN_TEST(test_on_answer_rejects_past_2100);
     RUN_TEST(test_on_answer_raises_the_floor_to_the_answer);
     RUN_TEST(test_on_answer_raises_at_most_to_the_ceiling);
     RUN_TEST(test_on_answer_never_lowers_for_answer_within_tolerance);
     RUN_TEST(test_on_answer_without_anchor_never_raises);
-    RUN_TEST(test_on_answer_garbage_high_raises_only_to_the_ceiling);
-    RUN_TEST(test_on_answer_never_raises_to_an_implausible_ceiling);
+    RUN_TEST(test_on_answer_far_future_raises_only_to_the_ceiling);
+    RUN_TEST(test_on_answer_implausible_answer_never_raises_a_saturated_ceiling);
 
     RUN_TEST(test_manual_set_lowers_floor_and_anchor);
     RUN_TEST(test_manual_set_keeps_the_ceiling_at_the_value);
