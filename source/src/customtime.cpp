@@ -1,10 +1,22 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025 Jibril Sharafi
 
+#include <atomic>
+#include <sys/time.h>
+#include "esp_sntp.h"
+
 #include "customtime.h"
 #include "customnet.h"
 #include "duration_format.h"
+#include "time_floor.h"
 #include "unix_time.h"
+
+#if __has_include("git_rev.h")
+#include "git_rev.h"
+#endif
+#ifndef GIT_COMMIT_UNIX_TIME
+#define GIT_COMMIT_UNIX_TIME 0ULL
+#endif
 
 namespace CustomTime {
     // Static variables to maintain state
@@ -16,11 +28,49 @@ namespace CustomTime {
     // the pointer it is given, not a copy.
     static char _gatewayNtpServer[IP_ADDRESS_BUFFER_SIZE];
 
+    // Time floor state (see TimeFloor). Written from the sntp_sync_time override on the lwIP
+    // tcpip thread, where NVS and the logger are off limits, so it hands its work over to task
+    // context (_handleTimeFloorEvents) through these atomics. The floor starts at the build
+    // floor so an answer landing before begin() is already guarded.
+    static std::atomic<uint32_t> _floorSeconds{static_cast<uint32_t>(GIT_COMMIT_UNIX_TIME)};
+    static std::atomic<uint32_t> _pendingFloorPersist{0}; // 0: nothing to persist
+    static std::atomic<uint32_t> _rejectedCandidate{0};
+    static std::atomic<bool> _rejectionPending{false};
+    static std::atomic<uint32_t> _lastRejectionWarningSeconds{0}; // uptime; 0: never warned
+
+    static std::atomic<bool> _skipGatewayOnce{false};
+    static std::atomic<bool> _gatewaySkipped{false}; // current SNTP server set has no gateway
+
     static bool _getTime();
     static void _checkAndSyncTime();
     static void _configureNtpServers();
 
+    static void _persistFloor(uint32_t floorSeconds) {
+        Preferences preferences;
+        if (!preferences.begin(PREFERENCES_NAMESPACE_TIME, false)) {
+            LOG_ERROR("Failed to open preferences namespace: %s", PREFERENCES_NAMESPACE_TIME);
+            return;
+        }
+        if (preferences.putUInt(TIME_FLOOR_KEY, floorSeconds) == 0) {
+            LOG_ERROR("Failed to persist the time floor %llu", (uint64_t)floorSeconds);
+        }
+        preferences.end();
+    }
+
+    static uint32_t _loadPersistedFloor() {
+        Preferences preferences;
+        if (!preferences.begin(PREFERENCES_NAMESPACE_TIME, true)) return 0;
+        uint32_t floorSeconds = preferences.getUInt(TIME_FLOOR_KEY, 0);
+        preferences.end();
+        return floorSeconds;
+    }
+
     bool begin() {
+        uint32_t persistedFloor = _loadPersistedFloor();
+        _floorSeconds.store(TimeFloor::effective(GIT_COMMIT_UNIX_TIME, persistedFloor));
+        LOG_DEBUG("Time floor %llu (build %llu, persisted %llu)",
+                  (uint64_t)_floorSeconds.load(), (uint64_t)GIT_COMMIT_UNIX_TIME, (uint64_t)persistedFloor);
+
         // Initial sync attempt
         _configureNtpServers();
 
@@ -187,7 +237,14 @@ namespace CustomTime {
             LOG_WARNING("Invalid Unix time provided: %llu", unixSeconds);
             return false;
         }
-        
+
+        // Replaces the floor outright (a sync can only raise it). Clear a pending auto-sync
+        // persist first so an older value cannot land in NVS after this one.
+        uint32_t floorSeconds = TimeFloor::toFloor(unixSeconds);
+        _pendingFloorPersist.store(0);
+        _floorSeconds.store(floorSeconds);
+        _persistFloor(floorSeconds);
+
         struct timeval tv;
         tv.tv_sec = (time_t)unixSeconds;
         tv.tv_usec = 0;
@@ -198,7 +255,7 @@ namespace CustomTime {
         }
         
         _isTimeSynched = true;
-        LOG_INFO("Time manually synchronized: %llu", unixSeconds);
+        LOG_INFO("Time manually synchronized: %llu (time floor set to it)", unixSeconds);
         return true;
     }
 
@@ -207,11 +264,22 @@ namespace CustomTime {
     // renewal, static IP change, interface failover (ETH<->STA on Pro), or
     // reconnect to a different network is picked up with no stale state.
     static void _configureNtpServers() {
+        if (_skipGatewayOnce.exchange(false)) {
+            // lwIP does not move on to another server after a plausible-but-wrong answer, and its
+            // current server index survives sntp_stop()/sntp_init(): the next request goes to
+            // the same slot. So every slot gets a server other than the one it held in the
+            // regular set, and no slot is left NULL (lwIP would reuse the slot's stale address).
+            configTime(0, 0, NTP_SERVER_1, NTP_SERVER_2, NTP_SERVER_1);
+            _gatewaySkipped.store(true);
+            return;
+        }
+
         IPAddress gateway = (CustomEth::activeInterface() == InterfaceArbitration::Interface::ETHERNET)
                                 ? ETH.gatewayIP()
                                 : WiFi.gatewayIP();
         snprintf(_gatewayNtpServer, sizeof(_gatewayNtpServer), "%s", gateway.toString().c_str());
         configTime(0, 0, _gatewayNtpServer, NTP_SERVER_1, NTP_SERVER_2);
+        _gatewaySkipped.store(false);
     }
 
     static bool _getTime() {
@@ -242,7 +310,41 @@ namespace CustomTime {
         _resyncRequested = true;
     }
 
+    // Task-context half of the sntp_sync_time override. Consume-and-clear with exchange():
+    // isTimeSynched() runs from several tasks and each event must be handled exactly once.
+    static void _handleTimeFloorEvents() {
+        uint32_t pendingFloor = _pendingFloorPersist.exchange(0);
+        if (pendingFloor != 0) _persistFloor(pendingFloor);
+
+        if (!_rejectionPending.exchange(false)) return;
+
+        uint64_t candidate = _rejectedCandidate.load();
+        uint64_t floorSeconds = _floorSeconds.load();
+
+        // Throttled: with a floor that is itself wrong (future-dated) every answer is rejected,
+        // and an unsynced device retries every minute - that must not flood the saved log.
+        uint32_t nowSeconds = static_cast<uint32_t>(millis64() / 1000ULL);
+        uint32_t lastWarning = _lastRejectionWarningSeconds.load();
+        if (lastWarning == 0 || nowSeconds - lastWarning >= TIME_SYNC_INTERVAL / 1000) {
+            _lastRejectionWarningSeconds.store(nowSeconds);
+            LOG_WARNING("Rejected NTP time %llu: more than %d s before the time floor %llu. Keeping the current clock",
+                        candidate, TIME_FLOOR_TOLERANCE_SECONDS, floorSeconds);
+        } else {
+            LOG_DEBUG("Rejected NTP time %llu (time floor %llu)", candidate, floorSeconds);
+        }
+
+        // lwIP counts the rejected answer as a success and would not ask again for hours. Retry
+        // right away without the gateway, once: if the gateway-free set was already the one
+        // rejected, the regular schedule takes over instead of hammering the public servers.
+        if (!_gatewaySkipped.load()) {
+            _skipGatewayOnce.store(true);
+            _resyncRequested = true;
+        }
+    }
+
     static void _checkAndSyncTime() {
+        _handleTimeFloorEvents();
+
         uint64_t currentTime = millis64();
 
         // Either enough time has passed since last successful sync, or we failed previously and we retry earlier
@@ -274,3 +376,47 @@ namespace CustomTime {
         }
     }
 };
+
+// Replaces the weak default in ESP-IDF components/lwip/apps/sntp/sntp.c (esp_sntp.h documents
+// the override). lwIP steps the clock in here, on its own schedule as well as after configTime(),
+// so checking the time afterwards in _getTime() is too late: the clock has already jumped.
+// Runs on the lwIP tcpip thread (4 KB stack, core lock held): atomics only, no NVS, no logger.
+extern "C" void sntp_sync_time(struct timeval *tv) {
+    uint64_t candidate = (uint64_t)tv->tv_sec;
+    uint32_t floorSeconds = CustomTime::_floorSeconds.load();
+    if (!TimeFloor::accepts(floorSeconds, candidate, TIME_FLOOR_TOLERANCE_SECONDS)) {
+        // Clock and sync status untouched: a device that was synced keeps its running clock
+        CustomTime::_rejectedCandidate.store(static_cast<uint32_t>(candidate));
+        CustomTime::_rejectionPending.store(true);
+        return;
+    }
+
+    // The default body (IDF release/v5.5), minus its debug logs. Its time_sync_notification_cb
+    // is static in sntp.c and unreachable from here; nothing in this firmware registers one.
+    sntp_sync_mode_t mode = sntp_get_sync_mode();
+    if (mode == SNTP_SYNC_MODE_IMMED) {
+        settimeofday(tv, NULL);
+        sntp_set_sync_status(SNTP_SYNC_STATUS_COMPLETED);
+    } else if (mode == SNTP_SYNC_MODE_SMOOTH) {
+        struct timeval now;
+        gettimeofday(&now, NULL);
+        int64_t cpuTime = (int64_t)now.tv_sec * 1000000LL + (int64_t)now.tv_usec;
+        int64_t sntpTime = (int64_t)tv->tv_sec * 1000000LL + (int64_t)tv->tv_usec;
+        int64_t delta = sntpTime - cpuTime;
+        struct timeval tvDelta;
+        tvDelta.tv_sec = (time_t)(delta / 1000000LL);
+        tvDelta.tv_usec = (suseconds_t)(delta % 1000000LL);
+        if (adjtime(&tvDelta, NULL) == -1) {
+            settimeofday(tv, NULL);
+            sntp_set_sync_status(SNTP_SYNC_STATUS_COMPLETED);
+        } else {
+            sntp_set_sync_status(SNTP_SYNC_STATUS_IN_PROGRESS);
+        }
+    }
+
+    uint32_t raised = TimeFloor::raisedBy(floorSeconds, candidate);
+    if (raised != floorSeconds) {
+        CustomTime::_floorSeconds.store(raised);
+        CustomTime::_pendingFloorPersist.store(raised);
+    }
+}
