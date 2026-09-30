@@ -1139,13 +1139,17 @@ namespace Ade7953
             return;
         }
 
-        // Set all energy values to 0 (safe since we acquired the mutex)
+        // Set all energy values to 0 (safe since we acquired the mutex). Rebase the
+        // baselined channels too, so a discard streak spanning the reset does not book
+        // its pre-reset time into the new counters.
+        uint64_t nowMillis = millis64();
         for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
             _meterValues[i].activeEnergyImported = 0.0;
             _meterValues[i].activeEnergyExported = 0.0;
             _meterValues[i].reactiveEnergyImported = 0.0;
             _meterValues[i].reactiveEnergyExported = 0.0;
             _meterValues[i].apparentEnergy = 0.0;
+            if (_meterValues[i].lastMillis != 0) _meterValues[i].lastMillis = nowMillis;
         }
 
         releaseMutex(&_meterValuesMutex);
@@ -1183,6 +1187,7 @@ namespace Ade7953
         _meterValues[channelIndex].reactiveEnergyImported = 0.0;
         _meterValues[channelIndex].reactiveEnergyExported = 0.0;
         _meterValues[channelIndex].apparentEnergy = 0.0;
+        if (_meterValues[channelIndex].lastMillis != 0) _meterValues[channelIndex].lastMillis = millis64(); // See resetEnergyValues
 
         releaseMutex(&_meterValuesMutex);
 
@@ -4316,8 +4321,8 @@ namespace Ade7953
         // We actually set the timestamp of the channel (used for the energy calculations)
         // only if we actually reached the end. Otherwise it would mean the point had to be
         // discarded, and the next successful read books the whole gap. Apart from the
-        // activation baseline this is the only writer of lastMillis (the starvation
-        // watchdog keeps its own stamp).
+        // activation baseline and the energy resets this is the only writer of lastMillis
+        // (the starvation watchdog keeps its own stamp).
         statistics.ade7953ReadingCount++;
         _meterValues[channelIndex].lastMillis = millisRead;
         _meterValues[channelIndex].lastUnixTimeMilliseconds = linecycUnixTimeMillis;
