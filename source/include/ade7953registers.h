@@ -157,20 +157,20 @@
 #define Reserved2_24 0x291 //Reserved, (R/W) Default: 0x000000, Signed,This register should not be modified (24 bit)
 #define Reserved2_32 0x391 //Reserved, (R/W) Default: 0x000000, Signed,This register should not be modified(32 bit)
 
-#define BIRMSOS_24 0x292 //BIRMSOS, (R/W) Default: 0x000000, Unsigned, IRMS offset (Current Channel B)(24 bit)
-#define BIRMSOS_32 0x392 //BIRMSOS, (R/W) Default: 0x000000, Unsigned,IRMS offset (Current Channel B)(32 bit)
+#define BIRMSOS_24 0x292 //BIRMSOS, (R/W) Default: 0x000000, Signed, IRMS offset (Current Channel B)(24 bit)
+#define BIRMSOS_32 0x392 //BIRMSOS, (R/W) Default: 0x000000, Signed,IRMS offset (Current Channel B)(32 bit)
 
 #define Reserved3_24 0x293 //Reserved, (R/W) Default: 0x000000, Signed,This register should not be modified (24 bit)
 #define Reserved3_32 0x393 //Reserved, (R/W) Default: 0x000000, Signed,This register should not be modified(32 bit)
 #define Reserved4_24 0x294 //Reserved, (R/W) Default: 0x000000, Signed,This register should not be modified (24 bit)
 #define Reserved4_32 0x394 //Reserved, (R/W) Default: 0x000000, Signed,This register should not be modified(32 bit)
 
-#define BWATTOS_24 0x295 //BWATTOS, (R/W) Default: 0x000000, Unsigned, Active power offset correction (Current Channel B)(24 bit)
-#define BWATTOS_32 0x395 //BWATTOS, (R/W) Default: 0x000000, Unsigned,Active power offset correction (Current Channel B)(32 bit)
-#define BVAROS_24 0x296 //BVAROS, (R/W) Default: 0x000000, Unsigned,Reactive power offset correction (Current Channel B)(24 bit)
-#define BVAROS_32 0x396 //BVAROS, (R/W) Default: 0x000000, Unsigned,Reactive power offset correction (Current Channel B)(32 bit)
-#define BVAOS_24 0x297 //BVAOS, (R/W) Default: 0x000000, Unsigned, Apparent power offset correction (Current Channel B)(24 bit)
-#define BVAOS_32 0x397 //BVAOS, (R/W) Default: 0x000000, Unsigned,Apparent power offset correction (Current Channel B)(32 bit)
+#define BWATTOS_24 0x295 //BWATTOS, (R/W) Default: 0x000000, Signed, Active power offset correction (Current Channel B)(24 bit)
+#define BWATTOS_32 0x395 //BWATTOS, (R/W) Default: 0x000000, Signed,Active power offset correction (Current Channel B)(32 bit)
+#define BVAROS_24 0x296 //BVAROS, (R/W) Default: 0x000000, Signed,Reactive power offset correction (Current Channel B)(24 bit)
+#define BVAROS_32 0x396 //BVAROS, (R/W) Default: 0x000000, Signed,Reactive power offset correction (Current Channel B)(32 bit)
+#define BVAOS_24 0x297 //BVAOS, (R/W) Default: 0x000000, Signed, Apparent power offset correction (Current Channel B)(24 bit)
+#define BVAOS_32 0x397 //BVAOS, (R/W) Default: 0x000000, Signed,Apparent power offset correction (Current Channel B)(32 bit)
 #define LAST_RWDATA_24 0x2FF //LAST_RWDATA, (R) Default: 0x000000, Unsigned, Contains the data from the last successful 24-bit/32-bit register communication(24 bit)
 #define LAST_RWDATA_32 0x3FF //LAST_RWDATA, (R) Default: 0x000000, Unsigned, Contains the data from the last successful 24-bit/32-bit register communication(32 bit)
 
