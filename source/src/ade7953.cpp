@@ -3837,7 +3837,7 @@ namespace Ade7953
     another line of a three-phase supply is integrated against V1, which gives
     P1 + jQ1 = V1 * I^*. Assuming V_k = V1 * e^{j*alpha}, its own powers are
         S_k = e^{j*alpha} * (P1 + jQ1),  alpha = calculatePhaseShiftDeg(basePhase, phase)
-    i.e. PhaseUtils::rotatePowers applied to the latched energy pair, with S and
+    i.e. PhaseUtils::toChannelFrame applied to the latched energy pair, with S and
     current unchanged. Assumptions:
     - |V2| = |V3| = |V1| and exact 120 deg spacing (a magnitude error shows up
       1:1 in P, an angle error grows as the PF drops),
@@ -3916,9 +3916,8 @@ namespace Ade7953
         // line of a three-phase supply is integrated against the wrong voltage, so its
         // P1/Q1 get rotated into its own line below.
         bool isSplitPhase240 = (channelData.phase == PHASE_SPLIT_240);
-        bool isOffPhase = !isSplitPhase240 && channelData.phase != basePhase; // channel 0 defines basePhase, so never off-phase itself
+        bool isOffPhase = PhaseUtils::isOffPhase(basePhase, channelData.phase); // channel 0 defines basePhase, so never off-phase itself
         float voltageMultiplier = isSplitPhase240 ? 2.0f : 1.0f;
-        float reverseSign = channelData.reverse ? -1.0f : 1.0f;
 
         // These are the three most important (and only) values to read. All of the rest will be computed from these.
         // These are the most reliable since they are computed on the whole line cycle, thus they incorporate any harmonic.
@@ -3931,23 +3930,18 @@ namespace Ade7953
         // and hold the last full latched window until the next CYCEND, so a second read within
         // a window returns the same correct value instead of 0. The old _interruptHandledChannel
         // flags existed solely to suppress that reset-induced zero and are now obsolete.
-        activeEnergy = float(_readActiveEnergy(ade7953Channel)) * channelData.ctSpecification.whLsb * reverseSign * voltageMultiplier;
-        reactiveEnergy = float(_readReactiveEnergy(ade7953Channel)) * channelData.ctSpecification.varhLsb * reverseSign * voltageMultiplier;
+        float rawActiveEnergy = float(_readActiveEnergy(ade7953Channel)) * channelData.ctSpecification.whLsb * voltageMultiplier;
+        float rawReactiveEnergy = float(_readReactiveEnergy(ade7953Channel)) * channelData.ctSpecification.varhLsb * voltageMultiplier;
         apparentEnergy = float(_readApparentEnergy(ade7953Channel)) * channelData.ctSpecification.vahLsb * voltageMultiplier;
 
-        if (isOffPhase) {
-            // Rotate the energy pair itself (the rotation is linear): the powers derived
-            // below follow, and the import/export accumulators take their direction from
-            // the rotated window, as on the base phase.
-            PhaseUtils::SignedPowers rotated = PhaseUtils::rotatePowers(
-                activeEnergy,
-                reactiveEnergy,
-                apparentEnergy,
-                PhaseUtils::calculatePhaseShiftDeg(basePhase, channelData.phase)
-            );
-            activeEnergy = rotated.activePower;
-            reactiveEnergy = rotated.reactivePower;
-        }
+        // Reverse, and for an off-phase channel the rotation into its own line, applied to
+        // the energy pair itself (the rotation is linear): the powers derived below follow,
+        // and the import/export accumulators take their direction from this window.
+        PhaseUtils::ActiveReactive energies = PhaseUtils::toChannelFrame(
+            rawActiveEnergy, rawReactiveEnergy, channelData.reverse, basePhase, channelData.phase
+        );
+        activeEnergy = energies.active;
+        reactiveEnergy = energies.reactive;
 
         // Since the voltage measurement is only one in any case, it makes sense to just re-use the same value
         // as channel 0 (sampled just before) instead of reading it again. It will be at worst _sampleTime old.
