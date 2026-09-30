@@ -247,8 +247,9 @@ namespace CustomTime {
             return false;
         }
 
-        // Lower-only (TimeFloor::onManualSet). Clear a pending sync persist first so an older
-        // value cannot land in NVS after this one.
+        // Lower-only (TimeFloor::onManualSet). Clear a queued sync persist first so it cannot land
+        // in NVS after this one. A persist already in flight still can, but it is capped at the
+        // ceiling, so at worst it undoes a voluntary lowering of a correct floor.
         _pendingFloorPersist.store(0);
         TimeFloor::ManualOutcome outcome =
             TimeFloor::onManualSet(_floorSeconds.load(), _anchorSeconds.load(), _uptimeSeconds(), unixSeconds);
