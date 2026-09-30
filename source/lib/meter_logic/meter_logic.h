@@ -112,6 +112,15 @@ bool shouldClampNegative(float activePower, ChannelRole role);
 float energyDirectionFlag(float power);
 
 // ============================================================================
+// Energy integration
+// ============================================================================
+// Sample-and-hold: a successful read books |power| held over deltaMillis, the time
+// since the channel's previous SUCCESSFUL read. Only the magnitude comes from here;
+// the import/export split is the caller's (energy register sign or
+// energyDirectionFlag). NaN power yields NaN.
+float energyIncrementWh(float power, uint64_t deltaMillis);
+
+// ============================================================================
 // RMS witness (energy-path integrity)
 // ============================================================================
 // True if the base-phase reading must be discarded because the apparent power

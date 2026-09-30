@@ -4257,13 +4257,12 @@ namespace Ade7953
         // _sampleTime. This self-corrects any repeated read now that reads are non-destructive
         // (RSTREAD off): two reads of one window add P*~200ms then P*~5ms ~= one true window, so a
         // double-service does not double-count energy (it only yields a duplicate power sample).
-        float deltaHoursFromLastEnergyIncrement = float(deltaMillis) / 1000.0f / 3600.0f; // Convert milliseconds to hours
         if (activeEnergy > 0) { // Increment imported
             // NOTE: The line below is the reason the energy variables are double: with float, we cannot sum numbers like 96901.9688 + 0.0054
             // thus on low powers (and high energy values) the increments would be lost
-            _meterValues[channelIndex].activeEnergyImported += abs(_meterValues[channelIndex].activePower * deltaHoursFromLastEnergyIncrement); // W * h = Wh
+            _meterValues[channelIndex].activeEnergyImported += MeterLogic::energyIncrementWh(_meterValues[channelIndex].activePower, deltaMillis);
         } else if (activeEnergy < 0) { // Increment exported
-            _meterValues[channelIndex].activeEnergyExported += abs(_meterValues[channelIndex].activePower * deltaHoursFromLastEnergyIncrement); // W * h = Wh
+            _meterValues[channelIndex].activeEnergyExported += MeterLogic::energyIncrementWh(_meterValues[channelIndex].activePower, deltaMillis);
         } else { // No load active energy detected
             LOG_VERBOSE(
                 "%s (%d): No load active energy reading. Setting active power and power factor to 0",
@@ -4275,9 +4274,9 @@ namespace Ade7953
         }
 
         if (reactiveEnergy > 0) { // Increment imported reactive energy
-            _meterValues[channelIndex].reactiveEnergyImported += abs(_meterValues[channelIndex].reactivePower * deltaHoursFromLastEnergyIncrement); // var * h = VArh
+            _meterValues[channelIndex].reactiveEnergyImported += MeterLogic::energyIncrementWh(_meterValues[channelIndex].reactivePower, deltaMillis); // VArh
         } else if (reactiveEnergy < 0) { // Increment exported reactive energy
-            _meterValues[channelIndex].reactiveEnergyExported += abs(_meterValues[channelIndex].reactivePower * deltaHoursFromLastEnergyIncrement); // var * h = VArh
+            _meterValues[channelIndex].reactiveEnergyExported += MeterLogic::energyIncrementWh(_meterValues[channelIndex].reactivePower, deltaMillis); // VArh
         } else { // No load reactive energy detected
             LOG_VERBOSE(
                 "%s (%d): No load reactive energy reading. Setting reactive power to 0",
@@ -4288,7 +4287,7 @@ namespace Ade7953
         }
 
         if (apparentEnergy != 0) {
-            _meterValues[channelIndex].apparentEnergy += _meterValues[channelIndex].apparentPower * deltaHoursFromLastEnergyIncrement; // VA * h = VAh
+            _meterValues[channelIndex].apparentEnergy += MeterLogic::energyIncrementWh(_meterValues[channelIndex].apparentPower, deltaMillis); // VAh (apparentPower is already >= 0)
         } else {
             LOG_VERBOSE(
                 "%s (%d): No load apparent energy reading. Setting apparent power and current to 0",

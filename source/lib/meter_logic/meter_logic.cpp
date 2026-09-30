@@ -85,6 +85,14 @@ float energyDirectionFlag(float power) {
 }
 
 // ----------------------------------------------------------------------------
+// Energy integration
+// ----------------------------------------------------------------------------
+float energyIncrementWh(float power, uint64_t deltaMillis) {
+    float deltaHours = float(deltaMillis) / 1000.0f / 3600.0f;
+    return std::fabs(power * deltaHours);
+}
+
+// ----------------------------------------------------------------------------
 // RMS witness (energy-path integrity)
 // ----------------------------------------------------------------------------
 bool apparentWitnessDiverges(float sApparentFromEnergy, float sApparentFromRms,

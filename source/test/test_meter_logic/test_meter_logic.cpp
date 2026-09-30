@@ -245,6 +245,17 @@ void test_energy_direction_zero_and_nan_are_import(void) {
 }
 
 // ============================================================================
+// energy integration
+// ============================================================================
+
+void test_energy_increment_is_power_held_over_delta(void) {
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 1.0f, energyIncrementWh(3600.0f, 1000));  // 3.6 kW for 1 s = 1 Wh
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 1.0f, energyIncrementWh(-3600.0f, 1000)); // magnitude only: sign is the caller's
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, energyIncrementWh(500.0f, 0));
+    TEST_ASSERT_TRUE(std::isnan(energyIncrementWh(NAN, 1000)));
+}
+
+// ============================================================================
 // weighting
 // ============================================================================
 
@@ -1288,6 +1299,7 @@ int main(int, char **) {
     RUN_TEST(test_energy_direction_splits_export_from_import);
     RUN_TEST(test_energy_direction_tiny_magnitudes_keep_their_sign);
     RUN_TEST(test_energy_direction_zero_and_nan_are_import);
+    RUN_TEST(test_energy_increment_is_power_held_over_delta);
 
     RUN_TEST(test_role_priority_grid_battery_only);
     RUN_TEST(test_weight_inactive_is_zero);
