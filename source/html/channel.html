@@ -312,12 +312,13 @@
     //
     // The single voltage reference (L1) means a channel's phase assignment is pure
     // math on the measured angle between voltage and current: the firmware rotates
-    // it by 0/+120/-120 degrees (phase 1/2/3, see _calculatePhaseShift in
-    // src/ade7953.cpp). So from one published reading (P, Q, S) we can reconstruct
-    // that angle and show what |active power| and PF every phase choice would yield -
-    // the installer picks the one that looks like a real load (PF near 1) instead of
-    // guessing from the breaker panel. The power sign is omitted: it is always
-    // flippable via the reverse flag, so it says nothing about the right phase.
+    // (P, Q) by calculatePhaseShiftDeg(basePhase, phase), i.e. 0/-120/+120 degrees for
+    // phase 1/2/3 against L1 (PhaseUtils::toChannelFrame in lib/phase_utils). So one
+    // published reading (P, Q, S) can be re-rotated into every other phase choice to
+    // show what |active power| and PF it would yield - the installer picks the one
+    // that looks like a real load (PF near 1) instead of guessing from the breaker
+    // panel. The power sign is omitted: it is always flippable via the reverse flag,
+    // so it says nothing about the right phase.
     const PHASE_ANGLES_DEG = { 1: 0, 2: -120, 3: 120 }; // IEC: PHASE_1=L1(0°), PHASE_2=L2(-120°), PHASE_3=L3(+120°)
 
     function isThreePhaseInstall() {
@@ -332,18 +333,17 @@
         // Negative reading clamped to zero this cycle (load/PV): angle not recoverable
         if (p === 0) return { state: 'clamped' };
 
-        // Both firmware measurement branches now publish (P, Q) as a consistent
-        // phasor: the energy-register branch (configured phase == base phase) gives
-        // the chip's signed pair, and the angle branch negates Q together with P when
-        // the current phasor is flipped. So atan2 sees the load angle directly, in the
-        // same frame as the published active power, with no correction needed.
-        const psi = Math.atan2(q, p);
-
+        // The firmware publishes (P, Q) as a consistent phasor in the configured
+        // phase's frame (the chip's signed pair, rotated for an off-phase channel,
+        // with reverse negating both), so candidate c is that pair rotated by
+        // angle(c) - angle(configured): the extra rotation the firmware would have
+        // applied had c been configured. PF is |P| / S as the firmware computes it,
+        // so the configured row reproduces the published P and PF.
         const candidates = {};
         [1, 2, 3].forEach(c => {
             const deltaRad = (PHASE_ANGLES_DEG[c] - PHASE_ANGLES_DEG[channel.phase]) * Math.PI / 180;
-            const cosC = Math.cos(psi + deltaRad);
-            candidates[c] = { power: s * cosC, pf: Math.abs(cosC) };
+            const power = p * Math.cos(deltaRad) - q * Math.sin(deltaRad);
+            candidates[c] = { power, pf: Math.abs(power) / s };
         });
         return { state: 'ok', candidates };
     }

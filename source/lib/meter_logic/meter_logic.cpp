@@ -77,14 +77,6 @@ bool shouldClampNegative(float activePower, ChannelRole role) {
 }
 
 // ----------------------------------------------------------------------------
-// Energy direction flag
-// ----------------------------------------------------------------------------
-float energyDirectionFlag(float power) {
-    // NaN < 0 is false in IEEE-754, so NaN falls through to +1 with no extra test.
-    return (power < 0.0f) ? -1.0f : 1.0f;
-}
-
-// ----------------------------------------------------------------------------
 // Energy integration
 // ----------------------------------------------------------------------------
 float energyIncrementWh(float power, uint64_t deltaMillis) {

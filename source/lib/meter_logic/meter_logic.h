@@ -96,34 +96,18 @@ PolarityResult updatePolarity(PolarityState state, float activePower, float curr
 bool shouldClampNegative(float activePower, ChannelRole role);
 
 // ============================================================================
-// Energy direction flag
-// ============================================================================
-// The import/export split of the accumulators is driven by the SIGN of the
-// per-window energy value, while the magnitude comes from |power| * dt. On the
-// base phase that sign arrives for free: the value is the ADE7953 energy
-// register, already signed (and already reverse-corrected). Channels on another
-// line never touch those registers - their power is reconstructed from the
-// zero-crossing angle - so the firmware only has a no-load flag there, and it
-// must carry the direction itself or every exported Wh gets booked as import.
-//
-// Returns -1 for a negative (exporting) power and +1 otherwise. Zero and NaN map
-// to +1: neither carries direction, and both add a zero-magnitude increment, so
-// the branch they land in is irrelevant.
-float energyDirectionFlag(float power);
-
-// ============================================================================
 // Energy integration
 // ============================================================================
 // Sample-and-hold: a successful read books |power| held over deltaMillis, the time
 // since the channel's previous SUCCESSFUL read. Only the magnitude comes from here;
-// the import/export split is the caller's (energy register sign or
-// energyDirectionFlag). NaN power yields NaN.
+// the import/export split is the caller's (the energy register sign).
+// NaN power yields NaN.
 float energyIncrementWh(float power, uint64_t deltaMillis);
 
 // ============================================================================
 // RMS witness (energy-path integrity)
 // ============================================================================
-// True if the base-phase reading must be discarded because the apparent power
+// True if a reading must be discarded because the apparent power
 // derived from the reset-on-read energy registers disagrees with the apparent
 // power measured independently from the RMS registers by more than maxDivergence.
 //

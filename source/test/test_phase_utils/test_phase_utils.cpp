@@ -6,6 +6,7 @@
 
 #include <unity.h>
 #include <math.h>
+#include <stdio.h>
 #include "phase_utils.h"
 
 void setUp(void) {}
@@ -31,7 +32,7 @@ static float simulateRawAngleDeg(Phase voltageLine, Phase trueLine, float loadAn
     return PhaseUtils::wrapDeg180(thetaV - thetaI);
 }
 
-// Power factor exactly as _readMeterValues computes it from the folded angle:
+// Power factor exactly as the ANGLE method (powersFromFoldedAngle) computes it:
 // cos() is non-negative over [-90, 90], so the sign carries inductive (+) vs
 // capacitive (-), matching the chip's own convention (datasheet Equation 37).
 static float powerFactorFrom(const PhaseUtils::LoadAngle &a) {
@@ -393,6 +394,299 @@ void test_field_reversed_ct_publishes_a_real_quadrant(void) {
 }
 
 // ============================================================================
+// isOffPhase / toChannelFrame - identities
+// ============================================================================
+
+static const float SQRT3_2 = 0.8660254f;
+
+void test_off_phase_only_for_another_rotational_line(void) {
+    for (int v = 0; v < 3; v++) {
+        for (int c = 0; c < 3; c++) {
+            TEST_ASSERT_EQUAL(v != c, PhaseUtils::isOffPhase(ROTATIONAL_PHASES[v], ROTATIONAL_PHASES[c]));
+        }
+        TEST_ASSERT_FALSE(PhaseUtils::isOffPhase(ROTATIONAL_PHASES[v], PHASE_SPLIT_240));
+    }
+}
+
+void test_frame_same_phase_is_not_rotated(void) {
+    // Channel 0 and every channel on its line take this path: exact, not merely close.
+    for (int v = 0; v < 3; v++) {
+        PhaseUtils::ActiveReactive r =
+            PhaseUtils::toChannelFrame(800.0f, 300.0f, false, ROTATIONAL_PHASES[v], ROTATIONAL_PHASES[v]);
+        TEST_ASSERT_EQUAL_FLOAT(800.0f, r.active);
+        TEST_ASSERT_EQUAL_FLOAT(300.0f, r.reactive);
+    }
+}
+
+void test_frame_reverse_negates_both_on_same_phase(void) {
+    PhaseUtils::ActiveReactive r = PhaseUtils::toChannelFrame(800.0f, 300.0f, true, PHASE_1, PHASE_1);
+    TEST_ASSERT_EQUAL_FLOAT(-800.0f, r.active);
+    TEST_ASSERT_EQUAL_FLOAT(-300.0f, r.reactive);
+}
+
+void test_frame_split240_is_never_rotated(void) {
+    // Split-phase 240 V shares the L1 angle, so calculatePhaseShiftDeg would rotate it by
+    // +-120 against an L2/L3 base: only the reverse flag may touch it.
+    const Phase bases[] = {PHASE_1, PHASE_2, PHASE_3, PHASE_SPLIT_240};
+    for (unsigned b = 0; b < sizeof(bases) / sizeof(bases[0]); b++) {
+        for (int rev = 0; rev < 2; rev++) {
+            const float sign = rev ? -1.0f : 1.0f;
+            PhaseUtils::ActiveReactive r =
+                PhaseUtils::toChannelFrame(800.0f, 300.0f, rev != 0, bases[b], PHASE_SPLIT_240);
+            TEST_ASSERT_EQUAL_FLOAT(sign * 800.0f, r.active);
+            TEST_ASSERT_EQUAL_FLOAT(sign * 300.0f, r.reactive);
+        }
+    }
+}
+
+void test_frame_l2_identity(void) {
+    // L2 against an L1 reference: shift -120 deg.
+    const float p1 = 800.0f, q1 = 300.0f;
+    PhaseUtils::ActiveReactive r = PhaseUtils::toChannelFrame(p1, q1, false, PHASE_1, PHASE_2);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, -0.5f * p1 + SQRT3_2 * q1, r.active);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, -0.5f * q1 - SQRT3_2 * p1, r.reactive);
+}
+
+void test_frame_l3_identity(void) {
+    // L3 against an L1 reference: shift +120 deg.
+    const float p1 = 800.0f, q1 = 300.0f;
+    PhaseUtils::ActiveReactive r = PhaseUtils::toChannelFrame(p1, q1, false, PHASE_1, PHASE_3);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, -0.5f * p1 - SQRT3_2 * q1, r.active);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, -0.5f * q1 + SQRT3_2 * p1, r.reactive);
+}
+
+void test_frame_reverse_negates_the_rotated_pair(void) {
+    for (int v = 0; v < 3; v++) {
+        for (int c = 0; c < 3; c++) {
+            if (c == v) continue;
+            PhaseUtils::ActiveReactive forward =
+                PhaseUtils::toChannelFrame(800.0f, 300.0f, false, ROTATIONAL_PHASES[v], ROTATIONAL_PHASES[c]);
+            PhaseUtils::ActiveReactive reversed =
+                PhaseUtils::toChannelFrame(800.0f, 300.0f, true, ROTATIONAL_PHASES[v], ROTATIONAL_PHASES[c]);
+            TEST_ASSERT_EQUAL_FLOAT(-forward.active, reversed.active);
+            TEST_ASSERT_EQUAL_FLOAT(-forward.reactive, reversed.reactive);
+        }
+    }
+}
+
+void test_frame_resistive_l2_load_recovers_full_power(void) {
+    // A 2300 W kettle on L2 integrates against V1 as P1 = -S/2, Q1 = +S*sqrt3/2: the
+    // chip alone would book it as a half-power export. The rotation puts it back.
+    PhaseUtils::ActiveReactive r =
+        PhaseUtils::toChannelFrame(-1150.0f, 2300.0f * SQRT3_2, false, PHASE_1, PHASE_2);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 2300.0f, r.active);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 0.0f, r.reactive);
+}
+
+// ============================================================================
+// toChannelFrame - time-domain model of one latched window
+//
+// v1 is the single voltage input, vk the line the CT really sits on, i the current.
+// The chip integrates P1 = mean(v1 * i) and Q1 = mean(v1(t - T/4) * i): an ideal 90 deg
+// reactive path, which gives +V*I*sin(phi) for a lagging current as the datasheet
+// defines it (Rev. C, "Sign of Reactive Power Calculation"). The reference is what
+// the circuit really exchanges on its own line, mean(vk * i). Integer cycles with
+// uniform sampling make the 2w ripple average out exactly, as the latched window does.
+// The firmware derives PF from these P and the apparent energy, so P and Q are what
+// the helper has to get right.
+// ============================================================================
+
+static const double SIM_V_RMS = 230.0;
+static const double SIM_I_RMS = 10.0;
+static const int SIM_CYCLES = 10;
+static const int SIM_SAMPLES_PER_CYCLE = 500;
+static const float SIM_TOLERANCE = 0.0005f; // 0.05%
+
+static const float PF_087_DEG = 29.541f; // acos(0.87)
+static const float SINE_LOAD_ANGLES[] = {0.0f, PF_087_DEG, -PF_087_DEG, 60.0f, -60.0f};
+static const unsigned SINE_LOAD_ANGLE_COUNT = sizeof(SINE_LOAD_ANGLES) / sizeof(SINE_LOAD_ANGLES[0]);
+
+struct SimLoad {
+    Phase trueLine;        // line the CT is physically clamped on
+    float loadAngleDeg;    // current lags its own line voltage by this (negative: leads)
+    bool exporting;        // the circuit delivers power: current phasor flipped
+    bool ctBackwards;      // CT clamped the wrong way round: the chip sees -i
+    double harmonic3;      // 3rd and 5th harmonic current, relative to the fundamental
+    double harmonic5;
+};
+
+struct SimWindow {
+    float p1;        // what the chip integrates against V1, before the reverse flag
+    float q1;
+    float apparent;  // VRMS * IRMS, the chip's apparent energy path
+    double pTrue;    // what the circuit really exchanges on its own line
+    double qTrue;
+};
+
+static SimLoad sineLoad(Phase trueLine, float loadAngleDeg) {
+    return SimLoad{trueLine, loadAngleDeg, false, false, 0.0, 0.0};
+}
+
+static SimWindow simulateWindow(Phase voltageLine, const SimLoad &load) {
+    const double degToRad = M_PI / 180.0;
+    const double thetaV1 = PhaseUtils::phaseAngleDeg(voltageLine) * degToRad;
+    const double thetaK = PhaseUtils::phaseAngleDeg(load.trueLine) * degToRad;
+    const double phi = load.loadAngleDeg * degToRad;
+    const double vPeak = sqrt(2.0) * SIM_V_RMS;
+    const double iPeak = sqrt(2.0) * SIM_I_RMS * (load.exporting ? -1.0 : 1.0);
+    const int samples = SIM_CYCLES * SIM_SAMPLES_PER_CYCLE;
+
+    double p1 = 0.0, q1 = 0.0, pTrue = 0.0, qTrue = 0.0, iSquared = 0.0;
+    for (int s = 0; s < samples; s++) {
+        double wt = 2.0 * M_PI * s / SIM_SAMPLES_PER_CYCLE;
+        double x = wt + thetaK - phi;
+        double iPhysical = iPeak * (cos(x) + load.harmonic3 * cos(3.0 * x) + load.harmonic5 * cos(5.0 * x));
+        double iChip = load.ctBackwards ? -iPhysical : iPhysical;
+
+        p1 += vPeak * cos(wt + thetaV1) * iChip;
+        q1 += vPeak * cos(wt + thetaV1 - M_PI / 2.0) * iChip;
+        pTrue += vPeak * cos(wt + thetaK) * iPhysical;
+        qTrue += vPeak * cos(wt + thetaK - M_PI / 2.0) * iPhysical;
+        iSquared += iChip * iChip;
+    }
+
+    SimWindow w{};
+    w.p1 = (float)(p1 / samples);
+    w.q1 = (float)(q1 / samples);
+    w.apparent = (float)(SIM_V_RMS * sqrt(iSquared / samples));
+    w.pTrue = pTrue / samples;
+    w.qTrue = qTrue / samples;
+    return w;
+}
+
+static PhaseUtils::ActiveReactive rotateWindow(Phase basePhase, Phase configuredPhase, const SimWindow &w,
+                                               bool reverse) {
+    return PhaseUtils::toChannelFrame(w.p1, w.q1, reverse, basePhase, configuredPhase);
+}
+
+static void assertMatchesTruth(const SimWindow &w, const PhaseUtils::ActiveReactive &r, const char *what) {
+    TEST_ASSERT_FLOAT_WITHIN_MESSAGE(SIM_TOLERANCE * (float)fabs(w.pTrue), (float)w.pTrue, r.active, what);
+    TEST_ASSERT_FLOAT_WITHIN_MESSAGE(SIM_TOLERANCE * w.apparent, (float)w.qTrue, r.reactive, what);
+}
+
+void test_rotate_matches_true_power_on_sine_loads(void) {
+    // Every voltage tap x every CT line x PF 1 / 0.87 / 0.5 leading and lagging, with
+    // the CT forward and clamped backwards (reverse flag set to match).
+    char what[96];
+    for (int v = 0; v < 3; v++) {
+        for (int c = 0; c < 3; c++) {
+            for (unsigned a = 0; a < SINE_LOAD_ANGLE_COUNT; a++) {
+                for (int backwards = 0; backwards < 2; backwards++) {
+                    SimLoad load = sineLoad(ROTATIONAL_PHASES[c], SINE_LOAD_ANGLES[a]);
+                    load.ctBackwards = backwards != 0;
+                    SimWindow w = simulateWindow(ROTATIONAL_PHASES[v], load);
+
+                    snprintf(what, sizeof(what), "base L%d, load L%d, phi %.1f, ct backwards %d",
+                             v + 1, c + 1, (double)SINE_LOAD_ANGLES[a], backwards);
+                    assertMatchesTruth(
+                        w, rotateWindow(ROTATIONAL_PHASES[v], ROTATIONAL_PHASES[c], w, load.ctBackwards), what);
+                }
+            }
+        }
+    }
+}
+
+void test_rotate_books_genuine_export_as_negative(void) {
+    // Regression: L2/L3 export was once booked as import (seen in prod on a 3-phase
+    // site). The accumulators take the direction from the signed energy of the window,
+    // so a circuit really delivering power must come out negative on every line.
+    char what[96];
+    for (int v = 0; v < 3; v++) {
+        for (int c = 0; c < 3; c++) {
+            SimLoad load = sineLoad(ROTATIONAL_PHASES[c], 10.0f);
+            load.exporting = true;
+            SimWindow w = simulateWindow(ROTATIONAL_PHASES[v], load);
+            PhaseUtils::ActiveReactive r = rotateWindow(ROTATIONAL_PHASES[v], ROTATIONAL_PHASES[c], w, false);
+
+            snprintf(what, sizeof(what), "base L%d, exporting L%d", v + 1, c + 1);
+            TEST_ASSERT_TRUE_MESSAGE(r.active < 0.0f, what);
+            assertMatchesTruth(w, r, what);
+        }
+    }
+}
+
+void test_rotate_ignores_harmonic_current(void) {
+    // Capacitor-input rectifier-like current (30% 3rd, 20% 5th) on a clean sine
+    // voltage: harmonic current carries no active power, and both P1 and Q1 are
+    // integrated against the sine V1, so the rotation stays exact. Irms times the
+    // displacement cosine - what the ANGLE method amounts to - overstates it.
+    for (int c = 1; c < 3; c++) {
+        SimLoad load = sineLoad(ROTATIONAL_PHASES[c], 20.0f);
+        load.harmonic3 = 0.3;
+        load.harmonic5 = 0.2;
+        SimWindow w = simulateWindow(PHASE_1, load);
+        PhaseUtils::ActiveReactive r = rotateWindow(PHASE_1, ROTATIONAL_PHASES[c], w, false);
+
+        assertMatchesTruth(w, r, "harmonic current");
+        float displacementEstimate = w.apparent * cosf(20.0f * (float)M_PI / 180.0f);
+        TEST_ASSERT_TRUE(displacementEstimate > 1.05f * (float)w.pTrue);
+    }
+}
+
+// ============================================================================
+// toChannelFrame vs the ANGLE method - identical on a pure sine
+//
+// Both apply the same calculatePhaseShiftDeg correction, so on a sine they must agree
+// for every configuration, including wrong ones: a misconfiguration stays exactly as
+// visible (PF, installer preview) as it was. S is the same for both, so equal P and Q
+// give the firmware's P/S power factor equal too.
+// ============================================================================
+
+void test_rotate_agrees_with_angle_method_on_sine(void) {
+    char what[128];
+    for (int v = 0; v < 3; v++) {
+        for (int line = 0; line < 3; line++) {
+            for (int cfg = 0; cfg < 3; cfg++) {
+                for (unsigned a = 0; a < SINE_LOAD_ANGLE_COUNT; a++) {
+                    for (int backwards = 0; backwards < 2; backwards++) {
+                        for (int rev = 0; rev < 2; rev++) {
+                            Phase base = ROTATIONAL_PHASES[v];
+                            Phase configured = ROTATIONAL_PHASES[cfg];
+                            SimLoad load = sineLoad(ROTATIONAL_PHASES[line], SINE_LOAD_ANGLES[a]);
+                            load.ctBackwards = backwards != 0;
+                            SimWindow w = simulateWindow(base, load);
+
+                            PhaseUtils::ActiveReactive rotated = rotateWindow(base, configured, w, rev != 0);
+
+                            float raw = simulateRawAngleDeg(base, load.trueLine, load.loadAngleDeg, load.ctBackwards);
+                            PhaseUtils::LoadAngle angle = PhaseUtils::loadAngleFromRawDeg(base, configured, raw);
+                            PhaseUtils::SignedPowers legacy = PhaseUtils::powersFromFoldedAngle(
+                                w.apparent, angle.foldedAngleDeg, rev != 0, angle.activePowerNegative);
+
+                            snprintf(what, sizeof(what), "base L%d, load L%d as L%d, phi %.1f, backwards %d, reverse %d",
+                                     v + 1, line + 1, cfg + 1, (double)SINE_LOAD_ANGLES[a], backwards, rev);
+                            float tolerance = SIM_TOLERANCE * w.apparent;
+                            TEST_ASSERT_FLOAT_WITHIN_MESSAGE(tolerance, legacy.activePower, rotated.active, what);
+                            TEST_ASSERT_FLOAT_WITHIN_MESSAGE(tolerance, legacy.reactivePower, rotated.reactive, what);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+void test_rotate_misconfiguration_stays_detectable(void) {
+    // Load really on L1 (the voltage tap) but configured as L3, with reverse set. A PF
+    // 0.72 load then reads S*cos(phi - 60) = +34% over the truth under both methods:
+    // the rotation neither hides nor worsens a wrong phase setting.
+    const float phi = 44.0f;
+    SimLoad load = sineLoad(PHASE_1, phi);
+    SimWindow w = simulateWindow(PHASE_1, load);
+
+    PhaseUtils::ActiveReactive rotated = rotateWindow(PHASE_1, PHASE_3, w, true);
+    float raw = simulateRawAngleDeg(PHASE_1, PHASE_1, phi, false);
+    PhaseUtils::LoadAngle angle = PhaseUtils::loadAngleFromRawDeg(PHASE_1, PHASE_3, raw);
+    PhaseUtils::SignedPowers legacy =
+        PhaseUtils::powersFromFoldedAngle(w.apparent, angle.foldedAngleDeg, true, angle.activePowerNegative);
+
+    float expected = w.apparent * cosf((phi - 60.0f) * (float)M_PI / 180.0f);
+    TEST_ASSERT_FLOAT_WITHIN(SIM_TOLERANCE * w.apparent, expected, rotated.active);
+    TEST_ASSERT_FLOAT_WITHIN(SIM_TOLERANCE * w.apparent, legacy.activePower, rotated.active);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 1.336f, rotated.active / (float)w.pTrue);
+}
+
+// ============================================================================
 // runner
 // ============================================================================
 
@@ -439,6 +733,20 @@ int main(int, char **) {
     RUN_TEST(test_power_factor_sign_is_independent_of_flow_direction);
     RUN_TEST(test_powers_conserve_apparent_power);
     RUN_TEST(test_field_reversed_ct_publishes_a_real_quadrant);
+
+    RUN_TEST(test_off_phase_only_for_another_rotational_line);
+    RUN_TEST(test_frame_same_phase_is_not_rotated);
+    RUN_TEST(test_frame_reverse_negates_both_on_same_phase);
+    RUN_TEST(test_frame_split240_is_never_rotated);
+    RUN_TEST(test_frame_l2_identity);
+    RUN_TEST(test_frame_l3_identity);
+    RUN_TEST(test_frame_reverse_negates_the_rotated_pair);
+    RUN_TEST(test_frame_resistive_l2_load_recovers_full_power);
+    RUN_TEST(test_rotate_matches_true_power_on_sine_loads);
+    RUN_TEST(test_rotate_books_genuine_export_as_negative);
+    RUN_TEST(test_rotate_ignores_harmonic_current);
+    RUN_TEST(test_rotate_agrees_with_angle_method_on_sine);
+    RUN_TEST(test_rotate_misconfiguration_stays_detectable);
 
     return UNITY_END();
 }

@@ -113,9 +113,10 @@ inline LoadAngle loadAngleFromRawDeg(Phase basePhase, Phase channelPhase, float 
     return result;
 }
 
-// Signed powers for the angle branch, i.e. a channel whose CT sits on a different line
-// than the single voltage input, where P and Q are reconstructed from the recovered
-// load angle instead of read from the ADE7953 energy registers.
+// Signed powers reconstructed from the recovered load angle (the ANGLE method) for a
+// channel whose CT sits on a different line than the single voltage input. The
+// firmware now uses toChannelFrame; this remains for the field A/B log and as the
+// reference toChannelFrame must match on a sine.
 //
 // A backwards CT and a genuine reverse flow are both a 180 deg flip of the current
 // phasor, so they negate BOTH P and Q. Flipping only P publishes an impossible
@@ -143,6 +144,38 @@ inline SignedPowers powersFromFoldedAngle(float apparentPower, float foldedAngle
     powers.activePower = apparentPower * std::fabs(std::cos(rad)) * flip;
     powers.reactivePower = apparentPower * std::sin(rad) * flip;
     return powers;
+}
+
+// True for a channel whose CT sits on another line of a three-phase supply than the
+// single voltage input. Split-phase 240 V is never off-phase: phaseAngleDeg gives it the
+// L1 angle, which against an L2/L3 base would rotate it by +-120.
+inline bool isOffPhase(Phase basePhase, Phase channelPhase) {
+    return channelPhase != PHASE_SPLIT_240 && channelPhase != basePhase;
+}
+
+struct ActiveReactive {
+    float active;
+    float reactive;
+};
+
+// One latched window (active, reactive energy as read, LSB-scaled) in the channel's own
+// line frame, as _readMeterValues publishes it. `reverse` negates both: a backwards CT is
+// a 180 deg flip of the current phasor. An off-phase channel is integrated against V1 as
+// P1 + jQ1 = V1 * I^*; assuming V_k = V1 * e^{j*shift} (same magnitude, exact 120 deg
+// spacing), its own S_k = e^{j*shift} * (P1 + jQ1), with shift =
+// calculatePhaseShiftDeg(basePhase, channelPhase), the same correction loadAngleFromRawDeg
+// adds to the ANGLE register, so on a pure sine both methods agree exactly. The rotation
+// is linear, so it applies to energies and powers alike.
+inline ActiveReactive toChannelFrame(float active, float reactive, bool reverse,
+                                     Phase basePhase, Phase channelPhase) {
+    const float sign = reverse ? -1.0f : 1.0f;
+    ActiveReactive out{active * sign, reactive * sign};
+    if (!isOffPhase(basePhase, channelPhase)) return out;
+
+    const float a = calculatePhaseShiftDeg(basePhase, channelPhase) * DEG_TO_RAD_F;
+    const float c = std::cos(a);
+    const float s = std::sin(a);
+    return ActiveReactive{out.active * c - out.reactive * s, out.reactive * c + out.active * s};
 }
 
 } // namespace PhaseUtils
