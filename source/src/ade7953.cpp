@@ -771,6 +771,21 @@ namespace Ade7953
         bool oldReverse = _channelData[channelIndex].reverse;
         Phase oldPhase = _channelData[channelIndex].phase;
 
+        // Baseline lastMillis on inactive->active BEFORE the channel can be scheduled:
+        // otherwise its first read integrates P over the whole inactive span from the
+        // stale pre-deactivation stamp (the watchdog no longer clamps lastMillis). It
+        // also gives the watchdog a zero point for a channel whose first read fails.
+        // Done ahead of _channelDataMutex since the two mutexes are never held together;
+        // a baseline left behind by a write that then fails is harmless (still inactive).
+        if (channelIndex > 0 && wasInactive && channelData.active) {
+            if (!acquireMutex(&_meterValuesMutex)) {
+                LOG_ERROR("Failed to acquire mutex for meter values");
+                return false;
+            }
+            _meterValues[channelIndex].lastMillis = millis64();
+            releaseMutex(&_meterValuesMutex);
+        }
+
         if (!acquireMutex(&_channelDataMutex)) {
             LOG_ERROR("Failed to acquire mutex for channel data");
             return false;
@@ -835,26 +850,9 @@ namespace Ade7953
             }
         }
 
-        // Capture the post-write active state for use after we release the
-        // channel mutex (we can't hold both _channelDataMutex and
-        // _meterValuesMutex at once without introducing a new lock order).
-        bool didActivate = (channelIndex > 0 && wasInactive && _channelData[channelIndex].active);
-
         _recalculateWeights();
 
         releaseMutex(&_channelDataMutex);
-
-        // Baseline _meterValues[i].lastMillis on inactive->active so the
-        // starvation watchdog has a meaningful zero point. Without this, a
-        // newly-activated channel whose very first read fails (e.g., CT
-        // wired backwards at boot) would have lastMillis=0 forever and the
-        // watchdog would skip it.
-        if (didActivate) {
-            if (acquireMutex(&_meterValuesMutex)) {
-                _meterValues[channelIndex].lastMillis = millis64();
-                releaseMutex(&_meterValuesMutex);
-            }
-        }
 
         _updateChannelData(channelIndex);
         _saveChannelDataToPreferences(channelIndex);
