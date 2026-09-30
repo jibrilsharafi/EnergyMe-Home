@@ -723,7 +723,7 @@ paths:
                     example: "2025-11-26T12:00:00.000Z"
     post:
       summary: Set system time
-      description: Manually set system time for devices without internet connectivity. Useful for static IP setups or isolated networks where NTP is unavailable. Can only lower the device's time floor (NTP answers more than a minute earlier than it are rejected) to this value, never raise it - the way to undo a wrong floor. The next NTP answer that agrees with the time set here raises the floor again.
+      description: Manually set system time for devices without internet connectivity. Useful for static IP setups or isolated networks where NTP is unavailable. Can only lower the device's time floor (NTP answers more than a minute earlier than it are rejected) to this value, never raise it - the way to undo a wrong floor. NTP answers then raise it again, at most to this time plus the uptime since. The firmware's own floor (its source commit time) still applies at every boot and a manual set cannot lower it past a reboot: on firmware dated in the future, genuine NTP answers are rejected again after each reboot until real time passes that date or the firmware is updated.
       tags:
         - System
       requestBody:
