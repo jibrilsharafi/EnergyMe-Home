@@ -3861,7 +3861,17 @@ namespace Ade7953
     */
     bool _readMeterValues(uint8_t channelIndex, uint64_t linecycUnixTimeMillis) {
         uint64_t millisRead = millis64();
-        uint64_t deltaMillis = millisRead - _meterValues[channelIndex].lastMillis;
+
+        // Copy under the mutex: a 64-bit load can tear on the 32-bit ESP32 against a
+        // concurrent writer in another task (e.g. the setChannelData baseline).
+        if (!acquireMutex(&_meterValuesMutex)) {
+            LOG_ERROR("Failed to acquire mutex for meter values");
+            _recordFailure();
+            return false;
+        }
+        uint64_t lastMillis = _meterValues[channelIndex].lastMillis;
+        releaseMutex(&_meterValuesMutex);
+        uint64_t deltaMillis = millisRead - lastMillis;
 
         ChannelData channelData(channelIndex);
         if (!getChannelData(channelData, channelIndex)) {
@@ -3872,7 +3882,7 @@ namespace Ade7953
 
         // We cannot put an higher limit here because if the channel happened to be disabled, then
         // enabled again, this would result in an infinite error.
-        if (_meterValues[channelIndex].lastMillis != 0 && deltaMillis == 0) {
+        if (lastMillis != 0 && deltaMillis == 0) {
             LOG_WARNING(
                 "%s (%lu): delta millis (%llu) is invalid. Discarding reading", 
                 channelData.label, channelIndex, deltaMillis
