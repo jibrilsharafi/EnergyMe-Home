@@ -40,13 +40,13 @@ Because published readings can repeat within a window once reads are non-destruc
 - **WHEN** a channel is read twice within one window (elapsed times summing to about one window)
 - **THEN** the integrated energy for that window is counted once (proportional to actual elapsed time), not doubled
 
-### Requirement: RMS witness cross-check on the base-phase reading path
+### Requirement: RMS witness cross-check on every channel's reading
 
-On the base-phase reading path, where active, reactive, and apparent power are derived from the energy registers, the system SHALL read the independent `IRMS` register and compare apparent power derived from energy (`APENERGY / _sampleTime`) against apparent power derived from RMS (`voltage x IRMS`). The comparison SHALL be apparent-against-apparent only, never active-against-apparent, so legitimately low power-factor loads never cause a false rejection. When the two estimates diverge beyond the calibrated tolerance, the system SHALL discard the reading through the existing invalid-reading path. `IRMS` is read solely as the witness; base-phase current remains derived from apparent energy.
+Every channel derives active, reactive, and apparent power from the energy registers (a channel on another line of a three-phase supply rotates its active/reactive pair into its own line; apparent energy is not rotated). On every channel's reading, the system SHALL read the independent `IRMS` register and compare apparent power derived from energy (`APENERGY / _sampleTime`) against apparent power derived from RMS (`voltage x IRMS`). The comparison SHALL be apparent-against-apparent only, never active-against-apparent, so legitimately low power-factor loads never cause a false rejection. When the two estimates diverge beyond the calibrated tolerance, the system SHALL discard the reading through the existing invalid-reading path. `IRMS` is never published; current remains derived from apparent energy (an off-phase channel also uses `IRMS` for its no-load gate).
 
 #### Scenario: Partial-window or mux artifact while current still flows
 
-- **WHEN** a base-phase channel's energy-derived apparent power is far below `voltage x IRMS` (divergence beyond tolerance)
+- **WHEN** a channel's energy-derived apparent power is far below `voltage x IRMS` (divergence beyond tolerance)
 - **THEN** the reading is discarded and not published, and a failure is recorded
 
 #### Scenario: Steady load agrees within tolerance
