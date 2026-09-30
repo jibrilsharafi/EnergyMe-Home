@@ -36,6 +36,7 @@ namespace Ade7953
     static float _prevActivePower[MAX_CHANNEL_COUNT] = {};   // Previous power reading for variability tracking
     static float _powerVariability[MAX_CHANNEL_COUNT] = {};  // EMA of |delta power| for variability scoring
     static uint8_t _wdrrCursor = 0;                          // Round-robin tie-break cursor for argmax
+    static uint64_t _lastForcedPickMillis[MAX_CHANNEL_COUNT] = {}; // Starvation watchdog throttle, apart from lastMillis (the energy base). Guarded by _meterValuesMutex (64-bit, not atomic)
     static int8_t _polarityVoteCount[MAX_CHANNEL_COUNT] = {}; // Net consistent-sign vote accumulator for CT-reversal detection (runtime only; reset on arm/decision)
     static uint16_t _polarityConductingReads[MAX_CHANNEL_COUNT] = {}; // Conducting reads since arming - bounds a sign-oscillating channel (runtime only; reset on arm/decision)
     static bool _lastConducting[MAX_CHANNEL_COUNT] = {}; // Was the channel's most recent reading conducting (pre-clamp)? Drives the CT-detection boost so a clamped reversed load/PV still gets it (meter-task only)
@@ -770,6 +771,21 @@ namespace Ade7953
         bool oldReverse = _channelData[channelIndex].reverse;
         Phase oldPhase = _channelData[channelIndex].phase;
 
+        // Baseline lastMillis on inactive->active BEFORE the channel can be scheduled:
+        // otherwise its first read integrates P over the whole inactive span from the
+        // stale pre-deactivation stamp. It also gives the watchdog a zero point for a
+        // channel whose first read fails.
+        // Done ahead of _channelDataMutex since the two mutexes are never held together;
+        // a baseline left behind by a write that then fails is harmless (still inactive).
+        if (channelIndex > 0 && wasInactive && channelData.active) {
+            if (!acquireMutex(&_meterValuesMutex)) {
+                LOG_ERROR("Failed to acquire mutex for meter values");
+                return false;
+            }
+            _meterValues[channelIndex].lastMillis = millis64();
+            releaseMutex(&_meterValuesMutex);
+        }
+
         if (!acquireMutex(&_channelDataMutex)) {
             LOG_ERROR("Failed to acquire mutex for channel data");
             return false;
@@ -834,26 +850,9 @@ namespace Ade7953
             }
         }
 
-        // Capture the post-write active state for use after we release the
-        // channel mutex (we can't hold both _channelDataMutex and
-        // _meterValuesMutex at once without introducing a new lock order).
-        bool didActivate = (channelIndex > 0 && wasInactive && _channelData[channelIndex].active);
-
         _recalculateWeights();
 
         releaseMutex(&_channelDataMutex);
-
-        // Baseline _meterValues[i].lastMillis on inactive->active so the
-        // starvation watchdog has a meaningful zero point. Without this, a
-        // newly-activated channel whose very first read fails (e.g., CT
-        // wired backwards at boot) would have lastMillis=0 forever and the
-        // watchdog would skip it.
-        if (didActivate) {
-            if (acquireMutex(&_meterValuesMutex)) {
-                _meterValues[channelIndex].lastMillis = millis64();
-                releaseMutex(&_meterValuesMutex);
-            }
-        }
 
         _updateChannelData(channelIndex);
         _saveChannelDataToPreferences(channelIndex);
@@ -1140,13 +1139,17 @@ namespace Ade7953
             return;
         }
 
-        // Set all energy values to 0 (safe since we acquired the mutex)
+        // Set all energy values to 0 (safe since we acquired the mutex). Rebase the
+        // baselined channels too, so a discard streak spanning the reset does not book
+        // its pre-reset time into the new counters.
+        uint64_t nowMillis = millis64();
         for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
             _meterValues[i].activeEnergyImported = 0.0;
             _meterValues[i].activeEnergyExported = 0.0;
             _meterValues[i].reactiveEnergyImported = 0.0;
             _meterValues[i].reactiveEnergyExported = 0.0;
             _meterValues[i].apparentEnergy = 0.0;
+            if (_meterValues[i].lastMillis != 0) _meterValues[i].lastMillis = nowMillis;
         }
 
         releaseMutex(&_meterValuesMutex);
@@ -1184,6 +1187,7 @@ namespace Ade7953
         _meterValues[channelIndex].reactiveEnergyImported = 0.0;
         _meterValues[channelIndex].reactiveEnergyExported = 0.0;
         _meterValues[channelIndex].apparentEnergy = 0.0;
+        if (_meterValues[channelIndex].lastMillis != 0) _meterValues[channelIndex].lastMillis = millis64(); // See resetEnergyValues
 
         releaseMutex(&_meterValuesMutex);
 
@@ -3861,8 +3865,19 @@ namespace Ade7953
     false if the data reading is not ready yet or valid.
     */
     bool _readMeterValues(uint8_t channelIndex, uint64_t linecycUnixTimeMillis) {
+        // Sample the clock and copy lastMillis under the mutex every lastMillis writer holds
+        // while it samples millis64() (activation baseline, energy resets): lastMillis can then
+        // never be ahead of millisRead, which would underflow deltaMillis into ~2^64 ms of
+        // energy. The copy also keeps the 64-bit load from tearing on the 32-bit ESP32.
+        if (!acquireMutex(&_meterValuesMutex)) {
+            LOG_ERROR("Failed to acquire mutex for meter values");
+            _recordFailure();
+            return false;
+        }
         uint64_t millisRead = millis64();
-        uint64_t deltaMillis = millisRead - _meterValues[channelIndex].lastMillis;
+        uint64_t lastMillis = _meterValues[channelIndex].lastMillis;
+        releaseMutex(&_meterValuesMutex);
+        uint64_t deltaMillis = millisRead - lastMillis;
 
         ChannelData channelData(channelIndex);
         if (!getChannelData(channelData, channelIndex)) {
@@ -3873,7 +3888,7 @@ namespace Ade7953
 
         // We cannot put an higher limit here because if the channel happened to be disabled, then
         // enabled again, this would result in an infinite error.
-        if (_meterValues[channelIndex].lastMillis != 0 && deltaMillis == 0) {
+        if (lastMillis != 0 && deltaMillis == 0) {
             LOG_WARNING(
                 "%s (%lu): delta millis (%llu) is invalid. Discarding reading", 
                 channelData.label, channelIndex, deltaMillis
@@ -4227,6 +4242,12 @@ namespace Ade7953
             return false;
         }
 
+        // An energy reset can rebase lastMillis while this read is in flight. The rebase is newer
+        // than this read's window, so book nothing and let the next read book from the new base:
+        // pre-reset time never lands in the zeroed counters.
+        uint64_t currentBase = _meterValues[channelIndex].lastMillis;
+        if (currentBase != lastMillis) deltaMillis = 0;
+
         _meterValues[channelIndex].voltage = voltage;
         _meterValues[channelIndex].current = current;
         _meterValues[channelIndex].activePower = activePower;
@@ -4257,13 +4278,12 @@ namespace Ade7953
         // _sampleTime. This self-corrects any repeated read now that reads are non-destructive
         // (RSTREAD off): two reads of one window add P*~200ms then P*~5ms ~= one true window, so a
         // double-service does not double-count energy (it only yields a duplicate power sample).
-        float deltaHoursFromLastEnergyIncrement = float(deltaMillis) / 1000.0f / 3600.0f; // Convert milliseconds to hours
         if (activeEnergy > 0) { // Increment imported
             // NOTE: The line below is the reason the energy variables are double: with float, we cannot sum numbers like 96901.9688 + 0.0054
             // thus on low powers (and high energy values) the increments would be lost
-            _meterValues[channelIndex].activeEnergyImported += abs(_meterValues[channelIndex].activePower * deltaHoursFromLastEnergyIncrement); // W * h = Wh
+            _meterValues[channelIndex].activeEnergyImported += MeterLogic::energyIncrementWh(_meterValues[channelIndex].activePower, deltaMillis);
         } else if (activeEnergy < 0) { // Increment exported
-            _meterValues[channelIndex].activeEnergyExported += abs(_meterValues[channelIndex].activePower * deltaHoursFromLastEnergyIncrement); // W * h = Wh
+            _meterValues[channelIndex].activeEnergyExported += MeterLogic::energyIncrementWh(_meterValues[channelIndex].activePower, deltaMillis);
         } else { // No load active energy detected
             LOG_VERBOSE(
                 "%s (%d): No load active energy reading. Setting active power and power factor to 0",
@@ -4275,9 +4295,9 @@ namespace Ade7953
         }
 
         if (reactiveEnergy > 0) { // Increment imported reactive energy
-            _meterValues[channelIndex].reactiveEnergyImported += abs(_meterValues[channelIndex].reactivePower * deltaHoursFromLastEnergyIncrement); // var * h = VArh
+            _meterValues[channelIndex].reactiveEnergyImported += MeterLogic::energyIncrementWh(_meterValues[channelIndex].reactivePower, deltaMillis); // VArh
         } else if (reactiveEnergy < 0) { // Increment exported reactive energy
-            _meterValues[channelIndex].reactiveEnergyExported += abs(_meterValues[channelIndex].reactivePower * deltaHoursFromLastEnergyIncrement); // var * h = VArh
+            _meterValues[channelIndex].reactiveEnergyExported += MeterLogic::energyIncrementWh(_meterValues[channelIndex].reactivePower, deltaMillis); // VArh
         } else { // No load reactive energy detected
             LOG_VERBOSE(
                 "%s (%d): No load reactive energy reading. Setting reactive power to 0",
@@ -4288,7 +4308,7 @@ namespace Ade7953
         }
 
         if (apparentEnergy != 0) {
-            _meterValues[channelIndex].apparentEnergy += _meterValues[channelIndex].apparentPower * deltaHoursFromLastEnergyIncrement; // VA * h = VAh
+            _meterValues[channelIndex].apparentEnergy += MeterLogic::energyIncrementWh(_meterValues[channelIndex].apparentPower, deltaMillis); // VAh
         } else {
             LOG_VERBOSE(
                 "%s (%d): No load apparent energy reading. Setting apparent power and current to 0",
@@ -4307,9 +4327,10 @@ namespace Ade7953
 
         // We actually set the timestamp of the channel (used for the energy calculations)
         // only if we actually reached the end. Otherwise it would mean the point had to be
-        // discarded
+        // discarded, and the next successful read books the whole gap. Apart from the
+        // activation baseline and the energy resets this is the only writer of lastMillis.
         statistics.ade7953ReadingCount++;
-        _meterValues[channelIndex].lastMillis = millisRead;
+        if (millisRead > currentBase) _meterValues[channelIndex].lastMillis = millisRead;
         _meterValues[channelIndex].lastUnixTimeMilliseconds = linecycUnixTimeMillis;
         releaseMutex(&_meterValuesMutex);
         return true;
@@ -4854,25 +4875,21 @@ namespace Ade7953
         for (uint8_t i = 0; i < count; i++) active[i] = _channelData[i].active;
 
         // Starvation watchdog (fix for issue #149): hard upper bound on the time
-        // between successful reads for any active mux channel. MeterLogic::
-        // findStarvedChannel returns the lowest-index channel past CHANNEL_MAX_GAP_MS
-        // (skipping never-baselined ones); we then stamp lastMillis = now - which
-        // throttles the watchdog to one fire per interval even if the read keeps
-        // failing - and reset its deficit so it does not immediately re-win the
-        // argmax. Hold _meterValuesMutex around the 64-bit read + write: a 32-bit
-        // ESP32 cannot atomically store a uint64_t, so a concurrent setChannelData
+        // between successful reads for any active mux channel (throttling in
+        // MeterLogic::pickStarvedChannel). Reset the pick's deficit so it does not
+        // immediately re-win the argmax. lastMillis is deliberately left alone: it is
+        // the energy-integration base (issue #253).
+        // Hold _meterValuesMutex around the 64-bit reads + write: a 32-bit ESP32
+        // cannot atomically store a uint64_t, so a concurrent setChannelData
         // baseline write could otherwise be torn-read here.
-        uint64_t nowMillis = millis64();
         uint8_t starvedChannel = INVALID_CHANNEL;
         uint64_t starvedGap = 0;
         if (acquireMutex(&_meterValuesMutex)) {
+            uint64_t nowMillis = millis64(); // under the mutex, so no lastMillis written before it is ahead of it
             uint64_t lastMs[MAX_CHANNEL_COUNT] = {};
             for (uint8_t i = 0; i < count; i++) lastMs[i] = _meterValues[i].lastMillis;
-            starvedChannel = MeterLogic::findStarvedChannel(lastMs, active, count, 1, nowMillis, CHANNEL_MAX_GAP_MS);
-            if (starvedChannel != INVALID_CHANNEL) {
-                starvedGap = nowMillis - lastMs[starvedChannel];
-                _meterValues[starvedChannel].lastMillis = nowMillis;
-            }
+            starvedChannel = MeterLogic::pickStarvedChannel(lastMs, _lastForcedPickMillis, active, count, 1, nowMillis, CHANNEL_MAX_GAP_MS);
+            if (starvedChannel != INVALID_CHANNEL) starvedGap = nowMillis - lastMs[starvedChannel];
             releaseMutex(&_meterValuesMutex);
         }
         if (starvedChannel != INVALID_CHANNEL) {

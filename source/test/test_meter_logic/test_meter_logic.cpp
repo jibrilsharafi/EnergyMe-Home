@@ -245,6 +245,17 @@ void test_energy_direction_zero_and_nan_are_import(void) {
 }
 
 // ============================================================================
+// energy integration
+// ============================================================================
+
+void test_energy_increment_is_power_held_over_delta(void) {
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 1.0f, energyIncrementWh(3600.0f, 1000));  // 3.6 kW for 1 s = 1 Wh
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 1.0f, energyIncrementWh(-3600.0f, 1000)); // magnitude only: sign is the caller's
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, energyIncrementWh(500.0f, 0));
+    TEST_ASSERT_TRUE(std::isnan(energyIncrementWh(NAN, 1000)));
+}
+
+// ============================================================================
 // weighting
 // ============================================================================
 
@@ -335,8 +346,9 @@ void test_find_starved_channel(void) {
     const uint8_t N = 4;
     bool active[N] = {true, true, true, false};
     uint64_t last[N] = {0, 19000, 1000, 0};
+    uint64_t forced[N] = {};
     uint64_t now = 20000;
-    uint8_t s = findStarvedChannel(last, active, N, 1, now, 15000);
+    uint8_t s = pickStarvedChannel(last, forced, active, N, 1, now, 15000);
     TEST_ASSERT_EQUAL_UINT8(2, s); // ch2 gap 19000 > 15000 (ch1 gap 1000 is fine)
 }
 
@@ -344,8 +356,9 @@ void test_find_starved_skips_unbaselined_and_inactive(void) {
     const uint8_t N = 4;
     bool active[N] = {true, false, true, true};
     uint64_t last[N] = {0, 1, 0, 1}; // ch1 inactive, ch2 never baselined (0), ch3 baselined
+    uint64_t forced[N] = {};
     uint64_t now = 100000;
-    uint8_t s = findStarvedChannel(last, active, N, 1, now, 15000);
+    uint8_t s = pickStarvedChannel(last, forced, active, N, 1, now, 15000);
     TEST_ASSERT_EQUAL_UINT8(3, s); // only ch3 qualifies
 }
 
@@ -353,8 +366,9 @@ void test_find_starved_none(void) {
     const uint8_t N = 3;
     bool active[N] = {true, true, true};
     uint64_t last[N] = {0, 99000, 99500};
+    uint64_t forced[N] = {};
     uint64_t now = 100000;
-    TEST_ASSERT_EQUAL_UINT8(NO_CHANNEL, findStarvedChannel(last, active, N, 1, now, 15000));
+    TEST_ASSERT_EQUAL_UINT8(NO_CHANNEL, pickStarvedChannel(last, forced, active, N, 1, now, 15000));
 }
 
 void test_wdrr_accumulate_gains_zeroes_and_clamps(void) {
@@ -703,16 +717,19 @@ void test_find_starved_returns_lowest_index_when_multiple(void) {
     const uint8_t N = 5;
     bool active[N] = {true, true, true, true, true};
     uint64_t last[N] = {0, 1000, 2000, 1000, 2000}; // all past gap at now=30000
-    TEST_ASSERT_EQUAL_UINT8(1, findStarvedChannel(last, active, N, 1, 30000, 5000));
+    uint64_t forced[N] = {};
+    TEST_ASSERT_EQUAL_UINT8(1, pickStarvedChannel(last, forced, active, N, 1, 30000, 5000));
 }
 
 void test_find_starved_exactly_at_gap_is_not_starved(void) {
     const uint8_t N = 3;
     bool active[N] = {true, true, true};
     uint64_t last[N] = {0, 5000, 4999}; // ch1 gap=15000 (==), ch2 gap=15001 (>)
-    TEST_ASSERT_EQUAL_UINT8(2, findStarvedChannel(last, active, N, 1, 20000, 15000));
+    uint64_t forced[N] = {};
+    TEST_ASSERT_EQUAL_UINT8(2, pickStarvedChannel(last, forced, active, N, 1, 20000, 15000));
     uint64_t last2[N] = {0, 4999, 5000}; // ch1 gap=15001 (>), ch2 gap=15000 (==)
-    TEST_ASSERT_EQUAL_UINT8(1, findStarvedChannel(last2, active, N, 1, 20000, 15000));
+    uint64_t forced2[N] = {};
+    TEST_ASSERT_EQUAL_UINT8(1, pickStarvedChannel(last2, forced2, active, N, 1, 20000, 15000));
 }
 
 void test_find_starved_now_before_lastMillis_returns_channel(void) {
@@ -722,7 +739,8 @@ void test_find_starved_now_before_lastMillis_returns_channel(void) {
     const uint8_t N = 3;
     bool active[N] = {true, true, true};
     uint64_t last[N] = {0, 5000, 5000};
-    TEST_ASSERT_EQUAL_UINT8(1, findStarvedChannel(last, active, N, 1, 1000, 5000));
+    uint64_t forced[N] = {};
+    TEST_ASSERT_EQUAL_UINT8(1, pickStarvedChannel(last, forced, active, N, 1, 1000, 5000));
 }
 
 void test_wdrr_accumulate_nan_weight_is_zeroed(void) {
@@ -1259,6 +1277,97 @@ void test_unhandled_irq_zero_status_is_false(void) {
 }
 
 // ============================================================================
+// starvation watchdog vs energy integration (issue #253)
+// ============================================================================
+// Replays the meter task's bookkeeping for one starved channel: the watchdog pick,
+// then on a successful read energyIncrementWh over (readAt - lastRead) followed by
+// lastRead = readAt; a discarded read moves nothing. The watchdog used to throttle
+// itself by stamping lastRead at the pick, so the forced read booked only the
+// ~0.4 s since the pick and the >= 15 s gap before it was lost.
+
+static const uint64_t WD_MAX_GAP_MS = 15000; // firmware CHANNEL_MAX_GAP_MS
+static const uint64_t WD_TICK_MS = 200;      // one scheduler pass per line-cycle window
+static const float WD_POWER_W = 15.0f;       // a small steady load, the kind WDRR starves
+static const uint64_t WD_T0 = 10000;         // the channel's last successful read
+
+void test_watchdog_forced_read_books_the_whole_gap(void) {
+    const uint8_t N = 2;
+    const bool active[N] = {true, true};
+    uint64_t lastRead[N] = {0, WD_T0};
+    uint64_t forced[N] = {};
+
+    TEST_ASSERT_EQUAL_UINT8(NO_CHANNEL, pickStarvedChannel(lastRead, forced, active, N, 1, WD_T0 + 15000, WD_MAX_GAP_MS));
+    TEST_ASSERT_EQUAL_UINT8(1, pickStarvedChannel(lastRead, forced, active, N, 1, WD_T0 + 15001, WD_MAX_GAP_MS));
+
+    // The forced read lands 15.4 s after the last successful one.
+    const uint64_t readAt = WD_T0 + 15400;
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, WD_POWER_W * 15.4f / 3600.0f,
+                             energyIncrementWh(WD_POWER_W, readAt - lastRead[1]));
+}
+
+void test_watchdog_discarded_forced_read_books_on_the_next(void) {
+    const uint8_t N = 2;
+    const bool active[N] = {true, true};
+    uint64_t lastRead[N] = {0, WD_T0};
+    uint64_t forced[N] = {};
+
+    TEST_ASSERT_EQUAL_UINT8(1, pickStarvedChannel(lastRead, forced, active, N, 1, WD_T0 + 15001, WD_MAX_GAP_MS));
+    // The forced read at +15.4 s is discarded: lastRead stays at WD_T0.
+    // Throttled off the forced pick, not re-fired on every pass.
+    TEST_ASSERT_EQUAL_UINT8(NO_CHANNEL, pickStarvedChannel(lastRead, forced, active, N, 1, WD_T0 + 15400, WD_MAX_GAP_MS));
+    TEST_ASSERT_EQUAL_UINT8(NO_CHANNEL, pickStarvedChannel(lastRead, forced, active, N, 1, WD_T0 + 30001, WD_MAX_GAP_MS));
+    TEST_ASSERT_EQUAL_UINT8(1, pickStarvedChannel(lastRead, forced, active, N, 1, WD_T0 + 30002, WD_MAX_GAP_MS));
+
+    // The second forced read succeeds and books the full 30.8 s, not 15.4 s or 0.8 s.
+    const uint64_t readAt = WD_T0 + 30800;
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, WD_POWER_W * 30.8f / 3600.0f,
+                             energyIncrementWh(WD_POWER_W, readAt - lastRead[1]));
+}
+
+void test_watchdog_fires_once_per_gap_while_reads_keep_failing(void) {
+    const uint8_t N = 2;
+    const bool active[N] = {true, true};
+    uint64_t lastRead[N] = {0, WD_T0};
+    uint64_t forced[N] = {};
+
+    uint8_t fires = 0;
+    uint64_t lastFire = 0;
+    const uint64_t end = WD_T0 + 61000;
+    for (uint64_t now = WD_T0 + WD_TICK_MS; now <= end; now += WD_TICK_MS) {
+        if (pickStarvedChannel(lastRead, forced, active, N, 1, now, WD_MAX_GAP_MS) != 1) continue;
+        if (fires > 0) {
+            TEST_ASSERT_TRUE(now - lastFire > WD_MAX_GAP_MS);
+            TEST_ASSERT_TRUE(now - lastFire <= WD_MAX_GAP_MS + WD_TICK_MS);
+        }
+        lastFire = now;
+        fires++;
+        // Every forced read is discarded: lastRead never moves.
+    }
+    TEST_ASSERT_EQUAL_UINT8(4, fires); // +15.2 s, +30.4 s, +45.6 s, +60.8 s
+
+    // When a read finally succeeds, it still books the whole outage.
+    const uint64_t readAt = lastFire + 400;
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, WD_POWER_W * float(readAt - WD_T0) / 1000.0f / 3600.0f,
+                             energyIncrementWh(WD_POWER_W, readAt - lastRead[1]));
+}
+
+void test_watchdog_after_successful_forced_read_keys_off_the_read(void) {
+    const uint8_t N = 2;
+    const bool active[N] = {true, true};
+    uint64_t lastRead[N] = {0, WD_T0};
+    uint64_t forced[N] = {};
+
+    TEST_ASSERT_EQUAL_UINT8(1, pickStarvedChannel(lastRead, forced, active, N, 1, WD_T0 + 15001, WD_MAX_GAP_MS));
+    lastRead[1] = WD_T0 + 15400; // the forced read succeeds
+
+    // Starvation runs from the later of the two stamps: 15 s past the pick is not
+    // yet 15 s past the read.
+    TEST_ASSERT_EQUAL_UINT8(NO_CHANNEL, pickStarvedChannel(lastRead, forced, active, N, 1, WD_T0 + 30002, WD_MAX_GAP_MS));
+    TEST_ASSERT_EQUAL_UINT8(NO_CHANNEL, pickStarvedChannel(lastRead, forced, active, N, 1, WD_T0 + 30400, WD_MAX_GAP_MS));
+    TEST_ASSERT_EQUAL_UINT8(1, pickStarvedChannel(lastRead, forced, active, N, 1, WD_T0 + 30401, WD_MAX_GAP_MS));
+}
+
+// ============================================================================
 // runner
 // ============================================================================
 
@@ -1288,6 +1397,7 @@ int main(int, char **) {
     RUN_TEST(test_energy_direction_splits_export_from_import);
     RUN_TEST(test_energy_direction_tiny_magnitudes_keep_their_sign);
     RUN_TEST(test_energy_direction_zero_and_nan_are_import);
+    RUN_TEST(test_energy_increment_is_power_held_over_delta);
 
     RUN_TEST(test_role_priority_grid_battery_only);
     RUN_TEST(test_weight_inactive_is_zero);
@@ -1366,6 +1476,11 @@ int main(int, char **) {
     RUN_TEST(test_unhandled_irq_recognized_plus_unrecognized_is_true);
     RUN_TEST(test_unhandled_irq_all_unrecognized_is_true);
     RUN_TEST(test_unhandled_irq_zero_status_is_false);
+
+    RUN_TEST(test_watchdog_forced_read_books_the_whole_gap);
+    RUN_TEST(test_watchdog_discarded_forced_read_books_on_the_next);
+    RUN_TEST(test_watchdog_fires_once_per_gap_while_reads_keep_failing);
+    RUN_TEST(test_watchdog_after_successful_forced_read_keys_off_the_read);
 
     return UNITY_END();
 }
