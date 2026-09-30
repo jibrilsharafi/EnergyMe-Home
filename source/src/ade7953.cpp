@@ -3850,10 +3850,7 @@ namespace Ade7953
     window, the RMS witness and the per-window energy direction as channel 0, a
     true PF (P/S) instead of a displacement cosine, and harmonic current no longer
     inflates P (against a sine V1 it carries no active power, while
-    Irms * cos(displacement) counted it). The chip gates P1 and Q1 against its
-    no-load threshold independently, which maps onto neither rotated value, so an
-    off-phase channel below minCurrentThreePhaseNoLoad (from IRMS) is zeroed as a
-    whole instead.
+    Irms * cos(displacement) counted it).
 
     Split-phase 240V channels are 180 deg from V1: only a sign (reverse) plus a 2x
     voltage multiplier, because V1 is a single 120V leg.
@@ -3910,20 +3907,8 @@ namespace Ade7953
         float minCurrentValidation = channelData.ctSpecification.currentRating * MINIMUM_CURRENT_RATIO_VALIDATION;   // validation discard: a reading invalid at this current is a real failure
         float minCurrentConducting  = channelData.ctSpecification.currentRating * MINIMUM_CURRENT_RATIO_CONDUCTING;  // polarity-vote / WDRR-boost gate: lower, catches small real loads
 
-        // Every channel reads the latched energy registers. Split-phase 240V circuits sit
-        // 180° from the reference, which is only a sign (covered by reverse), plus a 2x
-        // multiplier because the ADE7953 measures a single 120V leg. A channel on another
-        // line of a three-phase supply is integrated against the wrong voltage, so its
-        // P1/Q1 get rotated into its own line below.
-        bool isSplitPhase240 = (channelData.phase == PHASE_SPLIT_240);
         bool isOffPhase = PhaseUtils::isOffPhase(basePhase, channelData.phase); // channel 0 defines basePhase, so never off-phase itself
-        float voltageMultiplier = isSplitPhase240 ? 2.0f : 1.0f;
-
-        // These are the three most important (and only) values to read. All of the rest will be computed from these.
-        // These are the most reliable since they are computed on the whole line cycle, thus they incorporate any harmonic.
-        // Using directly power or RMS values would require instead constant sampling and averaging. Let's avoid that and leave
-        // the ADE7953 do the hard work for us.
-        // Use multiplication instead of division as it is faster in embedded systems
+        float voltageMultiplier = (channelData.phase == PHASE_SPLIT_240) ? 2.0f : 1.0f; // the ADE7953 measures a single 120V leg
 
         // No double-read guard needed anymore: with read-with-reset disabled (LCYCMODE
         // RSTREAD=0, see DEFAULT_LCYCMODE_REGISTER), the energy registers are non-destructive
@@ -3957,7 +3942,6 @@ namespace Ade7953
 
         // We use sample time instead of _deltaMillis because the energy readings are over whole line cycles (defined by the sample time)
         // Thus, extracting the power from energy divided by linecycle is more stable (does not care about ESP32 slowing down) and accurate
-        // Use multiplication instead of division as it is faster in embedded systems
         float deltaHoursSampleTime = float(_sampleTime) / 1000.0f / 3600.0f; // Convert milliseconds to hours | ENSURE THEY ARE FLOAT: YOU LOST A LOT OF TIME DEBUGGING THIS!!!
         activePower = deltaHoursSampleTime > 0.0f ? activeEnergy / deltaHoursSampleTime : 0.0f; // W
         reactivePower = deltaHoursSampleTime > 0.0f ? reactiveEnergy / deltaHoursSampleTime : 0.0f; // VAR
