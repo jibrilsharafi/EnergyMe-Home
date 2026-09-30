@@ -3903,138 +3903,122 @@ namespace Ade7953
         float minCurrentValidation = channelData.ctSpecification.currentRating * MINIMUM_CURRENT_RATIO_VALIDATION;   // validation discard: a reading invalid at this current is a real failure
         float minCurrentConducting  = channelData.ctSpecification.currentRating * MINIMUM_CURRENT_RATIO_CONDUCTING;  // polarity-vote / WDRR-boost gate: lower, catches small real loads
 
-        // Split-phase 240V circuits use same-phase path (only 180° shift, so only the sign changes) so we can use the accurate energy registers, but accounting for a 2x multiplier
+        // Every channel reads the latched energy registers. Split-phase 240V circuits sit
+        // 180° from the reference, which is only a sign (covered by reverse), plus a 2x
+        // multiplier because the ADE7953 measures a single 120V leg. A channel on another
+        // line of a three-phase supply is integrated against the wrong voltage, so its
+        // P1/Q1 get rotated into its own line below.
         bool isSplitPhase240 = (channelData.phase == PHASE_SPLIT_240);
-        if (channelData.phase == basePhase || isSplitPhase240) { // The phase is not necessarily PHASE_A, so use as reference the one of channel A
-            
-            // These are the three most important (and only) values to read. All of the rest will be computed from these.
-            // These are the most reliable since they are computed on the whole line cycle, thus they incorporate any harmonic.
-            // Using directly power or RMS values would require instead constant sampling and averaging. Let's avoid that and leave
-            // the ADE7953 do the hard work for us.
-            // Use multiplication instead of division as it is faster in embedded systems
-                    
-            // No double-read guard needed anymore: with read-with-reset disabled (LCYCMODE
-            // RSTREAD=0, see DEFAULT_LCYCMODE_REGISTER), the energy registers are non-destructive
-            // and hold the last full latched window until the next CYCEND, so a second read within
-            // a window returns the same correct value instead of 0. The old _interruptHandledChannel
-            // flags existed solely to suppress that reset-induced zero and are now obsolete.
+        bool isOffPhase = !isSplitPhase240 && channelData.phase != basePhase; // channel 0 defines basePhase, so never off-phase itself
+        float voltageMultiplier = isSplitPhase240 ? 2.0f : 1.0f;
+        float reverseSign = channelData.reverse ? -1.0f : 1.0f;
 
-            // Apply 2x multiplier for split-phase 240V circuits (ADE7953 measures only 120V leg)
-            float voltageMultiplier = isSplitPhase240 ? 2.0f : 1.0f;
+        // These are the three most important (and only) values to read. All of the rest will be computed from these.
+        // These are the most reliable since they are computed on the whole line cycle, thus they incorporate any harmonic.
+        // Using directly power or RMS values would require instead constant sampling and averaging. Let's avoid that and leave
+        // the ADE7953 do the hard work for us.
+        // Use multiplication instead of division as it is faster in embedded systems
 
-            activeEnergy = float(_readActiveEnergy(ade7953Channel)) * channelData.ctSpecification.whLsb * (channelData.reverse ? -1.0f : 1.0f) * voltageMultiplier;
-            reactiveEnergy = float(_readReactiveEnergy(ade7953Channel)) * channelData.ctSpecification.varhLsb * (channelData.reverse ? -1.0f : 1.0f) * voltageMultiplier;
-            apparentEnergy = float(_readApparentEnergy(ade7953Channel)) * channelData.ctSpecification.vahLsb * voltageMultiplier;
+        // No double-read guard needed anymore: with read-with-reset disabled (LCYCMODE
+        // RSTREAD=0, see DEFAULT_LCYCMODE_REGISTER), the energy registers are non-destructive
+        // and hold the last full latched window until the next CYCEND, so a second read within
+        // a window returns the same correct value instead of 0. The old _interruptHandledChannel
+        // flags existed solely to suppress that reset-induced zero and are now obsolete.
+        activeEnergy = float(_readActiveEnergy(ade7953Channel)) * channelData.ctSpecification.whLsb * reverseSign * voltageMultiplier;
+        reactiveEnergy = float(_readReactiveEnergy(ade7953Channel)) * channelData.ctSpecification.varhLsb * reverseSign * voltageMultiplier;
+        apparentEnergy = float(_readApparentEnergy(ade7953Channel)) * channelData.ctSpecification.vahLsb * voltageMultiplier;
 
-            // Since the voltage measurement is only one in any case, it makes sense to just re-use the same value
-            // as channel 0 (sampled just before) instead of reading it again. It will be at worst _sampleTime old.
-            if (channelIndex == 0) {
-                voltage = float(_readVoltageRms()) * _voltPerLsb * voltageMultiplier;
+        if (isOffPhase) {
+            // Rotate the energy pair itself (the rotation is linear): the powers derived
+            // below follow, and the import/export accumulators take their direction from
+            // the rotated window, as on the base phase.
+            PhaseUtils::SignedPowers rotated = PhaseUtils::rotatePowers(
+                activeEnergy,
+                reactiveEnergy,
+                apparentEnergy,
+                PhaseUtils::calculatePhaseShiftDeg(basePhase, channelData.phase)
+            );
+            activeEnergy = rotated.activePower;
+            reactiveEnergy = rotated.reactivePower;
+        }
 
-                // Update grid frequency during channel 0 reading
-                float newGridFrequency = _readGridFrequency();
-                if (_validateGridFrequency(newGridFrequency)) _gridFrequency = newGridFrequency;
-            } else {
-                voltage = _meterValues[0].voltage * voltageMultiplier;
-            }
-            
-            // We use sample time instead of _deltaMillis because the energy readings are over whole line cycles (defined by the sample time)
-            // Thus, extracting the power from energy divided by linecycle is more stable (does not care about ESP32 slowing down) and accurate
-            // Use multiplication instead of division as it is faster in embedded systems
-            float deltaHoursSampleTime = float(_sampleTime) / 1000.0f / 3600.0f; // Convert milliseconds to hours | ENSURE THEY ARE FLOAT: YOU LOST A LOT OF TIME DEBUGGING THIS!!!
-            activePower = deltaHoursSampleTime > 0.0f ? activeEnergy / deltaHoursSampleTime : 0.0f; // W
-            reactivePower = deltaHoursSampleTime > 0.0f ? reactiveEnergy / deltaHoursSampleTime : 0.0f; // VAR
-            apparentPower = deltaHoursSampleTime > 0.0f ? apparentEnergy / deltaHoursSampleTime : 0.0f; // VA
+        // Since the voltage measurement is only one in any case, it makes sense to just re-use the same value
+        // as channel 0 (sampled just before) instead of reading it again. It will be at worst _sampleTime old.
+        if (channelIndex == 0) {
+            voltage = float(_readVoltageRms()) * _voltPerLsb * voltageMultiplier;
 
-            // It is faster and more consistent to compute the values rather than reading them from the ADE7953
-            if (apparentPower == 0.0f) powerFactor = 0.0f; // Avoid division by zero
-            else powerFactor = activePower / apparentPower * (reactivePower >= 0.0f ? 1.0f : -1.0f); // Apply sign as by datasheet (page 38)
-
-            current = voltage > 0.0f ? apparentPower / voltage : 0.0f; // VA = V * A => A = VA / V | Always positive as apparent power is always positive
-
-            // RMS witness (residual integrity check). apparentPower here comes from the reset-on-read
-            // energy path; IRMS is an independent, continuously-updated register that is NOT on that
-            // path, so it stays truthful when a bad accumulation window corrupts the energy read
-            // (partials / mux artifacts - the residual the RSTREAD root fix does not cover). Compare
-            // APPARENT-vs-APPARENT only (S_rms = voltage x IRMS) so power factor never false-trips, and
-            // discard on a large divergence. NOT a timing/deltaMillis guard: that false-rejects valid
-            // close-in-time reads (see openspec harden-meter-energy-window-glitches design.md).
-            float apparentPowerFromRms = voltage * (float(_readCurrentRms(ade7953Channel)) * channelData.ctSpecification.aLsb);
-            if (MeterLogic::apparentWitnessDiverges(apparentPower, apparentPowerFromRms, APPARENT_WITNESS_MAX_DIVERGENCE, minCurrentValidation * voltage)) {
-                LOG_DEBUG(
-                    "%s (%d): RMS witness discard - S_energy %.1fVA vs S_rms %.1fVA (>%.0f%% divergence)",
-                    channelData.label, channelIndex, apparentPower, apparentPowerFromRms, APPARENT_WITNESS_MAX_DIVERGENCE * 100.0f
-                );
-                _recordFailure();
-                return false;
-            }
+            // Update grid frequency during channel 0 reading
+            float newGridFrequency = _readGridFrequency();
+            if (_validateGridFrequency(newGridFrequency)) _gridFrequency = newGridFrequency;
         } else {
-            // We cannot use the energy registers as it would be too complicated (or impossible) to account both for the 120° shift and possible reverse current
-            // Assume the voltage is the same as channel 0 (in amplitude) but shifted 120°
-            // Important: here the reverse channel is not taken into account as the calculations would (probably) be wrong
-            // It is easier just to ensure during installation that the CTs are installed correctly
-            
-            // Assume from channel 0
-            voltage = _meterValues[0].voltage; // Assume the voltage is the same for all channels (medium assumption as difference usually is in the order of few volts, so less than 1%)
-            
-            // Read the current (RMS is absolute so no reverse is needed). No assumption here
-            current = float(_readCurrentRms(ade7953Channel)) * channelData.ctSpecification.aLsb;
+            voltage = _meterValues[0].voltage * voltageMultiplier;
+        }
 
-            // To get the power factor, we can read the angle difference between voltage and current (which is the time between the two zero-crossings)
-            float angleDifferenceDeg = _readAngleRadians(ade7953Channel) * float(RAD_TO_DEG);
+        // We use sample time instead of _deltaMillis because the energy readings are over whole line cycles (defined by the sample time)
+        // Thus, extracting the power from energy divided by linecycle is more stable (does not care about ESP32 slowing down) and accurate
+        // Use multiplication instead of division as it is faster in embedded systems
+        float deltaHoursSampleTime = float(_sampleTime) / 1000.0f / 3600.0f; // Convert milliseconds to hours | ENSURE THEY ARE FLOAT: YOU LOST A LOT OF TIME DEBUGGING THIS!!!
+        activePower = deltaHoursSampleTime > 0.0f ? activeEnergy / deltaHoursSampleTime : 0.0f; // W
+        reactivePower = deltaHoursSampleTime > 0.0f ? reactiveEnergy / deltaHoursSampleTime : 0.0f; // VAR
+        apparentPower = deltaHoursSampleTime > 0.0f ? apparentEnergy / deltaHoursSampleTime : 0.0f; // VA
 
-            // Rotate the raw angle into this channel's own frame (+-120° for the lagging
-            // or leading line, 0 for the reference) and fold it into the +-90° quadrant.
-            // Wrapping before folding matters: raw reaches +-180°, so raw + 120° reaches
-            // 300°, and a single fold leaves that at 120° - still outside the quadrant,
-            // where cos() goes negative and the power factor sign stops meaning
-            // inductive/capacitive. Only reachable on a misconfigured phase, which is
-            // exactly when the installer preview needs a truthful (P, Q) to point at the
-            // right label.
-            PhaseUtils::LoadAngle loadAngle = PhaseUtils::loadAngleFromRawDeg(
-                basePhase, channelData.phase, angleDifferenceDeg
-            );
-            bool isActivePowerNegative = loadAngle.activePowerNegative;
+        // It is faster and more consistent to compute the values rather than reading them from the ADE7953
+        if (apparentPower == 0.0f) powerFactor = 0.0f; // Avoid division by zero
+        else powerFactor = activePower / apparentPower * (reactivePower >= 0.0f ? 1.0f : -1.0f); // Apply sign as by datasheet (page 38)
 
-            // S = Vrms * Irms, then P and Q from the recovered load angle. Both are
-            // negated together when the current phasor is flipped (backwards CT or
-            // genuine reverse flow) so the published pair stays a real phasor.
-            apparentPower = current * voltage;
-            PhaseUtils::SignedPowers powers = PhaseUtils::powersFromFoldedAngle(
-                apparentPower,
-                loadAngle.foldedAngleDeg,
-                channelData.reverse,
-                isActivePowerNegative
-            );
-            powerFactor = powers.powerFactor;
+        current = voltage > 0.0f ? apparentPower / voltage : 0.0f; // VA = V * A => A = VA / V | Always positive as apparent power is always positive
 
-            // Since this is a tricky approximation, we print the debug info anyway
+        // RMS witness (residual integrity check). apparentPower here comes from the reset-on-read
+        // energy path; IRMS is an independent, continuously-updated register that is NOT on that
+        // path, so it stays truthful when a bad accumulation window corrupts the energy read
+        // (partials / mux artifacts - the residual the RSTREAD root fix does not cover). Compare
+        // APPARENT-vs-APPARENT only (S_rms = voltage x IRMS) so power factor never false-trips, and
+        // discard on a large divergence. NOT a timing/deltaMillis guard: that false-rejects valid
+        // close-in-time reads (see openspec harden-meter-energy-window-glitches design.md).
+        float currentRms = float(_readCurrentRms(ade7953Channel)) * channelData.ctSpecification.aLsb;
+        float apparentPowerFromRms = voltage * currentRms;
+        if (MeterLogic::apparentWitnessDiverges(apparentPower, apparentPowerFromRms, APPARENT_WITNESS_MAX_DIVERGENCE, minCurrentValidation * voltage)) {
             LOG_DEBUG(
-                "%s (%d) (phase %d): Angle difference: %.1f° (from %.1f°), Power factor: %.1f%% %s",
-                channelData.label,
-                channelIndex,
-                channelData.phase,
-                loadAngle.foldedAngleDeg,
-                angleDifferenceDeg,
-                powerFactor * 100.0f,
-                isActivePowerNegative ? "(negative power)" : ""
+                "%s (%d): RMS witness discard - S_energy %.1fVA vs S_rms %.1fVA (>%.0f%% divergence)",
+                channelData.label, channelIndex, apparentPower, apparentPowerFromRms, APPARENT_WITNESS_MAX_DIVERGENCE * 100.0f
             );
+            _recordFailure();
+            return false;
+        }
 
-            // FINALLY: Compute power values (computed above with the power factor)
-            activePower = powers.activePower;     // P = S * |cos(phi)|, signed by the flips
-            reactivePower = powers.reactivePower; // Q = S * sin(phi), signed by the same flips
+        // TODO: remove after the #254 field A/B (rotation vs the old ANGLE method). It then
+        // takes _readAngleRadians with it, and the ANGLE helpers in phase_utils become
+        // test-only. Costs one extra ANGLE read, and only while DEBUG is being printed.
+        if (isOffPhase && AdvancedLogger::getPrintLevel() <= LogLevel::DEBUG) {
+            float rawAngleDeg = _readAngleRadians(ade7953Channel) * float(RAD_TO_DEG);
+            PhaseUtils::LoadAngle legacyAngle = PhaseUtils::loadAngleFromRawDeg(basePhase, channelData.phase, rawAngleDeg);
+            PhaseUtils::SignedPowers legacy = PhaseUtils::powersFromFoldedAngle(
+                apparentPowerFromRms,
+                legacyAngle.foldedAngleDeg,
+                channelData.reverse,
+                legacyAngle.activePowerNegative
+            );
+            LOG_DEBUG(
+                "%s (%d) (phase %d): A/B rotated %.1fW PF %.3f | angle %.1fW PF %.3f (raw %.1f°)",
+                channelData.label, channelIndex, channelData.phase,
+                activePower, powerFactor, legacy.activePower, legacy.powerFactor, rawAngleDeg
+            );
+        }
 
-            // Synthetic no-load: the ADE7953's no-load feature only gates the energy
-            // registers of the base-phase branch; here a sub-threshold current is offset
-            // noise reading a garbage angle, so zero the whole reading. This keeps the
-            // published contract "nonzero values are reliable" (the web UI relies on it).
-            if (current < minCurrentThreePhaseNoLoad) {
-                current = 0.0f;
-                activePower = 0.0f;
-                reactivePower = 0.0f;
-                apparentPower = 0.0f;
-                powerFactor = 0.0f;
-            }
+        // Synthetic no-load for the whole off-phase reading. The chip gates P1 and Q1
+        // independently against V1, so after the rotation neither gate maps onto this
+        // line's own P or Q; a sub-threshold current is offset noise. Zeroing the
+        // energies too keeps the published contract "nonzero values are reliable" (the
+        // web UI relies on it) and books nothing in the accumulators.
+        if (isOffPhase && currentRms < minCurrentThreePhaseNoLoad) {
+            current = 0.0f;
+            activePower = 0.0f;
+            reactivePower = 0.0f;
+            apparentPower = 0.0f;
+            powerFactor = 0.0f;
+            activeEnergy = 0.0f;
+            reactiveEnergy = 0.0f;
+            apparentEnergy = 0.0f;
         }
 
         apparentPower = abs(apparentPower); // Apparent power must be positive
@@ -4233,19 +4217,6 @@ namespace Ade7953
         _meterValues[channelIndex].reactivePower = reactivePower;
         _meterValues[channelIndex].apparentPower = apparentPower;
         _meterValues[channelIndex].powerFactor = powerFactor;
-
-        // If the phase is not the phase of the main channel, set the energy not to 0 if the current
-        // is above the threshold since we cannot use the ADE7593 no-load feature in this approximation.
-        // These stand in for the energy registers the angle branch never reads, so they must carry the
-        // DIRECTION as well as the presence of load: the accumulators below split import from export on
-        // the sign alone (the magnitude is |power| * dt). A hard-coded +1 made the export branch
-        // unreachable off the base phase, so every exported Wh/VArh on L2/L3 was booked as imported.
-        // Apparent power is unsigned, so its flag stays a plain presence marker.
-        if (channelData.phase != basePhase && current > minCurrentThreePhaseNoLoad) {
-            activeEnergy = MeterLogic::energyDirectionFlag(activePower);
-            reactiveEnergy = MeterLogic::energyDirectionFlag(reactivePower);
-            apparentEnergy = 1;
-        }
 
         
         // Leverage the no-load feature of the ADE7953 to discard the noise
