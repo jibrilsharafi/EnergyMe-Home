@@ -441,19 +441,13 @@ namespace Ade7953
 
         releaseMutex(&_spiMutex); // Leave as soon as possible since no more direct SPI operations are needed
 
-        // Compose the long response from the byte array
-        int32_t longResponse = 0;
+        // Compose the raw response from the byte array
+        uint32_t rawResponse = 0;
         for (uint8_t i = 0; i < nBits / 8; i++) {
-            longResponse = (longResponse << 8) | response[i];
+            rawResponse = (rawResponse << 8) | response[i];
         }
 
-        // If it is signed data, we need to check the sign bit
-        // and eventually convert it to a negative value
-        if (signedData) {
-            if (longResponse & (1 << (nBits - 1))) { // Check if the sign bit (the highest bit) is set
-                longResponse -= (1 << nBits);
-            }
-        }
+        int32_t longResponse = signedData ? MeterLogic::signExtendRegister(rawResponse, nBits) : (int32_t)rawResponse;
 
         // Verify the data if required by reading the dedicated ADE7953 register
         if (isVerificationRequired) {
@@ -2941,7 +2935,7 @@ namespace Ade7953
         _setGain(config.bVarGain, Ade7953Channel::B, MeasurementType::REACTIVE_POWER);
 
         _setOffset(config.aVarOs, Ade7953Channel::A, MeasurementType::REACTIVE_POWER);
-        _setOffset(config.bVarOs, Ade7953Channel::B, MeasurementType::ACTIVE_POWER);
+        _setOffset(config.bVarOs, Ade7953Channel::B, MeasurementType::REACTIVE_POWER);
 
         _setGain(config.aVaGain, Ade7953Channel::A, MeasurementType::APPARENT_POWER);
         _setGain(config.bVaGain, Ade7953Channel::B, MeasurementType::APPARENT_POWER);

@@ -243,4 +243,14 @@ uint8_t wdrrPick(float* deficits, const bool* active, uint8_t count,
 // if statusA sets any bit outside handledMask, even when a handled bit is also set.
 bool hasUnhandledIrqBits(int32_t statusA, int32_t handledMask);
 
+// ============================================================================
+// Signed register reads
+// ============================================================================
+// Two's-complement value of a signed register read, given the zero-extended raw
+// bytes and the read width. A 32-bit read passes through unchanged: the ADE7953
+// sign-extends its 24-bit registers into the 32-bit view, so the raw word already
+// is the int32 bit pattern. (Subtracting 1 << 32 there is undefined behaviour; on
+// Xtensa it evaluated to 1 and made every negative 32-bit read one LSB low.)
+int32_t signExtendRegister(uint32_t raw, uint8_t nBits);
+
 } // namespace MeterLogic
