@@ -31,15 +31,11 @@ namespace CustomTime {
 
     // Time floor state (see TimeFloor). Written from the sntp_sync_time override on the lwIP
     // tcpip thread, where NVS and the logger are off limits, so it hands its work over to task
-    // context (_handleTimeFloorEvents, persistPendingFloor) through these atomics. The floor
+    // context (_handleRejectedAnswer, persistPendingFloor) through these atomics. The floor
     // starts at the build floor so an answer landing before begin() is already guarded.
     static std::atomic<uint32_t> _floorSeconds{static_cast<uint32_t>(GIT_COMMIT_UNIX_TIME)};
     static std::atomic<uint32_t> _anchorSeconds{static_cast<uint32_t>(GIT_COMMIT_UNIX_TIME)}; // TimeFloor::ceiling
     static std::atomic<uint32_t> _pendingFloorPersist{0}; // 0: nothing to persist
-
-    static uint32_t _uptimeSeconds() {
-        return static_cast<uint32_t>(esp_timer_get_time() / 1000000LL);
-    }
 
     static std::atomic<uint32_t> _rejectedCandidate{0};
     static std::atomic<bool> _rejectionPending{false};
@@ -47,6 +43,10 @@ namespace CustomTime {
 
     static std::atomic<bool> _skipGatewayOnce{false};
     static std::atomic<bool> _gatewaySkipped{false}; // current SNTP server set has no gateway
+
+    static uint32_t _uptimeSeconds() {
+        return static_cast<uint32_t>(esp_timer_get_time() / 1000000LL);
+    }
 
     static bool _getTime();
     static void _checkAndSyncTime();
@@ -252,10 +252,9 @@ namespace CustomTime {
         _pendingFloorPersist.store(0);
         TimeFloor::ManualOutcome outcome =
             TimeFloor::onManualSet(_floorSeconds.load(), _anchorSeconds.load(), _uptimeSeconds(), unixSeconds);
-        uint32_t floorSeconds = outcome.floor;
         _anchorSeconds.store(outcome.anchor);
-        _floorSeconds.store(floorSeconds);
-        _persistFloor(floorSeconds);
+        _floorSeconds.store(outcome.floor);
+        _persistFloor(outcome.floor);
 
         struct timeval tv;
         tv.tv_sec = (time_t)unixSeconds;
@@ -267,7 +266,7 @@ namespace CustomTime {
         }
         
         _isTimeSynched = true;
-        LOG_INFO("Time manually synchronized: %llu (time floor %llu)", unixSeconds, (uint64_t)floorSeconds);
+        LOG_INFO("Time manually synchronized: %llu (time floor %llu)", unixSeconds, (uint64_t)outcome.floor);
         return true;
     }
 
@@ -327,10 +326,9 @@ namespace CustomTime {
         if (pendingFloor != 0) _persistFloor(pendingFloor);
     }
 
-    // Task-context half of the sntp_sync_time override for a rejected answer (a raised floor goes
-    // through persistPendingFloor). Consume-and-clear with exchange(): isTimeSynched() runs from
-    // several tasks and each event must be handled exactly once.
-    static void _handleTimeFloorEvents() {
+    // Task-context half of a rejection in the sntp_sync_time override. Consume-and-clear with
+    // exchange(): isTimeSynched() runs from several tasks and each rejection must be handled once.
+    static void _handleRejectedAnswer() {
         if (!_rejectionPending.exchange(false)) return;
 
         uint64_t candidate = _rejectedCandidate.load();
@@ -338,7 +336,7 @@ namespace CustomTime {
 
         // Throttled: with a floor that is itself wrong (future-dated) every answer is rejected,
         // and an unsynced device retries every minute - that must not flood the saved log.
-        uint32_t nowSeconds = static_cast<uint32_t>(millis64() / 1000ULL);
+        uint32_t nowSeconds = _uptimeSeconds();
         uint32_t lastWarning = _lastRejectionWarningSeconds.load();
         if (lastWarning == 0 || nowSeconds - lastWarning >= TIME_SYNC_INTERVAL / 1000) {
             _lastRejectionWarningSeconds.store(nowSeconds);
@@ -363,7 +361,7 @@ namespace CustomTime {
     }
 
     static void _checkAndSyncTime() {
-        _handleTimeFloorEvents();
+        _handleRejectedAnswer();
 
         uint64_t currentTime = millis64();
 
