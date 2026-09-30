@@ -552,8 +552,8 @@ void test_rotate_matches_true_power_on_sine_loads(void) {
 }
 
 void test_rotate_books_genuine_export_as_negative(void) {
-    // Replaces the energyDirectionFlag regression: L2/L3 export used to be booked as
-    // import. The accumulators take the direction from the rotated energy sign, so a
+    // Regression: L2/L3 export was once booked as import (seen in prod on a 3-phase
+    // site). The accumulators take the direction from the rotated energy sign, so a
     // circuit really delivering power off the base phase must come out negative.
     char what[96];
     for (int v = 0; v < 3; v++) {
