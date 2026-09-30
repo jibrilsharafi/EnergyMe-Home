@@ -848,12 +848,10 @@ namespace Ade7953
         // starvation watchdog has a meaningful zero point. Without this, a
         // newly-activated channel whose very first read fails (e.g., CT
         // wired backwards at boot) would have lastMillis=0 forever and the
-        // watchdog would skip it. The forced-pick stamp from a previous activation
-        // is cleared so the watchdog restarts from this baseline alone.
+        // watchdog would skip it.
         if (didActivate) {
             if (acquireMutex(&_meterValuesMutex)) {
                 _meterValues[channelIndex].lastMillis = millis64();
-                _lastForcedPickMillis[channelIndex] = 0;
                 releaseMutex(&_meterValuesMutex);
             }
         }
