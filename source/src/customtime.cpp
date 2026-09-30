@@ -361,8 +361,22 @@ namespace CustomTime {
         }
     }
 
+    static bool _isClockValid() {
+        time_t now;
+        time(&now);
+        return isUnixTimeValid((uint64_t)now, false);
+    }
+
+    // Never waits for the answer: this runs on caller tasks, including async_tcp, which is on
+    // the 5 s task watchdog, and getLocalTime()'s 5 s poll could trip it on an unsynced device.
+    // The answer lands asynchronously (sntp_sync_time) and a later call picks it up here.
     static void _checkAndSyncTime() {
         _handleRejectedAnswer();
+
+        if (!_isTimeSynched && _isClockValid()) {
+            _isTimeSynched = true;
+            LOG_INFO("Time successfully synchronized with NTP");
+        }
 
         uint64_t currentTime = millis64();
 
@@ -380,18 +394,7 @@ namespace CustomTime {
 
             // Re-configure time to trigger a new sync
             _configureNtpServers();
-
-            // Check if sync was successful
-            bool previousSyncState = _isTimeSynched;
-            _isTimeSynched = _getTime();
-            
-            if (_isTimeSynched && !previousSyncState) {
-                LOG_INFO("Time successfully synchronized with NTP");
-            } else if (!_isTimeSynched && previousSyncState) {
-                LOG_WARNING("Time synchronization lost");
-            } else if (!_isTimeSynched) {
-                LOG_DEBUG("Time synchronization attempt failed, will retry");
-            }
+            if (!_isTimeSynched) LOG_DEBUG("Time sync requested, waiting for an NTP answer");
         }
     }
 };
