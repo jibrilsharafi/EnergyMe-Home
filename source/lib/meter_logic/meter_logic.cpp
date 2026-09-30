@@ -243,4 +243,15 @@ bool hasUnhandledIrqBits(int32_t statusA, int32_t handledMask) {
     return (statusA & ~handledMask) != 0;
 }
 
+// ----------------------------------------------------------------------------
+// Signed register reads
+// ----------------------------------------------------------------------------
+int32_t signExtendRegister(uint32_t raw, uint8_t nBits) {
+    if (nBits == 0 || nBits >= 32) return (int32_t)raw;
+
+    const uint32_t signBit = 1UL << (nBits - 1);
+    if ((raw & signBit) == 0) return (int32_t)raw;
+    return (int32_t)(raw - (signBit << 1));
+}
+
 } // namespace MeterLogic

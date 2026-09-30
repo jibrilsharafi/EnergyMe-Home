@@ -1259,6 +1259,32 @@ void test_unhandled_irq_zero_status_is_false(void) {
 }
 
 // ============================================================================
+// signExtendRegister
+// ============================================================================
+
+void test_sign_extend_32_bit_is_passthrough(void) {
+    // The cases the old 1 << 32 correction got wrong (it subtracted 1 on-device).
+    TEST_ASSERT_EQUAL_INT32(-1, signExtendRegister(0xFFFFFFFFu, 32));
+    TEST_ASSERT_EQUAL_INT32(INT32_MIN, signExtendRegister(0x80000000u, 32));
+    TEST_ASSERT_EQUAL_INT32(-100, signExtendRegister(0xFFFFFF9Cu, 32));
+    TEST_ASSERT_EQUAL_INT32(INT32_MAX, signExtendRegister(0x7FFFFFFFu, 32));
+    TEST_ASSERT_EQUAL_INT32(0, signExtendRegister(0u, 32));
+}
+
+void test_sign_extend_24_bit(void) {
+    TEST_ASSERT_EQUAL_INT32(-8388608, signExtendRegister(0x800000u, 24));
+    TEST_ASSERT_EQUAL_INT32(-1, signExtendRegister(0xFFFFFFu, 24));
+    TEST_ASSERT_EQUAL_INT32(8388607, signExtendRegister(0x7FFFFFu, 24));
+}
+
+void test_sign_extend_16_and_8_bit(void) {
+    TEST_ASSERT_EQUAL_INT32(-32768, signExtendRegister(0x8000u, 16));
+    TEST_ASSERT_EQUAL_INT32(32767, signExtendRegister(0x7FFFu, 16));
+    TEST_ASSERT_EQUAL_INT32(-1, signExtendRegister(0xFFu, 8));
+    TEST_ASSERT_EQUAL_INT32(127, signExtendRegister(0x7Fu, 8));
+}
+
+// ============================================================================
 // runner
 // ============================================================================
 
@@ -1366,6 +1392,10 @@ int main(int, char **) {
     RUN_TEST(test_unhandled_irq_recognized_plus_unrecognized_is_true);
     RUN_TEST(test_unhandled_irq_all_unrecognized_is_true);
     RUN_TEST(test_unhandled_irq_zero_status_is_false);
+
+    RUN_TEST(test_sign_extend_32_bit_is_passthrough);
+    RUN_TEST(test_sign_extend_24_bit);
+    RUN_TEST(test_sign_extend_16_and_8_bit);
 
     return UNITY_END();
 }
