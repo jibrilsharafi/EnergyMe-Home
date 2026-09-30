@@ -2934,7 +2934,7 @@ namespace Ade7953
         _setGain(config.bVarGain, Ade7953Channel::B, MeasurementType::REACTIVE_POWER);
 
         _setOffset(config.aVarOs, Ade7953Channel::A, MeasurementType::REACTIVE_POWER);
-        _setOffset(config.bVarOs, Ade7953Channel::B, MeasurementType::ACTIVE_POWER);
+        _setOffset(config.bVarOs, Ade7953Channel::B, MeasurementType::REACTIVE_POWER);
 
         _setGain(config.aVaGain, Ade7953Channel::A, MeasurementType::APPARENT_POWER);
         _setGain(config.bVaGain, Ade7953Channel::B, MeasurementType::APPARENT_POWER);
