@@ -293,6 +293,26 @@ namespace ModbusTcp
                 case 616: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentEnergyByRole(CHANNEL_ROLE_INVERTER), ENERGY_DECIMALS), true);
                 case 617: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentEnergyByRole(CHANNEL_ROLE_INVERTER), ENERGY_DECIMALS), false);
 
+                // Bidirectional aggregated (700-717)
+                case 700: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActivePowerByRole(CHANNEL_ROLE_BIDIRECTIONAL), POWER_DECIMALS), true);
+                case 701: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActivePowerByRole(CHANNEL_ROLE_BIDIRECTIONAL), POWER_DECIMALS), false);
+                case 702: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactivePowerByRole(CHANNEL_ROLE_BIDIRECTIONAL), POWER_DECIMALS), true);
+                case 703: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactivePowerByRole(CHANNEL_ROLE_BIDIRECTIONAL), POWER_DECIMALS), false);
+                case 704: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentPowerByRole(CHANNEL_ROLE_BIDIRECTIONAL), POWER_DECIMALS), true);
+                case 705: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentPowerByRole(CHANNEL_ROLE_BIDIRECTIONAL), POWER_DECIMALS), false);
+                case 706: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedPowerFactorByRole(CHANNEL_ROLE_BIDIRECTIONAL), POWER_FACTOR_DECIMALS), true);
+                case 707: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedPowerFactorByRole(CHANNEL_ROLE_BIDIRECTIONAL), POWER_FACTOR_DECIMALS), false);
+                case 708: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActiveEnergyImportedByRole(CHANNEL_ROLE_BIDIRECTIONAL), ENERGY_DECIMALS), true);
+                case 709: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActiveEnergyImportedByRole(CHANNEL_ROLE_BIDIRECTIONAL), ENERGY_DECIMALS), false);
+                case 710: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActiveEnergyExportedByRole(CHANNEL_ROLE_BIDIRECTIONAL), ENERGY_DECIMALS), true);
+                case 711: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedActiveEnergyExportedByRole(CHANNEL_ROLE_BIDIRECTIONAL), ENERGY_DECIMALS), false);
+                case 712: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactiveEnergyImportedByRole(CHANNEL_ROLE_BIDIRECTIONAL), ENERGY_DECIMALS), true);
+                case 713: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactiveEnergyImportedByRole(CHANNEL_ROLE_BIDIRECTIONAL), ENERGY_DECIMALS), false);
+                case 714: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactiveEnergyExportedByRole(CHANNEL_ROLE_BIDIRECTIONAL), ENERGY_DECIMALS), true);
+                case 715: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedReactiveEnergyExportedByRole(CHANNEL_ROLE_BIDIRECTIONAL), ENERGY_DECIMALS), false);
+                case 716: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentEnergyByRole(CHANNEL_ROLE_BIDIRECTIONAL), ENERGY_DECIMALS), true);
+                case 717: return _getFloatBits(roundToDecimals(Ade7953::getAggregatedApparentEnergyByRole(CHANNEL_ROLE_BIDIRECTIONAL), ENERGY_DECIMALS), false);
+
                 // Default case to handle unexpected addresses
                 default: return 0;
             }
@@ -349,12 +369,13 @@ namespace ModbusTcp
         // Meter values: 100-103
         if (address >= 100 && address <= 103) return true;
 
-        // Role-based aggregated values: 200-217, 300-317, 400-417, 500-517, 600-617
+        // Role-based aggregated values (200-717, 100 per role)
         if ((address >= 200 && address <= 217) ||  // Grid
             (address >= 300 && address <= 317) ||  // Load
             (address >= 400 && address <= 417) ||  // PV
             (address >= 500 && address <= 517) ||  // Battery
-            (address >= 600 && address <= 617)) {  // Inverter
+            (address >= 600 && address <= 617) ||  // Inverter
+            (address >= 700 && address <= 717)) {  // Bidirectional
             return true;
         }
 

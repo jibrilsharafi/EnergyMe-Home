@@ -3096,8 +3096,8 @@ paths:
                   description: Human-readable label for the group. Channels with the same groupLabel are aggregated together.
                 role:
                   type: string
-                  enum: [load, grid, pv, battery, inverter]
-                  description: "Channel role: load, grid (+ import/- export), pv (+ generation), battery (+ discharge/- charge), inverter (PV + battery DC-coupled)"
+                  enum: [load, grid, pv, battery, inverter, bidirectional]
+                  description: "Channel role: load, grid (+ import/- export), pv (+ generation), battery (+ discharge/- charge), inverter (PV + battery DC-coupled), bidirectional (+ import/- export, never clamped, counted with the loads)"
                 startMeasuringUnixTimeMs:
                   type: integer
                   format: int64
@@ -3398,7 +3398,7 @@ paths:
                           description: Channel group label (if configured)
                         role:
                           type: string
-                          description: Channel role (load, grid, pv, battery, inverter)
+                          description: Channel role (load, grid, pv, battery, inverter, bidirectional)
                         data:
                           $ref: '#/components/schemas/MeterValues'
                   - $ref: '#/components/schemas/MeterValues'
@@ -4297,7 +4297,7 @@ components:
           example: "Main Three-Phase"
         role:
           type: string
-          enum: [load, grid, pv, battery, inverter]
+          enum: [load, grid, pv, battery, inverter, bidirectional]
           description: "Channel role determining measurement behavior and sign convention"
           example: "load"
           default: "load"

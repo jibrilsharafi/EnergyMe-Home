@@ -106,6 +106,7 @@ Each channel has the following fields:
 | `PV / Solar (+ generation)` | A solar panel string measured directly (AC side). Positive when generating |
 | `Battery (+ discharge, - charge)` | A battery system. Positive when discharging to the home, negative when charging |
 | `Inverter (PV + Battery DC-coupled)` | A hybrid inverter where PV and battery share a single AC output |
+| `Bidirectional (+ import, - export)` | A line with flow in both directions that is not the main supply (e.g. a sub-panel feed with PV or a battery behind it). Counted with the loads by its net value |
 
 #### Configuration for a typical single-phase home
 

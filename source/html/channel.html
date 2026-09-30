@@ -277,6 +277,7 @@
                         <option value="pv" ${channel.role === 'pv' ? 'selected' : ''}>PV / Solar (+ generation)</option>
                         <option value="battery" ${channel.role === 'battery' ? 'selected' : ''}>Battery (+ discharge, - charge)</option>
                         <option value="inverter" ${channel.role === 'inverter' ? 'selected' : ''}>Inverter (PV + Battery DC-coupled)</option>
+                        <option value="bidirectional" ${channel.role === 'bidirectional' ? 'selected' : ''}>Bidirectional (+ import, - export, counted as load)</option>
                     </select>
                 </label>
                 <div style="height: 10px;"></div>

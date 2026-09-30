@@ -3233,6 +3233,18 @@ namespace CustomServer
                 JsonDocument doc(&allocator);
                 doc.set(json);
 
+                // Accept /channel/{n} as well: the path index fills in a body that omits it
+                static const char CHANNEL_PATH_PREFIX[] = "/api/v1/ade7953/channel/";
+                const String path = request->url();
+                const char *url = path.c_str();
+                if (!doc["index"].is<uint8_t>() && strncmp(url, CHANNEL_PATH_PREFIX, sizeof(CHANNEL_PATH_PREFIX) - 1) == 0)
+                {
+                    const char *indexStr = url + sizeof(CHANNEL_PATH_PREFIX) - 1;
+                    char *end = nullptr;
+                    unsigned long pathIndex = strtoul(indexStr, &end, 10);
+                    if (end != indexStr && *end == '\0' && pathIndex <= UINT8_MAX) doc["index"] = static_cast<uint8_t>(pathIndex);
+                }
+
                 bool roleChanged = false;
                 if (Ade7953::setChannelDataFromJson(doc, isPartialUpdate, &roleChanged))
                 {
