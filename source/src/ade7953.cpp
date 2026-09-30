@@ -3865,15 +3865,16 @@ namespace Ade7953
     false if the data reading is not ready yet or valid.
     */
     bool _readMeterValues(uint8_t channelIndex, uint64_t linecycUnixTimeMillis) {
-        uint64_t millisRead = millis64();
-
-        // Copy under the mutex: a 64-bit load can tear on the 32-bit ESP32 against a
-        // concurrent writer in another task (e.g. the setChannelData baseline).
+        // Sample the clock and copy lastMillis under the mutex every lastMillis writer holds
+        // while it samples millis64() (activation baseline, energy resets): lastMillis can then
+        // never be ahead of millisRead, which would underflow deltaMillis into ~2^64 ms of
+        // energy. The copy also keeps the 64-bit load from tearing on the 32-bit ESP32.
         if (!acquireMutex(&_meterValuesMutex)) {
             LOG_ERROR("Failed to acquire mutex for meter values");
             _recordFailure();
             return false;
         }
+        uint64_t millisRead = millis64();
         uint64_t lastMillis = _meterValues[channelIndex].lastMillis;
         releaseMutex(&_meterValuesMutex);
         uint64_t deltaMillis = millisRead - lastMillis;
@@ -4241,10 +4242,11 @@ namespace Ade7953
             return false;
         }
 
-        // An energy reset can rebase lastMillis while this read was in flight: book only the
-        // time since the current base, so pre-reset time never lands in the zeroed counters.
+        // An energy reset can rebase lastMillis while this read is in flight. The rebase is newer
+        // than this read's window, so book nothing and let the next read book from the new base:
+        // pre-reset time never lands in the zeroed counters.
         uint64_t currentBase = _meterValues[channelIndex].lastMillis;
-        if (currentBase != lastMillis) deltaMillis = (millisRead > currentBase) ? millisRead - currentBase : 0;
+        if (currentBase != lastMillis) deltaMillis = 0;
 
         _meterValues[channelIndex].voltage = voltage;
         _meterValues[channelIndex].current = current;
@@ -4880,10 +4882,10 @@ namespace Ade7953
         // Hold _meterValuesMutex around the 64-bit reads + write: a 32-bit ESP32
         // cannot atomically store a uint64_t, so a concurrent setChannelData
         // baseline write could otherwise be torn-read here.
-        uint64_t nowMillis = millis64();
         uint8_t starvedChannel = INVALID_CHANNEL;
         uint64_t starvedGap = 0;
         if (acquireMutex(&_meterValuesMutex)) {
+            uint64_t nowMillis = millis64(); // under the mutex, so no lastMillis written before it is ahead of it
             uint64_t lastMs[MAX_CHANNEL_COUNT] = {};
             for (uint8_t i = 0; i < count; i++) lastMs[i] = _meterValues[i].lastMillis;
             starvedChannel = MeterLogic::pickStarvedChannel(lastMs, _lastForcedPickMillis, active, count, 1, nowMillis, CHANNEL_MAX_GAP_MS);
