@@ -327,8 +327,13 @@ namespace CustomTime {
         uint32_t lastWarning = _lastRejectionWarningSeconds.load();
         if (lastWarning == 0 || nowSeconds - lastWarning >= TIME_SYNC_INTERVAL / 1000) {
             _lastRejectionWarningSeconds.store(nowSeconds);
-            LOG_WARNING("Rejected NTP time %llu: more than %d s before the time floor %llu. Keeping the current clock",
-                        candidate, TIME_FLOOR_TOLERANCE_SECONDS, floorSeconds);
+            if (TimeFloor::isZeroTransmitArtifact(candidate)) {
+                LOG_WARNING("Rejected NTP time %llu: zero transmit timestamp (unsynchronized server). Keeping the current clock",
+                            candidate);
+            } else {
+                LOG_WARNING("Rejected NTP time %llu: more than %d s before the time floor %llu. Keeping the current clock",
+                            candidate, TIME_FLOOR_TOLERANCE_SECONDS, floorSeconds);
+            }
         } else {
             LOG_DEBUG("Rejected NTP time %llu (time floor %llu)", candidate, floorSeconds);
         }
@@ -384,7 +389,8 @@ namespace CustomTime {
 extern "C" void sntp_sync_time(struct timeval *tv) {
     uint64_t candidate = (uint64_t)tv->tv_sec;
     uint32_t floorSeconds = CustomTime::_floorSeconds.load();
-    if (!TimeFloor::accepts(floorSeconds, candidate, TIME_FLOOR_TOLERANCE_SECONDS)) {
+    if (TimeFloor::isZeroTransmitArtifact(candidate) ||
+        !TimeFloor::accepts(floorSeconds, candidate, TIME_FLOOR_TOLERANCE_SECONDS)) {
         // Clock and sync status untouched: a device that was synced keeps its running clock
         CustomTime::_rejectedCandidate.store(static_cast<uint32_t>(candidate));
         CustomTime::_rejectionPending.store(true);

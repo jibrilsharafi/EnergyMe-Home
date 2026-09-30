@@ -12,7 +12,7 @@
 #include "unix_time.h"
 
 // Fallback servers, tried after the default gateway (see CustomTime::begin/_checkAndSyncTime), and
-// used alone for the resync after an answer below the time floor was rejected -
+// used alone for the resync after a rejected answer (below the time floor, or a zero transmit timestamp) -
 // NTP_SERVER_1 is a DNS-dependent public pool, NTP_SERVER_2 a raw IP so it still works if DNS fails.
 #define NTP_SERVER_1 "pool.ntp.org"
 #define NTP_SERVER_2 "162.159.200.1" // Cloudflare NTP server IP

@@ -119,6 +119,27 @@ void test_raise_ignores_implausible_answer(void) {
 }
 
 // ============================================================================
+// isZeroTransmitArtifact
+// ============================================================================
+
+void test_zero_transmit_artifact_is_detected(void) {
+    TEST_ASSERT_EQUAL_UINT64(2085978496ULL, ZERO_TRANSMIT_SECONDS); // 2036-02-07T06:28:16Z
+    TEST_ASSERT_TRUE(isZeroTransmitArtifact(ZERO_TRANSMIT_SECONDS));
+}
+
+void test_zero_transmit_neighbours_are_not_the_artifact(void) {
+    TEST_ASSERT_FALSE(isZeroTransmitArtifact(ZERO_TRANSMIT_SECONDS - 1ULL));
+    TEST_ASSERT_FALSE(isZeroTransmitArtifact(ZERO_TRANSMIT_SECONDS + 1ULL));
+    TEST_ASSERT_FALSE(isZeroTransmitArtifact(BUILD));
+    TEST_ASSERT_FALSE(isZeroTransmitArtifact(0));
+}
+
+void test_zero_transmit_artifact_passes_the_floor_check(void) {
+    // Why it needs its own check: it is in the future, so the floor lets it through
+    TEST_ASSERT_TRUE(accepts(PERSISTED, ZERO_TRANSMIT_SECONDS, TOLERANCE));
+}
+
+// ============================================================================
 // Scenarios
 // ============================================================================
 
@@ -176,6 +197,10 @@ int main(int argc, char **argv) {
     RUN_TEST(test_raise_never_lowers_for_answer_within_tolerance);
     RUN_TEST(test_raise_from_no_floor);
     RUN_TEST(test_raise_ignores_implausible_answer);
+
+    RUN_TEST(test_zero_transmit_artifact_is_detected);
+    RUN_TEST(test_zero_transmit_neighbours_are_not_the_artifact);
+    RUN_TEST(test_zero_transmit_artifact_passes_the_floor_check);
 
     RUN_TEST(test_floor_is_monotonic_across_syncs);
     RUN_TEST(test_manual_set_may_lower_the_floor);

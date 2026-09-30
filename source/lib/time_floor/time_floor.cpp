@@ -27,4 +27,8 @@ uint32_t raisedBy(uint32_t floor, uint64_t acceptedSeconds) {
     return candidate > floor ? candidate : floor;
 }
 
+bool isZeroTransmitArtifact(uint64_t candidateSeconds) {
+    return candidateSeconds == ZERO_TRANSMIT_SECONDS;
+}
+
 } // namespace TimeFloor

@@ -35,4 +35,13 @@ bool accepts(uint32_t floor, uint64_t candidateSeconds, uint32_t toleranceSecond
 // that got in within the tolerance.
 uint32_t raisedBy(uint32_t floor, uint64_t acceptedSeconds);
 
+// What lwIP hands over for a reply with an all-zero transmit timestamp, which an
+// unsynchronized server sends and RFC 4330 says to discard. With SNTP_CHECK_RESPONSE
+// 0 (the IDF default) lwIP passes it on, decoding NTP second 0 as era 1:
+// 2036-02-07T06:28:16Z, far enough ahead to pass any floor.
+constexpr uint64_t ZERO_TRANSMIT_SECONDS = 2085978496ULL;
+
+// True for that artifact: never a genuine answer, rejected regardless of the floor.
+bool isZeroTransmitArtifact(uint64_t candidateSeconds);
+
 } // namespace TimeFloor
