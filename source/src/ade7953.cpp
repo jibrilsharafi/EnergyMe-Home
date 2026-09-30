@@ -36,6 +36,7 @@ namespace Ade7953
     static float _prevActivePower[MAX_CHANNEL_COUNT] = {};   // Previous power reading for variability tracking
     static float _powerVariability[MAX_CHANNEL_COUNT] = {};  // EMA of |delta power| for variability scoring
     static uint8_t _wdrrCursor = 0;                          // Round-robin tie-break cursor for argmax
+    static uint64_t _lastForcedPickMillis[MAX_CHANNEL_COUNT] = {}; // Starvation watchdog's own throttle stamp, kept apart from lastMillis (the energy base). Guarded by _meterValuesMutex: 64-bit is not atomic on the ESP32
     static int8_t _polarityVoteCount[MAX_CHANNEL_COUNT] = {}; // Net consistent-sign vote accumulator for CT-reversal detection (runtime only; reset on arm/decision)
     static uint16_t _polarityConductingReads[MAX_CHANNEL_COUNT] = {}; // Conducting reads since arming - bounds a sign-oscillating channel (runtime only; reset on arm/decision)
     static bool _lastConducting[MAX_CHANNEL_COUNT] = {}; // Was the channel's most recent reading conducting (pre-clamp)? Drives the CT-detection boost so a clamped reversed load/PV still gets it (meter-task only)
@@ -847,10 +848,12 @@ namespace Ade7953
         // starvation watchdog has a meaningful zero point. Without this, a
         // newly-activated channel whose very first read fails (e.g., CT
         // wired backwards at boot) would have lastMillis=0 forever and the
-        // watchdog would skip it.
+        // watchdog would skip it. The forced-pick stamp from a previous activation
+        // is cleared so the watchdog restarts from this baseline alone.
         if (didActivate) {
             if (acquireMutex(&_meterValuesMutex)) {
                 _meterValues[channelIndex].lastMillis = millis64();
+                _lastForcedPickMillis[channelIndex] = 0;
                 releaseMutex(&_meterValuesMutex);
             }
         }
@@ -4306,7 +4309,9 @@ namespace Ade7953
 
         // We actually set the timestamp of the channel (used for the energy calculations)
         // only if we actually reached the end. Otherwise it would mean the point had to be
-        // discarded
+        // discarded, and the next successful read books the whole gap. Apart from the
+        // activation baseline this is the only writer of lastMillis (the starvation
+        // watchdog keeps its own stamp).
         statistics.ade7953ReadingCount++;
         _meterValues[channelIndex].lastMillis = millisRead;
         _meterValues[channelIndex].lastUnixTimeMilliseconds = linecycUnixTimeMillis;
@@ -4854,12 +4859,14 @@ namespace Ade7953
 
         // Starvation watchdog (fix for issue #149): hard upper bound on the time
         // between successful reads for any active mux channel. MeterLogic::
-        // findStarvedChannel returns the lowest-index channel past CHANNEL_MAX_GAP_MS
-        // (skipping never-baselined ones); we then stamp lastMillis = now - which
+        // pickStarvedChannel returns the lowest-index channel past CHANNEL_MAX_GAP_MS
+        // (skipping never-baselined ones) and stamps _lastForcedPickMillis, which
         // throttles the watchdog to one fire per interval even if the read keeps
-        // failing - and reset its deficit so it does not immediately re-win the
-        // argmax. Hold _meterValuesMutex around the 64-bit read + write: a 32-bit
-        // ESP32 cannot atomically store a uint64_t, so a concurrent setChannelData
+        // failing; we reset its deficit so it does not immediately re-win the argmax.
+        // lastMillis is deliberately left alone: it is the energy-integration base,
+        // and stamping it here dropped the energy of the whole gap (issue #253).
+        // Hold _meterValuesMutex around the 64-bit reads + write: a 32-bit ESP32
+        // cannot atomically store a uint64_t, so a concurrent setChannelData
         // baseline write could otherwise be torn-read here.
         uint64_t nowMillis = millis64();
         uint8_t starvedChannel = INVALID_CHANNEL;
@@ -4867,11 +4874,8 @@ namespace Ade7953
         if (acquireMutex(&_meterValuesMutex)) {
             uint64_t lastMs[MAX_CHANNEL_COUNT] = {};
             for (uint8_t i = 0; i < count; i++) lastMs[i] = _meterValues[i].lastMillis;
-            starvedChannel = MeterLogic::findStarvedChannel(lastMs, active, count, 1, nowMillis, CHANNEL_MAX_GAP_MS);
-            if (starvedChannel != INVALID_CHANNEL) {
-                starvedGap = nowMillis - lastMs[starvedChannel];
-                _meterValues[starvedChannel].lastMillis = nowMillis;
-            }
+            starvedChannel = MeterLogic::pickStarvedChannel(lastMs, _lastForcedPickMillis, active, count, 1, nowMillis, CHANNEL_MAX_GAP_MS);
+            if (starvedChannel != INVALID_CHANNEL) starvedGap = nowMillis - lastMs[starvedChannel];
             releaseMutex(&_meterValuesMutex);
         }
         if (starvedChannel != INVALID_CHANNEL) {

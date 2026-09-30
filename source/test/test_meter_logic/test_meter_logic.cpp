@@ -346,8 +346,9 @@ void test_find_starved_channel(void) {
     const uint8_t N = 4;
     bool active[N] = {true, true, true, false};
     uint64_t last[N] = {0, 19000, 1000, 0};
+    uint64_t forced[N] = {};
     uint64_t now = 20000;
-    uint8_t s = findStarvedChannel(last, active, N, 1, now, 15000);
+    uint8_t s = pickStarvedChannel(last, forced, active, N, 1, now, 15000);
     TEST_ASSERT_EQUAL_UINT8(2, s); // ch2 gap 19000 > 15000 (ch1 gap 1000 is fine)
 }
 
@@ -355,8 +356,9 @@ void test_find_starved_skips_unbaselined_and_inactive(void) {
     const uint8_t N = 4;
     bool active[N] = {true, false, true, true};
     uint64_t last[N] = {0, 1, 0, 1}; // ch1 inactive, ch2 never baselined (0), ch3 baselined
+    uint64_t forced[N] = {};
     uint64_t now = 100000;
-    uint8_t s = findStarvedChannel(last, active, N, 1, now, 15000);
+    uint8_t s = pickStarvedChannel(last, forced, active, N, 1, now, 15000);
     TEST_ASSERT_EQUAL_UINT8(3, s); // only ch3 qualifies
 }
 
@@ -364,8 +366,9 @@ void test_find_starved_none(void) {
     const uint8_t N = 3;
     bool active[N] = {true, true, true};
     uint64_t last[N] = {0, 99000, 99500};
+    uint64_t forced[N] = {};
     uint64_t now = 100000;
-    TEST_ASSERT_EQUAL_UINT8(NO_CHANNEL, findStarvedChannel(last, active, N, 1, now, 15000));
+    TEST_ASSERT_EQUAL_UINT8(NO_CHANNEL, pickStarvedChannel(last, forced, active, N, 1, now, 15000));
 }
 
 void test_wdrr_accumulate_gains_zeroes_and_clamps(void) {
@@ -714,16 +717,19 @@ void test_find_starved_returns_lowest_index_when_multiple(void) {
     const uint8_t N = 5;
     bool active[N] = {true, true, true, true, true};
     uint64_t last[N] = {0, 1000, 2000, 1000, 2000}; // all past gap at now=30000
-    TEST_ASSERT_EQUAL_UINT8(1, findStarvedChannel(last, active, N, 1, 30000, 5000));
+    uint64_t forced[N] = {};
+    TEST_ASSERT_EQUAL_UINT8(1, pickStarvedChannel(last, forced, active, N, 1, 30000, 5000));
 }
 
 void test_find_starved_exactly_at_gap_is_not_starved(void) {
     const uint8_t N = 3;
     bool active[N] = {true, true, true};
     uint64_t last[N] = {0, 5000, 4999}; // ch1 gap=15000 (==), ch2 gap=15001 (>)
-    TEST_ASSERT_EQUAL_UINT8(2, findStarvedChannel(last, active, N, 1, 20000, 15000));
+    uint64_t forced[N] = {};
+    TEST_ASSERT_EQUAL_UINT8(2, pickStarvedChannel(last, forced, active, N, 1, 20000, 15000));
     uint64_t last2[N] = {0, 4999, 5000}; // ch1 gap=15001 (>), ch2 gap=15000 (==)
-    TEST_ASSERT_EQUAL_UINT8(1, findStarvedChannel(last2, active, N, 1, 20000, 15000));
+    uint64_t forced2[N] = {};
+    TEST_ASSERT_EQUAL_UINT8(1, pickStarvedChannel(last2, forced2, active, N, 1, 20000, 15000));
 }
 
 void test_find_starved_now_before_lastMillis_returns_channel(void) {
@@ -733,7 +739,8 @@ void test_find_starved_now_before_lastMillis_returns_channel(void) {
     const uint8_t N = 3;
     bool active[N] = {true, true, true};
     uint64_t last[N] = {0, 5000, 5000};
-    TEST_ASSERT_EQUAL_UINT8(1, findStarvedChannel(last, active, N, 1, 1000, 5000));
+    uint64_t forced[N] = {};
+    TEST_ASSERT_EQUAL_UINT8(1, pickStarvedChannel(last, forced, active, N, 1, 1000, 5000));
 }
 
 void test_wdrr_accumulate_nan_weight_is_zeroed(void) {

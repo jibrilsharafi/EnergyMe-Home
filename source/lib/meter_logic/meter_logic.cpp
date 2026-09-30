@@ -191,13 +191,17 @@ void computeWeights(const ChannelWeightInput* in, uint8_t count, uint8_t startIn
 // ----------------------------------------------------------------------------
 // WDRR scheduler core
 // ----------------------------------------------------------------------------
-uint8_t findStarvedChannel(const uint64_t* lastMillis, const bool* active,
-                           uint8_t count, uint8_t startIndex, uint64_t now,
-                           uint64_t maxGap) {
+uint8_t pickStarvedChannel(const uint64_t* lastReadMillis, uint64_t* lastForcedPickMillis,
+                           const bool* active, uint8_t count, uint8_t startIndex,
+                           uint64_t now, uint64_t maxGap) {
     for (uint8_t i = startIndex; i < count; i++) {
         if (!active[i]) continue;
-        if (lastMillis[i] == 0) continue; // never baselined - priority slot handles it
-        if (now - lastMillis[i] > maxGap) return i;
+        if (lastReadMillis[i] == 0) continue; // never baselined - priority slot handles it
+        uint64_t since = (lastForcedPickMillis[i] > lastReadMillis[i]) ? lastForcedPickMillis[i] : lastReadMillis[i];
+        if (now - since > maxGap) {
+            lastForcedPickMillis[i] = now;
+            return i;
+        }
     }
     return NO_CHANNEL;
 }
