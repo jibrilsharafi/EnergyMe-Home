@@ -305,8 +305,8 @@
     //
     // The single voltage reference (L1) means a channel's phase assignment is pure
     // math on the measured angle between voltage and current: the firmware rotates
-    // it by 0/+120/-120 degrees (phase 1/2/3, see _calculatePhaseShift in
-    // src/ade7953.cpp). So from one published reading (P, Q, S) we can reconstruct
+    // (P, Q) by 0/+120/-120 degrees (phase 1/2/3, see PhaseUtils::rotatePowers in
+    // lib/phase_utils). So from one published reading (P, Q, S) we can reconstruct
     // that angle and show what |active power| and PF every phase choice would yield -
     // the installer picks the one that looks like a real load (PF near 1) instead of
     // guessing from the breaker panel. The power sign is omitted: it is always
@@ -325,10 +325,9 @@
         // Negative reading clamped to zero this cycle (load/PV): angle not recoverable
         if (p === 0) return { state: 'clamped' };
 
-        // Both firmware measurement branches now publish (P, Q) as a consistent
-        // phasor: the energy-register branch (configured phase == base phase) gives
-        // the chip's signed pair, and the angle branch negates Q together with P when
-        // the current phasor is flipped. So atan2 sees the load angle directly, in the
+        // The firmware publishes (P, Q) as a consistent phasor in the configured
+        // phase's frame: the chip's signed pair, rotated for an off-phase channel,
+        // with reverse negating both. So atan2 sees the load angle directly, in the
         // same frame as the published active power, with no correction needed.
         const psi = Math.atan2(q, p);
 

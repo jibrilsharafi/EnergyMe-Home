@@ -98,7 +98,7 @@ bool shouldClampNegative(float activePower, ChannelRole role);
 // ============================================================================
 // RMS witness (energy-path integrity)
 // ============================================================================
-// True if the base-phase reading must be discarded because the apparent power
+// True if a reading must be discarded because the apparent power
 // derived from the reset-on-read energy registers disagrees with the apparent
 // power measured independently from the RMS registers by more than maxDivergence.
 //

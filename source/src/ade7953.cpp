@@ -3819,37 +3819,44 @@ namespace Ade7953
     // ============================
 
     /*
-    There is no better way to read the values from the ADE7953 
-    than this. Since we use a multiplexer, we cannot read the data
-    more often than 200 ms as that is the settling time for the
-    RMS current. 
+    Every channel is read from the ADE7953 energy registers (AENERGY, RENERGY,
+    APENERGY). In line cycle accumulation mode they latch one whole window
+    (_sampleTime, an integer number of half line cycles) at each CYCEND and hold
+    it until the next, so a reading integrates a fixed window instead of sampling
+    live registers, harmonics included. Power is energy / _sampleTime, PF is P/S
+    with the sign of Q (positive = inductive, datasheet "Sign of Reactive Power
+    Calculation"), current is S/V. The window after a mux switch spans the
+    transition and is skipped, so channel 0 reads every 200 ms and the others
+    need 400 ms each.
 
-    Moreover, as we switch the multiplexer just after the line cycle has
-    ended, we need to make 1 line cycle go empty before we can actually
-    read the data. This is because we want the power factor reading
-    to be as accurate as possible.
+    IRMS is read as an independent witness of S (discard on divergence), the
+    chip's no-load feature zeroes idle energies, and every value is validated
+    against the limits of the hardware.
 
-    In the end we can have a channel 0 reading every 200 ms, while the
-    other will need 400 ms per channel.
+    The only voltage input sits on channel 0's line (V1). A channel whose CT is on
+    another line of a three-phase supply is integrated against V1, which gives
+    P1 + jQ1 = V1 * I^*. Assuming V_k = V1 * e^{j*alpha}, its own powers are
+        S_k = e^{j*alpha} * (P1 + jQ1),  alpha = calculatePhaseShiftDeg(basePhase, phase)
+    i.e. PhaseUtils::rotatePowers applied to the latched energy pair, with S and
+    current unchanged. Assumptions:
+    - |V2| = |V3| = |V1| and exact 120 deg spacing (a magnitude error shows up
+      1:1 in P, an angle error grows as the PF drops),
+    - a correct phase setting (a wrong one stays as visible as before: a
+      resistive load reads |PF| ~ 0.5),
+    - BVARGAIN == BWGAIN, since Q1 now feeds P: a Q-path gain error e shows up as
+      ~0.75 * e on a resistive L2/L3 load.
+    Compared with the ANGLE method it replaces (V1 * IRMS * cos of the live,
+    single zero-crossing ANGLE register), off-phase channels get the same latched
+    window, the RMS witness and the per-window energy direction as channel 0, a
+    true PF (P/S) instead of a displacement cosine, and harmonic current no longer
+    inflates P (against a sine V1 it carries no active power, while
+    Irms * cos(displacement) counted it). The chip gates P1 and Q1 against its
+    no-load threshold independently, which maps onto neither rotated value, so an
+    off-phase channel below minCurrentThreePhaseNoLoad (from IRMS) is zeroed as a
+    whole instead.
 
-    The read values from which everything is computed afterwards are:
-    - Voltage RMS
-    - Current RMS (needs 200 ms to settle, and is computed by the ADE7953 at every zero crossing)
-    - Sign of the active power (as we use RMS values, the signedData will indicate the direction of the power)
-    - Power factor (computed by the ADE7953 by averaging on the whole line cycle, thus why we need to read only every other line cycle)
-    - Active energy, reactive energy, apparent energy (only to make use of the no-load feature)
-
-    For the three phase, we assume that the phase shift is 120 degrees. 
-
-    It the energies are 0, all the previously computed values are set to 0 as the no-load feature is enabled.
-
-    All the values are validated to be within the limits of the hardware/system used.
-
-    There could be a way to improve the measurements by directly using the energy registers and computing the average
-    power during the last line cycle. This proved to be a bit unstable and complex to calibrate with respect to the 
-    direct voltage, current and power factor readings. The time limitation of 200 ms would still be present. The only
-    real advantage would be an accurate value of reactive power, which now is only an approximation.
-
+    Split-phase 240V channels are 180 deg from V1: only a sign (reverse) plus a 2x
+    voltage multiplier, because V1 is a single 120V leg.
     */
 
     /*
