@@ -34,6 +34,12 @@
             box-sizing: border-box;
         }
 
+        /* A select sizes itself to its longest option, which pushed the card wider than the column */
+        .channel-columns select {
+            max-width: 90%;
+            box-sizing: border-box;
+        }
+
         .phase-preview {
             font-size: 0.85em;
             color: #666;
@@ -266,7 +272,8 @@
                             <strong>Grid</strong>: utility connection. Positive = importing (buying), negative = exporting (selling).<br>
                             <strong>PV / Solar</strong>: generation. Only positive values are stored.<br>
                             <strong>Battery</strong>: storage. Positive = discharging, negative = charging.<br>
-                            <strong>Inverter</strong>: DC-coupled hybrid (PV + Battery share one inverter). Both signs are kept.
+                            <strong>Inverter</strong>: DC-coupled hybrid (PV + Battery share one inverter). Both signs are kept.<br>
+                            <strong>Bidirectional</strong>: a circuit that can draw or feed back (e.g. a sub-panel with its own generation). Both signs are kept, and it is counted with the loads.
                         </div>
                     </span>
                 </h4>
@@ -277,7 +284,7 @@
                         <option value="pv" ${channel.role === 'pv' ? 'selected' : ''}>PV / Solar (+ generation)</option>
                         <option value="battery" ${channel.role === 'battery' ? 'selected' : ''}>Battery (+ discharge, - charge)</option>
                         <option value="inverter" ${channel.role === 'inverter' ? 'selected' : ''}>Inverter (PV + Battery DC-coupled)</option>
-                        <option value="bidirectional" ${channel.role === 'bidirectional' ? 'selected' : ''}>Bidirectional (+ import, - export, counted as load)</option>
+                        <option value="bidirectional" ${channel.role === 'bidirectional' ? 'selected' : ''}>Bidirectional (+ import, - export)</option>
                     </select>
                 </label>
                 <div style="height: 10px;"></div>
