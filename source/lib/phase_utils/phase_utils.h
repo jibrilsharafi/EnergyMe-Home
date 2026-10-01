@@ -115,8 +115,8 @@ inline LoadAngle loadAngleFromRawDeg(Phase basePhase, Phase channelPhase, float 
 
 // Signed powers reconstructed from the recovered load angle (the ANGLE method) for a
 // channel whose CT sits on a different line than the single voltage input. The
-// firmware now uses toChannelFrame; this remains for the field A/B log and as the
-// reference toChannelFrame must match on a sine.
+// firmware now uses toChannelFrame; this remains as the reference toChannelFrame must
+// match on a sine.
 //
 // A backwards CT and a genuine reverse flow are both a 180 deg flip of the current
 // phasor, so they negate BOTH P and Q. Flipping only P publishes an impossible

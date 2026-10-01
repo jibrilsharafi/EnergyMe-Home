@@ -262,8 +262,6 @@ namespace Ade7953
     static int32_t _readActiveEnergy(Ade7953Channel ade7953Channel);
     static int32_t _readReactiveEnergy(Ade7953Channel ade7953Channel);
     static int32_t _readApparentEnergy(Ade7953Channel ade7953Channel);
-    static int32_t _readAngle(Ade7953Channel ade7953Channel);
-    static float _readAngleRadians(Ade7953Channel ade7953Channel);
     static int32_t _readPeriod();
     static float _readGridFrequency();
 
@@ -3968,26 +3966,6 @@ namespace Ade7953
             return false;
         }
 
-        // TODO: remove after the #254 field A/B (rotation vs the old ANGLE method). It then
-        // takes _readAngleRadians with it, and the ANGLE helpers in phase_utils become
-        // test-only. Costs one ANGLE read per off-phase reading, as the ANGLE method did.
-        // Not gated on the print level: DEBUG reaches the UDP/MQTT log sinks regardless.
-        if (isOffPhase) {
-            float rawAngleDeg = _readAngleRadians(ade7953Channel) * float(RAD_TO_DEG);
-            PhaseUtils::LoadAngle legacyAngle = PhaseUtils::loadAngleFromRawDeg(basePhase, channelData.phase, rawAngleDeg);
-            PhaseUtils::SignedPowers legacy = PhaseUtils::powersFromFoldedAngle(
-                apparentPowerFromRms,
-                legacyAngle.foldedAngleDeg,
-                channelData.reverse,
-                legacyAngle.activePowerNegative
-            );
-            LOG_DEBUG(
-                "%s (%d) (phase %d): A/B rotated %.1fW PF %.3f | angle %.1fW PF %.3f (raw %.1f°)",
-                channelData.label, channelIndex, channelData.phase,
-                activePower, powerFactor, legacy.activePower, legacy.powerFactor, rawAngleDeg
-            );
-        }
-
         // Synthetic no-load for the whole off-phase reading. The chip gates P1 and Q1
         // independently against V1, so after the rotation neither gate maps onto this
         // line's own P or Q; a sub-threshold current is offset noise. Zeroing the
@@ -4538,15 +4516,6 @@ namespace Ade7953
         else return readRegister(APENERGYB_32, BIT_32, true);
     }
 
-    int32_t _readAngle(Ade7953Channel ade7953Channel) {
-        if (ade7953Channel == Ade7953Channel::A) return readRegister(ANGLE_A_16, BIT_16, true);
-        else return readRegister(ANGLE_B_16, BIT_16, true);
-    }
-
-    float _readAngleRadians(Ade7953Channel ade7953Channel) {
-        int32_t angleRaw = _readAngle(ade7953Channel);
-        return (float(angleRaw) * 360.0f * float(DEG_TO_RAD) * float(_lineFrequency) / GRID_FREQUENCY_CONVERSION_FACTOR); // Convert to radians
-    }
 
     int32_t _readPeriod() {
         return readRegister(PERIOD_16, BIT_16, false);
