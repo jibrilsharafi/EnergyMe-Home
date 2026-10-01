@@ -1813,7 +1813,6 @@ namespace Ade7953
 
         // Waveform buffers are kept: a web handler can still be reading a completed capture while
         // the restart sequence runs (only caller), and a reboot follows.
-        LOG_DEBUG("Cleaned up waveform capture buffers");
 
         LOG_DEBUG("Cleaned up tasks and energy saved");
     }
