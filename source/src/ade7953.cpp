@@ -384,11 +384,8 @@ namespace Ade7953
         // Clean up resources (where the data will also be saved)
         _cleanup();
 
-        deleteMutex(&_spiMutex);
-        deleteMutex(&_spiOperationMutex);
-        deleteMutex(&_configMutex);
-        deleteMutex(&_meterValuesMutex);
-        deleteMutex(&_channelDataMutex);
+        // Mutexes are kept: Modbus, MQTT and web handlers can still be inside getters while the
+        // restart sequence runs, and deleting a mutex in use trips a FreeRTOS assert. A reboot follows.
         
         LOG_DEBUG("ADE7953 stopped successfully");
     }

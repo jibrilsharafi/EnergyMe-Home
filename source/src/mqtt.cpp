@@ -394,36 +394,9 @@ namespace Mqtt
         LOG_DEBUG("Stopping MQTT client...");
         _stopTask();
         
-        _logQueue = nullptr;
-        _meterQueue = nullptr;
-        _gridQueue = nullptr;
-        _alarmQueue = nullptr;
-
-        if (_logQueueStorage != nullptr) {
-            free(_logQueueStorage);
-            _logQueueStorage = nullptr;
-            LOG_DEBUG("MQTT log queue PSRAM freed");
-        }
-
-        if (_meterQueueStorage != nullptr) {
-            free(_meterQueueStorage);
-            _meterQueueStorage = nullptr;
-            LOG_DEBUG("MQTT meter queue PSRAM freed");
-        }
-
-        if (_gridQueueStorage != nullptr) {
-            free(_gridQueueStorage);
-            _gridQueueStorage = nullptr;
-            LOG_DEBUG("MQTT grid queue PSRAM freed");
-        }
-
-        if (_alarmQueueStorage != nullptr) {
-            free(_alarmQueueStorage);
-            _alarmQueueStorage = nullptr;
-            LOG_DEBUG("MQTT alarm queue PSRAM freed");
-        }
-
-        deleteMutex(&_configMutex);
+        // Queues and the config mutex are kept: other tasks (pushLog from any LOG_*, web handlers
+        // via setCloudServicesEnabled) can still reach them during the restart sequence, and
+        // freeing them under a live user is a use-after-free. A reboot follows.
 
         // Zeroize and free certificate buffers
         if (_awsIotCoreCert != nullptr) {
