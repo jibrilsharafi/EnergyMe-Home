@@ -2387,7 +2387,7 @@ namespace Mqtt
         // whole document per point was quadratic and, with a full queue after a long cloud
         // outage, kept mqtt_task busy past the task watchdog.
         size_t payloadBytes = 1;
-        while (xQueueReceive(_gridQueue, &point, 0) == pdTRUE && loops < MAX_LOOP_ITERATIONS) {
+        while (loops < MAX_LOOP_ITERATIONS && xQueueReceive(_gridQueue, &point, 0) == pdTRUE) { // Cap first: a point received past it would be dropped
             loops++;
             JsonArray triplet = points.add<JsonArray>();
             triplet.add(point.unixTimeMs);
