@@ -1811,19 +1811,8 @@ namespace Ade7953
         LOG_DEBUG("Saving final energy data during cleanup");
         _saveEnergyComplete();
 
-        // Free waveform capture buffers
-        if (_voltageWaveformBuffer) {
-            free(_voltageWaveformBuffer);
-            _voltageWaveformBuffer = nullptr;
-        }
-        if (_currentWaveformBuffer) {
-            free(_currentWaveformBuffer);
-            _currentWaveformBuffer = nullptr;
-        }
-        if (_microsWaveformBuffer) {
-            free(_microsWaveformBuffer);
-            _microsWaveformBuffer = nullptr;
-        }
+        // Waveform buffers are kept: a web handler can still be reading a completed capture while
+        // the restart sequence runs (only caller), and a reboot follows.
         LOG_DEBUG("Cleaned up waveform capture buffers");
 
         LOG_DEBUG("Cleaned up tasks and energy saved");
