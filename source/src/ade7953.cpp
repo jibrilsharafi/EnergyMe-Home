@@ -3864,7 +3864,7 @@ namespace Ade7953
         uint64_t millisRead = millis64();
         uint64_t lastMillis = _meterValues[channelIndex].lastMillis;
         releaseMutex(&_meterValuesMutex);
-        uint64_t deltaMillis = millisRead - lastMillis;
+        uint64_t deltaMillis = lastMillis != 0 ? millisRead - lastMillis : 0; // First read only sets the base (channel 0 is never baselined; it would book P x uptime)
 
         ChannelData channelData(channelIndex);
         if (!getChannelData(channelData, channelIndex)) {
