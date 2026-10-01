@@ -2410,6 +2410,10 @@ namespace Mqtt
 
         PayloadGridPoint point;
         uint32_t loops = 0;
+        // Running size of the array: '[' plus each element and its ',' or ']'. Re-measuring the
+        // whole document per point was quadratic and, with a full queue after a long cloud
+        // outage, kept mqtt_task busy past the task watchdog.
+        size_t payloadBytes = 1;
         while (xQueueReceive(_gridQueue, &point, 0) == pdTRUE && loops < MAX_LOOP_ITERATIONS) {
             loops++;
             JsonArray triplet = points.add<JsonArray>();
@@ -2417,7 +2421,8 @@ namespace Mqtt
             triplet.add(roundToDecimals(point.frequency, MQTT_GRID_FREQUENCY_PAYLOAD_DECIMALS));
             triplet.add(roundToDecimals(point.voltage, MQTT_GRID_VOLTAGE_PAYLOAD_DECIMALS));
 
-            if (measureJson(doc) > AWS_IOT_CORE_MQTT_PAYLOAD_LIMIT * MQTT_METER_PAYLOAD_THRESHOLD_MULTIPLIER) break; // Remainder ships at the next aligned boundary
+            payloadBytes += measureJson(triplet) + 1;
+            if (payloadBytes > AWS_IOT_CORE_MQTT_PAYLOAD_LIMIT * MQTT_METER_PAYLOAD_THRESHOLD_MULTIPLIER) break; // Remainder ships at the next aligned boundary
         }
 
         if (_publishJsonStreaming(doc, _mqttTopicGrid)) {
@@ -2987,6 +2992,7 @@ namespace Mqtt
         ) {
             PayloadMeter payloadMeter;
             uint32_t loops = 0;
+            size_t payloadBytes = 1; // Running array size, as in _publishGrid
             while ((uxQueueMessagesWaiting(_meterQueue) > 0) && loops < MAX_LOOP_ITERATIONS) {
                 loops++;
 
@@ -2998,12 +3004,13 @@ namespace Mqtt
                 powerArray.add(roundToDecimals(payloadMeter.activePower, POWER_DECIMALS));
                 powerArray.add(roundToDecimals(payloadMeter.powerFactor, POWER_FACTOR_DECIMALS));
                 entriesAdded++;
+                payloadBytes += measureJson(powerArray) + 1;
 
                 // Check if we're approaching the minimum billable size (optimize costs by staying just under)
-                if (measureJson(doc) > AWS_IOT_CORE_MQTT_PAYLOAD_MINIMUM_BILLABLE * MQTT_METER_PAYLOAD_THRESHOLD_MULTIPLIER) {
+                if (payloadBytes > AWS_IOT_CORE_MQTT_PAYLOAD_MINIMUM_BILLABLE * MQTT_METER_PAYLOAD_THRESHOLD_MULTIPLIER) {
                     LOG_DEBUG(
                         "Meter data JSON approaching billable threshold (%u bytes, max %u), stopping queue processing (missing %d points)",
-                        measureJson(doc), AWS_IOT_CORE_MQTT_PAYLOAD_MINIMUM_BILLABLE, uxQueueMessagesWaiting(_meterQueue)
+                        payloadBytes, AWS_IOT_CORE_MQTT_PAYLOAD_MINIMUM_BILLABLE, uxQueueMessagesWaiting(_meterQueue)
                     );
                     break; // Remaining entries will be sent in the next publish
                 }
