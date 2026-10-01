@@ -412,7 +412,8 @@ const DataHelpers = {
         let trackedLoadConsumption = 0;
         Object.keys(periodData).forEach(channel => {
             if (!excludeFromOther.has(channel)) {
-                trackedLoadConsumption += periodData[channel];
+                // Net: a bidirectional circuit's export feeds the rest of the house (loads never export)
+                trackedLoadConsumption += periodData[channel] - (periodExportData[channel] || 0);
             }
         });
 

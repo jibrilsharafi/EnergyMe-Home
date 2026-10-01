@@ -262,3 +262,13 @@ test('finalize derives Other from grid and hides role channels', () => {
     assert.deepEqual(result.rawImported['10:00'], { 0: 3, 1: 1, 2: 0.5 });
     ChannelCache.setChannelData(null);
 });
+
+test('a bidirectional circuit counts net in Other, so its export feeds the house', () => {
+    const { DataHelpers } = require('../../js/data-helpers.js');
+    ChannelCache.setChannelData([
+        { index: 0, role: 'grid' }, { index: 1, role: 'load' }, { index: 2, role: 'bidirectional' },
+    ]);
+    // Grid imports 2, the load uses 4, the sub-panel draws 1 and exports 5 into the house
+    const other = DataHelpers.calculateOtherConsumption({ 0: 2, 1: 4, 2: 1 }, ChannelCache.excludeFromOther, { 2: 5 });
+    assert.ok(Math.abs(other - 2) < EPS);
+});
