@@ -213,9 +213,10 @@ namespace CustomServer
         // Stop the server
         server.end();
 
-        // Delete API mutex
-        deleteMutex(&_apiMutex);
-        
+        // The API mutex is deliberately kept: a request already inside a handler on async_tcp
+        // can still be waiting on it, and deleting a mutex with a waiter trips a FreeRTOS
+        // assert (panic on every restart under load). begin() reuses it via createMutexIfNeeded.
+
         LOG_DEBUG("Web server stopped");
     }
 

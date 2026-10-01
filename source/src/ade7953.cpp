@@ -384,11 +384,8 @@ namespace Ade7953
         // Clean up resources (where the data will also be saved)
         _cleanup();
 
-        deleteMutex(&_spiMutex);
-        deleteMutex(&_spiOperationMutex);
-        deleteMutex(&_configMutex);
-        deleteMutex(&_meterValuesMutex);
-        deleteMutex(&_channelDataMutex);
+        // Mutexes are kept: Modbus, MQTT and web handlers can still be inside getters while the
+        // restart sequence runs, and deleting a mutex in use trips a FreeRTOS assert. A reboot follows.
         
         LOG_DEBUG("ADE7953 stopped successfully");
     }
@@ -1814,20 +1811,8 @@ namespace Ade7953
         LOG_DEBUG("Saving final energy data during cleanup");
         _saveEnergyComplete();
 
-        // Free waveform capture buffers
-        if (_voltageWaveformBuffer) {
-            free(_voltageWaveformBuffer);
-            _voltageWaveformBuffer = nullptr;
-        }
-        if (_currentWaveformBuffer) {
-            free(_currentWaveformBuffer);
-            _currentWaveformBuffer = nullptr;
-        }
-        if (_microsWaveformBuffer) {
-            free(_microsWaveformBuffer);
-            _microsWaveformBuffer = nullptr;
-        }
-        LOG_DEBUG("Cleaned up waveform capture buffers");
+        // Waveform buffers are kept: a web handler can still be reading a completed capture while
+        // the restart sequence runs (only caller), and a reboot follows.
 
         LOG_DEBUG("Cleaned up tasks and energy saved");
     }
@@ -3878,7 +3863,7 @@ namespace Ade7953
         uint64_t millisRead = millis64();
         uint64_t lastMillis = _meterValues[channelIndex].lastMillis;
         releaseMutex(&_meterValuesMutex);
-        uint64_t deltaMillis = millisRead - lastMillis;
+        uint64_t deltaMillis = lastMillis != 0 ? millisRead - lastMillis : 0; // First read only sets the base (channel 0 is never baselined; it would book P x uptime)
 
         ChannelData channelData(channelIndex);
         if (!getChannelData(channelData, channelIndex)) {

@@ -394,36 +394,9 @@ namespace Mqtt
         LOG_DEBUG("Stopping MQTT client...");
         _stopTask();
         
-        _logQueue = nullptr;
-        _meterQueue = nullptr;
-        _gridQueue = nullptr;
-        _alarmQueue = nullptr;
-
-        if (_logQueueStorage != nullptr) {
-            free(_logQueueStorage);
-            _logQueueStorage = nullptr;
-            LOG_DEBUG("MQTT log queue PSRAM freed");
-        }
-
-        if (_meterQueueStorage != nullptr) {
-            free(_meterQueueStorage);
-            _meterQueueStorage = nullptr;
-            LOG_DEBUG("MQTT meter queue PSRAM freed");
-        }
-
-        if (_gridQueueStorage != nullptr) {
-            free(_gridQueueStorage);
-            _gridQueueStorage = nullptr;
-            LOG_DEBUG("MQTT grid queue PSRAM freed");
-        }
-
-        if (_alarmQueueStorage != nullptr) {
-            free(_alarmQueueStorage);
-            _alarmQueueStorage = nullptr;
-            LOG_DEBUG("MQTT alarm queue PSRAM freed");
-        }
-
-        deleteMutex(&_configMutex);
+        // Queues and the config mutex are kept: other tasks (pushLog from any LOG_*, web handlers
+        // via setCloudServicesEnabled) can still reach them during the restart sequence, and
+        // freeing them under a live user is a use-after-free. A reboot follows.
 
         // Zeroize and free certificate buffers
         if (_awsIotCoreCert != nullptr) {
@@ -2410,14 +2383,19 @@ namespace Mqtt
 
         PayloadGridPoint point;
         uint32_t loops = 0;
-        while (xQueueReceive(_gridQueue, &point, 0) == pdTRUE && loops < MAX_LOOP_ITERATIONS) {
+        // Running size of the array: '[' plus each element and its ',' or ']'. Re-measuring the
+        // whole document per point was quadratic and, with a full queue after a long cloud
+        // outage, kept mqtt_task busy past the task watchdog.
+        size_t payloadBytes = 1;
+        while (loops < MAX_LOOP_ITERATIONS && xQueueReceive(_gridQueue, &point, 0) == pdTRUE) { // Cap first: a point received past it would be dropped
             loops++;
             JsonArray triplet = points.add<JsonArray>();
             triplet.add(point.unixTimeMs);
             triplet.add(roundToDecimals(point.frequency, MQTT_GRID_FREQUENCY_PAYLOAD_DECIMALS));
             triplet.add(roundToDecimals(point.voltage, MQTT_GRID_VOLTAGE_PAYLOAD_DECIMALS));
 
-            if (measureJson(doc) > AWS_IOT_CORE_MQTT_PAYLOAD_LIMIT * MQTT_METER_PAYLOAD_THRESHOLD_MULTIPLIER) break; // Remainder ships at the next aligned boundary
+            payloadBytes += measureJson(triplet) + 1;
+            if (payloadBytes > AWS_IOT_CORE_MQTT_PAYLOAD_LIMIT * MQTT_METER_PAYLOAD_THRESHOLD_MULTIPLIER) break; // Remainder ships at the next aligned boundary
         }
 
         if (_publishJsonStreaming(doc, _mqttTopicGrid)) {
@@ -2987,6 +2965,7 @@ namespace Mqtt
         ) {
             PayloadMeter payloadMeter;
             uint32_t loops = 0;
+            size_t payloadBytes = 1; // Running array size, as in _publishGrid
             while ((uxQueueMessagesWaiting(_meterQueue) > 0) && loops < MAX_LOOP_ITERATIONS) {
                 loops++;
 
@@ -2998,12 +2977,13 @@ namespace Mqtt
                 powerArray.add(roundToDecimals(payloadMeter.activePower, POWER_DECIMALS));
                 powerArray.add(roundToDecimals(payloadMeter.powerFactor, POWER_FACTOR_DECIMALS));
                 entriesAdded++;
+                payloadBytes += measureJson(powerArray) + 1;
 
                 // Check if we're approaching the minimum billable size (optimize costs by staying just under)
-                if (measureJson(doc) > AWS_IOT_CORE_MQTT_PAYLOAD_MINIMUM_BILLABLE * MQTT_METER_PAYLOAD_THRESHOLD_MULTIPLIER) {
+                if (payloadBytes > AWS_IOT_CORE_MQTT_PAYLOAD_MINIMUM_BILLABLE * MQTT_METER_PAYLOAD_THRESHOLD_MULTIPLIER) {
                     LOG_DEBUG(
                         "Meter data JSON approaching billable threshold (%u bytes, max %u), stopping queue processing (missing %d points)",
-                        measureJson(doc), AWS_IOT_CORE_MQTT_PAYLOAD_MINIMUM_BILLABLE, uxQueueMessagesWaiting(_meterQueue)
+                        payloadBytes, AWS_IOT_CORE_MQTT_PAYLOAD_MINIMUM_BILLABLE, uxQueueMessagesWaiting(_meterQueue)
                     );
                     break; // Remaining entries will be sent in the next publish
                 }
