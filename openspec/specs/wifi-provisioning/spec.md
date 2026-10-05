@@ -3,9 +3,7 @@
 ## Purpose
 
 TBD - Update Purpose after archive.
-
 ## Requirements
-
 ### Requirement: Provisioning never blocks the WiFi task
 
 The WiFi task SHALL remain able to service its notification loop at all times during provisioning. No provisioning operation SHALL block the task for longer than one notification-loop iteration.
@@ -36,7 +34,7 @@ The device SHALL start the web server and local integrations when the SoftAP is 
 
 ### Requirement: The SoftAP is raised while the device is unreachable, and only then
 
-The SoftAP SHALL be raised whenever the device cannot be reached over its own network, and SHALL be torn down once it can. Association, not elapsed time, is the teardown condition.
+The SoftAP SHALL be raised whenever the device cannot be reached over its own network, and SHALL be torn down once it can. Association, not elapsed time, is the teardown condition. On products with Ethernet, "reachable" includes the Ethernet interface: a device with an Ethernet link and an address SHALL NOT raise the SoftAP, and a serviceable Ethernet interface SHALL satisfy the teardown condition the same way an STA association does. On products without Ethernet, the conditions are unchanged.
 
 #### Scenario: Successful provisioning
 
@@ -63,6 +61,21 @@ The SoftAP SHALL be raised whenever the device cannot be reached over its own ne
 
 - **WHEN** the AP comes down for any reason while the device still cannot associate
 - **THEN** it is raised again on the next lifecycle tick, with no cooldown to wait out
+
+#### Scenario: Cabled Pro device never raises the AP
+
+- **WHEN** a Home Pro device has an Ethernet link and an address, with or without WiFi credentials
+- **THEN** no SoftAP is raised, because the device is reachable over the wire
+
+#### Scenario: Pro device recovers over Ethernet
+
+- **WHEN** the SoftAP is up on a Pro device and an Ethernet cable is plugged in and obtains an address
+- **THEN** the AP is torn down under the same rules as a successful STA association
+
+#### Scenario: Pro device with no interface at all
+
+- **WHEN** a Home Pro device has no Ethernet link and cannot associate to WiFi (or has no credentials)
+- **THEN** the SoftAP is raised, exactly as on a Home device that cannot associate
 
 ### Requirement: Local integrations are not exposed on the SoftAP
 
@@ -151,7 +164,7 @@ The OTA endpoint SHALL require digest authentication in every provisioning state
 
 ### Requirement: The DNS responder is confined to AP-only operation
 
-The catch-all DNS responder SHALL run only while the SoftAP is raised and STA is disconnected, and SHALL be stopped once STA connects.
+The catch-all DNS responder SHALL run only while the SoftAP is raised and no station-side interface is serviceable - STA disconnected, and on products with Ethernet, no serviceable Ethernet interface either - and SHALL be stopped once any station-side interface comes up.
 
 #### Scenario: STA connects while the AP is still up
 
@@ -163,9 +176,14 @@ The catch-all DNS responder SHALL run only while the SoftAP is raised and STA is
 - **WHEN** the SoftAP address is moved to avoid a collision with the STA subnet
 - **THEN** the DNS responder answers with the current SoftAP address, not a previously cached one
 
+#### Scenario: Ethernet becomes serviceable while the AP is up
+
+- **WHEN** an Ethernet address is obtained during AP recovery on a Pro device
+- **THEN** the DNS responder stops, because the device is now reachable on a real network and must not answer LAN DNS queries
+
 ### Requirement: The SoftAP subnet never overlaps the STA subnet
 
-The SoftAP SHALL be assigned a subnet that does not overlap the STA subnet, because lwIP resolves an ambiguous route to the first matching interface and a later-added interface is prepended.
+The SoftAP SHALL be assigned a subnet that does not overlap any station-side subnet - the STA subnet, and on products with Ethernet, the Ethernet subnet (live lease or configured static) - because lwIP resolves an ambiguous route to the first matching interface and a later-added interface is prepended.
 
 #### Scenario: Router uses the default AP subnet
 
@@ -187,6 +205,12 @@ The SoftAP SHALL be assigned a subnet that does not overlap the STA subnet, beca
 
 - **WHEN** the AP is raised while unprovisioned and STA later obtains a lease that overlaps the AP subnet
 - **THEN** the condition is logged and the AP is torn down rather than left routing ambiguously
+
+#### Scenario: Ethernet lease overlaps the AP subnet
+
+- **WHEN** the AP is up on a Pro device and Ethernet obtains an address that overlaps the AP subnet
+- **THEN** the AP is torn down (the device is wire-reachable anyway), never left routing ambiguously
+- **AND** subnet selection for a future AP raise accounts for the Ethernet subnet - lease and configured static - alongside the STA subnet
 
 ### Requirement: The setup page tells the user where the meter went
 
@@ -226,3 +250,18 @@ A power interruption that also restarts the user's router SHALL NOT cause the de
 
 - **WHEN** the device restarts from a power-on or brownout reset and the router is still booting
 - **THEN** the device applies the extended connection timeout before counting association failures toward raising the SoftAP
+
+### Requirement: Provisioning carve-outs require a peer inside the SoftAP subnet
+
+Every test that treats a request as arriving over the SoftAP (the unauthenticated provisioning carve-out, the provisioning-session read carve-out, and the AP-origin widening of the default-password allowlist) SHALL require both that the request was addressed to the SoftAP address AND that the peer address lies inside the SoftAP subnet (and is not the AP address itself). The destination address alone is not proof of arrival interface: with Ethernet up, lwIP accepts a wired packet addressed to the SoftAP address and routes the reply back out Ethernet.
+
+#### Scenario: LAN host addresses the SoftAP address over Ethernet
+
+- **WHEN** an unprovisioned Pro device has its SoftAP raised and a host on the wired LAN sends a request to the SoftAP address
+- **THEN** the request is not treated as a provisioning-origin request and runs the full authentication chain
+
+#### Scenario: Real SoftAP client
+
+- **WHEN** a client associated to the SoftAP, holding an address the SoftAP leased, requests the provisioning page while unprovisioned
+- **THEN** the carve-out applies exactly as before
+

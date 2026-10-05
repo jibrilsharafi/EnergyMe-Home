@@ -69,11 +69,15 @@ Because the device uses asymmetric desired-null (the delta-ack nulls `desired`; 
 - **THEN** no delta is generated, the device does not clear `desired`, and the cloud must clear it after observing convergence
 
 ### Requirement: Secrets and high-rate telemetry stay out of shadows
-Shadows SHALL NOT carry secrets (WiFi credentials, CustomMQTT credentials, InfluxDB token, web UI password) or high-rate telemetry (energy counters, instantaneous power). The `wifi` shadow SHALL report only non-secret network state (connected/ssid/ip/gateway/subnet/dns/mac, static_ip, fallback_to_dhcp).
+Shadows SHALL NOT carry secrets (WiFi credentials, CustomMQTT credentials, InfluxDB token, web UI password) or high-rate telemetry (energy counters, instantaneous power). The `wifi` shadow SHALL report only non-secret network state (connected/ssid/ip/gateway/subnet/dns/mac, static_ip, fallback_to_dhcp). On hardware with Ethernet it SHALL additionally report `active_interface` and an `ethernet` object (enabled, and when enabled link_up/static_ip/ip/gateway/subnet/dns1/dns2/mac) instead of a separate named shadow.
 
 #### Scenario: wifi shadow exposes no credentials
 - **WHEN** the `wifi` shadow publishes reported state
 - **THEN** it contains non-secret network fields only and no WiFi password
+
+#### Scenario: Ethernet state reported on a Home Pro
+- **WHEN** the `wifi` shadow publishes on hardware with Ethernet
+- **THEN** it includes `active_interface` and the `ethernet` object, and a Home device publishes neither
 
 ### Requirement: System shadow exposes meter publish cadence fields
 The `system` shadow SHALL expose `meter_publish_threshold_bytes` and `meter_publish_max_interval_ms` as writable fields, following the same delta-apply-persist-ack pattern as `send_power_data`/`send_grid_data`: a delta sets the field, the device persists it to NVS, and the same publish carries both the new `reported` value and `desired:{<field>:null}`.
@@ -86,7 +90,6 @@ The `system` shadow SHALL expose `meter_publish_threshold_bytes` and `meter_publ
 - **WHEN** the MQTT client (re)connects
 - **THEN** the `system` shadow's full reported state includes the current `meter_publish_threshold_bytes` and `meter_publish_max_interval_ms`, alongside the existing fields
 
-
 ### Requirement: Info shadow reports the rollback target fingerprint
 The `info` shadow SHALL report `other_partition_sha256`: the 64-hex-character application sha256 of the firmware image currently in the passive OTA partition, or `null` when the passive slot holds no readable application descriptor. This makes every device's rollback target observable fleet-wide before any incident, so a `firmware_rollback` command's `expected_sha256` can be chosen from the shadow without querying the device during an outage.
 
@@ -97,3 +100,4 @@ The `info` shadow SHALL report `other_partition_sha256`: the 64-hex-character ap
 #### Scenario: Unreadable passive slot reported as null
 - **WHEN** the passive partition has no valid application descriptor (e.g. fresh factory device)
 - **THEN** the `info` shadow reports `other_partition_sha256` as `null`
+
