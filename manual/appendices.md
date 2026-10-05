@@ -54,6 +54,9 @@ The three channels share the same **Grouping** value (`Grid`), so the dashboard 
 > **✅ TIP: Use power factor to catch a wrong phase assignment**  
 > A channel with the wrong `Phase` setting still shows plausible-looking numbers, just wrong ones, so it's easy to miss. The fast check: put a purely resistive load on the circuit (a kettle, a resistive heater) and look at its power factor. A resistive load should read **close to 100% PF**. If it instead reads **close to 50% PF**, that channel is very likely on the wrong phase (each phase is 120° apart, and being 120° off collapses a 100% PF load to almost exactly 50%). Try the other phase settings and watch the power factor climb back towards 100%.
 
+> **ⓘ NOTE: Accuracy on L2 and L3**  
+> The device only measures the voltage of the phase it is powered from. Channels on the other two phases are computed assuming the three voltages have the same amplitude and are exactly 120° apart, so expect them to be slightly less accurate than Channel 0's phase (typically within 1-2%, depending on how balanced your supply is).
+
 ### B.2 Three-phase branch load (e.g., EV charger, heat pump, oven)
 
 #### Hardware
@@ -217,7 +220,7 @@ The button on the front of the device lets you recover from common situations wi
 | < 2 s | White | No action |
 | 2-5 s | **Cyan** | **Restart:** equivalent to a power cycle |
 | 5-10 s | **Yellow** | **Password reset:** resets the web password to `energyme` |
-| 10-15 s | **Orange** | **Wi-Fi reset:** clears Wi-Fi credentials and reopens the device's own setup network ([§4.1](02-setup.md#41-connect-to-the-devices-wi-fi-setup-network)). Energy data and channel configuration are preserved |
+| 10-15 s | **Orange** | **Wi-Fi reset:** clears Wi-Fi credentials and any static IP settings (back to DHCP), then reopens the device's own setup network ([§4.1](02-setup.md#41-connect-to-the-devices-wi-fi-setup-network)). Energy data and channel configuration are preserved |
 | 15-20 s | **Red** | **Factory reset** ⚠: erases all data, configuration, and credentials. Use only as a last resort |
 | > 20 s | White | No action. Release and try again |
 

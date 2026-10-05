@@ -212,7 +212,7 @@ To update manually:
 2. Follow the on-screen instructions.
 
 > **ⓘ NOTE: Community devices**  
-> Community (self-built) devices have no factory-provisioned cloud credentials, so **Cloud Services** can't be enabled and updates are always manual: download the latest firmware binary from [GitHub Releases](https://github.com/jibrilsharafi/EnergyMe-Home/releases/latest) and upload it via the Update page. Consider watching the repository (GitHub's "Watch" button, Releases only) so you hear about new versions without having to check manually.
+> Community (self-built) devices have no factory-provisioned cloud credentials, so **Cloud Services** can't be enabled and updates are always manual: download the latest firmware binary from [GitHub Releases](https://github.com/jibrilsharafi/EnergyMe-Home/releases/latest) and upload it via the Update page. Pick the file matching your product, `energyme_home_<version>.bin` (or `energyme_homepro_<version>.bin` for a Home Pro), not the `_bootloader`, `_partitions`, `.elf` or `.sig` files; a binary for the other product is rejected by the device. Consider watching the repository (GitHub's "Watch" button, Releases only) so you hear about new versions without having to check manually.
 
 ### 4.9 Integrations
 

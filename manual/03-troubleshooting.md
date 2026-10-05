@@ -17,10 +17,11 @@ A full symptom-driven troubleshooting guide is being prepared. Anticipated secti
 
 If you run into a problem that isn't covered elsewhere in this manual:
 
-1. Check the **[LED Status Reference (Appendix C)](appendices.md#appendix-c-led-status-reference)** — most installation issues are visible from the LED.
-2. Try the **kettle test** described in [§4.7](02-setup.md#47-verification) to verify your wiring quickly.
-3. Use the **button on the device** to recover from common situations (Wi-Fi reset, password reset); see [Appendix D](appendices.md#appendix-d-user-button-reference).
-4. Compare your dashboard against the **[live demo](https://demo-energyme-home.energyme.net/)** to spot any obvious differences.
+1. Check the **issues badge** in the top-right corner of the web interface. The device detects common problems on its own (e.g. a CT with the wrong polarity, over-temperature) and lists them there with a short explanation; channel-specific ones also appear on the **Channels** page.
+2. Check the **[LED Status Reference (Appendix C)](appendices.md#appendix-c-led-status-reference)** — most installation issues are visible from the LED.
+3. Try the **kettle test** described in [§4.7](02-setup.md#47-verification) to verify your wiring quickly.
+4. Use the **button on the device** to recover from common situations (Wi-Fi reset, password reset); see [Appendix D](appendices.md#appendix-d-user-button-reference).
+5. Compare your dashboard against the **[live demo](https://demo-energyme-home.energyme.net/)** to spot any obvious differences.
 
 If none of the above helps, open a [GitHub issue](https://github.com/jibrilsharafi/EnergyMe-Home/issues) with:
 
