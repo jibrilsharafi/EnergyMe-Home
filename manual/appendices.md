@@ -250,7 +250,7 @@ If both are configured, **Ethernet is used first and Wi-Fi is the automatic fall
 
 ### E.3 Static IP
 
-**Configuration → Ethernet Configuration** lets you switch from DHCP to a static address. If the static settings repeatedly fail to bring the connection up, the device reverts to DHCP on its own. The [Wi-Fi reset](#appendix-d-user-button-reference) button action also resets the Ethernet settings to DHCP.
+**Configuration → Ethernet Configuration** lets you switch from DHCP to a static address; the device restarts to apply it. Double-check the values: a wrong but valid address (e.g. outside your router's range) is not detected, and the device simply becomes unreachable over the cable. To recover, unplug the cable (the device falls back to Wi-Fi, or opens its setup network) and fix the settings, or use the [Wi-Fi reset](#appendix-d-user-button-reference) button action, which also resets the Ethernet settings to DHCP.
 
 ### E.4 Firmware
 
