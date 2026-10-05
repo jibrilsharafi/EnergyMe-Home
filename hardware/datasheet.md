@@ -66,7 +66,7 @@ The metering chain monitors single-phase and (as derived single-phase per leg) t
 | Three phase | 400 / 230 V (3L + N) | Commercial, derived voltages |
 | Three phase | 208 / 120 V (3L + N) | North America commercial, derived voltages |
 
-Three-phase systems are monitored as derived single-phase voltages per leg, each on its own channel; the board is a single-phase metering platform, not a true polyphase meter.
+Three-phase systems are monitored per leg, each on its own channel, against the single measured voltage: off-phase channels are rotated by ±120° assuming a balanced supply. The board is a single-phase metering platform, not a true polyphase meter.
 
 ---
 
@@ -124,10 +124,12 @@ CTs are not part of the board; any voltage-output CT within the input range work
 
 - Energy monitoring per channel (real-time power, RMS voltage and current, power factor, frequency, kWh accumulation)
 - Web interface for configuration, monitoring, and integration setup
-- Token-based authentication with password protection
+- Channel roles (load, grid, PV, battery, inverter, bidirectional) with automatic CT reversal detection
+- HTTP Digest authentication with forced default-password change and brute-force lockout
 - Captive portal for first-time Wi-Fi setup; mDNS service discovery (`energyme.local`)
-- Over-the-air firmware updates with MD5 verification and rollback
+- Over-the-air firmware updates with MD5 verification and rollback (cloud updates are signature-verified)
 - Crash recovery with safe-mode operation
+- Device issue registry and grid blackout detection
 - 10+ years of hourly local data logging with CSV export
 - Per-channel waveform capture (voltage and current) from the web UI
 

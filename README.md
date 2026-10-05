@@ -73,12 +73,14 @@ The firmware is built with C++ using the *PlatformIO* ecosystem and *Arduino 3.x
 **Key Features:**
 
 - **Energy Monitoring**: ADE7953 driver with energy accumulation and CSV logging
+- **Channel Roles**: Load, grid, PV, battery, hybrid inverter and bidirectional channels, with automatic CT reversal detection
 - **Web Interface**: Dashboard for monitoring and system configuration
-- **Authentication**: Token-based security with password protection
+- **Authentication**: HTTP Digest with forced default-password change and brute-force lockout
 - **Integration Options**: REST API, MQTT, InfluxDB, and Modbus TCP
-- **Crash Recovery**: Automatic recovery and firmware rollback on failures
+- **Crash Recovery**: Automatic recovery, firmware rollback and core dump archive
 - **WiFi Setup**: Captive portal for configuration and mDNS support (`energyme.local`)
-- **OTA Updates**: Firmware updates with MD5 verification and rollback
+- **OTA Updates**: Firmware updates with MD5 verification and rollback (cloud updates are signature-verified)
+- **Device Health**: Issue registry (CT polarity, over-temperature, ...) and grid blackout detection
 - **Waveform Analyzer**: Capture high-resolution voltage & current waveforms per channel from the web UI
 
 For detailed architecture, implementation details, and API documentation, see [`source/README.md`](source/README.md).
@@ -113,7 +115,7 @@ Get started at [homeassistant-energyme](https://github.com/jibrilsharafi/homeass
 2. **Populate the board**: Solder all components using the BOMs in `hardware/pcb/main_board/`, `hardware/pcb/top_board_1/`, and `hardware/pcb/top_board_2/`
 3. **Flash the firmware**: Connect a USB-to-UART adapter to the UART pins and flash using PlatformIO
 4. **Configure WiFi**: Power on the device and connect to the captive portal to set up WiFi credentials
-5. **Start monitoring**: Access the web interface at `http://energyme.local` (default credentials: *admin*/*energyme*)
+5. **Start monitoring**: Access the web interface at `http://energyme.local` (default credentials: *admin*/*energyme*, you will be asked to change the password at first login)
 
 For detailed build instructions and troubleshooting, see the [manual](manual/README.md).
 

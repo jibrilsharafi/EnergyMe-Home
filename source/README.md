@@ -9,9 +9,10 @@ Task-based energy monitoring system built on FreeRTOS. ESP32-S3 interfaces with 
 
 **Monitoring Capabilities:**
 
-- **16 channels**: 1 direct (channel 0) + 15 multiplexed
+- **Channels per product line**: Home 16 (1 direct + 15 multiplexed), Home Pro 12 (W5500 Ethernet)
 - **Measurements**: Voltage, current, active/reactive/apparent power, power factor, energy accumulation
-- Single-phase per channel (three-phase assumes 120° shift, same voltage reference - see `ade7953.cpp`)
+- Single voltage reference (channel 0): channels on other lines of a three-phase supply rotate the measured energies by ±120°, assuming a balanced voltage (see `ade7953.cpp`)
+- Channel roles (load, grid, PV, battery, inverter, bidirectional) with automatic CT reversal detection
 - Calibration with no-load threshold detection
 
 ## Architecture
@@ -77,8 +78,12 @@ The system implements a hierarchical protection against restart loops to ensure 
 #### Additional Features
 
 - RTC memory persistence (survives reboots)
-- ESP32 core dump support with backtrace decoding
+- ESP32 core dump support with backtrace decoding, archived to LittleFS
 - Automatic MQTT crash reporting (if configured)
+
+**Device Issues:**
+
+Runtime issue registry (CT polarity mismatch, over-temperature, ...) exposed via API and cloud. Grid blackouts are detected via the ADE7953 zero-crossing timeout and reported before power is lost.
 
 **Memory Management:**
 
@@ -106,7 +111,7 @@ The system implements a hierarchical protection against restart loops to ensure 
 
 - Responsive UI with real-time updates
 - RESTful API with Swagger documentation
-- Token-based authentication with HTTP-only cookies
+- HTTP Digest authentication
 - Pages: Dashboard, System Info, Configuration, Channel Setup, Calibration, ADE7953 Tester, Firmware Updates, Logs, API Docs
 
 **Communication:**
@@ -140,9 +145,9 @@ source/
 
 **Key Modules:**
 
-- **System**: `CrashMonitor`, `Led`, `ButtonHandler`, `CustomTime`
+- **System**: `CrashMonitor`, `IssueRegistry`, `Led`, `ButtonHandler`, `CustomTime`
 - **Energy**: `Ade7953`, `Multiplexer`
-- **Network**: `CustomWifi`, `CustomServer`, `Mqtt`, `CustomMqtt`, `InfluxDbClient`, `ModbusTcp`
+- **Network**: `CustomWifi`, `CustomEth`, `CustomServer`, `Mqtt`, `Shadow`, `CustomMqtt`, `InfluxDbClient`, `ModbusTcp`
 - **Storage**: `Preferences API`, `LittleFS`
 
 **Design Principles:**
@@ -150,7 +155,6 @@ source/
 - Task-based operations with FreeRTOS
 - Crash resilience with automatic recovery
 - PSRAM utilization and stack monitoring
-- Token-based authentication
 - Non-blocking operations
 
 ## Configuration & Storage
@@ -159,13 +163,16 @@ source/
 
 - `general_ns`: System settings, device configuration
 - `ade7953_ns`: Energy IC parameters
+- `energy_ns`: Accumulated energy counters
 - `calibration_ns`: Measurement calibration values
 - `channels_ns`: Per-channel configuration
 - `mqtt_ns` / `custom_mqtt_ns`: MQTT broker settings
 - `influxdb_ns`: InfluxDB configuration
 - `auth_ns`: Authentication credentials
-- `wifi_ns`: Network configuration
+- `wifi_ns` / `eth_ns`: Network configuration
 - `crashmonitor_ns`: Crash recovery settings
+- `time_ns`, `led_ns`, `button_ns`, `udp_log_ns`: Module settings
+- `factory_ns`: Manufacturing data (certificates, serial, PCB revision), read-only
 
 **LittleFS Files:**
 
@@ -187,7 +194,7 @@ Monitored tasks: MQTT clients, web server, ADE7953 operations, crash monitor, LE
 
 **Monitoring:**
 
-- 16 circuits: 1 direct + 15 multiplexed
+- Up to 16 circuits (Home) or 12 (Home Pro): 1 direct + the rest multiplexed
 - Parameters: RMS voltage/current, active/reactive/apparent power, power factor, energy accumulation
 - Sampling: Channel 0 every 200ms, others every 400ms minimum (depends on active channels)
 - Accuracy: Typically ±1% with proper CT calibration
@@ -213,7 +220,7 @@ Swagger documentation at `/swagger.html` covers authentication, system managemen
 
 **MQTT:**  
 
-- AWS IoT Core (certificates loaded from the `factory_ns` NVS partition; no build-time secrets)
+- AWS IoT Core (certificates loaded from the `factory_ns` NVS partition; no build-time secrets), with named shadows, IoT Commands and signature-verified OTA jobs
 - Local broker support with configurable authentication
 - TLS/SSL with certificates
 
@@ -226,12 +233,12 @@ FC03/FC04 function codes, register mapping for system info and measurements.
 ## Security
 
 **Authentication:**
-HTTP Digest Authentication (RFC 7616) via ESPAsyncWebServer. Password stored in NVS, with length validation. Local network only.
+HTTP Digest Authentication (RFC 7616) via ESPAsyncWebServer. Password stored in NVS, with length validation. Failed logins are rate-limited per IP. Local network only.
 
 **Default Credentials:**  
 Username: `admin` | Password: `energyme`
 
-⚠️ Change immediately after first login.
+⚠️ The password must be changed at first login before the device can be used.
 
 ## AWS IoT Integration (Optional)
 
@@ -245,7 +252,7 @@ Devices without factory provisioning (community builds) run in local-only mode. 
 PlatformIO with Arduino 3.x framework on ESP32-S3.
 
 **Dependencies:**  
-AdvancedLogger, ArduinoJson, StreamUtils, ESPAsyncWebServer, PubSubClient, WiFiManager, eModbus
+AdvancedLogger, ArduinoJson, StreamUtils, AsyncTCP, ESPAsyncWebServer, PubSubClient, eModbus
 
 **Tools:**  
 Static analysis (cppcheck, clang-tidy), ESP32 core debugging, PSRAM optimization
