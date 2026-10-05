@@ -232,4 +232,30 @@ The button on the front of the device lets you recover from common situations wi
 
 ---
 
+## Appendix E: Home Pro (Ethernet)
+
+*EnergyMe Home Pro* follows this manual with two differences: it has **12 channels** (Channel 0 plus branch Channels 1 to 11) and a wired **Ethernet** port. Everything else (CT placement, channel configuration, three-phase, LED, button) is the same.
+
+### E.1 Connecting over Ethernet
+
+1. Plug an Ethernet cable from your router or switch into the device before or after power-on.
+2. The device gets an address from your router automatically (DHCP), no setup network or Wi-Fi configuration needed.
+3. Open **`http://energyme.local`** and continue from [§4.3](02-setup.md#43-access-the-web-interface). In the router's device list it appears as `energyme-homepro-<DEVICE_ID>`.
+
+Without a cable, the device behaves like a *Home* and opens its setup network for Wi-Fi configuration ([§4.1](02-setup.md#41-connect-to-the-devices-wi-fi-setup-network)).
+
+### E.2 Ethernet and Wi-Fi together
+
+If both are configured, **Ethernet is used first and Wi-Fi is the automatic fallback**: unplug the cable and the device moves to Wi-Fi within seconds, plug it back and it returns to Ethernet shortly after. Integrations (MQTT, InfluxDB, Modbus, cloud) follow the active connection on their own.
+
+### E.3 Static IP
+
+**Configuration → Ethernet Configuration** lets you switch from DHCP to a static address. If the static settings repeatedly fail to bring the connection up, the device reverts to DHCP on its own. The [Wi-Fi reset](#appendix-d-user-button-reference) button action also resets the Ethernet settings to DHCP.
+
+### E.4 Firmware
+
+Home Pro uses its own firmware file, `energyme_homepro_<version>.bin` ([§4.8](02-setup.md#48-firmware-updates)). A *Home* binary is rejected, and vice versa.
+
+---
+
 **Previous:** [← Troubleshooting](03-troubleshooting.md)

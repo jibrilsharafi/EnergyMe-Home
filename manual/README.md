@@ -37,4 +37,4 @@ Hold tight. This is going to be interesting.
 1. [Installation](01-installation.md) — box contents, what you need, electrical work (electrician)
 2. [Setup](02-setup.md) — Wi-Fi, web interface, channel configuration (end user)
 3. [Troubleshooting](03-troubleshooting.md) — symptom-driven guide for when something doesn't behave as expected
-4. [Appendices](appendices.md) — channel map, three-phase configuration, LED reference, button reference
+4. [Appendices](appendices.md) — channel map, three-phase configuration, LED reference, button reference, Home Pro (Ethernet)
