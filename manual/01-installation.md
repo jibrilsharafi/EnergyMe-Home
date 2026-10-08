@@ -24,7 +24,7 @@ If you ordered additional CTs to monitor more than 3 branch circuits, you'll fin
 > **ⓘ NOTE: About the CTs**  
 > The standard CTs are **30 A rated** (printed on each clamp). They work without issues for **single-phase systems up to ~7 kW at 230 V, or ~3.5 kW at 120 V**.
 >
-> Before clamping any CT, check the current rating printed on the breaker the CT will monitor; it must not exceed the CT rating. If you have circuits drawing higher current (power supply, heat pump), or a three-phase supply, you may need higher-rated CTs (75 A or 150 A), available from our [website store](https://www.energyme.net/product-home-en).
+> Before clamping any CT, check the current rating printed on the breaker the CT will monitor; it must not exceed the CT rating. If you have circuits drawing higher current (power supply, heat pump), or a three-phase supply, you may need higher-rated CTs (75 A or 150 A), available from our [website store](https://www.energyme.net/shop).
 
 > **ⓘ NOTE: Home Pro**  
 > *EnergyMe Home Pro* has 12 channels (0 to 11) and an Ethernet port; see **[Appendix E](appendices.md#appendix-e-home-pro-ethernet)** for what changes.

@@ -4,7 +4,7 @@
 
 A practical guide to wiring, configuring, and using the open-source EnergyMe-Home board: electrical installation, Wi-Fi and web-interface setup, channel mapping, and troubleshooting.
 
-> ⓘ **Maker / community guide.** This covers the open-source board you build or run yourself. If you bought a ready-made unit, the official product Installation Manual and safety & compliance documentation are on our [website](https://www.energyme.net/product-home-en).
+> ⓘ **Maker / community guide.** This covers the open-source board you build or run yourself. If you bought a ready-made unit, the official product Installation Manual and safety & compliance documentation are on our [website](https://www.energyme.net/energyme-home-installation-guide) (Home Pro: [here](https://www.energyme.net/energyme-homepro-installation-guide)).
 
 ## Before you start: Read this page
 
