@@ -2980,6 +2980,11 @@ namespace Mqtt
                 payloadBytes += measureJson(powerArray) + 1;
 
                 // Check if we're approaching the minimum billable size (optimize costs by staying just under)
+                // Deliberately fixed at ~5 KB, independent of _meterPublishThresholdBytes: the threshold
+                // only decides WHEN to publish, never how big one message gets. IoT Core bills Basic
+                // Ingest rules and actions per 5 KB block, so one 50 KB message costs the same as ten
+                // 5 KB ones and bigger messages would only add latency and widen the data lost on a
+                // reboot. Consequence: a threshold above ~5 KB has no cost benefit (decided 2026-10-11).
                 if (payloadBytes > AWS_IOT_CORE_MQTT_PAYLOAD_MINIMUM_BILLABLE * MQTT_METER_PAYLOAD_THRESHOLD_MULTIPLIER) {
                     LOG_DEBUG(
                         "Meter data JSON approaching billable threshold (%u bytes, max %u), stopping queue processing (missing %d points)",
