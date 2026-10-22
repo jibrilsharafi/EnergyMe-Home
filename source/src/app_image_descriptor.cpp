@@ -7,7 +7,6 @@
 #include <cstring>
 
 #include <Arduino.h>
-#include <AdvancedLogger.h>
 #include <esp_efuse.h>
 #include <esp_efuse_table.h>
 #include <esp_ota_ops.h>
@@ -61,8 +60,7 @@ const ImageDescriptor::Descriptor ENERGYME_APP_DESC = {
 
 namespace AppImageDescriptor {
 
-// The silicon, not the running image: a wrong image still boots (without PSRAM), and
-// judging against its own descriptor would reject every image that could fix it.
+// The silicon, not the running image (see image_descriptor.h).
 static uint32_t _hardwarePsramMb() {
     uint8_t cap = 0;
     if (esp_efuse_read_field_blob(ESP_EFUSE_PSRAM_CAP, &cap, 2) == ESP_OK) {
@@ -86,26 +84,30 @@ ImageDescriptor::DeviceIdentity deviceIdentity() {
     return dev;
 }
 
+// Serial, not LOG_*: this runs before AdvancedLogger::begin(), which drops anything earlier.
 void rollBackIfWrongImage() {
-    ImageDescriptor::Verdict running = ImageDescriptor::validate(&ENERGYME_APP_DESC, deviceIdentity(), false);
+    ImageDescriptor::DeviceIdentity dev = deviceIdentity();
+    Serial.printf("Board PSRAM: %lu MB (image built for %lu MB)\n", (unsigned long)dev.psramMb,
+                  (unsigned long)ENERGYME_APP_DESC.psramMb);
+    ImageDescriptor::Verdict running = ImageDescriptor::validate(&ENERGYME_APP_DESC, dev, false);
     if (ImageDescriptor::accepts(running)) return;
 
-    LOG_ERROR("The running firmware is not built for this board (%s)", ImageDescriptor::verdictToString(running));
+    Serial.printf("The running firmware is not built for this board (%s)\n", ImageDescriptor::verdictToString(running));
     const esp_partition_t* passive = esp_ota_get_next_update_partition(NULL);
     ImageDescriptor::Verdict passiveVerdict = validatePartition(passive, false);
     if (!ImageDescriptor::accepts(passiveVerdict)) {
-        LOG_ERROR("The previous firmware does not fit this board either (%s) - upload a build for this board",
-                  ImageDescriptor::verdictToString(passiveVerdict));
+        Serial.printf("The previous firmware does not fit this board either (%s) - upload a build for this board\n",
+                      ImageDescriptor::verdictToString(passiveVerdict));
         return;
     }
     esp_err_t err = esp_ota_set_boot_partition(passive);
     if (err != ESP_OK) {
-        LOG_ERROR("Rolling back to the previous firmware failed: %s", esp_err_to_name(err));
+        Serial.printf("Rolling back to the previous firmware failed: %s\n", esp_err_to_name(err));
         return;
     }
-    LOG_FATAL("Rolled back to the previous firmware (%s), restarting", passive->label);
+    Serial.printf("Rolled back to the previous firmware (%s), restarting\n", passive->label);
     Serial.flush();
-    esp_restart();
+    ESP.restart();
 }
 
 ImageDescriptor::Verdict validatePartition(const esp_partition_t* partition, bool rejectDevOnProd) {

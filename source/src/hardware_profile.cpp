@@ -312,6 +312,4 @@ void initHardwareProfile() {
     globalCommunityMode = false;
     LOG_INFO("Hardware profile selected: %s v%u (pcb_revision=\"%s\")",
              productLineToString(product), version, pcbRevision.c_str());
-    // A build for the other product is caught right after this by
-    // AppImageDescriptor::rollBackIfWrongImage(); the board decides the pinout.
 }
