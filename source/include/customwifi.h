@@ -43,7 +43,7 @@ static_assert(sizeof(WIFI_HOSTNAME_PREFIX) + 1 + WIFI_HOSTNAME_DEVICE_ID_LENGTH 
 #define WIFI_AP_PENDING_TICK_MS (1 * 1000)          // Tick while a deferred AP raise waits on the wired boot windows (Ethernet products only)
 #define WIFI_SCAN_MS_PER_CHANNEL 120                // Per-channel dwell. The default (~300 ms) makes a full scan long enough that a phone on the SoftAP times out waiting
 #define WIFI_SCAN_HOLD_TICK_MS 500                  // Tick while association retries are paused for a scan, so they resume promptly once it ends
-#define WIFI_SCAN_MAX_RESULTS 30                   // Cap the JSON response; a dense apartment block can see far more than a user will scroll
+#define WIFI_SCAN_MAX_RESULTS 30                    // Cap the JSON response; a dense apartment block can see far more than a user will scroll
 #define WIFI_SCAN_RESULTS_TTL_MS (2 * 60 * 1000)    // How long a completed result set is served before it is freed and re-scanned. The driver holds the full set in internal RAM, so it must not be kept for the rest of the uptime
 #define WIFI_STABLE_CONNECTION_DURATION (5 * 60 * 1000)    // Duration of uninterrupted WiFi connection to reset the reconnection counter
 #define WIFI_PERIODIC_CHECK_INTERVAL (30 * 1000)    // Interval to check WiFi connection status (does not need to be too frequent since we have an event-based system)

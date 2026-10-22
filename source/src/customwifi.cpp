@@ -354,7 +354,9 @@ namespace CustomWifi
     // free and every scan was refused. Ask the WiFi task to cancel the attempt and pause
     // retries; the client's next poll then finds the radio free.
     if (_connectDeadlineMs != 0) {
-      if (_scanRequestedAtMs == 0) {
+      // An expired stamp belongs to a client that stopped polling: this is a new request
+      // and gets its own full window, not an immediate give-up.
+      if (_scanRequestedAtMs == 0 || millis64() - _scanRequestedAtMs >= WIFI_PROVISIONING_SCAN_HOLD_MIN_MS) {
         LOG_DEBUG("Scan requested during an association attempt - pausing retries");
         _scanRequestedAtMs = millis64();
       }
@@ -387,8 +389,7 @@ namespace CustomWifi
     // A scan waiting for the retry pause: keep the client polling and start it as soon as
     // the radio is free. Past the hold minimum the pause is not coming, so give up.
     if (_scanRequestedAtMs != 0) {
-      bool started = startScan();
-      if (started || millis64() - _scanRequestedAtMs < WIFI_PROVISIONING_SCAN_HOLD_MIN_MS) {
+      if (startScan() || millis64() - _scanRequestedAtMs < WIFI_PROVISIONING_SCAN_HOLD_MIN_MS) {
         jsonDocument["status"] = "running";
         jsonDocument["networks"].to<JsonArray>();
         return;
@@ -1479,9 +1480,6 @@ namespace CustomWifi
     _connectDeadlineMs = millis64() + _connectTimeoutMs;
   }
 
-  // One association attempt gave up. Feed the state machine and either retry or let the
-  // AP-raise predicate decide. Never restarts the device: failing to associate is now a
-  // state (UNPROVISIONED / AP_ASSIST), not a fatal error.
   // A scan pause ended: resume the retries it held off. scanComplete() only reads the
   // driver's status bits, never the result buffer, so it is safe off the AsyncTCP task.
   static void _serviceScanHold()
@@ -1498,6 +1496,9 @@ namespace CustomWifi
     }
   }
 
+  // One association attempt gave up. Feed the state machine and either retry or let the
+  // AP-raise predicate decide. Never restarts the device: failing to associate is now a
+  // state (UNPROVISIONED / AP_ASSIST), not a fatal error.
   static void _serviceConnectDeadline()
   {
     if (_connectDeadlineMs == 0) return;
