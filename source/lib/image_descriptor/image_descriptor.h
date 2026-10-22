@@ -13,9 +13,9 @@
 // script places immediately after esp_app_desc_t - a fixed 0x120 offset from
 // the start of the .bin. The still-running firmware reads it off the staged
 // OTA partition (or the first upload chunk) and refuses to activate an image
-// built for different hardware. A wrong-PSRAM image boots without PSRAM
-// (SPIRAM_IGNORE_NOTFOUND) and crash-loops, so the gate must judge against
-// the silicon, not the running image, or it blocks its own recovery.
+// built for different hardware. A wrong-PSRAM image still boots, without
+// PSRAM, and crash-loops, so the gate must judge against the silicon, not
+// the running image, or it blocks its own recovery.
 //
 // Reading flash and building the DeviceIdentity is the caller's job;
 // everything here is host-testable.
