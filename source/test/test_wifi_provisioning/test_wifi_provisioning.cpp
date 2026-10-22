@@ -867,6 +867,30 @@ void test_ap_peer_honours_a_narrower_ap_subnet(void) {
     TEST_ASSERT_FALSE(isApPeer(AP_IP, 0xC0A80414u, AP_IP, 28));
 }
 
+void test_scan_hold_inactive_without_a_request(void) {
+    TEST_ASSERT_FALSE(isScanHoldActive(0, 1000, false));
+    TEST_ASSERT_FALSE(isScanHoldActive(0, 1000, true));
+}
+
+void test_scan_hold_waits_for_the_scan_to_start(void) {
+    const uint64_t start = 100000;
+    TEST_ASSERT_TRUE(isScanHoldActive(start, start, false));
+    TEST_ASSERT_TRUE(isScanHoldActive(start, start + WIFI_PROVISIONING_SCAN_HOLD_MIN_MS - 1, false));
+    TEST_ASSERT_FALSE(isScanHoldActive(start, start + WIFI_PROVISIONING_SCAN_HOLD_MIN_MS, false));
+}
+
+void test_scan_hold_lasts_while_the_scan_runs_up_to_the_cap(void) {
+    const uint64_t start = 100000;
+    TEST_ASSERT_TRUE(isScanHoldActive(start, start + WIFI_PROVISIONING_SCAN_HOLD_MIN_MS + 1000, true));
+    TEST_ASSERT_TRUE(isScanHoldActive(start, start + WIFI_PROVISIONING_SCAN_HOLD_MAX_MS - 1, true));
+    // A scan that never reports done must not stop retries for good
+    TEST_ASSERT_FALSE(isScanHoldActive(start, start + WIFI_PROVISIONING_SCAN_HOLD_MAX_MS, true));
+}
+
+void test_scan_hold_survives_a_clock_behind_the_start(void) {
+    TEST_ASSERT_TRUE(isScanHoldActive(100000, 99000, false));
+}
+
 void test_cidr_zero_does_not_shift_by_the_operand_width(void) {
     // 0xFFFFFFFF << 32 is undefined behaviour, and on x86 the shift count is taken mod 32,
     // so a naive implementation returns 0xFFFFFFFF here instead of 0.
@@ -986,6 +1010,11 @@ int main(int, char **) {
     RUN_TEST(test_ap_peer_requires_the_ap_as_destination);
     RUN_TEST(test_ap_peer_rejects_no_ap_self_and_zero_mask);
     RUN_TEST(test_ap_peer_honours_a_narrower_ap_subnet);
+
+    RUN_TEST(test_scan_hold_inactive_without_a_request);
+    RUN_TEST(test_scan_hold_waits_for_the_scan_to_start);
+    RUN_TEST(test_scan_hold_lasts_while_the_scan_runs_up_to_the_cap);
+    RUN_TEST(test_scan_hold_survives_a_clock_behind_the_start);
 
     RUN_TEST(test_every_state_has_a_distinct_wire_name);
     RUN_TEST(test_out_of_range_state_falls_back_to_unprovisioned);
