@@ -54,6 +54,9 @@ namespace CustomWifi
   // must re-evaluate the AP and the network LED now, not at the next periodic tick.
   static const uint32_t WIFI_EVENT_WIRED_CHANGED = (1UL << 11);
   static const uint32_t WIFI_EVENT_AP_STOP = (1UL << 12); // Log-only: the SoftAP went down
+  // startScan() found an association attempt in flight: cancel it and pause retries so the
+  // scan can run (see WifiProvisioning::isScanHoldActive).
+  static const uint32_t WIFI_EVENT_SCAN_REQUEST = (1UL << 13);
 
   // Task state management
   static bool _taskShouldRun = false;
@@ -118,6 +121,11 @@ namespace CustomWifi
   // Written from the AsyncTCP task by startScan(), read there too. The WiFi task never touches
   // it, so the only writer is the request path and no synchronisation is needed for it alone.
   static uint64_t _lastScanStartedMs = 0;
+  // A scan that is waiting for the WiFi task to pause its retries, 0 when none. AsyncTCP only,
+  // same as _lastScanStartedMs.
+  static uint64_t _scanRequestedAtMs = 0;
+  // Start of the retry pause granted to a scan request, 0 when none. WiFi task only.
+  static uint64_t _scanHoldStartedAtMs = 0;
 
   // Host-order snapshot of the SoftAP address, 0 when no AP is up. Published here so the
   // auth carve-out filter can compare against it without calling WiFi.softAPIP(), which is an
@@ -140,6 +148,7 @@ namespace CustomWifi
   static void _wifiConnectionTask(void *parameter);
   static void _startStaAttempt();
   static void _serviceConnectDeadline();
+  static void _serviceScanHold();
   static void _serviceApLifecycle();
   static void _reconcileApWithState();
   static bool _raiseAp();
@@ -339,8 +348,17 @@ namespace CustomWifi
     // tear, but only the zero/nonzero distinction is used and both tearing outcomes are
     // already handled: a spurious nonzero refuses one scan, and a spurious zero lets a scan
     // through that the driver then rejects with ESP_ERR_WIFI_STATE.
+    //
+    // Refusing is not enough on its own: a device retrying credentials that cannot work
+    // starts the next attempt the moment the last one times out, so the radio is never
+    // free and every scan was refused. Ask the WiFi task to cancel the attempt and pause
+    // retries; the client's next poll then finds the radio free.
     if (_connectDeadlineMs != 0) {
-      LOG_DEBUG("Scan requested during an association attempt - deferring");
+      if (_scanRequestedAtMs == 0) {
+        LOG_DEBUG("Scan requested during an association attempt - pausing retries");
+        _scanRequestedAtMs = millis64();
+      }
+      if (_wifiTaskHandle != NULL) xTaskNotify(_wifiTaskHandle, WIFI_EVENT_SCAN_REQUEST, eSetBits);
       return false;
     }
 
@@ -351,6 +369,7 @@ namespace CustomWifi
       return false;
     }
 
+    _scanRequestedAtMs = 0;
     _lastScanStartedMs = millis64();
     return true;
   }
@@ -365,10 +384,27 @@ namespace CustomWifi
       return;
     }
 
+    // A scan waiting for the retry pause: keep the client polling and start it as soon as
+    // the radio is free. Past the hold minimum the pause is not coming, so give up.
+    if (_scanRequestedAtMs != 0) {
+      bool started = startScan();
+      if (started || millis64() - _scanRequestedAtMs < WIFI_PROVISIONING_SCAN_HOLD_MIN_MS) {
+        jsonDocument["status"] = "running";
+        jsonDocument["networks"].to<JsonArray>();
+        return;
+      }
+      _scanRequestedAtMs = 0;
+      jsonDocument["status"] = "unavailable";
+      jsonDocument["networks"].to<JsonArray>();
+      return;
+    }
+
     if (count == WIFI_SCAN_FAILED) {
       // No scan has ever completed, or the last one failed. Kick one off so the next poll
-      // has something, and tell the client to come back.
-      jsonDocument["status"] = startScan() ? "running" : "unavailable";
+      // has something, and tell the client to come back. A refused start that queued a
+      // retry pause is still a scan on its way.
+      bool started = startScan();
+      jsonDocument["status"] = (started || _scanRequestedAtMs != 0) ? "running" : "unavailable";
       jsonDocument["networks"].to<JsonArray>();
       return;
     }
@@ -391,7 +427,8 @@ namespace CustomWifi
       // starting the scan is what retires the old buffer. Deliberately NOT freeing first: a
       // rescan that cannot start right now would otherwise throw away a list the user is
       // still looking at.
-      if (startScan()) {
+      bool started = startScan();
+      if (started || _scanRequestedAtMs != 0) {
         jsonDocument["status"] = "running";
         jsonDocument["networks"].to<JsonArray>();
         return;
@@ -407,7 +444,7 @@ namespace CustomWifi
         return;
       }
 
-      // Forced but the radio is busy associating: serve the cached set rather than nothing.
+      // Forced but the scan could not start: serve the cached set rather than nothing.
     }
 
     jsonDocument["status"] = "complete";
@@ -721,6 +758,7 @@ namespace CustomWifi
       // `continue`s in the switch below, which skip the periodic branch entirely.
       _serviceDisconnectDeadline();
       _serviceConnectDeadline();
+      _serviceScanHold();
       _serviceApLifecycle();
 
       // Never wait past an armed deadline, or a 15 s grace window would go unchecked
@@ -737,6 +775,10 @@ namespace CustomWifi
       {
         uint64_t remainingMs = (_connectDeadlineMs > nowMs) ? (_connectDeadlineMs - nowMs) : 0;
         if (remainingMs < waitMs) waitMs = (uint32_t)remainingMs;
+      }
+      if (_scanHoldStartedAtMs != 0 && waitMs > WIFI_SCAN_HOLD_TICK_MS)
+      {
+        waitMs = WIFI_SCAN_HOLD_TICK_MS;
       }
       if (_apRaised && waitMs > WIFI_AP_LIFECYCLE_TICK_MS)
       {
@@ -796,6 +838,19 @@ namespace CustomWifi
         if (notificationValue & WIFI_EVENT_FORCE_RECONNECT)
         {
           _forceReconnectInternal();
+        }
+
+        if (notificationValue & WIFI_EVENT_SCAN_REQUEST)
+        {
+          // Cancelled, not failed: nothing is fed to the state machine, so a user scanning
+          // does not push the device towards raising its AP.
+          if (_connectDeadlineMs != 0 && !WiFi.isConnected())
+          {
+            LOG_DEBUG("Pausing association retries for a network scan");
+            _connectDeadlineMs = 0;
+            _scanHoldStartedAtMs = millis64();
+            esp_wifi_disconnect();
+          }
         }
 
         if (notificationValue & WIFI_EVENT_CREDENTIALS_CLEARED)
@@ -911,7 +966,8 @@ namespace CustomWifi
           // would feed STA_ATTEMPT_FAILED twice for one failure, so apRaiseTriggers would
           // reach its threshold in roughly half the intended time and stop meaning
           // "consecutive genuine association failures".
-          if (_disconnectDeadlineMs == 0 && _connectDeadlineMs == 0)
+          // Nor for the disconnect a scan pause causes: that attempt was cancelled, not lost.
+          if (_disconnectDeadlineMs == 0 && _connectDeadlineMs == 0 && _scanHoldStartedAtMs == 0)
           {
             _disconnectDeadlineMs = millis64() + WIFI_DISCONNECT_DELAY;
           }
@@ -999,6 +1055,10 @@ namespace CustomWifi
             // An attempt is already in flight and carries its own deadline, which is what
             // reports the failure. Interfering here would restart the radio underneath it.
             LOG_DEBUG("Periodic check: association attempt in flight, leaving it alone");
+          }
+          else if (_scanHoldStartedAtMs != 0)
+          {
+            LOG_DEBUG("Periodic check: retries paused for a network scan");
           }
           else if (_hasCredentialsWorthRetrying())
           {
@@ -1368,6 +1428,7 @@ namespace CustomWifi
     // to ~25 minutes instead of ~50 seconds.
     bool powerReset = _isPowerReset() && !_powerResetGraceUsed;
     _powerResetGraceUsed = true;
+    _scanHoldStartedAtMs = 0; // Any deliberate attempt (new credentials, end of a hold) ends a scan pause
 
     _connectTimeoutMs = (powerReset ? WIFI_CONNECT_TIMEOUT_POWER_RESET_SECONDS
                                     : WIFI_CONNECT_TIMEOUT_SECONDS) * 1000UL;
@@ -1421,6 +1482,22 @@ namespace CustomWifi
   // One association attempt gave up. Feed the state machine and either retry or let the
   // AP-raise predicate decide. Never restarts the device: failing to associate is now a
   // state (UNPROVISIONED / AP_ASSIST), not a fatal error.
+  // A scan pause ended: resume the retries it held off. scanComplete() only reads the
+  // driver's status bits, never the result buffer, so it is safe off the AsyncTCP task.
+  static void _serviceScanHold()
+  {
+    if (_scanHoldStartedAtMs == 0) return;
+    bool scanRunning = WiFi.scanComplete() == WIFI_SCAN_RUNNING;
+    if (WifiProvisioning::isScanHoldActive(_scanHoldStartedAtMs, millis64(), scanRunning)) return;
+
+    _scanHoldStartedAtMs = 0;
+    if (isFullyConnected() || _connectDeadlineMs != 0) return;
+    if (_hasCredentialsWorthRetrying()) {
+      LOG_DEBUG("Scan pause over - resuming association attempts");
+      _startStaAttempt();
+    }
+  }
+
   static void _serviceConnectDeadline()
   {
     if (_connectDeadlineMs == 0) return;
