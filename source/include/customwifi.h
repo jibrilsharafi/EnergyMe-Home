@@ -178,6 +178,10 @@ namespace CustomWifi
     // success to the user and the password is silently discarded.
     bool lastCredentialWriteFailed();
 
+    // Hand the network LED layer back after borrowing it (web OTA). The WiFi task re-applies
+    // the AP blink or the offline pulse; clearing it bare would show a false healthy green.
+    void refreshNetworkLed();
+
     // Async network scan for the provisioning UI. startScan() returns false when a scan
     // cannot be started right now; during an association attempt it also asks the WiFi task
     // to pause retries, and the results call reports "running" until the radio is free.

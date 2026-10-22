@@ -57,6 +57,9 @@ namespace CustomWifi
   // startScan() found an association attempt in flight: cancel it and pause retries so the
   // scan can run (see WifiProvisioning::isScanHoldActive).
   static const uint32_t WIFI_EVENT_SCAN_REQUEST = (1UL << 13);
+  // Another module borrowed the network LED layer (the web OTA's purple blink) and gave it
+  // back: re-assert what this task shows there.
+  static const uint32_t WIFI_EVENT_LED_REFRESH = (1UL << 14);
 
   // Task state management
   static bool _taskShouldRun = false;
@@ -854,6 +857,13 @@ namespace CustomWifi
           }
         }
 
+        if (notificationValue & WIFI_EVENT_LED_REFRESH)
+        {
+          Led::clearPattern(Led::PRIO_MEDIUM);
+          if (_apRaised) Led::blinkBlueFast(Led::PRIO_MEDIUM);
+          else if (!isFullyConnected() && !CustomEth::isServiceable()) Led::pulseBlue(Led::PRIO_MEDIUM);
+        }
+
         if (notificationValue & WIFI_EVENT_CREDENTIALS_CLEARED)
         {
           // resetWifi() erased the driver's stored credentials from another task. Bring the
@@ -1125,6 +1135,15 @@ namespace CustomWifi
     }
 
     setRestartSystem("Restart after WiFi reset");
+  }
+
+  void refreshNetworkLed()
+  {
+    if (_wifiTaskHandle != NULL) {
+      xTaskNotify(_wifiTaskHandle, WIFI_EVENT_LED_REFRESH, eSetBits);
+    } else {
+      Led::clearPattern(Led::PRIO_MEDIUM); // No task to own the layer: just release it
+    }
   }
 
   bool setCredentials(const char* ssid, const char* password)

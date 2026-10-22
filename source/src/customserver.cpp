@@ -680,7 +680,7 @@ namespace CustomServer
     {
         Update.abort();
         _stopOtaTimeoutTask();
-        Led::clearPattern(Led::PRIO_MEDIUM);
+        CustomWifi::refreshNetworkLed();
         Led::doubleBlinkYellow(Led::PRIO_URGENT, 1000ULL);
     }
 
