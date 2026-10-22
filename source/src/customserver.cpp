@@ -90,6 +90,7 @@ namespace CustomServer
     static void _startOtaTimeoutTask();
     static void _stopOtaTimeoutTask();
     static void _otaTimeoutTask(void *parameter);
+    static void _abortOtaUpload();
 
     // Authentication management
     static bool _setWebPassword(const char *password);
@@ -669,8 +670,18 @@ namespace CustomServer
         }
     }
 
-    static void _stopOtaTimeoutTask() { 
-        stopTaskGracefully(&_otaTimeoutTaskHandle, "OTA timeout task"); 
+    static void _stopOtaTimeoutTask() {
+        stopTaskGracefully(&_otaTimeoutTaskHandle, "OTA timeout task");
+    }
+
+    // An upload that fails without a restart behind it. The purple "OTA in progress" blink
+    // only went away on reboot, so a dropped upload left it on for the rest of the uptime.
+    static void _abortOtaUpload()
+    {
+        Update.abort();
+        _stopOtaTimeoutTask();
+        Led::clearPattern(Led::PRIO_MEDIUM);
+        Led::doubleBlinkYellow(Led::PRIO_URGENT, 1000ULL);
     }
 
     static void _otaTimeoutTask(void *parameter)
@@ -1476,8 +1487,7 @@ namespace CustomServer
         _otaOwner = nullptr;
         if (_otaFinalized) return;
         LOG_WARNING("Firmware upload connection closed before completion - aborting the update");
-        Update.abort();
-        _stopOtaTimeoutTask();
+        _abortOtaUpload();
     }
 
     static void _handleOtaUploadData(AsyncWebServerRequest *request, const String& filename,
@@ -1511,8 +1521,7 @@ namespace CustomServer
                 if (!ImageDescriptor::accepts(verdict)) {
                     LOG_ERROR("Firmware image rejected on first chunk: %s", ImageDescriptor::verdictToString(verdict));
                     _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Firmware image is not compatible with this device");
-                    Update.abort();
-                    _stopOtaTimeoutTask();
+                    _abortOtaUpload();
                     _otaOwner = nullptr;
                     return;
                 }
@@ -1640,8 +1649,7 @@ namespace CustomServer
         if (written != len) {
             LOG_ERROR("OTA write failed: expected %zu bytes, wrote %zu bytes", len, written);
             _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Write failed");
-            Update.abort();
-            _stopOtaTimeoutTask(); // Stop timeout task on write failure
+            _abortOtaUpload();
             return false;
         }
 
