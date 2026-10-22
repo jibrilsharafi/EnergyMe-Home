@@ -13,9 +13,9 @@
 // script places immediately after esp_app_desc_t - a fixed 0x120 offset from
 // the start of the .bin. The still-running firmware reads it off the staged
 // OTA partition (or the first upload chunk) and refuses to activate an image
-// built for different hardware. A wrong-PSRAM image fails PSRAM init before
-// any application code runs, so no post-boot mechanism can recover from it -
-// this pre-activation gate is the only defense.
+// built for different hardware. A wrong-PSRAM image still boots, without
+// PSRAM, and crash-loops, so the gate must judge against the silicon, not
+// the running image, or it blocks its own recovery.
 //
 // Reading flash and building the DeviceIdentity is the caller's job;
 // everything here is host-testable.
@@ -52,9 +52,8 @@ struct Descriptor {
 static_assert(sizeof(Descriptor) == 128, "fixed on-flash layout");
 
 // The validating device's identity. Product and PCB version come from the
-// runtime hardware profile; psramMb, partitionLayoutId and runningProdEnv come
-// from the RUNNING image's own descriptor (the running build boots, therefore
-// its compiled PSRAM mode matches the silicon - no probing needed).
+// runtime hardware profile, psramMb from the eFuse, partitionLayoutId and
+// runningProdEnv from the RUNNING image's own descriptor.
 struct DeviceIdentity {
     char product[PRODUCT_LEN];
     uint32_t psramMb;
@@ -96,6 +95,11 @@ inline bool accepts(Verdict v) {
     return v == Verdict::ACCEPT || v == Verdict::ACCEPT_LEGACY_NO_DESCRIPTOR ||
            v == Verdict::ACCEPT_DEV_ON_PROD;
 }
+
+// PSRAM class from the low two bits of the ESP32-S3 eFuse PSRAM_CAP field (as
+// esptool decodes them): 1 = 8 MB octal (R8), 2 = 2 MB quad (R2). 0 for
+// anything else (no in-package PSRAM, or a size no build targets).
+uint32_t psramMbFromEfuseCap(uint32_t cap);
 
 // Short stable token for logs and OTA failure reasons.
 const char* verdictToString(Verdict v);

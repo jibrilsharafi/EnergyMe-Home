@@ -422,7 +422,7 @@ namespace CrashMonitor
 
             // Try rollback first (if available and not already tried). Never onto an image of
             // the other product: canRollBack() only looks at the first byte, and such an image
-            // dies at PSRAM init, where nothing can bring the device back.
+            // crash-loops without PSRAM.
             bool rollbackPossible = Update.canRollBack() && !_rollbackTried;
             ImageDescriptor::Verdict passiveVerdict = rollbackPossible
                 ? AppImageDescriptor::validatePartition(esp_ota_get_next_update_partition(NULL), false)

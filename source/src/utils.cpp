@@ -863,8 +863,7 @@ FirmwareRollbackResult attemptFirmwareRollback(const char* reason) {
 
     // image_validate below only proves the image is well formed, not that it can run here.
     // A complete image of the other product can sit in the passive slot (an update refused
-    // late enough to have been fully written), and booting it fails at PSRAM init, before
-    // any code that could recover.
+    // late enough to have been fully written), and booting it crash-loops without PSRAM.
     ImageDescriptor::Verdict verdict = AppImageDescriptor::validatePartition(passive, false);
     if (!ImageDescriptor::accepts(verdict)) {
         LOG_ERROR("Rollback: image in %s is not compatible with this device (%s)", passive->label, ImageDescriptor::verdictToString(verdict));

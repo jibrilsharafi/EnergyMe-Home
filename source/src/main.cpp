@@ -15,6 +15,7 @@
 #include "structs.h"
 #include "utils.h"
 #include "hardware_profile.h"
+#include "app_image_descriptor.h"
 
 #include "ade7953.h"
 #include "buttonhandler.h"
@@ -107,6 +108,7 @@ void setup()
   // Must be first: reads eFuse, selects hardware profile (pins, voltage ratios, mux map),
   // sets globalHwProfile and globalCommunityMode before any hardware is initialized.
   initHardwareProfile();
+  AppImageDescriptor::rollBackIfWrongImage();
 
   // Register per-core idle hooks before any task is created so the baseline is
   // measured against a still-quiet system. Failure here is non-fatal (CPU% will

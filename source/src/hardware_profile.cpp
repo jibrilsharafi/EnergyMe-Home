@@ -312,12 +312,4 @@ void initHardwareProfile() {
     globalCommunityMode = false;
     LOG_INFO("Hardware profile selected: %s v%u (pcb_revision=\"%s\")",
              productLineToString(product), version, pcbRevision.c_str());
-
-    // The board decides the pinout, so the factory product stands. But the build's name,
-    // PSRAM mode and image descriptor all say the other product, and the upload gates will
-    // refuse every image until a build for this board is flashed over serial.
-    if (product != buildFallbackProduct()) {
-        LOG_ERROR("This firmware is built for %s but the board is a %s - flash the right build over serial",
-                  productLineToString(buildFallbackProduct()), productLineToString(product));
-    }
 }
