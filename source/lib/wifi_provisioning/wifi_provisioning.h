@@ -41,6 +41,11 @@ namespace WifiProvisioning {
 // a normally-leasing network never sees an AP blip on a zero-touch first boot.
 #define WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS (15UL * 1000UL)
 
+// Scan hold (see isScanHoldActive). The minimum covers the UI's next poll (every 1.2-1.5 s)
+// starting the scan; the cap bounds how long a request can keep the STA from retrying.
+#define WIFI_PROVISIONING_SCAN_HOLD_MIN_MS (5UL * 1000UL)
+#define WIFI_PROVISIONING_SCAN_HOLD_MAX_MS (20UL * 1000UL)
+
 // Window (counted from init()) in which a product WITH a wired interface cannot have reported
 // link yet: the driver starts after this state machine, the PHY autonegotiates, and
 // esp_eth polls link every 2 s. Until it ends "link down" only means "not known yet",
@@ -143,6 +148,13 @@ bool shouldRaiseAp(const Context &context, uint64_t nowMs, bool wiredReachable =
 // True while a wired link could still be coming up after init() (the DHCP grace, which
 // contains the link-detect window). Callers use it to tick fast and to query the link.
 bool insideWiredBootWindows(const Context &context, uint64_t nowMs);
+
+// A user-requested network scan pauses STA association retries. The driver refuses to
+// scan while associating, and a device retrying credentials that cannot work starts the
+// next attempt the instant the last one times out, so without a pause no scan ever runs.
+// The hold leaves the client's next poll time to start the scan, lasts while it runs, and
+// is capped so a scan that never starts cannot stop retries for good. 0 = no hold.
+bool isScanHoldActive(uint64_t holdStartedAtMs, uint64_t nowMs, bool scanRunning);
 
 // Applies the teardown, including the settle to STA_ONLY when a grace window ends.
 // Every path that lowers the AP goes through here, so no caller can leave the state

@@ -42,6 +42,7 @@ static_assert(sizeof(WIFI_HOSTNAME_PREFIX) + 1 + WIFI_HOSTNAME_DEVICE_ID_LENGTH 
 #define WIFI_AP_LIFECYCLE_TICK_MS (10 * 1000)       // How often the AP lifetime/grace predicates are evaluated while the SoftAP is up
 #define WIFI_AP_PENDING_TICK_MS (1 * 1000)          // Tick while a deferred AP raise waits on the wired boot windows (Ethernet products only)
 #define WIFI_SCAN_MS_PER_CHANNEL 120                // Per-channel dwell. The default (~300 ms) makes a full scan long enough that a phone on the SoftAP times out waiting
+#define WIFI_SCAN_HOLD_TICK_MS 500                  // Tick while association retries are paused for a scan, so they resume promptly once it ends
 #define WIFI_SCAN_MAX_RESULTS 30                    // Cap the JSON response; a dense apartment block can see far more than a user will scroll
 #define WIFI_SCAN_RESULTS_TTL_MS (2 * 60 * 1000)    // How long a completed result set is served before it is freed and re-scanned. The driver holds the full set in internal RAM, so it must not be kept for the rest of the uptime
 #define WIFI_STABLE_CONNECTION_DURATION (5 * 60 * 1000)    // Duration of uninterrupted WiFi connection to reset the reconnection counter
@@ -177,9 +178,14 @@ namespace CustomWifi
     // success to the user and the password is silently discarded.
     bool lastCredentialWriteFailed();
 
+    // Hand the network LED layer back after borrowing it (web OTA). The WiFi task re-applies
+    // the AP blink or the offline pulse; clearing it bare would show a false healthy green.
+    void refreshNetworkLed();
+
     // Async network scan for the provisioning UI. startScan() returns false when a scan
-    // cannot be started right now (an association attempt is in flight); the results call
-    // reports status "running" / "complete" / "unavailable" so the client can poll.
+    // cannot be started right now; during an association attempt it also asks the WiFi task
+    // to pause retries, and the results call reports "running" until the radio is free.
+    // Status is "running" / "complete" / "unavailable" so the client can poll.
     // `forceRescan` is the explicit "Scan again" press: it retires a cached set that would
     // otherwise be re-served unchanged. Polling must leave it false, or a client would keep
     // restarting the scan it is waiting on.

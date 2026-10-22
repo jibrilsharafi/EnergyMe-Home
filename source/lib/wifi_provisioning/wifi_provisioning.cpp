@@ -266,6 +266,13 @@ bool insideWiredBootWindows(const Context &context, uint64_t nowMs) {
     return elapsedSince(context.initAtMs, nowMs) < WIFI_PROVISIONING_WIRED_DHCP_GRACE_MS;
 }
 
+bool isScanHoldActive(uint64_t holdStartedAtMs, uint64_t nowMs, bool scanRunning) {
+    if (holdStartedAtMs == 0) return false;
+    uint64_t elapsed = elapsedSince(holdStartedAtMs, nowMs);
+    if (elapsed >= WIFI_PROVISIONING_SCAN_HOLD_MAX_MS) return false;
+    return scanRunning || elapsed < WIFI_PROVISIONING_SCAN_HOLD_MIN_MS;
+}
+
 bool isNetworkServiceable(bool staConnected, bool apServing) {
     return staConnected || apServing;
 }
