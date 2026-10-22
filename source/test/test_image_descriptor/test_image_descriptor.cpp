@@ -293,6 +293,28 @@ void test_verdict_strings_are_stable_tokens(void) {
 }
 
 // ============================================================================
+// psramMbFromEfuseCap / wrong image running (issue #264)
+// ============================================================================
+
+void test_psram_from_efuse_cap(void) {
+    TEST_ASSERT_EQUAL_UINT32(8, psramMbFromEfuseCap(1));
+    TEST_ASSERT_EQUAL_UINT32(2, psramMbFromEfuseCap(2));
+    TEST_ASSERT_EQUAL_UINT32(0, psramMbFromEfuseCap(0));
+    TEST_ASSERT_EQUAL_UINT32(0, psramMbFromEfuseCap(3));
+}
+
+void test_wrong_running_image_can_be_replaced(void) {
+    // A Pro image running on a quad Home: the identity comes from the silicon, so the
+    // running image is flagged and both a Home image and a legacy 2.0.0 are accepted.
+    DeviceIdentity dev = makeDevice("home", 2);
+    Descriptor running = makeDescriptor("homepro", 8);
+    Descriptor home = makeDescriptor("home", 2);
+    TEST_ASSERT_EQUAL(Verdict::REJECT_PSRAM_MISMATCH, validate(&running, dev, false));
+    TEST_ASSERT_EQUAL(Verdict::ACCEPT, validate(&home, dev, false));
+    TEST_ASSERT_EQUAL(Verdict::ACCEPT_LEGACY_NO_DESCRIPTOR, validate(nullptr, dev, false));
+}
+
+// ============================================================================
 
 int main(int, char**) {
     UNITY_BEGIN();
@@ -326,6 +348,8 @@ int main(int, char**) {
     RUN_TEST(test_dev_on_dev_accepted);
     RUN_TEST(test_accepts_classification);
     RUN_TEST(test_verdict_strings_are_stable_tokens);
+    RUN_TEST(test_psram_from_efuse_cap);
+    RUN_TEST(test_wrong_running_image_can_be_replaced);
 
     return UNITY_END();
 }

@@ -52,6 +52,14 @@ Verdict validate(const Descriptor* desc, const DeviceIdentity& device, bool reje
     return Verdict::ACCEPT;
 }
 
+uint32_t psramMbFromEfuseCap(uint32_t cap) {
+    switch (cap) {
+        case 1: return 8;
+        case 2: return 2;
+        default: return 0;
+    }
+}
+
 const char* verdictToString(Verdict v) {
     switch (v) {
         case Verdict::ACCEPT: return "accept";
