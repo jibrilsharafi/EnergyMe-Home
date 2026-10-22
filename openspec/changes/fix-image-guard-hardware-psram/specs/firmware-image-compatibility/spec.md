@@ -52,7 +52,7 @@ An image with no valid descriptor (bad magic or zero layout) SHALL be accepted o
 
 ### Requirement: A running image built for another board rolls itself back
 
-Right after the hardware profile is selected, and before any PSRAM-dependent initialization, the firmware SHALL validate its own descriptor against the device identity. When it fails (other product or other PSRAM class) and the passive slot's image passes validation, the firmware SHALL switch the boot partition to the passive slot and restart. When the passive slot does not pass, the firmware SHALL log the reason and continue booting, so a compatible image can still be uploaded.
+First thing in `setup()`, right after the hardware profile is selected, the firmware SHALL validate its own descriptor against the device identity. When it fails (other product, other PSRAM class, or a PCB range excluding this board) and the passive slot's image passes validation, the firmware SHALL switch the boot partition to the passive slot and restart. When the passive slot does not pass, the firmware SHALL print the reason on the serial console and continue booting, so a compatible image can still be uploaded.
 
 #### Scenario: Home Pro image on a Home board with the previous Home release in the passive slot
 
