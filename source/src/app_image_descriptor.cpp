@@ -6,6 +6,12 @@
 #include <cstdio>
 #include <cstring>
 
+#include <Arduino.h>
+#include <AdvancedLogger.h>
+#include <esp_efuse.h>
+#include <esp_efuse_table.h>
+#include <esp_ota_ops.h>
+
 #include "constants.h"
 #include "hardware_profile.h"
 #include "sdkconfig.h"
@@ -55,18 +61,51 @@ const ImageDescriptor::Descriptor ENERGYME_APP_DESC = {
 
 namespace AppImageDescriptor {
 
+// The silicon, not the running image: a wrong image still boots (without PSRAM), and
+// judging against its own descriptor would reject every image that could fix it.
+static uint32_t _hardwarePsramMb() {
+    uint8_t cap = 0;
+    if (esp_efuse_read_field_blob(ESP_EFUSE_PSRAM_CAP, &cap, 2) == ESP_OK) {
+        uint32_t psramMb = ImageDescriptor::psramMbFromEfuseCap(cap);
+        if (psramMb != 0) return psramMb;
+    }
+    return ENERGYME_APP_DESC.psramMb;
+}
+
 ImageDescriptor::DeviceIdentity deviceIdentity() {
     ImageDescriptor::DeviceIdentity dev = {};
     snprintf(dev.product, sizeof(dev.product), "%s", productLineToString(globalHwProfile->product));
-    dev.psramMb = ENERGYME_APP_DESC.psramMb;
+    dev.psramMb = _hardwarePsramMb();
     dev.pcbVersion = globalHwProfile->version;
     dev.partitionLayoutId = ENERGYME_APP_DESC.partitionLayoutId;
     dev.runningProdEnv = strncmp(ENERGYME_APP_DESC.buildEnv, "prod", sizeof(ENERGYME_APP_DESC.buildEnv)) == 0;
-    // Every pre-descriptor release is a quad-PSRAM Home image, so only a RUNNING quad image
-    // proves one can boot here. The product alone is not enough: it comes from factory NVS,
-    // and octal hardware provisioned as "home" would otherwise accept an unbootable image.
-    dev.allowMissingDescriptor = (globalHwProfile->product == ProductLine::HOME) && ENERGYME_APP_DESC.psramMb == 2;
+    // Every pre-descriptor release is a quad-PSRAM Home image. The product alone is not
+    // enough: it comes from factory NVS, and octal hardware provisioned as "home" would
+    // otherwise accept an unbootable image.
+    dev.allowMissingDescriptor = (globalHwProfile->product == ProductLine::HOME) && dev.psramMb == 2;
     return dev;
+}
+
+void rollBackIfWrongImage() {
+    ImageDescriptor::Verdict running = ImageDescriptor::validate(&ENERGYME_APP_DESC, deviceIdentity(), false);
+    if (ImageDescriptor::accepts(running)) return;
+
+    LOG_ERROR("The running firmware is not built for this board (%s)", ImageDescriptor::verdictToString(running));
+    const esp_partition_t* passive = esp_ota_get_next_update_partition(NULL);
+    ImageDescriptor::Verdict passiveVerdict = validatePartition(passive, false);
+    if (!ImageDescriptor::accepts(passiveVerdict)) {
+        LOG_ERROR("The previous firmware does not fit this board either (%s) - upload a build for this board",
+                  ImageDescriptor::verdictToString(passiveVerdict));
+        return;
+    }
+    esp_err_t err = esp_ota_set_boot_partition(passive);
+    if (err != ESP_OK) {
+        LOG_ERROR("Rolling back to the previous firmware failed: %s", esp_err_to_name(err));
+        return;
+    }
+    LOG_FATAL("Rolled back to the previous firmware (%s), restarting", passive->label);
+    Serial.flush();
+    esp_restart();
 }
 
 ImageDescriptor::Verdict validatePartition(const esp_partition_t* partition, bool rejectDevOnProd) {

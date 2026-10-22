@@ -22,6 +22,12 @@ inline constexpr uint32_t PARTITION_LAYOUT_ID = 1;
 // initHardwareProfile() to have run.
 ImageDescriptor::DeviceIdentity deviceIdentity();
 
+// When the running image was built for another board (product or PSRAM), switch to
+// the passive slot if that one fits and restart. Otherwise log and return: the upload
+// gates judge against the hardware, so a build for this board can still be uploaded.
+// Call right after initHardwareProfile(), before anything leans on PSRAM.
+void rollBackIfWrongImage();
+
 // Read the staged image's descriptor off `partition` and validate it against
 // this device. A missing partition or failed read is a hard reject; a readable
 // image with no valid descriptor follows the legacy policy (accepted only on a
