@@ -1057,6 +1057,18 @@ namespace CustomServer
     }
 
     /**
+     * Send a pre-gzipped vendored library. The URL carries the library version,
+     * so the body never changes for a given path and can be cached for good.
+     */
+    static void _sendVendorGzip(AsyncWebServerRequest *request, const uint8_t* content, size_t len)
+    {
+        AsyncWebServerResponse *response = request->beginResponse(HTTP_CODE_OK, "application/javascript", content, len);
+        response->addHeader("Content-Encoding", "gzip");
+        response->addHeader("Cache-Control", "public, max-age=31536000, immutable");
+        request->send(response);
+    }
+
+    /**
      * Send file with ETag validation
      * If client sends matching If-None-Match header, responds with 304 Not Modified
      * Otherwise streams file content with ETag and Cache-Control headers
@@ -1145,6 +1157,14 @@ namespace CustomServer
         });
         _onOpenDuringSession("/js/reboot-wait.js", HTTP_GET, [etag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "application/javascript", EMBEDDED(reboot_wait_js), etag);
+        });
+
+        // Vendored libraries, so the UI works on LANs without internet access
+        _onOpenDuringSession("/js/vendor/chart-4.4.0.min.js", HTTP_GET, [](AsyncWebServerRequest *request) {
+            _sendVendorGzip(request, EMBEDDED_BINARY(chart_js_gz));
+        });
+        _onOpenDuringSession("/js/vendor/spark-md5-3.0.2.min.js", HTTP_GET, [](AsyncWebServerRequest *request) {
+            _sendVendorGzip(request, EMBEDDED_BINARY(spark_md5_js_gz));
         });
 
         // Resources
