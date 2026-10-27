@@ -282,10 +282,8 @@ const DataHelpers = {
             throw new Error(`Failed to fetch ${filename}: ${response.status}`);
         }
 
-        const gzipData = await response.arrayBuffer();
-        const decompressed = pako.inflate(new Uint8Array(gzipData), { to: 'string' });
-
-        return decompressed;
+        const decompressed = response.body.pipeThrough(new DecompressionStream('gzip'));
+        return await new Response(decompressed).text();
     },
 
     /**

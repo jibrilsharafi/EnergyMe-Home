@@ -79,6 +79,12 @@ extern const char swagger_yaml_end[] asm("_binary_resources_swagger_yaml_end");
 extern const char favicon_svg[]      asm("_binary_resources_favicon_svg_start");
 extern const char favicon_svg_end[]  asm("_binary_resources_favicon_svg_end");
 
+// Vendored libraries, pre-gzipped (board_build.embed_files)
+extern const char chart_js_gz[]          asm("_binary_js_vendor_chart_4_4_0_min_js_gz_start");
+extern const char chart_js_gz_end[]      asm("_binary_js_vendor_chart_4_4_0_min_js_gz_end");
+extern const char spark_md5_js_gz[]      asm("_binary_js_vendor_spark_md5_3_0_2_min_js_gz_start");
+extern const char spark_md5_js_gz_end[]  asm("_binary_js_vendor_spark_md5_3_0_2_min_js_gz_end");
+
 // Expands to (const uint8_t* content, size_t len) - the two args expected by
 // AsyncWebServerRequest::beginResponse(int, const char*, const uint8_t*, size_t).
 // Streams from flash without copying into heap (vs the const char* overload,
@@ -86,3 +92,8 @@ extern const char favicon_svg_end[]  asm("_binary_resources_favicon_svg_end");
 #define EMBEDDED(name) \
     reinterpret_cast<const uint8_t*>(name), \
     static_cast<size_t>(name##_end - name) - 1
+
+// Same as EMBEDDED() for board_build.embed_files, which appends no '\0'.
+#define EMBEDDED_BINARY(name) \
+    reinterpret_cast<const uint8_t*>(name), \
+    static_cast<size_t>(name##_end - name)

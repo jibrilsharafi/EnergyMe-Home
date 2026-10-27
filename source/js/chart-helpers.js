@@ -944,7 +944,7 @@ const ChartHelpers = {
             <div class="chart-loading">${config.loadingEmoji} ${config.loadingText}</div>
             <canvas id="${config.canvasId}" style="display: none;"></canvas>
             <button id="${config.downloadId}" class="tooltip" style="position: absolute; top: 2px; right: 2px; display: none;">
-                <i class="fas fa-download"></i>
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"/></svg>
             </button>
         `;
     },
