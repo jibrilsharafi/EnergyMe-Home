@@ -27,7 +27,7 @@ Verdict validate(const Descriptor* desc, const DeviceIdentity& device, bool reje
                                              : Verdict::REJECT_NO_DESCRIPTOR;
     }
 
-    // PSRAM first: the one mismatch no post-boot mechanism can recover from.
+    // PSRAM first: the one mismatch that leaves the device crash-looping without PSRAM.
     if (desc->psramMb != device.psramMb) return Verdict::REJECT_PSRAM_MISMATCH;
 
     if (strncmp(desc->product, device.product, PRODUCT_LEN) != 0) {
@@ -50,6 +50,14 @@ Verdict validate(const Descriptor* desc, const DeviceIdentity& device, bool reje
     }
 
     return Verdict::ACCEPT;
+}
+
+uint32_t psramMbFromEfuseCap(uint32_t cap) {
+    switch (cap) {
+        case 1: return 8;
+        case 2: return 2;
+        default: return 0;
+    }
 }
 
 const char* verdictToString(Verdict v) {
