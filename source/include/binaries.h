@@ -79,8 +79,7 @@ extern const char swagger_yaml_end[] asm("_binary_resources_swagger_yaml_end");
 extern const char favicon_svg[]      asm("_binary_resources_favicon_svg_start");
 extern const char favicon_svg_end[]  asm("_binary_resources_favicon_svg_end");
 
-// Vendored libraries, pre-gzipped, via board_build.embed_files (binary: no
-// trailing '\0', so use EMBEDDED_BINARY, not EMBEDDED)
+// Vendored libraries, pre-gzipped (board_build.embed_files)
 extern const char chart_js_gz[]          asm("_binary_js_vendor_chart_4_4_0_min_js_gz_start");
 extern const char chart_js_gz_end[]      asm("_binary_js_vendor_chart_4_4_0_min_js_gz_end");
 extern const char spark_md5_js_gz[]      asm("_binary_js_vendor_spark_md5_3_0_2_min_js_gz_start");
