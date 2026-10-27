@@ -38,3 +38,11 @@ html, body {
     overflow-x: hidden;
     max-width: 100vw;
 }
+
+/* Inline SVG icons: sized and coloured like the surrounding text */
+.icon {
+    width: 1em;
+    height: 1em;
+    fill: currentColor;
+    vertical-align: -0.125em;
+}
