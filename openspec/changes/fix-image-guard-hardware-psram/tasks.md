@@ -13,6 +13,8 @@
 The web upload of this branch refuses a Pro build on a Home board, so the wrong image goes on over serial (`esptool write-flash` of the Pro .bin to the active app slot, Home build of this branch in the other slot).
 
 - [ ] 3.1 Home dev: serial shows `Board PSRAM: 2 MB (image built for 2 MB)`, normal boot unchanged, OTA of a Home build still accepted, Pro build rejected with `psram_mismatch`
+  - 2026-10-27, over the network on .174 (development @ fc9a242): normal boot unchanged, OTA of a Home build accepted, Pro build rejected on the first chunk with `psram_mismatch` and the running image kept. Serial line still unchecked (no USB attached).
 - [ ] 3.2 Home dev, Pro build of this branch running, Home build in the passive slot: the device switches to the Home build by itself on the first boot
 - [ ] 3.3 Home dev, Pro build of this branch running, passive slot erased: boot continues, and a Home upload from the web UI is accepted (if the Pro image lives long enough to serve it)
 - [ ] 3.4 Pro bench: serial shows `Board PSRAM: 8 MB`, normal boot unchanged, Home upload rejected with `psram_mismatch`
+  - 2026-10-27, over the network on .80 (development @ fc9a242): normal boot unchanged, Home upload rejected on the first chunk with `psram_mismatch` and the running image kept. Serial line still unchecked (no USB attached).

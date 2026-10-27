@@ -56,7 +56,14 @@
 #define PREFERENCES_KEY_PASSWORD "password"
 #define WEBSERVER_DEFAULT_USERNAME "admin"
 #define WEBSERVER_DEFAULT_PASSWORD "energyme"
+// Browsers show the realm in the login prompt and LAN scanners report it as the device
+// name, so it names the product. Changing it only re-prompts saved browser logins: the
+// password is stored in clear, not as a realm-bound digest hash.
+#if defined(PRODUCT_FALLBACK) && PRODUCT_FALLBACK == 1
+#define WEBSERVER_REALM "EnergyMe-Home-Pro"
+#else
 #define WEBSERVER_REALM "EnergyMe-Home"
+#endif
 #define MAX_PASSWORD_LENGTH 64
 // MAX_PASSWORD_LENGTH + 1 for the terminator. NOT PASSWORD_BUFFER_SIZE (also 64), which is
 // one byte short: Preferences::getString() returns the length INCLUDING the NUL, and
