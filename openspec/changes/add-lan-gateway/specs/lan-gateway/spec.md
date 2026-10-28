@@ -73,7 +73,7 @@ Primitives SHALL run in a dedicated gateway task, one request at a time. The MQT
 - **THEN** meter and MQTT keepalive traffic continue during the wait
 
 ### Requirement: Technical limits
-Each primitive SHALL apply a timeout, `timeout_ms` from args, defaulting to 5000 and clamped to 100-10000, as one absolute deadline covering connect, send and the whole response: a peer that trickles header lines or holds the body open SHALL NOT extend it. `udp_send` waits SHALL be clamped to 0-5000 ms. LAN response payloads SHALL be capped at 4096 bytes, with `truncated: true` in the result when the cap is hit. `net_scan` SHALL sweep at most the device's /24, in batches, and SHALL stop after 30 s with `truncated: true`. Decoded `args` SHALL be at most 6 KB: the 9 KB inbound MQTT buffer is the real ceiling once base64 and the envelope are added.
+Each primitive SHALL apply a timeout, `timeout_ms` from args, defaulting to 5000 and clamped to 100-10000, as one absolute deadline covering connect, send and the whole response: a peer that trickles header lines or holds the body open SHALL NOT extend it. `udp_send` waits SHALL be clamped to 0-5000 ms. LAN response payloads SHALL be capped at 4096 bytes, with `truncated: true` in the result when the cap is hit. `net_scan` SHALL sweep at most the device's /24, in batches, and SHALL finish within 30 s including the optional mDNS query, with `truncated: true` when the sweep was cut short. Decoded `args`, in either form, SHALL be at most 6 KB: the 9 KB inbound MQTT buffer is the real ceiling once base64 and the envelope are added. A complete HTTP request SHALL fit lwIP's TCP send buffer (5760 bytes) so it is sent in one non-blocking write; larger requests SHALL be rejected with `BAD_ARGS`.
 
 #### Scenario: Oversized response is truncated
 - **WHEN** an `http_request` target returns a 10 KB body
@@ -95,7 +95,7 @@ On success the device SHALL publish `SUCCEEDED` with a `result` map. LAN payload
 - `http_request` `{ip, port (default 80), method (GET|POST|PUT|PATCH|DELETE, default GET), path (default "/"), headers (optional string map), body (optional string) or body_b64, timeout_ms}` returns `status_code`, `body` (bin), `truncated` (b). The request is sent as HTTP/1.1 with `Connection: close`; a chunked reply is decoded.
 - `modbus_read` `{ip, port (default 502), unit (default 1), function (1|2|3|4), address, count (1-125 for registers, 1-2000 for bits)}` returns `values` (JSON array of integers).
 - `modbus_write` `{ip, port, unit, function (5|6|15|16), address, values (array of integers, 1-123 registers or 1-1968 bits)}` returns `written` with the count.
-- `udp_send` `{ip, port, payload_b64, wait_ms (default 0)}` returns `sent: true`, `reply` (bin) and `truncated` (replies are cut at 1460 bytes) when a datagram from the target arrives within `wait_ms`, and `FAILED NO_REPLY` when none does. Datagrams from other hosts are ignored. Without a wait, it returns `sent: true`.
+- `udp_send` `{ip, port, payload_b64 (1-1460 bytes, one datagram), wait_ms (default 0)}` returns `sent: true`, `reply` (bin) and `truncated` (replies are cut at 1460 bytes) when a datagram from the target arrives within `wait_ms`, and `FAILED NO_REPLY` when none does. Datagrams from other hosts are ignored. Without a wait, it returns `sent: true`.
 
 #### Scenario: Shelly switched through http_request
 - **WHEN** an enabled device runs `http_request` with `{ip:"192.168.2.72", path:"/rpc/Switch.Set?id=0&on=true"}`

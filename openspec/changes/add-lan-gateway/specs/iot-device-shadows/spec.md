@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: System shadow exposes the gateway switch
-The `system` shadow SHALL expose `gateway_enabled` as a writable boolean, following the same delta-apply-persist-ack pattern as the other `system` fields. A delta sets the field, the device persists it to NVS, and the same publish carries both the new `reported` value and `desired:{gateway_enabled:null}`. A non-boolean value SHALL be ignored with a warning and leave the stored state unchanged. A local change through the REST API SHALL appear in the reported state through the existing drift detection.
+The `system` shadow SHALL expose `gateway_enabled` as a writable boolean, following the same delta-apply-persist-ack pattern as the other `system` fields. A delta sets the field, the device persists it to NVS, and the same publish carries both the new `reported` value and `desired:{gateway_enabled:null}`. A non-boolean value, or a value that could not be persisted, SHALL be ignored with a warning and leave the stored and reported state unchanged. A local change through the REST API SHALL appear in the reported state through the existing drift detection.
 
 #### Scenario: Gateway switch applied from the cloud
 - **WHEN** a `system` delta sets `gateway_enabled: true`
