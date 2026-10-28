@@ -362,6 +362,33 @@ void test_decode_chunked(void) {
     TEST_ASSERT_TRUE(decodeChunked(u(huge), strlen(huge), out, sizeof(out), &n) == Chunked::MALFORMED);
 }
 
+void test_http_method_has_body(void) {
+    TEST_ASSERT_TRUE(httpMethodHasBody("POST"));
+    TEST_ASSERT_TRUE(httpMethodHasBody("PUT"));
+    TEST_ASSERT_TRUE(httpMethodHasBody("PATCH"));
+    TEST_ASSERT_FALSE(httpMethodHasBody("GET"));
+    TEST_ASSERT_FALSE(httpMethodHasBody("DELETE"));
+    TEST_ASSERT_FALSE(httpMethodHasBody(nullptr));
+}
+
+void test_http_content_length_digit_cap(void) {
+    const char *nine = "HTTP/1.1 200 OK\r\nContent-Length: 999999999\r\n\r\n";
+    TEST_ASSERT_EQUAL_INT64(999999999, httpContentLength(u(nine), strlen(nine)));
+    const char *ten = "HTTP/1.1 200 OK\r\nContent-Length: 4294967296\r\n\r\n";
+    TEST_ASSERT_EQUAL_INT64(-1, httpContentLength(u(ten), strlen(ten)));
+}
+
+void test_http_chunked_ended(void) {
+    const char *done = "4\r\nWiki\r\n0\r\n\r\n";
+    TEST_ASSERT_TRUE(httpChunkedEnded(u(done), strlen(done)));
+    TEST_ASSERT_TRUE(httpChunkedEnded(u("0\r\n\r\n"), 5));
+    const char *open = "4\r\nWiki\r\n";
+    TEST_ASSERT_FALSE(httpChunkedEnded(u(open), strlen(open)));
+    const char *tenChunk = "a\r\n0123456780\r\n\r\n"; // data ending in "0" + CRLF is not a last chunk
+    TEST_ASSERT_FALSE(httpChunkedEnded(u(tenChunk), strlen(tenChunk)));
+    TEST_ASSERT_FALSE(httpChunkedEnded(nullptr, 0));
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_parse_op_known_and_unknown);
@@ -392,5 +419,8 @@ int main(int, char **) {
     RUN_TEST(test_http_content_length);
     RUN_TEST(test_http_chunked_detection);
     RUN_TEST(test_decode_chunked);
+    RUN_TEST(test_http_method_has_body);
+    RUN_TEST(test_http_content_length_digit_cap);
+    RUN_TEST(test_http_chunked_ended);
     return UNITY_END();
 }

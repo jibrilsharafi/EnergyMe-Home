@@ -114,6 +114,11 @@ bool isAllowedHttpMethod(const char *method) {
     return false;
 }
 
+bool httpMethodHasBody(const char *method) {
+    if (method == nullptr) return false;
+    return strcmp(method, "POST") == 0 || strcmp(method, "PUT") == 0 || strcmp(method, "PATCH") == 0;
+}
+
 bool isValidHttpPath(const char *path) {
     if (path == nullptr || path[0] != '/') return false;
     size_t len = strnlen(path, HTTP_PATH_MAX_LEN + 1);
@@ -220,7 +225,7 @@ bool httpStatusCode(const uint8_t *buffer, size_t headerLen, int *code) {
 int64_t httpContentLength(const uint8_t *buffer, size_t headerLen) {
     const char *value = nullptr;
     size_t valueLen = 0;
-    if (!findHeader(buffer, headerLen, "content-length", &value, &valueLen) || valueLen == 0 || valueLen > 10) return -1;
+    if (!findHeader(buffer, headerLen, "content-length", &value, &valueLen) || valueLen == 0 || valueLen > 9) return -1;
     int64_t result = 0;
     for (size_t i = 0; i < valueLen; i++) {
         if (value[i] < '0' || value[i] > '9') return -1;
@@ -241,6 +246,13 @@ bool httpIsChunked(const uint8_t *buffer, size_t headerLen) {
         if (match) return true;
     }
     return false;
+}
+
+bool httpChunkedEnded(const uint8_t *body, size_t len) {
+    static const char LAST[] = "0\r\n\r\n";
+    const size_t lastLen = sizeof(LAST) - 1;
+    if (body == nullptr || len < lastLen || memcmp(body + len - lastLen, LAST, lastLen) != 0) return false;
+    return len == lastLen || body[len - lastLen - 1] == '\n';
 }
 
 Chunked decodeChunked(const uint8_t *in, size_t len, uint8_t *out, size_t cap, size_t *outLen) {

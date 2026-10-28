@@ -7,8 +7,8 @@
 #include <cstdint>
 
 // Pure, dependency-free logic for the LAN gateway (openspec capability:
-// lan-gateway): target validation, argument clamps, Modbus TCP framing and the
-// scan range. Sockets, tasks and JSON live in gateway.cpp; everything here is
+// lan-gateway): target validation, argument clamps, HTTP request validation and
+// response parsing, Modbus TCP framing and the scan range. Sockets, tasks and JSON live in gateway.cpp; everything here is
 // host-testable.
 
 namespace GatewayLogic {
@@ -42,6 +42,7 @@ uint32_t clampPingCount(int64_t requested); // <=0 -> default
 
 bool isValidPort(int64_t port);
 bool isAllowedHttpMethod(const char *method);
+bool httpMethodHasBody(const char *method); // POST, PUT, PATCH always send Content-Length
 
 // Must start with '/', at most HTTP_PATH_MAX_LEN, and contain no control
 // characters or spaces (the firmware puts it on the request line as-is).
@@ -67,10 +68,13 @@ size_t httpHeaderEnd(const uint8_t *buffer, size_t len);
 // "HTTP/1.x NNN ..." -> NNN. False if the status line is malformed.
 bool httpStatusCode(const uint8_t *buffer, size_t headerLen, int *code);
 
-// Content-Length value, or -1 when absent or invalid.
+// Content-Length value, or -1 when absent, invalid or above 9 digits (fits a 32-bit size_t).
 int64_t httpContentLength(const uint8_t *buffer, size_t headerLen);
 
 bool httpIsChunked(const uint8_t *buffer, size_t headerLen);
+
+// True once a chunked body ends with its zero-size last chunk (no trailers).
+bool httpChunkedEnded(const uint8_t *body, size_t len);
 
 enum class Chunked { COMPLETE, INCOMPLETE, MALFORMED };
 
