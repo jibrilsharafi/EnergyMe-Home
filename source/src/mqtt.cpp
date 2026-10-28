@@ -20,6 +20,7 @@ static_assert(SHA256_HEX_BUFFER_SIZE == RollbackLogic::SHA256_HEX_LEN + 1,
 #include "ota_keys.h"
 #include "ota_signature.h"
 #include "sha256_hex.h"
+#include "gateway.h"
 #include "mbedtls/base64.h"
 #include "mbedtls/sha256.h"
 #include "mbedtls/pk.h"
@@ -229,6 +230,8 @@ namespace Mqtt
     static void _publishCommandStatus(const char* executionId, const char* status, const char* reasonCode, const char* reasonDescription);
     static void _queueCommand(const char* topic, const char* payload);
     static void _drainPendingCommand();
+    static void _handleGatewayCommand(const char* executionId, JsonDocument& doc);
+    static void _drainGatewayResult();
     static void _handleAwsIotJobMessage(const char* message, const char* topic);
     
     // AWS IoT Jobs OTA functions
@@ -1463,10 +1466,103 @@ namespace Mqtt
                     }
                     break;
             }
+        } else if (strcmp(operation, "gateway") == 0) {
+            _handleGatewayCommand(executionId, doc);
         } else {
             LOG_WARNING("Unknown command operation: %s", operation);
             _publishCommandStatus(executionId, "REJECTED", "UNKNOWN_OPERATION", operation);
         }
+    }
+
+    // LAN gateway (openspec capability: lan-gateway). Only the envelope is checked
+    // here; the primitive runs in the gateway task and its terminal status comes
+    // back through _drainGatewayResult, so nothing slow ever runs on this task.
+    // `args` arrives as base64 JSON from the cloud template (no quoting issues in
+    // awsJsonSubstitution) or as a plain object from the dev inject harness.
+    static void _handleGatewayCommand(const char* executionId, JsonDocument& doc) {
+        if (!Gateway::isEnabled()) {
+            LOG_WARNING("Gateway command %s rejected: gateway disabled", executionId);
+            _publishCommandStatus(executionId, "REJECTED", "GATEWAY_DISABLED", "Enable the gateway from the cloud or the local UI");
+            return;
+        }
+
+        GatewayLogic::Op op = GatewayLogic::parseOp(doc["op"].as<const char*>());
+        if (op == GatewayLogic::Op::UNKNOWN) {
+            LOG_WARNING("Gateway command %s rejected: unknown op", executionId);
+            _publishCommandStatus(executionId, "REJECTED", "UNKNOWN_OP", "op must be ping, net_scan, http_request, modbus_read, modbus_write or udp_send");
+            return;
+        }
+
+        char* argsJson = nullptr;
+        JsonVariant args = doc["args"];
+        if (args.is<JsonObject>()) {
+            size_t length = measureJson(args) + 1;
+            argsJson = (char*)ps_malloc(length);
+            if (argsJson != nullptr) serializeJson(args, argsJson, length);
+        } else if (args.is<const char*>()) {
+            const char* encoded = args.as<const char*>();
+            size_t encodedLength = strlen(encoded);
+            size_t decodedLength = 0;
+            int rc = mbedtls_base64_decode(nullptr, 0, &decodedLength, (const unsigned char*)encoded, encodedLength);
+            if ((rc == 0 || rc == MBEDTLS_ERR_BASE64_BUFFER_TOO_SMALL) && decodedLength > 0 && decodedLength <= GATEWAY_ARGS_MAX_BYTES) {
+                argsJson = (char*)ps_malloc(decodedLength + 1);
+                if (argsJson != nullptr) {
+                    if (mbedtls_base64_decode((unsigned char*)argsJson, decodedLength, &decodedLength, (const unsigned char*)encoded, encodedLength) == 0) {
+                        argsJson[decodedLength] = '\0';
+                    } else {
+                        free(argsJson);
+                        argsJson = nullptr;
+                    }
+                }
+            }
+        }
+        if (argsJson == nullptr) {
+            LOG_WARNING("Gateway command %s rejected: bad args", executionId);
+            _publishCommandStatus(executionId, "REJECTED", "BAD_ARGS", "args must be a JSON object or base64-encoded JSON");
+            return;
+        }
+
+        Gateway::SubmitResult submitted = Gateway::submit(executionId, op, argsJson);
+        free(argsJson);
+        switch (submitted) {
+            case Gateway::SubmitResult::ACCEPTED:
+                LOG_DEBUG("Gateway command %s (%s) handed to the gateway task", executionId, GatewayLogic::opName(op));
+                break;
+            case Gateway::SubmitResult::NOT_ENABLED:
+                _publishCommandStatus(executionId, "REJECTED", "GATEWAY_DISABLED", "Gateway not running");
+                break;
+            case Gateway::SubmitResult::BUSY:
+                LOG_WARNING("Gateway command %s rejected: busy", executionId);
+                _publishCommandStatus(executionId, "REJECTED", "GATEWAY_BUSY", "Another gateway request is running");
+                break;
+            case Gateway::SubmitResult::NO_MEMORY:
+                _publishCommandStatus(executionId, "FAILED", "NO_MEMORY", "Could not queue the request");
+                break;
+        }
+    }
+
+    static void _drainGatewayResult() {
+        char* executionId = nullptr;
+        char* responseJson = nullptr;
+        if (!Gateway::takeResult(&executionId, &responseJson)) return;
+
+        SpiRamAllocator allocator;
+        JsonDocument doc(&allocator);
+        if (deserializeJson(doc, responseJson)) {
+            LOG_ERROR("Gateway result for %s is not valid JSON", executionId);
+            doc.clear();
+            doc["status"] = "FAILED";
+            doc["statusReason"]["reasonCode"] = "INTERNAL_ERROR";
+        }
+
+        char topic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructCommandTopic(executionId, "response/json", topic, sizeof(topic));
+        LOG_DEBUG("Gateway result %s (%u bytes): %.300s", executionId, (unsigned)strlen(responseJson), responseJson);
+        if (_publishJsonStreaming(doc, topic)) LOG_DEBUG("Gateway result %s published", executionId);
+        else LOG_WARNING("Failed to publish gateway result %s", executionId);
+
+        free(executionId);
+        free(responseJson);
     }
 
     // Command handoff. Both the broker RX path (_subscribeCallback) and the dev
@@ -3243,6 +3339,7 @@ namespace Mqtt
         _checkPublishMqtt();
         Shadow::checkPublish(); // drain shadow deltas/local-edits/reports (MQTT task body)
         _drainPendingCommand(); // process queued IoT Command (broker RX or dev inject) off the callback
+        _drainGatewayResult(); // publish a finished LAN gateway request from the task body
 #ifdef ENV_DEV
         _drainPendingJob(); // dev-injected synthetic job, same off-the-callback rule
 #endif
