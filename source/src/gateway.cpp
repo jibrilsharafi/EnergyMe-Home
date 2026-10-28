@@ -6,9 +6,7 @@
 #include <atomic>
 
 #include <AdvancedLogger.h>
-#include <ArduinoJson.h>
 #include <ESPmDNS.h>
-#include <HTTPClient.h>
 #include <Preferences.h>
 #include <WiFi.h>
 
@@ -28,38 +26,33 @@ namespace Gateway
     struct Request {
         char executionId[NAME_BUFFER_SIZE];
         Op op;
-        char* args; // PSRAM, owned by the gateway task once queued
+        char* args; // PSRAM JSON, owned by the gateway task once queued
     };
 
     static bool _enabled = GATEWAY_ENABLED_DEFAULT; // aligned bool: atomic read on the S3
+    static SemaphoreHandle_t _stateMutex = nullptr;  // serializes setEnabled (REST vs shadow)
     static TaskHandle_t _taskHandle = nullptr;
     static QueueHandle_t _queue = nullptr;
     static SemaphoreHandle_t _resultMutex = nullptr;
 
-    // Set by submit(), cleared by takeResult(): covers both the queued and the
-    // running request and the undrained result, so the single result slot is
-    // never overwritten.
+    // Set by submit(), cleared by takeResult(): covers the queued request, the
+    // running one and its undrained result, so the single result slot is never
+    // overwritten.
     static std::atomic<bool> _busy{false};
-    static char* _resultExecutionId = nullptr;
+    static char _resultExecutionId[NAME_BUFFER_SIZE] = "";
     static char* _resultJson = nullptr;
-
-    static void _gatewayTask(void* parameter);
-    static void _run(const Request& request);
 
     // Response building
     // =================
 
-    static void _reject(JsonDocument& doc, const char* code, const char* description) {
-        doc["status"] = "REJECTED";
+    static void _setStatus(JsonDocument& doc, const char* status, const char* code, const char* description) {
+        doc["status"] = status;
         doc["statusReason"]["reasonCode"] = code;
         if (description) doc["statusReason"]["reasonDescription"] = description;
     }
 
-    static void _fail(JsonDocument& doc, const char* code, const char* description) {
-        doc["status"] = "FAILED";
-        doc["statusReason"]["reasonCode"] = code;
-        if (description) doc["statusReason"]["reasonDescription"] = description;
-    }
+    static void _reject(JsonDocument& doc, const char* code, const char* description) { _setStatus(doc, "REJECTED", code, description); }
+    static void _fail(JsonDocument& doc, const char* code, const char* description) { _setStatus(doc, "FAILED", code, description); }
 
     static JsonObject _succeed(JsonDocument& doc) {
         doc["status"] = "SUCCEEDED";
@@ -87,35 +80,57 @@ namespace Gateway
         char* encoded = (char*)ps_malloc(encodedLength + 1);
         if (encoded == nullptr) return false;
         size_t written = 0;
-        if (mbedtls_base64_encode((unsigned char*)encoded, encodedLength + 1, &written, data, length) != 0) {
-            free(encoded);
-            return false;
+        bool ok = mbedtls_base64_encode((unsigned char*)encoded, encodedLength + 1, &written, data, length) == 0;
+        if (ok) {
+            encoded[written] = '\0';
+            result[key]["bin"] = (const char*)encoded; // const char* -> ArduinoJson copies
         }
-        encoded[written] = '\0';
-        result[key]["bin"] = (const char*)encoded; // const char* -> ArduinoJson copies
         free(encoded);
-        return true;
+        return ok;
     }
 
-    // Decodes a base64 string into a new PSRAM buffer (caller frees). Returns false on bad input.
+    // Decodes base64 into a new NUL-terminated PSRAM buffer (caller frees).
     static bool _decodeBase64(const char* text, uint8_t** out, size_t* outLength, size_t maxLength) {
         size_t textLength = strlen(text);
         size_t decodedLength = 0;
         int rc = mbedtls_base64_decode(nullptr, 0, &decodedLength, (const unsigned char*)text, textLength);
         if (rc != 0 && rc != MBEDTLS_ERR_BASE64_BUFFER_TOO_SMALL) return false;
         if (decodedLength == 0 || decodedLength > maxLength) return false;
-        uint8_t* buffer = (uint8_t*)ps_malloc(decodedLength);
+        uint8_t* buffer = (uint8_t*)ps_malloc(decodedLength + 1);
         if (buffer == nullptr) return false;
         if (mbedtls_base64_decode(buffer, decodedLength, &decodedLength, (const unsigned char*)text, textLength) != 0) {
             free(buffer);
             return false;
         }
+        buffer[decodedLength] = '\0';
         *out = buffer;
         *outLength = decodedLength;
         return true;
     }
 
-    // Argument helpers. Absent -> default; present with the wrong type -> false (BAD_ARGS).
+    // Serializes a result list, dropping trailing entries until it fits the budget.
+    static void _setList(JsonObject result, const char* key, JsonArray list, bool* truncated) {
+        size_t loops = 0;
+        while (list.size() > 0 && measureJson(list) > GATEWAY_SCAN_LIST_BUDGET && loops++ < GATEWAY_SCAN_MAX_HOSTS) {
+            list.remove(list.size() - 1);
+            *truncated = true;
+        }
+        size_t length = measureJson(list) + 1;
+        char* text = (char*)ps_malloc(length);
+        if (text == nullptr) {
+            _setString(result, key, "[]");
+            *truncated = true;
+            return;
+        }
+        serializeJson(list, text, length);
+        _setString(result, key, text);
+        free(text);
+    }
+
+    // Argument helpers
+    // ================
+
+    // Absent -> default; present with the wrong type -> false.
     static bool _readInt(JsonObjectConst args, const char* key, int64_t defaultValue, int64_t* out) {
         JsonVariantConst value = args[key];
         if (value.isNull()) {
@@ -127,16 +142,54 @@ namespace Gateway
         return true;
     }
 
-    // Validates `ip`, and sets reject codes on `doc` when invalid.
+    static bool _requireInt(JsonObjectConst args, const char* key, int64_t defaultValue, JsonDocument& doc, int64_t* out) {
+        if (_readInt(args, key, defaultValue, out)) return true;
+        char description[64];
+        snprintf(description, sizeof(description), "%s must be an integer", key);
+        _reject(doc, "BAD_ARGS", description);
+        return false;
+    }
+
+    // Absent -> default; present but not a string -> nullptr.
+    static const char* _readString(JsonObjectConst args, const char* key, const char* defaultValue) {
+        JsonVariantConst value = args[key];
+        if (value.isNull()) return defaultValue;
+        return value.is<const char*>() ? value.as<const char*>() : nullptr;
+    }
+
+    // The device itself (any interface, which would hand the cloud the local admin
+    // API through loopback) and the network/broadcast addresses of its subnets.
+    static bool _isLocalOrBroadcast(const uint8_t octets[4]) {
+        uint32_t target = ((uint32_t)octets[0] << 24) | ((uint32_t)octets[1] << 16) | ((uint32_t)octets[2] << 8) | octets[3];
+        bool local = false;
+        LOCK_TCPIP_CORE();
+        struct netif* nif = nullptr;
+        NETIF_FOREACH(nif) {
+            if (!netif_is_up(nif)) continue;
+            uint32_t address = lwip_ntohl(ip4_addr_get_u32(netif_ip4_addr(nif)));
+            if (address == 0) continue;
+            uint32_t mask = lwip_ntohl(ip4_addr_get_u32(netif_ip4_netmask(nif)));
+            if (target == address || target == (address & mask) || target == (address | ~mask)) {
+                local = true;
+                break;
+            }
+        }
+        UNLOCK_TCPIP_CORE();
+        return local;
+    }
+
     static bool _readTarget(JsonObjectConst args, JsonDocument& doc, const char** ip, uint8_t octets[4]) {
-        JsonVariantConst value = args["ip"];
-        if (!value.is<const char*>()) {
+        *ip = _readString(args, "ip", nullptr);
+        if (*ip == nullptr) {
             _reject(doc, "BAD_ARGS", "ip must be an IPv4 string");
             return false;
         }
-        *ip = value.as<const char*>();
-        if (!GatewayLogic::isPrivateIpv4(*ip) || !GatewayLogic::parseIpv4(*ip, octets)) {
+        if (!GatewayLogic::parseIpv4(*ip, octets) || !GatewayLogic::isPrivateIpv4(octets)) {
             _reject(doc, "TARGET_NOT_PRIVATE", "Target must be a private IPv4 literal");
+            return false;
+        }
+        if (_isLocalOrBroadcast(octets)) {
+            _reject(doc, "TARGET_NOT_ALLOWED", "Target is this device or a network/broadcast address");
             return false;
         }
         return true;
@@ -154,44 +207,23 @@ namespace Gateway
 
     static bool _readTimeout(JsonObjectConst args, JsonDocument& doc, uint32_t* timeoutMs) {
         int64_t value = 0;
-        if (!_readInt(args, "timeout_ms", 0, &value)) {
-            _reject(doc, "BAD_ARGS", "timeout_ms must be an integer");
-            return false;
-        }
+        if (!_requireInt(args, "timeout_ms", 0, doc, &value)) return false;
         *timeoutMs = GatewayLogic::clampTimeoutMs(value);
         return true;
     }
 
-    // Collects up to `cap` bytes; the first write that would overflow marks the
-    // buffer full and returns short, which makes HTTPClient::writeToStream stop.
-    class CappedBuffer : public Stream {
-    public:
-        CappedBuffer(uint8_t* buffer, size_t cap) : _buffer(buffer), _cap(cap) {}
-        size_t write(uint8_t byte) override { return write(&byte, 1); }
-        size_t write(const uint8_t* data, size_t size) override {
-            size_t room = _cap - _length;
-            size_t copy = size < room ? size : room;
-            memcpy(_buffer + _length, data, copy);
-            _length += copy;
-            if (copy < size) _full = true;
-            return copy;
-        }
-        int available() override { return 0; }
-        int read() override { return -1; }
-        int peek() override { return -1; }
-        void flush() override {}
-        size_t length() const { return _length; }
-        bool full() const { return _full; }
-    private:
-        uint8_t* _buffer;
-        size_t _cap;
-        size_t _length = 0;
-        bool _full = false;
-    };
+    // Loop bound for a polling loop that sleeps `pollMs` until `timeoutMs` runs out.
+    static uint32_t _pollBound(uint32_t timeoutMs, uint32_t pollMs) { return timeoutMs / pollMs + 100; }
+
+    static bool _beforeDeadline(uint32_t deadline) { return (int32_t)(deadline - millis()) > 0; }
 
     // Primitives
     // ==========
 
+    // HTTP/1.0 + Connection: close so the server ends the body by closing and
+    // never chunks; every read is bounded by one absolute deadline. HTTPClient
+    // was dropped because its header and body loops have no overall deadline: a
+    // LAN host trickling bytes kept the gateway busy forever.
     static void _runHttp(JsonObjectConst args, JsonDocument& doc, const char* executionId) {
         const char* ip = nullptr;
         uint8_t octets[4];
@@ -199,109 +231,182 @@ namespace Gateway
         uint32_t timeoutMs = 0;
         if (!_readTarget(args, doc, &ip, octets) || !_readPort(args, 80, doc, &port) || !_readTimeout(args, doc, &timeoutMs)) return;
 
-        const char* method = args["method"].is<const char*>() ? args["method"].as<const char*>() : (args["method"].isNull() ? "GET" : nullptr);
+        const char* method = _readString(args, "method", "GET");
         if (!GatewayLogic::isAllowedHttpMethod(method)) {
             _reject(doc, "BAD_ARGS", "method must be GET, POST, PUT, PATCH or DELETE");
             return;
         }
-        const char* path = args["path"].is<const char*>() ? args["path"].as<const char*>() : (args["path"].isNull() ? "/" : nullptr);
+        const char* path = _readString(args, "path", "/");
         if (!GatewayLogic::isValidHttpPath(path)) {
             _reject(doc, "BAD_ARGS", "path must start with / and contain no spaces or control characters");
             return;
         }
 
         JsonVariantConst headers = args["headers"];
+        size_t headersLength = 0;
         if (!headers.isNull()) {
             if (!headers.is<JsonObjectConst>()) {
                 _reject(doc, "BAD_ARGS", "headers must be an object of strings");
                 return;
             }
             for (JsonPairConst header : headers.as<JsonObjectConst>()) {
-                if (!header.value().is<const char*>() || !GatewayLogic::isValidHeaderName(header.key().c_str()) ||
+                const char* name = header.key().c_str();
+                if (!header.value().is<const char*>() || !GatewayLogic::isValidHeaderName(name) ||
                     !GatewayLogic::isValidHeaderValue(header.value().as<const char*>())) {
                     _reject(doc, "BAD_ARGS", "Invalid header name or value");
                     return;
                 }
+                if (GatewayLogic::isReservedHeaderName(name)) {
+                    _reject(doc, "BAD_ARGS", "Host, Content-Length, Transfer-Encoding and Connection are set by the device");
+                    return;
+                }
+                headersLength += strlen(name) + strlen(header.value().as<const char*>()) + 4;
             }
         }
 
-        uint8_t* body = nullptr;
+        uint8_t* decodedBody = nullptr;
+        const uint8_t* body = nullptr;
         size_t bodyLength = 0;
-        bool bodyOwned = false;
-        if (args["body_b64"].is<const char*>()) {
-            if (!_decodeBase64(args["body_b64"].as<const char*>(), &body, &bodyLength, GatewayLogic::RESPONSE_CAP_BYTES * 2)) {
+        const char* bodyB64 = _readString(args, "body_b64", nullptr);
+        const char* bodyText = _readString(args, "body", nullptr);
+        if ((!args["body_b64"].isNull() && bodyB64 == nullptr) || (!args["body"].isNull() && bodyText == nullptr)) {
+            _reject(doc, "BAD_ARGS", "body and body_b64 must be strings");
+            return;
+        }
+        if (bodyB64 != nullptr) {
+            if (!_decodeBase64(bodyB64, &decodedBody, &bodyLength, GATEWAY_ARGS_MAX_BYTES)) {
                 _reject(doc, "BAD_ARGS", "body_b64 is not valid base64 or is too large");
                 return;
             }
-            bodyOwned = true;
-        } else if (args["body"].is<const char*>()) {
-            body = (uint8_t*)args["body"].as<const char*>();
-            bodyLength = strlen((const char*)body);
-        } else if (!args["body"].isNull() || !args["body_b64"].isNull()) {
-            _reject(doc, "BAD_ARGS", "body must be a string");
-            return;
+            body = decodedBody;
+        } else if (bodyText != nullptr) {
+            body = (const uint8_t*)bodyText;
+            bodyLength = strlen(bodyText);
         }
 
         LOG_INFO("Gateway %s: http_request %s %s:%u%s", executionId, method, ip, port, path);
 
-        uint8_t* responseBuffer = (uint8_t*)ps_malloc(GatewayLogic::RESPONSE_CAP_BYTES);
-        if (responseBuffer == nullptr) {
-            if (bodyOwned) free(body);
-            _fail(doc, "NO_MEMORY", "Could not allocate the response buffer");
+        size_t headCap = strlen(method) + strlen(path) + headersLength + 160;
+        size_t rawCap = GatewayLogic::HTTP_HEADER_CAP_BYTES + GatewayLogic::RESPONSE_CAP_BYTES + 512;
+        char* head = (char*)ps_malloc(headCap);
+        uint8_t* raw = (uint8_t*)ps_malloc(rawCap);
+        uint8_t* chunkedBody = nullptr;
+        if (head == nullptr || raw == nullptr) {
+            free(decodedBody);
+            free(head);
+            free(raw);
+            _fail(doc, "NO_MEMORY", "Could not allocate the HTTP buffers");
             return;
         }
 
-        WiFiClient client;
-        HTTPClient http;
-        http.setReuse(false);
-        http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
-        http.setConnectTimeout((int32_t)timeoutMs);
-        http.setTimeout((uint16_t)timeoutMs);
-
-        if (!http.begin(client, ip, port, path, false)) {
-            if (bodyOwned) free(body);
-            free(responseBuffer);
-            _fail(doc, "CONNECT_FAILED", "Could not prepare the HTTP request");
-            return;
-        }
+        size_t used = (size_t)snprintf(head, headCap, "%s %s HTTP/1.0\r\nHost: %s:%u\r\nConnection: close\r\n", method, path, ip, port);
         if (!headers.isNull()) {
             for (JsonPairConst header : headers.as<JsonObjectConst>()) {
-                http.addHeader(header.key().c_str(), header.value().as<const char*>());
+                used += (size_t)snprintf(head + used, headCap - used, "%s: %s\r\n", header.key().c_str(), header.value().as<const char*>());
             }
         }
+        bool sendsBody = bodyLength > 0 || strcmp(method, "POST") == 0 || strcmp(method, "PUT") == 0 || strcmp(method, "PATCH") == 0;
+        if (sendsBody) used += (size_t)snprintf(head + used, headCap - used, "Content-Length: %u\r\n", (unsigned)bodyLength);
+        snprintf(head + used, headCap - used, "\r\n");
 
-        int code = http.sendRequest(method, body, bodyLength);
-        if (bodyOwned) free(body);
-
-        if (code < 0) {
-            _fail(doc, code == HTTPC_ERROR_READ_TIMEOUT ? "TIMEOUT" : "CONNECT_FAILED", HTTPClient::errorToString(code).c_str());
-            http.end();
-            free(responseBuffer);
+        uint32_t deadline = millis() + timeoutMs;
+        WiFiClient client;
+        if (!client.connect(IPAddress(octets[0], octets[1], octets[2], octets[3]), port, (int32_t)timeoutMs)) {
+            free(decodedBody);
+            free(head);
+            free(raw);
+            _fail(doc, _beforeDeadline(deadline) ? "CONNECT_FAILED" : "TIMEOUT", "TCP connect failed");
+            return;
+        }
+        size_t headLength = strlen(head);
+        bool sent = client.write((const uint8_t*)head, headLength) == headLength &&
+                    (bodyLength == 0 || client.write(body, bodyLength) == bodyLength);
+        free(decodedBody);
+        free(head);
+        if (!sent) {
+            client.stop();
+            free(raw);
+            _fail(doc, "CONNECT_FAILED", "Could not send the HTTP request");
             return;
         }
 
-        // writeToStream errors out on an empty body once the server has closed the
-        // connection (we send Connection: close), so an announced empty body is not read.
-        CappedBuffer capped(responseBuffer, GatewayLogic::RESPONSE_CAP_BYTES);
-        int announced = http.getSize();
-        bool truncated = false;
-        if (announced != 0) {
-            int streamed = http.writeToStream(&capped);
-            bool complete = announced > 0 && capped.length() == (size_t)announced;
-            // A read timeout or a short write after the cap still leaves a usable prefix.
-            truncated = capped.full() || (streamed < 0 && !complete);
+        size_t length = 0;
+        size_t headerEnd = 0;
+        int64_t contentLength = -1;
+        bool closed = false;
+        bool rawFull = false;
+        uint32_t loops = 0;
+        const uint32_t maxLoops = _pollBound(timeoutMs, 2);
+        while (_beforeDeadline(deadline) && loops++ < maxLoops) {
+            int available = client.available();
+            if (available > 0) {
+                size_t room = rawCap - length;
+                int n = client.read(raw + length, (size_t)available < room ? (size_t)available : room);
+                if (n > 0) length += (size_t)n;
+                if (length == rawCap) {
+                    rawFull = true;
+                    break;
+                }
+                if (headerEnd == 0) {
+                    headerEnd = GatewayLogic::httpHeaderEnd(raw, length);
+                    if (headerEnd == 0 && length >= GatewayLogic::HTTP_HEADER_CAP_BYTES) break;
+                    if (headerEnd != 0) contentLength = GatewayLogic::httpContentLength(raw, headerEnd);
+                }
+                if (headerEnd != 0 && contentLength >= 0 && length - headerEnd >= (size_t)contentLength) break;
+            } else if (!client.connected()) {
+                closed = true;
+                break;
+            } else {
+                delay(2);
+            }
         }
-        http.end();
+        client.stop();
+
+        int statusCode = 0;
+        if (headerEnd == 0 || !GatewayLogic::httpStatusCode(raw, headerEnd, &statusCode)) {
+            free(raw);
+            if (!closed && !rawFull && length < GatewayLogic::HTTP_HEADER_CAP_BYTES) _fail(doc, "TIMEOUT", "No complete HTTP response header within timeout_ms");
+            else _fail(doc, "BAD_RESPONSE", "Missing, oversized or malformed HTTP header");
+            return;
+        }
+
+        const uint8_t* responseBody = raw + headerEnd;
+        size_t received = length - headerEnd;
+        size_t bodyOut = 0;
+        bool truncated = false;
+        if (GatewayLogic::httpIsChunked(raw, headerEnd)) {
+            // HTTP/1.0 forbids it, but some embedded servers chunk anyway.
+            chunkedBody = (uint8_t*)ps_malloc(GatewayLogic::RESPONSE_CAP_BYTES);
+            if (chunkedBody == nullptr) {
+                free(raw);
+                _fail(doc, "NO_MEMORY", "Could not allocate the chunked body buffer");
+                return;
+            }
+            truncated = GatewayLogic::decodeChunked(responseBody, received, chunkedBody, GatewayLogic::RESPONSE_CAP_BYTES, &bodyOut) !=
+                        GatewayLogic::Chunked::COMPLETE;
+            responseBody = chunkedBody;
+        } else if (contentLength >= 0) {
+            size_t expected = (size_t)contentLength;
+            bodyOut = received < expected ? received : expected;
+            truncated = received < expected;
+        } else {
+            bodyOut = received;
+            truncated = !closed || rawFull;
+        }
+        if (bodyOut > GatewayLogic::RESPONSE_CAP_BYTES) {
+            bodyOut = GatewayLogic::RESPONSE_CAP_BYTES;
+            truncated = true;
+        }
 
         JsonObject result = _succeed(doc);
-        _setNumber(result, "status_code", code);
-        if (!_setBinary(result, "body", responseBuffer, capped.length())) {
+        _setNumber(result, "status_code", statusCode);
+        _setBool(result, "truncated", truncated);
+        if (!_setBinary(result, "body", responseBody, bodyOut)) {
             doc.clear();
             _fail(doc, "NO_MEMORY", "Could not encode the response body");
-        } else {
-            _setBool(result, "truncated", truncated);
         }
-        free(responseBuffer);
+        free(chunkedBody);
+        free(raw);
     }
 
     struct PingContext {
@@ -328,11 +433,7 @@ namespace Gateway
         uint8_t octets[4];
         uint32_t timeoutMs = 0;
         int64_t count = 0;
-        if (!_readTarget(args, doc, &ip, octets) || !_readTimeout(args, doc, &timeoutMs)) return;
-        if (!_readInt(args, "count", 0, &count)) {
-            _reject(doc, "BAD_ARGS", "count must be an integer");
-            return;
-        }
+        if (!_readTarget(args, doc, &ip, octets) || !_readTimeout(args, doc, &timeoutMs) || !_requireInt(args, "count", 0, doc, &count)) return;
         uint32_t pings = GatewayLogic::clampPingCount(count);
         uint32_t perPingTimeoutMs = timeoutMs < 1000 ? timeoutMs : 1000;
 
@@ -376,27 +477,21 @@ namespace Gateway
         if (context.received > 0) _setNumber(result, "rtt_avg_ms", context.rttSumMs / context.received);
     }
 
+    // NetworkUDP::parsePacket() never reads more than one MTU of payload.
+    static constexpr size_t UDP_MAX_REPLY_BYTES = 1460;
+
     static void _runUdp(JsonObjectConst args, JsonDocument& doc, const char* executionId) {
         const char* ip = nullptr;
         uint8_t octets[4];
         uint16_t port = 0;
         int64_t wait = 0;
-        if (!_readTarget(args, doc, &ip, octets)) return;
-        if (args["port"].isNull()) {
-            _reject(doc, "BAD_ARGS", "port is required");
-            return;
-        }
-        if (!_readPort(args, 0, doc, &port)) return;
-        if (!_readInt(args, "wait_ms", 0, &wait)) {
-            _reject(doc, "BAD_ARGS", "wait_ms must be an integer");
-            return;
-        }
+        if (!_readTarget(args, doc, &ip, octets) || !_readPort(args, 0, doc, &port) || !_requireInt(args, "wait_ms", 0, doc, &wait)) return;
         uint32_t waitMs = GatewayLogic::clampUdpWaitMs(wait);
 
         uint8_t* payload = nullptr;
         size_t payloadLength = 0;
-        if (!args["payload_b64"].is<const char*>() ||
-            !_decodeBase64(args["payload_b64"].as<const char*>(), &payload, &payloadLength, 1472)) {
+        const char* payloadB64 = _readString(args, "payload_b64", nullptr);
+        if (payloadB64 == nullptr || !_decodeBase64(payloadB64, &payload, &payloadLength, 1472)) {
             _reject(doc, "BAD_ARGS", "payload_b64 must be base64 of 1-1472 bytes");
             return;
         }
@@ -417,14 +512,13 @@ namespace Gateway
             _fail(doc, "CONNECT_FAILED", "Could not send the datagram");
             return;
         }
-
         if (waitMs == 0) {
             udp.stop();
             _setBool(_succeed(doc), "sent", true);
             return;
         }
 
-        uint8_t* reply = (uint8_t*)ps_malloc(GatewayLogic::RESPONSE_CAP_BYTES);
+        uint8_t* reply = (uint8_t*)ps_malloc(UDP_MAX_REPLY_BYTES);
         if (reply == nullptr) {
             udp.stop();
             _fail(doc, "NO_MEMORY", "Could not allocate the reply buffer");
@@ -432,14 +526,13 @@ namespace Gateway
         }
         size_t replyLength = 0;
         bool gotReply = false;
-        uint32_t start = millis();
+        uint32_t deadline = millis() + waitMs;
         uint32_t loops = 0;
-        while (millis() - start < waitMs && loops < MAX_LOOP_ITERATIONS) {
-            loops++;
-            int size = udp.parsePacket();
-            if (size > 0) {
+        const uint32_t maxLoops = _pollBound(waitMs, 10);
+        while (_beforeDeadline(deadline) && loops++ < maxLoops) {
+            if (udp.parsePacket() > 0) {
                 if (udp.remoteIP() == target) {
-                    replyLength = udp.read(reply, GatewayLogic::RESPONSE_CAP_BYTES);
+                    replyLength = udp.read(reply, UDP_MAX_REPLY_BYTES);
                     gotReply = true;
                     break;
                 }
@@ -456,6 +549,7 @@ namespace Gateway
         }
         JsonObject result = _succeed(doc);
         _setBool(result, "sent", true);
+        _setBool(result, "truncated", replyLength >= UDP_MAX_REPLY_BYTES);
         bool encoded = _setBinary(result, "reply", reply, replyLength);
         free(reply);
         if (!encoded) {
@@ -464,13 +558,11 @@ namespace Gateway
         }
     }
 
-    static bool _readExact(WiFiClient& client, uint8_t* buffer, size_t length, uint32_t deadline) {
+    static bool _readExact(WiFiClient& client, uint8_t* buffer, size_t length, uint32_t deadline, uint32_t maxLoops) {
         size_t got = 0;
         uint32_t loops = 0;
-        while (got < length && (int32_t)(deadline - millis()) > 0 && loops < MAX_LOOP_ITERATIONS) {
-            loops++;
-            int available = client.available();
-            if (available > 0) {
+        while (got < length && _beforeDeadline(deadline) && loops++ < maxLoops) {
+            if (client.available() > 0) {
                 int n = client.read(buffer + got, length - got);
                 if (n > 0) got += (size_t)n;
             } else if (!client.connected()) {
@@ -482,73 +574,86 @@ namespace Gateway
         return got == length;
     }
 
+    // Parses and validates the Modbus arguments into `values` (writes) or `count`
+    // (reads). Rejects on `doc` and returns false when invalid.
+    static bool _readModbusArgs(JsonObjectConst args, JsonDocument& doc, bool write, int64_t* unit, uint8_t* fc,
+                                int64_t* address, uint16_t** values, size_t* count) {
+        int64_t function = 0;
+        if (!_readInt(args, "unit", 1, unit) || *unit < 0 || *unit > 255 ||
+            !_readInt(args, "function", -1, &function) || function < 0 || function > 255 ||
+            !_readInt(args, "address", -1, address) || *address < 0 || *address > 0xFFFF) {
+            _reject(doc, "BAD_ARGS", "unit 0-255, function and address 0-65535 are required");
+            return false;
+        }
+        *fc = (uint8_t)function;
+
+        if (!write) {
+            int64_t requested = 0;
+            if (!_readInt(args, "count", -1, &requested) || requested < 1 || requested > 2000 ||
+                !GatewayLogic::isModbusReadFunction(*fc) || !GatewayLogic::isValidModbusReadCount(*fc, (uint32_t)requested)) {
+                _reject(doc, "BAD_ARGS", "function must be 1-4 with count 1-2000 (bits) or 1-125 (registers)");
+                return false;
+            }
+            *count = (size_t)requested;
+            return true;
+        }
+
+        JsonArrayConst list = args["values"].as<JsonArrayConst>();
+        if (!GatewayLogic::isModbusWriteFunction(*fc) || list.isNull() || !GatewayLogic::isValidModbusWriteCount(*fc, list.size())) {
+            _reject(doc, "BAD_ARGS", "function must be 5, 6, 15 or 16 with a values array of a valid length");
+            return false;
+        }
+        *values = (uint16_t*)ps_malloc(list.size() * sizeof(uint16_t));
+        if (*values == nullptr) {
+            _fail(doc, "NO_MEMORY", "Could not allocate the values buffer");
+            return false;
+        }
+        size_t i = 0;
+        for (JsonVariantConst v : list) {
+            if (!v.is<int64_t>() || !GatewayLogic::isValidModbusWriteValue(*fc, v.as<int64_t>())) {
+                free(*values);
+                *values = nullptr;
+                _reject(doc, "BAD_ARGS", "values must be 0/1 for coils or 0-65535 for registers");
+                return false;
+            }
+            (*values)[i++] = (uint16_t)v.as<int64_t>();
+        }
+        *count = list.size();
+        return true;
+    }
+
     static void _runModbus(JsonObjectConst args, JsonDocument& doc, const char* executionId, bool write) {
         const char* ip = nullptr;
         uint8_t octets[4];
         uint16_t port = 0;
         uint32_t timeoutMs = 0;
-        int64_t unit = 0, function = 0, address = 0, count = 0;
-        if (!_readTarget(args, doc, &ip, octets) || !_readPort(args, 502, doc, &port) || !_readTimeout(args, doc, &timeoutMs)) return;
-        if (!_readInt(args, "unit", 1, &unit) || unit < 0 || unit > 255 ||
-            !_readInt(args, "function", -1, &function) || !_readInt(args, "address", -1, &address) ||
-            address < 0 || address > 0xFFFF) {
-            _reject(doc, "BAD_ARGS", "unit 0-255, function and address 0-65535 are required");
-            return;
-        }
-        uint8_t fc = (function >= 0 && function <= 255) ? (uint8_t)function : 0;
-
+        int64_t unit = 0, address = 0;
+        uint8_t fc = 0;
         uint16_t* values = nullptr;
-        size_t valueCount = 0;
-        if (write) {
-            JsonArrayConst list = args["values"].as<JsonArrayConst>();
-            valueCount = list.size();
-            if (!GatewayLogic::isModbusWriteFunction(fc) || list.isNull() || !GatewayLogic::isValidModbusWriteCount(fc, valueCount)) {
-                _reject(doc, "BAD_ARGS", "function must be 5, 6, 15 or 16 with a values array of a valid length");
-                return;
-            }
-            values = (uint16_t*)ps_malloc(valueCount * sizeof(uint16_t));
-            if (values == nullptr) {
-                _fail(doc, "NO_MEMORY", "Could not allocate the values buffer");
-                return;
-            }
-            size_t i = 0;
-            for (JsonVariantConst v : list) {
-                if (!v.is<int64_t>() || !GatewayLogic::isValidModbusWriteValue(fc, v.as<int64_t>())) {
-                    free(values);
-                    _reject(doc, "BAD_ARGS", "values must be 0/1 for coils or 0-65535 for registers");
-                    return;
-                }
-                values[i++] = (uint16_t)v.as<int64_t>();
-            }
-        } else {
-            if (!_readInt(args, "count", -1, &count) || !GatewayLogic::isModbusReadFunction(fc) ||
-                count < 0 || !GatewayLogic::isValidModbusReadCount(fc, (uint32_t)count)) {
-                _reject(doc, "BAD_ARGS", "function must be 1-4 with count 1-2000 (bits) or 1-125 (registers)");
-                return;
-            }
-            valueCount = (size_t)count;
-        }
+        size_t count = 0;
+        if (!_readTarget(args, doc, &ip, octets) || !_readPort(args, 502, doc, &port) || !_readTimeout(args, doc, &timeoutMs) ||
+            !_readModbusArgs(args, doc, write, &unit, &fc, &address, &values, &count)) return;
 
         uint16_t transactionId = (uint16_t)esp_random();
         uint8_t frame[GatewayLogic::MODBUS_MAX_FRAME];
         size_t frameLength = write
-            ? GatewayLogic::buildModbusWriteRequest(frame, sizeof(frame), transactionId, (uint8_t)unit, fc, (uint16_t)address, values, valueCount)
-            : GatewayLogic::buildModbusReadRequest(frame, sizeof(frame), transactionId, (uint8_t)unit, fc, (uint16_t)address, (uint16_t)valueCount);
-        if (values) free(values);
+            ? GatewayLogic::buildModbusWriteRequest(frame, sizeof(frame), transactionId, (uint8_t)unit, fc, (uint16_t)address, values, count)
+            : GatewayLogic::buildModbusReadRequest(frame, sizeof(frame), transactionId, (uint8_t)unit, fc, (uint16_t)address, (uint16_t)count);
+        free(values);
         if (frameLength == 0) {
             _reject(doc, "BAD_ARGS", "Could not build the Modbus request");
             return;
         }
 
         LOG_INFO("Gateway %s: modbus_%s %s:%u unit %d fc %u addr %d n %u", executionId, write ? "write" : "read",
-                 ip, port, (int)unit, fc, (int)address, (unsigned)valueCount);
+                 ip, port, (int)unit, fc, (int)address, (unsigned)count);
 
+        uint32_t deadline = millis() + timeoutMs;
         WiFiClient client;
         if (!client.connect(IPAddress(octets[0], octets[1], octets[2], octets[3]), port, (int32_t)timeoutMs)) {
             _fail(doc, "CONNECT_FAILED", "TCP connect failed");
             return;
         }
-        uint32_t deadline = millis() + timeoutMs;
         if (client.write(frame, frameLength) != frameLength) {
             client.stop();
             _fail(doc, "CONNECT_FAILED", "Could not send the Modbus request");
@@ -556,22 +661,22 @@ namespace Gateway
         }
 
         uint8_t response[GatewayLogic::MODBUS_MAX_FRAME];
-        size_t responseLength = 0;
-        if (_readExact(client, response, 6, deadline)) {
-            responseLength = GatewayLogic::modbusFrameLength(response, 6);
-            if (responseLength == 0 || !_readExact(client, response + 6, responseLength - 6, deadline)) responseLength = 0;
-        } else {
-            client.stop();
+        const uint32_t maxLoops = _pollBound(timeoutMs, 5);
+        bool gotHeader = _readExact(client, response, GatewayLogic::MODBUS_LENGTH_PREFIX, deadline, maxLoops);
+        size_t responseLength = gotHeader ? GatewayLogic::modbusFrameLength(response, GatewayLogic::MODBUS_LENGTH_PREFIX) : 0;
+        bool gotFrame = responseLength != 0 &&
+                        _readExact(client, response + GatewayLogic::MODBUS_LENGTH_PREFIX, responseLength - GatewayLogic::MODBUS_LENGTH_PREFIX, deadline, maxLoops);
+        client.stop();
+        if (!gotHeader) {
             _fail(doc, "TIMEOUT", "No Modbus response within timeout_ms");
             return;
         }
-        client.stop();
-        if (responseLength == 0) {
+        if (!gotFrame) {
             _fail(doc, "BAD_RESPONSE", "Truncated or invalid Modbus frame");
             return;
         }
 
-        uint16_t* decoded = write ? nullptr : (uint16_t*)ps_malloc(valueCount * sizeof(uint16_t));
+        uint16_t* decoded = write ? nullptr : (uint16_t*)ps_malloc(count * sizeof(uint16_t));
         if (!write && decoded == nullptr) {
             _fail(doc, "NO_MEMORY", "Could not allocate the decode buffer");
             return;
@@ -579,44 +684,33 @@ namespace Gateway
         size_t decodedCount = 0;
         uint8_t exception = 0;
         GatewayLogic::ModbusParse parsed = GatewayLogic::parseModbusResponse(
-            response, responseLength, transactionId, (uint8_t)unit, fc, (uint16_t)valueCount,
-            decoded, decoded ? valueCount : 0, &decodedCount, &exception);
+            response, responseLength, transactionId, (uint8_t)unit, fc, (uint16_t)count,
+            decoded, decoded ? count : 0, &decodedCount, &exception);
 
         if (parsed == GatewayLogic::ModbusParse::EXCEPTION) {
-            if (decoded) free(decoded);
             char description[32];
             snprintf(description, sizeof(description), "Modbus exception code %u", exception);
             _fail(doc, "MODBUS_EXCEPTION", description);
-            return;
-        }
-        if (parsed != GatewayLogic::ModbusParse::OK) {
-            if (decoded) free(decoded);
+        } else if (parsed != GatewayLogic::ModbusParse::OK) {
             _fail(doc, "BAD_RESPONSE", "Modbus response does not match the request");
-            return;
+        } else if (write) {
+            _setNumber(_succeed(doc), "written", (int64_t)decodedCount);
+        } else {
+            // At most 2000 values of up to 5 digits plus separators.
+            size_t cap = decodedCount * 6 + 3;
+            char* list = (char*)ps_malloc(cap);
+            if (list == nullptr) {
+                _fail(doc, "NO_MEMORY", "Could not allocate the values string");
+            } else {
+                size_t used = (size_t)snprintf(list, cap, "[");
+                for (size_t i = 0; i < decodedCount && used < cap; i++) {
+                    used += (size_t)snprintf(list + used, cap - used, i == 0 ? "%u" : ",%u", decoded[i]);
+                }
+                if (used < cap) snprintf(list + used, cap - used, "]");
+                _setString(_succeed(doc), "values", list);
+                free(list);
+            }
         }
-
-        JsonObject result = _succeed(doc);
-        if (write) {
-            _setNumber(result, "written", (int64_t)decodedCount);
-            return;
-        }
-
-        // At most 2000 values of up to 5 digits plus separators: well under 16 KB.
-        size_t cap = decodedCount * 6 + 3;
-        char* list = (char*)ps_malloc(cap);
-        if (list == nullptr) {
-            free(decoded);
-            doc.clear();
-            _fail(doc, "NO_MEMORY", "Could not allocate the values string");
-            return;
-        }
-        size_t used = (size_t)snprintf(list, cap, "[");
-        for (size_t i = 0; i < decodedCount && used < cap; i++) {
-            used += (size_t)snprintf(list + used, cap - used, i == 0 ? "%u" : ",%u", decoded[i]);
-        }
-        if (used < cap) snprintf(list + used, cap - used, "]");
-        _setString(result, "values", list);
-        free(list);
         free(decoded);
     }
 
@@ -625,7 +719,7 @@ namespace Gateway
         uint8_t mac[6];
     };
 
-    static void _collectArpEntries(struct netif* scanNetif, ScanHost* hosts, size_t* hostCount, size_t cap) {
+    static void _collectArpEntries(struct netif* scanNetif, ScanHost* hosts, size_t* hostCount) {
         for (size_t i = 0; i < ARP_TABLE_SIZE; i++) {
             ip4_addr_t* entryIp = nullptr;
             struct netif* entryNetif = nullptr;
@@ -633,17 +727,57 @@ namespace Gateway
             if (!etharp_get_entry(i, &entryIp, &entryNetif, &entryMac) || entryNetif != scanNetif) continue;
             uint32_t address = ip4_addr_get_u32(entryIp);
             bool known = false;
-            for (size_t j = 0; j < *hostCount; j++) {
-                if (hosts[j].ip == address) {
-                    known = true;
-                    break;
-                }
-            }
-            if (known || *hostCount >= cap) continue;
+            for (size_t j = 0; j < *hostCount && !known; j++) known = hosts[j].ip == address;
+            if (known || *hostCount >= GATEWAY_SCAN_MAX_HOSTS) continue;
             hosts[*hostCount].ip = address;
             memcpy(hosts[*hostCount].mac, entryMac->addr, 6);
             (*hostCount)++;
         }
+    }
+
+    enum class SweepResult { DONE, TIME_CAP, NETWORK_DOWN, INTERFACE_CHANGED, NO_MEMORY };
+
+    // ARP-sweeps the /24 around the active interface's address.
+    static SweepResult _sweepArp(ScanHost* hosts, size_t* hostCount) {
+        LOCK_TCPIP_CORE();
+        struct netif* scanNetif = netif_default;
+        bool up = scanNetif != nullptr && netif_is_up(scanNetif) && netif_is_link_up(scanNetif) &&
+                  !ip4_addr_isany_val(*netif_ip4_addr(scanNetif));
+        uint32_t self = up ? lwip_ntohl(ip4_addr_get_u32(netif_ip4_addr(scanNetif))) : 0;
+        uint32_t mask = up ? lwip_ntohl(ip4_addr_get_u32(netif_ip4_netmask(scanNetif))) : 0;
+        UNLOCK_TCPIP_CORE();
+        if (!up) return SweepResult::NETWORK_DOWN;
+
+        uint32_t* targets = (uint32_t*)ps_malloc(GATEWAY_SCAN_MAX_HOSTS * sizeof(uint32_t));
+        if (targets == nullptr) return SweepResult::NO_MEMORY;
+        size_t targetCount = GatewayLogic::buildScanTargets(self, mask, targets, GATEWAY_SCAN_MAX_HOSTS);
+
+        SweepResult outcome = SweepResult::DONE;
+        uint32_t start = millis();
+        for (size_t offset = 0; offset < targetCount; offset += GATEWAY_SCAN_BATCH_SIZE) {
+            if (millis() - start > GATEWAY_SCAN_MAX_DURATION_MS) {
+                outcome = SweepResult::TIME_CAP;
+                break;
+            }
+            LOCK_TCPIP_CORE();
+            if (netif_default != scanNetif) {
+                UNLOCK_TCPIP_CORE();
+                outcome = SweepResult::INTERFACE_CHANGED;
+                break;
+            }
+            for (size_t i = offset; i < offset + GATEWAY_SCAN_BATCH_SIZE && i < targetCount; i++) {
+                ip4_addr_t address;
+                ip4_addr_set_u32(&address, lwip_htonl(targets[i]));
+                etharp_request(scanNetif, &address);
+            }
+            UNLOCK_TCPIP_CORE();
+            delay(GATEWAY_SCAN_BATCH_WAIT_MS);
+            LOCK_TCPIP_CORE();
+            if (netif_default == scanNetif) _collectArpEntries(scanNetif, hosts, hostCount);
+            UNLOCK_TCPIP_CORE();
+        }
+        free(targets);
+        return outcome;
     }
 
     static bool _parseMdnsService(const char* text, char* service, size_t serviceSize, char* proto, size_t protoSize) {
@@ -660,9 +794,6 @@ namespace Gateway
         return true;
     }
 
-    // Raw size budget for each JSON list so the whole response stays well inside the 9 KB MQTT buffer.
-    static constexpr size_t SCAN_LIST_BUDGET = 3500;
-
     static void _runScan(JsonObjectConst args, JsonDocument& doc, const char* executionId) {
         char service[32] = "";
         char proto[8] = "";
@@ -672,108 +803,57 @@ namespace Gateway
             return;
         }
 
-        LOCK_TCPIP_CORE();
-        struct netif* scanNetif = netif_default;
-        bool up = scanNetif != nullptr && netif_is_up(scanNetif) && netif_is_link_up(scanNetif) &&
-                  !ip4_addr_isany_val(*netif_ip4_addr(scanNetif));
-        uint32_t self = up ? lwip_ntohl(ip4_addr_get_u32(netif_ip4_addr(scanNetif))) : 0;
-        uint32_t mask = up ? lwip_ntohl(ip4_addr_get_u32(netif_ip4_netmask(scanNetif))) : 0;
-        UNLOCK_TCPIP_CORE();
-        if (!up) {
-            _fail(doc, "NETWORK_DOWN", "No active network interface");
-            return;
-        }
+        LOG_INFO("Gateway %s: net_scan%s%s", executionId, service[0] ? " + mDNS " : "", service[0] ? mdnsArg.as<const char*>() : "");
 
-        uint32_t* targets = (uint32_t*)ps_malloc(254 * sizeof(uint32_t));
-        ScanHost* hosts = (ScanHost*)ps_malloc(254 * sizeof(ScanHost));
-        if (targets == nullptr || hosts == nullptr) {
-            if (targets) free(targets);
-            if (hosts) free(hosts);
-            _fail(doc, "NO_MEMORY", "Could not allocate the scan buffers");
+        ScanHost* hosts = (ScanHost*)ps_malloc(GATEWAY_SCAN_MAX_HOSTS * sizeof(ScanHost));
+        if (hosts == nullptr) {
+            _fail(doc, "NO_MEMORY", "Could not allocate the scan buffer");
             return;
         }
-        size_t targetCount = GatewayLogic::buildScanTargets(self, mask, targets, 254);
         size_t hostCount = 0;
-
-        LOG_INFO("Gateway %s: net_scan %u hosts%s%s", executionId, (unsigned)targetCount, service[0] ? " + mDNS " : "", mdnsArg.isNull() ? "" : mdnsArg.as<const char*>());
-
-        uint32_t start = millis();
-        bool interfaceChanged = false;
-        for (size_t offset = 0; offset < targetCount; offset += GATEWAY_SCAN_BATCH_SIZE) {
-            if (millis() - start > GATEWAY_SCAN_MAX_DURATION_MS) break;
-            LOCK_TCPIP_CORE();
-            if (netif_default != scanNetif) {
-                interfaceChanged = true;
-                UNLOCK_TCPIP_CORE();
-                break;
-            }
-            for (size_t i = offset; i < offset + GATEWAY_SCAN_BATCH_SIZE && i < targetCount; i++) {
-                ip4_addr_t address;
-                ip4_addr_set_u32(&address, lwip_htonl(targets[i]));
-                etharp_request(scanNetif, &address);
-            }
-            UNLOCK_TCPIP_CORE();
-            delay(GATEWAY_SCAN_BATCH_WAIT_MS);
-            LOCK_TCPIP_CORE();
-            if (netif_default == scanNetif) _collectArpEntries(scanNetif, hosts, &hostCount, 254);
-            UNLOCK_TCPIP_CORE();
-        }
-        free(targets);
-
-        if (interfaceChanged) {
+        SweepResult sweep = _sweepArp(hosts, &hostCount);
+        if (sweep == SweepResult::NETWORK_DOWN || sweep == SweepResult::INTERFACE_CHANGED || sweep == SweepResult::NO_MEMORY) {
             free(hosts);
-            _fail(doc, "NETWORK_DOWN", "Active interface changed during the scan");
+            if (sweep == SweepResult::NO_MEMORY) _fail(doc, "NO_MEMORY", "Could not allocate the scan targets");
+            else _fail(doc, "NETWORK_DOWN", sweep == SweepResult::NETWORK_DOWN ? "No active network interface" : "Active interface changed during the scan");
             return;
         }
 
-        char* list = (char*)ps_malloc(SCAN_LIST_BUDGET + 64);
-        if (list == nullptr) {
-            free(hosts);
-            _fail(doc, "NO_MEMORY", "Could not allocate the host list");
-            return;
-        }
-        bool truncated = false;
-        size_t used = (size_t)snprintf(list, SCAN_LIST_BUDGET, "[");
+        SpiRamAllocator allocator;
+        JsonDocument lists(&allocator);
+        JsonArray hostList = lists["hosts"].to<JsonArray>();
         for (size_t i = 0; i < hostCount; i++) {
             ip4_addr_t address;
             ip4_addr_set_u32(&address, hosts[i].ip);
+            char ipText[IP_ADDRESS_BUFFER_SIZE];
+            char macText[13];
             const uint8_t* m = hosts[i].mac;
-            char entry[64];
-            int n = snprintf(entry, sizeof(entry), "%s{\"ip\":\"%s\",\"mac\":\"%02x%02x%02x%02x%02x%02x\"}",
-                             i == 0 ? "" : ",", ip4addr_ntoa(&address), m[0], m[1], m[2], m[3], m[4], m[5]);
-            if (used + (size_t)n + 2 > SCAN_LIST_BUDGET) {
-                truncated = true;
-                break;
-            }
-            memcpy(list + used, entry, (size_t)n);
-            used += (size_t)n;
+            snprintf(ipText, sizeof(ipText), "%s", ip4addr_ntoa(&address));
+            snprintf(macText, sizeof(macText), "%02x%02x%02x%02x%02x%02x", m[0], m[1], m[2], m[3], m[4], m[5]);
+            JsonObject entry = hostList.add<JsonObject>();
+            entry["ip"] = ipText;
+            entry["mac"] = macText;
         }
-        snprintf(list + used, SCAN_LIST_BUDGET + 64 - used, "]");
         free(hosts);
 
+        bool truncated = sweep == SweepResult::TIME_CAP;
         JsonObject result = _succeed(doc);
-        _setString(result, "hosts", list);
         _setNumber(result, "host_count", (int64_t)hostCount);
+        _setList(result, "hosts", hostList, &truncated);
 
         if (service[0] != '\0') {
+            // Hostnames come from the network: ArduinoJson escapes them.
+            JsonArray mdnsList = lists["mdns"].to<JsonArray>();
             int found = MDNS.queryService(service, proto);
-            used = (size_t)snprintf(list, SCAN_LIST_BUDGET, "[");
             for (int i = 0; i < found; i++) {
-                char entry[160];
-                int n = snprintf(entry, sizeof(entry), "%s{\"name\":\"%s\",\"ip\":\"%s\",\"port\":%u}", i == 0 ? "" : ",",
-                                 MDNS.hostname(i).c_str(), MDNS.address(i).toString().c_str(), MDNS.port(i));
-                if (n < 0 || (size_t)n >= sizeof(entry) || used + (size_t)n + 2 > SCAN_LIST_BUDGET) {
-                    truncated = true;
-                    break;
-                }
-                memcpy(list + used, entry, (size_t)n);
-                used += (size_t)n;
+                JsonObject entry = mdnsList.add<JsonObject>();
+                entry["name"] = MDNS.hostname(i);
+                entry["ip"] = MDNS.address(i).toString();
+                entry["port"] = MDNS.port(i);
             }
-            snprintf(list + used, SCAN_LIST_BUDGET + 64 - used, "]");
-            _setString(result, "mdns", list);
+            _setList(result, "mdns", mdnsList, &truncated);
         }
         _setBool(result, "truncated", truncated);
-        free(list);
     }
 
     // Task plumbing
@@ -782,10 +862,8 @@ namespace Gateway
     static void _run(const Request& request) {
         SpiRamAllocator allocator;
         JsonDocument doc(&allocator);
-
         JsonDocument argsDoc(&allocator);
-        DeserializationError error = deserializeJson(argsDoc, request.args);
-        if (error || !argsDoc.is<JsonObject>()) {
+        if (deserializeJson(argsDoc, request.args) || !argsDoc.is<JsonObject>()) {
             _reject(doc, "BAD_ARGS", "args must be a JSON object");
         } else {
             JsonObjectConst args = argsDoc.as<JsonObjectConst>();
@@ -801,37 +879,26 @@ namespace Gateway
         }
 
         const char* status = doc["status"] | "FAILED";
-        const char* reason = doc["statusReason"]["reasonCode"] | "";
         if (strcmp(status, "SUCCEEDED") == 0) {
             LOG_INFO("Gateway %s: %s succeeded", request.executionId, GatewayLogic::opName(request.op));
         } else {
-            LOG_WARNING("Gateway %s: %s %s %s", request.executionId, GatewayLogic::opName(request.op), status, reason);
+            LOG_WARNING("Gateway %s: %s %s %s", request.executionId, GatewayLogic::opName(request.op), status,
+                        doc["statusReason"]["reasonCode"] | "");
         }
 
         size_t length = measureJson(doc) + 1;
         char* json = (char*)ps_malloc(length);
-        char* executionId = (char*)ps_malloc(strlen(request.executionId) + 1);
-        if (json == nullptr || executionId == nullptr) {
-            // Nothing to publish: drop the busy flag so the device does not stay stuck.
-            if (json) free(json);
-            if (executionId) free(executionId);
-            LOG_ERROR("Gateway %s: could not allocate the response", request.executionId);
-            _busy = false;
-            return;
-        }
-        serializeJson(doc, json, length);
-        snprintf(executionId, strlen(request.executionId) + 1, "%s", request.executionId);
-
-        if (acquireMutex(&_resultMutex)) {
-            _resultExecutionId = executionId;
+        if (json != nullptr) serializeJson(doc, json, length);
+        if (json != nullptr && acquireMutex(&_resultMutex)) {
+            snprintf(_resultExecutionId, sizeof(_resultExecutionId), "%s", request.executionId);
             _resultJson = json;
             releaseMutex(&_resultMutex);
-        } else {
-            free(json);
-            free(executionId);
-            LOG_ERROR("Gateway %s: could not store the result", request.executionId);
-            _busy = false;
+            return;
         }
+        // Nothing to publish: drop the busy flag so the gateway does not stay stuck.
+        free(json);
+        LOG_ERROR("Gateway %s: could not store the result", request.executionId);
+        _busy = false;
     }
 
     static void _gatewayTask(void* parameter) {
@@ -861,8 +928,8 @@ namespace Gateway
             preferences.end();
         }
 
-        if (!createMutexIfNeeded(&_resultMutex)) {
-            LOG_ERROR("Failed to create the gateway result mutex");
+        if (!createMutexIfNeeded(&_stateMutex) || !createMutexIfNeeded(&_resultMutex)) {
+            LOG_ERROR("Failed to create the gateway mutexes");
             return;
         }
         if (_queue == nullptr) _queue = xQueueCreate(1, sizeof(Request));
@@ -879,6 +946,9 @@ namespace Gateway
         LOG_INFO("Gateway ready (%s)", _enabled ? "enabled" : "disabled");
     }
 
+    // Only called on the restart path. A request in flight can outlive the stop
+    // timeout and be force-deleted; the restart's failsafe timer covers a socket
+    // or lwIP lock left behind.
     void stop() {
         stopTaskGracefully(&_taskHandle, "gateway task");
     }
@@ -886,6 +956,10 @@ namespace Gateway
     bool isEnabled() { return _enabled; }
 
     void setEnabled(bool enabled) {
+        if (!acquireMutex(&_stateMutex)) {
+            LOG_ERROR("Failed to acquire the gateway state mutex");
+            return;
+        }
         Preferences preferences;
         if (preferences.begin(PREFERENCES_NAMESPACE_GATEWAY, false)) {
             preferences.putBool(GATEWAY_ENABLED_KEY, enabled);
@@ -895,42 +969,51 @@ namespace Gateway
         }
         if (_enabled != enabled) LOG_INFO("Gateway %s", enabled ? "enabled" : "disabled");
         _enabled = enabled;
+        releaseMutex(&_stateMutex);
     }
 
-    SubmitResult submit(const char* executionId, Op op, const char* argsJson) {
-        if (!_enabled) return SubmitResult::NOT_ENABLED;
-        if (_queue == nullptr || _taskHandle == nullptr) return SubmitResult::NOT_ENABLED;
+    SubmitResult submit(const char* executionId, Op op, JsonVariantConst args) {
+        if (!_enabled || _queue == nullptr || _taskHandle == nullptr) return SubmitResult::NOT_ENABLED;
+
+        char* argsJson = nullptr;
+        if (args.is<JsonObjectConst>()) {
+            size_t length = measureJson(args) + 1;
+            argsJson = (char*)ps_malloc(length);
+            if (argsJson == nullptr) return SubmitResult::NO_MEMORY;
+            serializeJson(args, argsJson, length);
+        } else {
+            size_t length = 0;
+            const char* encoded = args.is<const char*>() ? args.as<const char*>() : nullptr;
+            if (encoded == nullptr || !_decodeBase64(encoded, (uint8_t**)&argsJson, &length, GATEWAY_ARGS_MAX_BYTES)) {
+                return SubmitResult::BAD_ARGS;
+            }
+        }
 
         bool expected = false;
-        if (!_busy.compare_exchange_strong(expected, true)) return SubmitResult::BUSY;
+        if (!_busy.compare_exchange_strong(expected, true)) {
+            free(argsJson);
+            return SubmitResult::BUSY;
+        }
 
         Request request = {};
         snprintf(request.executionId, sizeof(request.executionId), "%s", executionId);
         request.op = op;
-        size_t length = strlen(argsJson) + 1;
-        request.args = (char*)ps_malloc(length);
-        if (request.args == nullptr) {
-            _busy = false;
-            return SubmitResult::NO_MEMORY;
-        }
-        memcpy(request.args, argsJson, length);
-
+        request.args = argsJson;
         if (xQueueSend(_queue, &request, 0) != pdTRUE) {
-            free(request.args);
+            free(argsJson);
             _busy = false;
             return SubmitResult::BUSY;
         }
         return SubmitResult::ACCEPTED;
     }
 
-    bool takeResult(char** executionId, char** responseJson) {
+    bool takeResult(char* executionId, size_t executionIdSize, char** responseJson) {
         if (!_busy) return false;
         bool taken = false;
         if (acquireMutex(&_resultMutex)) {
             if (_resultJson != nullptr) {
-                *executionId = _resultExecutionId;
+                snprintf(executionId, executionIdSize, "%s", _resultExecutionId);
                 *responseJson = _resultJson;
-                _resultExecutionId = nullptr;
                 _resultJson = nullptr;
                 taken = true;
             }

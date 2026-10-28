@@ -4,6 +4,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include <ArduinoJson.h>
 
 #include "gateway_logic.h"
 
@@ -19,13 +20,17 @@
 #define GATEWAY_ENABLED_DEFAULT false
 
 #define GATEWAY_TASK_NAME "gateway_task"
-#define GATEWAY_TASK_STACK_SIZE (8 * 1024) // HTTPClient + lwIP sockets; profile before trimming
+#define GATEWAY_TASK_STACK_SIZE (8 * 1024) // lwIP sockets + ArduinoJson; profile before trimming
 #define GATEWAY_TASK_PRIORITY 1
 
+#define GATEWAY_SCAN_MAX_HOSTS 254
 #define GATEWAY_SCAN_BATCH_SIZE 8           // Below lwIP's 10-entry ARP table so a batch is read before eviction
 #define GATEWAY_SCAN_BATCH_WAIT_MS 300
 #define GATEWAY_SCAN_MAX_DURATION_MS (30 * 1000)
-#define GATEWAY_ARGS_MAX_BYTES (8 * 1024) // Decoded args; the largest legitimate payload is an HTTP body
+#define GATEWAY_SCAN_LIST_BUDGET 3500       // Serialized bytes per result list, so the response fits the 9 KB MQTT buffer
+// Decoded args. The inbound MQTT buffer (9 KB) is the real ceiling: 6 KB of
+// JSON is 8 KB once base64-encoded, plus the command envelope.
+#define GATEWAY_ARGS_MAX_BYTES (6 * 1024)
 
 namespace Gateway
 {
@@ -35,15 +40,16 @@ namespace Gateway
     bool isEnabled();
     void setEnabled(bool enabled); // Persists to NVS; used by the system shadow, REST and UI alike
 
-    enum class SubmitResult { ACCEPTED, NOT_ENABLED, BUSY, NO_MEMORY };
+    enum class SubmitResult { ACCEPTED, NOT_ENABLED, BUSY, BAD_ARGS, NO_MEMORY };
 
-    // Hands a request to the gateway task. `argsJson` is the args object as
-    // compact JSON (already base64-decoded); it is copied.
-    SubmitResult submit(const char* executionId, GatewayLogic::Op op, const char* argsJson);
+    // Hands a request to the gateway task. `args` is the JSON object itself
+    // (dev inject harness) or a string holding its base64 encoding (cloud
+    // template). Copied, so the caller's document can go away.
+    SubmitResult submit(const char* executionId, GatewayLogic::Op op, JsonVariantConst args);
 
-    // If the running request has finished, returns true and gives the caller a
-    // PSRAM-allocated, null-terminated JSON document holding the full command
-    // response ({status, statusReason?, result?}). The caller frees both buffers
-    // with free(). Clears the busy state.
-    bool takeResult(char** executionId, char** responseJson);
+    // If the running request has finished, copies its execution id into
+    // `executionId` and hands over a PSRAM-allocated JSON document with the full
+    // command response ({status, statusReason?, result?}), which the caller
+    // frees with free(). Clears the busy state.
+    bool takeResult(char* executionId, size_t executionIdSize, char** responseJson);
 }
