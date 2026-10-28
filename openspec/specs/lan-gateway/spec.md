@@ -1,7 +1,7 @@
 # lan-gateway Specification
 
 ## Purpose
-TBD - created by archiving change add-lan-gateway. Update Purpose after archive.
+Cloud-driven LAN gateway: one generic primitive per IoT Command (ping, net_scan, http_request, modbus_read, modbus_write, udp_send) against private IPv4 targets other than the device itself, run one at a time in a dedicated task under one absolute deadline, disabled by default and switched from the system shadow (REST as emergency kill switch, no web UI). All device knowledge and protocol logic live in the cloud.
 ## Requirements
 ### Requirement: Gateway command envelope
 The device SHALL accept an IoT Command with `operation: "gateway"`, an `op` string naming one primitive (`ping`, `net_scan`, `http_request`, `modbus_read`, `modbus_write`, `udp_send`), and `args` given either as a JSON object or as a string holding base64-encoded JSON. It SHALL reject the command with `REJECTED` and reasonCode `UNKNOWN_OP` for an unknown `op`, and `BAD_ARGS` when `args` is missing, not decodable, not a JSON object, or fails the primitive's argument validation.
