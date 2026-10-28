@@ -76,14 +76,14 @@ Each primitive SHALL apply a timeout, `timeout_ms` from args, defaulting to 5000
 - **THEN** the device waits at most 10000 ms
 
 ### Requirement: Primitive results
-On success the device SHALL publish `SUCCEEDED` with a `result` map. LAN payload bytes SHALL use `bin` (base64), structured lists SHALL use `s` with compact JSON, and numbers SHALL use `s` with their decimal string. Transport failures SHALL publish `FAILED` with a reasonCode: `TIMEOUT`, `CONNECT_FAILED`, `NO_REPLY`, `MODBUS_EXCEPTION` (with the exception code in reasonDescription), or `NETWORK_DOWN`.
+On success the device SHALL publish `SUCCEEDED` with a `result` map. LAN payload bytes SHALL use `bin` (base64), structured lists SHALL use `s` with compact JSON, and numbers SHALL use `s` with their decimal string. Transport failures SHALL publish `FAILED` with a reasonCode: `TIMEOUT`, `CONNECT_FAILED`, `NO_REPLY`, `MODBUS_EXCEPTION` (with the exception code in reasonDescription), `BAD_RESPONSE` (a Modbus reply that does not match the request), `NETWORK_DOWN`, or `NO_MEMORY`.
 
 - `ping` `{ip, count (1-5, default 3)}` returns `sent`, `received`, `rtt_avg_ms`. It succeeds even with zero replies, and `received: "0"` is the answer.
-- `net_scan` `{mdns_service (optional, e.g. "_http._tcp"), timeout_ms}` returns `hosts` (`[{"ip","mac"}]`) and, when requested, `mdns` (`[{"name","ip","port"}]`).
+- `net_scan` `{mdns_service (optional, e.g. "_http._tcp"), timeout_ms}` returns `hosts` (`[{"ip","mac"}]`), `host_count`, `truncated`, and, when requested, `mdns` (`[{"name","ip","port"}]`). Lists are cut to fit the MQTT buffer, which sets `truncated: true`.
 - `http_request` `{ip, port (default 80), method (GET|POST|PUT|PATCH|DELETE, default GET), path (default "/"), headers (optional string map), body (optional string) or body_b64, timeout_ms}` returns `status_code`, `body` (bin), `truncated` (b).
 - `modbus_read` `{ip, port (default 502), unit (default 1), function (1|2|3|4), address, count (1-125 for registers, 1-2000 for bits)}` returns `values` (JSON array of integers).
 - `modbus_write` `{ip, port, unit, function (5|6|15|16), address, values (array of integers, 1-123 registers or 1-1968 bits)}` returns `written` with the count.
-- `udp_send` `{ip, port, payload_b64, wait_ms (default 0)}` returns `reply` (bin) and `reply_from` when a datagram arrives within `wait_ms`. Without a wait, it returns `sent: true`.
+- `udp_send` `{ip, port, payload_b64, wait_ms (default 0)}` returns `sent: true` and `reply` (bin) when a datagram from the target arrives within `wait_ms`, and `FAILED NO_REPLY` when none does. Datagrams from other hosts are ignored. Without a wait, it returns `sent: true`.
 
 #### Scenario: Shelly switched through http_request
 - **WHEN** an enabled device runs `http_request` with `{ip:"192.168.2.72", path:"/rpc/Switch.Set?id=0&on=true"}`
