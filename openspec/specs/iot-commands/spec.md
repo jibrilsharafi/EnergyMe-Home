@@ -1,10 +1,31 @@
 # iot-commands Specification
 
 ## Purpose
-Transient device actions over AWS IoT Commands (restart, factory_reset, energy_reset, issue_ack): json-request routing only, off-callback processing, anti-fat-finger confirmation, and AWS-pattern reason codes. Jobs remain OTA-only.
+Transient device actions over AWS IoT Commands (restart, factory_reset, energy_reset, issue_ack, firmware_rollback, gateway): json-request routing only, off-callback processing, anti-fat-finger confirmation, and AWS-pattern reason codes. Jobs remain OTA-only.
 ## Requirements
-### Requirement: Five transient IoT Commands
-The device SHALL support exactly five AWS IoT Commands: `restart` (no payload), `factory_reset` (`{"confirm": "<device_id>"}`), `energy_reset` (selective or full counter reset), `issue_ack` (acknowledge one or all active device issues), and `firmware_rollback` (`{"expected_sha256": "<64 hex>"}` - boot the previous firmware from the passive OTA partition without a download). Jobs remain OTA-only.
+### Requirement: factory_reset requires device-id confirmation
+The device SHALL reject a `factory_reset` whose `confirm` field does not equal the device id. Only a matching `confirm` SHALL trigger the wipe of user NVS (factory NVS preserved).
+
+#### Scenario: Mismatched confirm is rejected
+- **WHEN** a `factory_reset` arrives with `confirm` not equal to the device id
+- **THEN** the device rejects it and performs no wipe
+
+### Requirement: Only the json request topic routes to the handler
+The device SHALL route only `.../request/json` to the command handler. AWS rejection echoes and any other payload-format segment SHALL be ignored, preventing an infinite status-publish loop.
+
+#### Scenario: Rejection echo is ignored
+- **WHEN** an AWS rejection echo is received on the command topic
+- **THEN** the device does not route it to the handler and does not publish a status in response
+
+### Requirement: Commands processed off the RX callback
+Command handling (per-channel NVS work and status publishes) SHALL run in the MQTT task body, not in the PubSubClient callback, to avoid corrupting the QoS1 PUBACK. Emitted `reasonCode`s SHALL be uppercased to the AWS `[A-Z0-9_-]+` pattern.
+
+#### Scenario: Status published from the task body
+- **WHEN** a command requires NVS work and a status publish
+- **THEN** that work runs in the MQTT task body and the reasonCode matches `[A-Z0-9_-]+`
+
+### Requirement: Six transient IoT Commands
+The device SHALL support exactly six AWS IoT Commands: `restart` (no payload), `factory_reset` (`{"confirm": "<device_id>"}`), `energy_reset` (selective or full counter reset), `issue_ack` (acknowledge one or all active device issues), `firmware_rollback` (`{"expected_sha256": "<64 hex>"}` - boot the previous firmware from the passive OTA partition without a download), and `gateway` (`{"op": "<primitive>", "args": <object or base64 JSON>}` - one LAN primitive, specified in the `lan-gateway` capability). Jobs remain OTA-only.
 
 `energy_reset`'s `channels` parameter SHALL be a string in one of two forms: the literal `"all"`, or a comma-separated list of channel indices (e.g. `"5"`, `"0,2,5"`) - the only shape AWS IoT Commands can actually deliver, since command parameters are string-typed end-to-end. A JSON array of indices SHALL continue to be accepted for the on-device inject test harness.
 
@@ -58,24 +79,7 @@ Parsing of the comma-separated form SHALL be best-effort per channel: an out-of-
 - **WHEN** a `firmware_rollback` command is delivered with `expected_sha256` matching the passive OTA partition's application sha256
 - **THEN** the device switches the boot partition, reports `SUCCEEDED`, and restarts into the previous firmware
 
-### Requirement: factory_reset requires device-id confirmation
-The device SHALL reject a `factory_reset` whose `confirm` field does not equal the device id. Only a matching `confirm` SHALL trigger the wipe of user NVS (factory NVS preserved).
-
-#### Scenario: Mismatched confirm is rejected
-- **WHEN** a `factory_reset` arrives with `confirm` not equal to the device id
-- **THEN** the device rejects it and performs no wipe
-
-### Requirement: Only the json request topic routes to the handler
-The device SHALL route only `.../request/json` to the command handler. AWS rejection echoes and any other payload-format segment SHALL be ignored, preventing an infinite status-publish loop.
-
-#### Scenario: Rejection echo is ignored
-- **WHEN** an AWS rejection echo is received on the command topic
-- **THEN** the device does not route it to the handler and does not publish a status in response
-
-### Requirement: Commands processed off the RX callback
-Command handling (per-channel NVS work and status publishes) SHALL run in the MQTT task body, not in the PubSubClient callback, to avoid corrupting the QoS1 PUBACK. Emitted `reasonCode`s SHALL be uppercased to the AWS `[A-Z0-9_-]+` pattern.
-
-#### Scenario: Status published from the task body
-- **WHEN** a command requires NVS work and a status publish
-- **THEN** that work runs in the MQTT task body and the reasonCode matches `[A-Z0-9_-]+`
+#### Scenario: gateway routes through the standard command dispatch
+- **WHEN** a valid `gateway` command is delivered on the `.../request/json` topic
+- **THEN** it is validated in the MQTT task body, subject to the same `created_at` staleness guard, its primitive runs in the gateway task, and its terminal status is published from the MQTT task
 
