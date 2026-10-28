@@ -229,6 +229,17 @@
     </div>
 
     <div class="section-box">
+        <h2>LAN Gateway</h2>
+        <p><i>Lets the EnergyMe cloud reach devices on this local network (smart plugs, relays, IR blasters, Modbus
+                devices) through this meter. Only private addresses can be reached. Off by default.</i></p>
+        <input type="checkbox" id="lanGateway" class="config-input field-loading" disabled>
+        <label for="lanGateway">Enable LAN gateway</label>
+        <span id="lanGatewaySpinner" class="field-spinner"></span>
+        <br><br>
+        <button class="buttonForm" onclick="setLanGateway()" id="setLanGatewayButton">🔌 Set LAN gateway</button>
+    </div>
+
+    <div class="section-box">
         <h2>LED</h2>
         <p><i>LED brightness is used to adjust the brightness of the status LED on the device. Keeping a small
                 amount of brightness is recommended.</i></p>
@@ -1127,6 +1138,37 @@
             }
         }
 
+        function getLanGateway() {
+            return energyApi.getLanGateway()
+                .then(data => {
+                    document.getElementById("lanGateway").checked = data.enabled;
+                })
+                .catch(error => {
+                    console.log("Error getting LAN gateway status. Response: " + error.message);
+                })
+                .finally(() => {
+                    setFieldLoading("lanGateway", "lanGatewaySpinner", false);
+                });
+        }
+
+        async function setLanGateway() {
+            const button = document.getElementById("setLanGatewayButton");
+            button.disabled = true;
+            button.classList.add('loading');
+
+            try {
+                showStatus('Updating LAN gateway...', 'info');
+                await energyApi.setLanGateway(document.getElementById("lanGateway").checked);
+                showStatus('LAN gateway updated', 'success');
+                getLanGateway();
+            } catch (error) {
+                showStatus('Error: ' + error.message, 'error');
+            } finally {
+                button.disabled = false;
+                button.classList.remove('loading');
+            }
+        }
+
         function getLedBrightness() {
             return energyApi.getLedBrightness()
                 .then(data => {
@@ -1589,6 +1631,8 @@
                 await delay(DELAY_BETWEEN_REQUESTS);
 
                 await getCloudServices();
+                await delay(DELAY_BETWEEN_REQUESTS);
+                await getLanGateway();
                 await delay(DELAY_BETWEEN_REQUESTS);
 
                 await getLedBrightness();
