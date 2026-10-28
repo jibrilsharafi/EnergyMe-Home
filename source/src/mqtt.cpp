@@ -1480,71 +1480,48 @@ namespace Mqtt
     // `args` arrives as base64 JSON from the cloud template (no quoting issues in
     // awsJsonSubstitution) or as a plain object from the dev inject harness.
     static void _handleGatewayCommand(const char* executionId, JsonDocument& doc) {
-        if (!Gateway::isEnabled()) {
-            LOG_WARNING("Gateway command %s rejected: gateway disabled", executionId);
-            _publishCommandStatus(executionId, "REJECTED", "GATEWAY_DISABLED", "Enable the gateway from the cloud or the local UI");
-            return;
-        }
-
         GatewayLogic::Op op = GatewayLogic::parseOp(doc["op"].as<const char*>());
-        if (op == GatewayLogic::Op::UNKNOWN) {
-            LOG_WARNING("Gateway command %s rejected: unknown op", executionId);
-            _publishCommandStatus(executionId, "REJECTED", "UNKNOWN_OP", "op must be ping, net_scan, http_request, modbus_read, modbus_write or udp_send");
-            return;
-        }
-
-        char* argsJson = nullptr;
-        JsonVariant args = doc["args"];
-        if (args.is<JsonObject>()) {
-            size_t length = measureJson(args) + 1;
-            argsJson = (char*)ps_malloc(length);
-            if (argsJson != nullptr) serializeJson(args, argsJson, length);
-        } else if (args.is<const char*>()) {
-            const char* encoded = args.as<const char*>();
-            size_t encodedLength = strlen(encoded);
-            size_t decodedLength = 0;
-            int rc = mbedtls_base64_decode(nullptr, 0, &decodedLength, (const unsigned char*)encoded, encodedLength);
-            if ((rc == 0 || rc == MBEDTLS_ERR_BASE64_BUFFER_TOO_SMALL) && decodedLength > 0 && decodedLength <= GATEWAY_ARGS_MAX_BYTES) {
-                argsJson = (char*)ps_malloc(decodedLength + 1);
-                if (argsJson != nullptr) {
-                    if (mbedtls_base64_decode((unsigned char*)argsJson, decodedLength, &decodedLength, (const unsigned char*)encoded, encodedLength) == 0) {
-                        argsJson[decodedLength] = '\0';
-                    } else {
-                        free(argsJson);
-                        argsJson = nullptr;
-                    }
-                }
+        const char* status = "REJECTED";
+        const char* reasonCode = nullptr;
+        const char* description = nullptr;
+        if (!Gateway::isEnabled()) {
+            reasonCode = "GATEWAY_DISABLED";
+            description = "Enable the gateway from the cloud or the local UI";
+        } else if (op == GatewayLogic::Op::UNKNOWN) {
+            reasonCode = "UNKNOWN_OP";
+            description = "op must be ping, net_scan, http_request, modbus_read, modbus_write or udp_send";
+        } else {
+            switch (Gateway::submit(executionId, op, doc["args"])) {
+                case Gateway::SubmitResult::ACCEPTED:
+                    LOG_DEBUG("Gateway command %s (%s) handed to the gateway task", executionId, GatewayLogic::opName(op));
+                    return;
+                case Gateway::SubmitResult::NOT_ENABLED:
+                    reasonCode = "GATEWAY_DISABLED";
+                    description = "Gateway not running";
+                    break;
+                case Gateway::SubmitResult::BUSY:
+                    reasonCode = "GATEWAY_BUSY";
+                    description = "Another gateway request is running";
+                    break;
+                case Gateway::SubmitResult::BAD_ARGS:
+                    reasonCode = "BAD_ARGS";
+                    description = "args must be a JSON object or base64-encoded JSON";
+                    break;
+                case Gateway::SubmitResult::NO_MEMORY:
+                    status = "FAILED";
+                    reasonCode = "NO_MEMORY";
+                    description = "Could not queue the request";
+                    break;
             }
         }
-        if (argsJson == nullptr) {
-            LOG_WARNING("Gateway command %s rejected: bad args", executionId);
-            _publishCommandStatus(executionId, "REJECTED", "BAD_ARGS", "args must be a JSON object or base64-encoded JSON");
-            return;
-        }
-
-        Gateway::SubmitResult submitted = Gateway::submit(executionId, op, argsJson);
-        free(argsJson);
-        switch (submitted) {
-            case Gateway::SubmitResult::ACCEPTED:
-                LOG_DEBUG("Gateway command %s (%s) handed to the gateway task", executionId, GatewayLogic::opName(op));
-                break;
-            case Gateway::SubmitResult::NOT_ENABLED:
-                _publishCommandStatus(executionId, "REJECTED", "GATEWAY_DISABLED", "Gateway not running");
-                break;
-            case Gateway::SubmitResult::BUSY:
-                LOG_WARNING("Gateway command %s rejected: busy", executionId);
-                _publishCommandStatus(executionId, "REJECTED", "GATEWAY_BUSY", "Another gateway request is running");
-                break;
-            case Gateway::SubmitResult::NO_MEMORY:
-                _publishCommandStatus(executionId, "FAILED", "NO_MEMORY", "Could not queue the request");
-                break;
-        }
+        LOG_WARNING("Gateway command %s %s: %s", executionId, status, reasonCode);
+        _publishCommandStatus(executionId, status, reasonCode, description);
     }
 
     static void _drainGatewayResult() {
-        char* executionId = nullptr;
+        char executionId[NAME_BUFFER_SIZE];
         char* responseJson = nullptr;
-        if (!Gateway::takeResult(&executionId, &responseJson)) return;
+        if (!Gateway::takeResult(executionId, sizeof(executionId), &responseJson)) return;
 
         SpiRamAllocator allocator;
         JsonDocument doc(&allocator);
@@ -1554,15 +1531,15 @@ namespace Mqtt
             doc["status"] = "FAILED";
             doc["statusReason"]["reasonCode"] = "INTERNAL_ERROR";
         }
+        LOG_DEBUG("Gateway result %s (%u bytes): %.300s", executionId, (unsigned)strlen(responseJson), responseJson);
+        free(responseJson);
 
+        // Not retried: if this publish fails the cloud sees the execution time out,
+        // the same as any command whose status never arrives.
         char topic[MQTT_TOPIC_BUFFER_SIZE];
         _constructCommandTopic(executionId, "response/json", topic, sizeof(topic));
-        LOG_DEBUG("Gateway result %s (%u bytes): %.300s", executionId, (unsigned)strlen(responseJson), responseJson);
         if (_publishJsonStreaming(doc, topic)) LOG_DEBUG("Gateway result %s published", executionId);
         else LOG_WARNING("Failed to publish gateway result %s", executionId);
-
-        free(executionId);
-        free(responseJson);
     }
 
     // Command handoff. Both the broker RX path (_subscribeCallback) and the dev
