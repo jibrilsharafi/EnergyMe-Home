@@ -19,7 +19,7 @@ IoT Commands are handled in the MQTT task body (`Mqtt::_handleCommandExecution`)
 - Raw response cap 4096 bytes. base64 makes it about 5.5 KB, which fits the 9 KB MQTT buffer with the envelope. Truncation is reported with `truncated: {b: true}`.
 
 ### Primitives
-- `http_request`: Arduino `HTTPClient` over `WiFiClient` (lwIP sockets, so it works on Ethernet too), redirects disabled, `Connection: close`, body streamed into a PSRAM buffer up to the cap.
+- `http_request`: a minimal HTTP/1.0 client on `WiFiClient` (lwIP sockets, so it works on Ethernet too) with `Connection: close`, one absolute deadline and a 2 KB header cap; the body is read until close or `Content-Length` into PSRAM. Header/status/length parsing and chunked decoding are pure functions in `lib/gateway_logic`. Rejected: Arduino `HTTPClient`, because its header loop resets its timer on every line and its body loop has no overall deadline, so a LAN host trickling bytes kept the gateway busy until reboot (found in review).
 - `ping`: IDF `esp_ping` session (`ping_sock.h`), synchronous via a semaphore on the end callback.
 - `net_scan`: ARP sweep of the active interface's subnet, limited to its /24 around the device address. Requests go out in batches of 8 under `LOCK_TCPIP_CORE()` on `netif_default` (Ethernet on Home Pro when it is the active interface), wait 300 ms, then the ARP table is read. The lwIP ARP table is small, so batching keeps entries from being evicted before they are read. Optional mDNS browse for one service type via ESPmDNS `queryService` (mDNS is already running).
 - `modbus_read` / `modbus_write`: a minimal synchronous Modbus TCP client on `WiFiClient`, with frame building and response parsing as pure functions in `lib/gateway_logic`. Rejected: eModbus `ModbusClientTCP`, because it starts its own worker task and request queue for what is one blocking request at a time.
@@ -29,11 +29,17 @@ IoT Commands are handled in the MQTT task body (`Mqtt::_handleCommandExecution`)
 - Pure `GatewayLogic::isPrivateIpv4(const char*)`: parses a dotted-quad literal strictly (no hostnames, no octal/hex forms, no leading or trailing garbage) and accepts only 10/8, 172.16/12 and 192.168/16. Loopback, link-local, multicast and broadcast are rejected.
 - Port range 1-65535. HTTP path must start with `/`. The URL is built by the firmware from ip/port/path, never taken from the cloud, so the host can't be smuggled in.
 
+### Local targets
+- Private ranges alone still include the device itself, and lwIP loopback is on: `http_request` to its own address reached the local admin API (with the digest nonce not validated, a default password was computable offline). The gateway therefore rejects every address of an up netif plus each subnet's network and broadcast address, checked under `LOCK_TCPIP_CORE`.
+
 ### Enable switch
 - `gateway_enabled` lives in the `system` shadow (writable) and in NVS, default false. Local REST `GET/PUT /api/v1/gateway` and a toggle on the configuration page call the same setter. A local change drift-detects into the shadow reported state like other local edits.
 - Disabling while a request runs lets it finish (bounded by the timeout). New requests are rejected with `GATEWAY_DISABLED`.
 
 ## Risks / Trade-offs
+
+- `Gateway::stop()` runs only on the restart path and waits the usual task-stop timeout; a request still in flight is force-deleted, and the restart failsafe timer covers any socket or lwIP lock left behind.
+- A result whose status publish fails is not retried: the cloud sees the execution time out, the same as any command whose status never arrives.
 
 - A compromised cloud account gets LAN reach on every enabled site. Mitigated by default-off, private-only targets, and later by cloud-side role/MFA/audit. Accepted by product decision on 2026-10-28.
 - Internal heap: the HTTP and UDP clients are short-lived inside the gateway task. Plain HTTP only, no TLS. Gateway task stack is internal RAM and sized once, then checked with the task profiler.
