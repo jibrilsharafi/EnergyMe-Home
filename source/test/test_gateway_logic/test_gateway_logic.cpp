@@ -279,6 +279,89 @@ void test_scan_targets_narrow_subnet(void) {
     TEST_ASSERT_EQUAL_UINT32(ip(192, 168, 1, 9), hosts[0]);
 }
 
+// ============================================================================
+// Private octets, reserved headers, HTTP/1.0 response parsing
+// ============================================================================
+
+void test_private_octets_overload(void) {
+    const uint8_t a[4] = {192, 168, 2, 72};
+    const uint8_t b[4] = {8, 8, 8, 8};
+    const uint8_t c[4] = {172, 31, 0, 1};
+    TEST_ASSERT_TRUE(isPrivateIpv4(a));
+    TEST_ASSERT_FALSE(isPrivateIpv4(b));
+    TEST_ASSERT_TRUE(isPrivateIpv4(c));
+}
+
+void test_reserved_headers(void) {
+    TEST_ASSERT_TRUE(isReservedHeaderName("Host"));
+    TEST_ASSERT_TRUE(isReservedHeaderName("content-length"));
+    TEST_ASSERT_TRUE(isReservedHeaderName("Content-Length"));
+    TEST_ASSERT_TRUE(isReservedHeaderName("TRANSFER-ENCODING"));
+    TEST_ASSERT_TRUE(isReservedHeaderName("Connection"));
+    TEST_ASSERT_TRUE(isReservedHeaderName("Expect"));
+    TEST_ASSERT_TRUE(isReservedHeaderName(nullptr));
+    TEST_ASSERT_FALSE(isReservedHeaderName("Content-Type"));
+    TEST_ASSERT_FALSE(isReservedHeaderName("Authorization"));
+    TEST_ASSERT_FALSE(isReservedHeaderName("Hosts"));
+}
+
+static const uint8_t *u(const char *s) { return reinterpret_cast<const uint8_t *>(s); }
+
+void test_http_header_end_and_status(void) {
+    const char *resp = "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello";
+    size_t end = httpHeaderEnd(u(resp), strlen(resp));
+    TEST_ASSERT_EQUAL_size_t(strlen(resp) - 5, end);
+    int code = 0;
+    TEST_ASSERT_TRUE(httpStatusCode(u(resp), end, &code));
+    TEST_ASSERT_EQUAL_INT(200, code);
+    TEST_ASSERT_EQUAL_size_t(0, httpHeaderEnd(u("HTTP/1.1 200 OK\r\nX: y\r\n"), 24));
+
+    const char *noReason = "HTTP/1.0 204\r\n\r\n";
+    TEST_ASSERT_TRUE(httpStatusCode(u(noReason), strlen(noReason), &code));
+    TEST_ASSERT_EQUAL_INT(204, code);
+    TEST_ASSERT_FALSE(httpStatusCode(u("HTTP/2 200 OK\r\n\r\n"), 17, &code));
+    TEST_ASSERT_FALSE(httpStatusCode(u("HTTP/1.1 2x0 OK\r\n\r\n"), 19, &code));
+    TEST_ASSERT_FALSE(httpStatusCode(u("HTTP/1.1 2000 OK\r\n\r\n"), 20, &code));
+    TEST_ASSERT_FALSE(httpStatusCode(u("garbage"), 7, &code));
+}
+
+void test_http_content_length(void) {
+    const char *h = "HTTP/1.1 200 OK\r\ncontent-LENGTH:  1234\r\n\r\n";
+    TEST_ASSERT_EQUAL_INT64(1234, httpContentLength(u(h), strlen(h)));
+    const char *none = "HTTP/1.1 200 OK\r\nX-Content-Length: 9\r\n\r\n";
+    TEST_ASSERT_EQUAL_INT64(-1, httpContentLength(u(none), strlen(none)));
+    const char *bad = "HTTP/1.1 200 OK\r\nContent-Length: 12a\r\n\r\n";
+    TEST_ASSERT_EQUAL_INT64(-1, httpContentLength(u(bad), strlen(bad)));
+}
+
+void test_http_chunked_detection(void) {
+    const char *h = "HTTP/1.1 200 OK\r\nTransfer-Encoding: gzip, Chunked\r\n\r\n";
+    TEST_ASSERT_TRUE(httpIsChunked(u(h), strlen(h)));
+    const char *n = "HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\n";
+    TEST_ASSERT_FALSE(httpIsChunked(u(n), strlen(n)));
+}
+
+void test_decode_chunked(void) {
+    const char *body = "4\r\nWiki\r\n5;ext=1\r\npedia\r\n0\r\n\r\n";
+    uint8_t out[32];
+    size_t n = 0;
+    TEST_ASSERT_TRUE(decodeChunked(u(body), strlen(body), out, sizeof(out), &n) == Chunked::COMPLETE);
+    TEST_ASSERT_EQUAL_size_t(9, n);
+    TEST_ASSERT_EQUAL_MEMORY("Wikipedia", out, 9);
+
+    TEST_ASSERT_TRUE(decodeChunked(u(body), 12, out, sizeof(out), &n) == Chunked::INCOMPLETE);
+    TEST_ASSERT_EQUAL_size_t(4, n);
+
+    TEST_ASSERT_TRUE(decodeChunked(u(body), strlen(body), out, 6, &n) == Chunked::INCOMPLETE);
+    TEST_ASSERT_EQUAL_size_t(6, n);
+    TEST_ASSERT_EQUAL_MEMORY("Wikipe", out, 6);
+
+    const char *bad = "4\r\nWikiXX5\r\npedia\r\n0\r\n\r\n";
+    TEST_ASSERT_TRUE(decodeChunked(u(bad), strlen(bad), out, sizeof(out), &n) == Chunked::MALFORMED);
+    const char *huge = "FFFFFFFF\r\n";
+    TEST_ASSERT_TRUE(decodeChunked(u(huge), strlen(huge), out, sizeof(out), &n) == Chunked::MALFORMED);
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_parse_op_known_and_unknown);
@@ -303,5 +386,11 @@ int main(int, char **) {
     RUN_TEST(test_scan_targets_slash24);
     RUN_TEST(test_scan_targets_wider_subnet_capped_to_slash24);
     RUN_TEST(test_scan_targets_narrow_subnet);
+    RUN_TEST(test_private_octets_overload);
+    RUN_TEST(test_reserved_headers);
+    RUN_TEST(test_http_header_end_and_status);
+    RUN_TEST(test_http_content_length);
+    RUN_TEST(test_http_chunked_detection);
+    RUN_TEST(test_decode_chunked);
     return UNITY_END();
 }

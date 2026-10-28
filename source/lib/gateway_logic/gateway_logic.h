@@ -20,6 +20,7 @@ inline constexpr uint32_t UDP_WAIT_MAX_MS = 5000;
 inline constexpr uint32_t PING_COUNT_DEFAULT = 3;
 inline constexpr uint32_t PING_COUNT_MAX = 5;
 inline constexpr size_t RESPONSE_CAP_BYTES = 4096;
+inline constexpr size_t HTTP_HEADER_CAP_BYTES = 2048; // Status line + headers of a LAN reply
 inline constexpr size_t HTTP_PATH_MAX_LEN = 512;
 
 enum class Op { UNKNOWN, PING, NET_SCAN, HTTP_REQUEST, MODBUS_READ, MODBUS_WRITE, UDP_SEND };
@@ -31,8 +32,9 @@ const char *opName(Op op);
 // (rejects octal-looking "010"), no sign, no whitespace, nothing trailing.
 bool parseIpv4(const char *text, uint8_t out[4]);
 
-// True iff `text` is a strict IPv4 literal in 10/8, 172.16/12 or 192.168/16.
-bool isPrivateIpv4(const char *text);
+// True iff the address is in 10/8, 172.16/12 or 192.168/16.
+bool isPrivateIpv4(const char *text); // strict literal, see parseIpv4
+bool isPrivateIpv4(const uint8_t ip[4]);
 
 uint32_t clampTimeoutMs(int64_t requested); // <=0 -> default
 uint32_t clampUdpWaitMs(int64_t requested); // <0 -> 0
@@ -49,11 +51,39 @@ bool isValidHttpPath(const char *path);
 bool isValidHeaderName(const char *name);
 bool isValidHeaderValue(const char *value);
 
+// Headers the firmware owns because they frame the request (Host, Content-Length,
+// Transfer-Encoding, Connection, ...). Case-insensitive. Letting the cloud set
+// them would allow request smuggling against lenient LAN servers.
+bool isReservedHeaderName(const char *name);
+
+// ---------------------------------------------------------------------------
+// HTTP/1.0 response parsing (the firmware sends HTTP/1.0 + Connection: close)
+// ---------------------------------------------------------------------------
+
+// Offset of the first body byte (just past the blank line), or 0 if the
+// header block is not complete within `len`.
+size_t httpHeaderEnd(const uint8_t *buffer, size_t len);
+
+// "HTTP/1.x NNN ..." -> NNN. False if the status line is malformed.
+bool httpStatusCode(const uint8_t *buffer, size_t headerLen, int *code);
+
+// Content-Length value, or -1 when absent or invalid.
+int64_t httpContentLength(const uint8_t *buffer, size_t headerLen);
+
+bool httpIsChunked(const uint8_t *buffer, size_t headerLen);
+
+enum class Chunked { COMPLETE, INCOMPLETE, MALFORMED };
+
+// Decodes a chunked body into `out` (up to `cap`). INCOMPLETE when the input
+// ends before the terminating zero chunk or `out` fills up first.
+Chunked decodeChunked(const uint8_t *in, size_t len, uint8_t *out, size_t cap, size_t *outLen);
+
 // ---------------------------------------------------------------------------
 // Modbus TCP
 // ---------------------------------------------------------------------------
 
 inline constexpr size_t MODBUS_MAX_FRAME = 260; // MBAP (7) + PDU (253)
+inline constexpr size_t MODBUS_LENGTH_PREFIX = 6; // MBAP bytes up to and including the length field
 
 bool isModbusReadFunction(uint8_t fc);  // 1, 2, 3, 4
 bool isModbusWriteFunction(uint8_t fc); // 5, 6, 15, 16

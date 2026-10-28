@@ -74,7 +74,10 @@ bool parseIpv4(const char *text, uint8_t out[4]) {
 
 bool isPrivateIpv4(const char *text) {
     uint8_t ip[4];
-    if (!parseIpv4(text, ip)) return false;
+    return parseIpv4(text, ip) && isPrivateIpv4(ip);
+}
+
+bool isPrivateIpv4(const uint8_t ip[4]) {
     if (ip[0] == 10) return true;
     if (ip[0] == 172 && ip[1] >= 16 && ip[1] <= 31) return true;
     if (ip[0] == 192 && ip[1] == 168) return true;
@@ -138,6 +141,137 @@ bool isValidHeaderValue(const char *value) {
         if (*p == '\r' || *p == '\n') return false;
     }
     return true;
+}
+
+namespace {
+
+char lower(char c) { return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c; }
+
+bool equalsIgnoreCase(const char *a, const char *b) {
+    for (; *a && *b; a++, b++) {
+        if (lower(*a) != lower(*b)) return false;
+    }
+    return *a == *b;
+}
+
+// Finds `name:` at the start of a header line and returns the value (leading
+// spaces skipped) and its length up to CR/LF.
+bool findHeader(const uint8_t *buffer, size_t headerLen, const char *name, const char **value, size_t *valueLen) {
+    if (buffer == nullptr) return false;
+    const char *text = reinterpret_cast<const char *>(buffer);
+    size_t nameLen = strlen(name);
+    for (size_t i = 0; i + nameLen + 1 <= headerLen; i++) {
+        if (i != 0 && text[i - 1] != '\n') continue;
+        bool match = true;
+        for (size_t k = 0; k < nameLen && match; k++) match = lower(text[i + k]) == lower(name[k]);
+        if (!match || text[i + nameLen] != ':') continue;
+        size_t v = i + nameLen + 1;
+        while (v < headerLen && (text[v] == ' ' || text[v] == '\t')) v++;
+        size_t end = v;
+        while (end < headerLen && text[end] != '\r' && text[end] != '\n') end++;
+        *value = text + v;
+        *valueLen = end - v;
+        return true;
+    }
+    return false;
+}
+
+int hexValue(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    c = lower(c);
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    return -1;
+}
+
+} // namespace
+
+bool isReservedHeaderName(const char *name) {
+    if (name == nullptr) return true;
+    static const char *const RESERVED[] = {"host", "content-length", "transfer-encoding", "connection", "expect",
+                                           "te", "upgrade", "keep-alive", "proxy-connection", "trailer"};
+    for (const char *r : RESERVED) {
+        if (equalsIgnoreCase(name, r)) return true;
+    }
+    return false;
+}
+
+size_t httpHeaderEnd(const uint8_t *buffer, size_t len) {
+    if (buffer == nullptr) return 0;
+    for (size_t i = 3; i < len; i++) {
+        if (buffer[i - 3] == '\r' && buffer[i - 2] == '\n' && buffer[i - 1] == '\r' && buffer[i] == '\n') return i + 1;
+    }
+    return 0;
+}
+
+bool httpStatusCode(const uint8_t *buffer, size_t headerLen, int *code) {
+    if (buffer == nullptr || code == nullptr || headerLen < 12) return false;
+    const char *t = reinterpret_cast<const char *>(buffer);
+    if (strncmp(t, "HTTP/1.", 7) != 0 || t[8] != ' ') return false;
+    int value = 0;
+    for (int i = 9; i < 12; i++) {
+        if (t[i] < '0' || t[i] > '9') return false;
+        value = value * 10 + (t[i] - '0');
+    }
+    if (value < 100 || (headerLen > 12 && t[12] != ' ' && t[12] != '\r')) return false;
+    *code = value;
+    return true;
+}
+
+int64_t httpContentLength(const uint8_t *buffer, size_t headerLen) {
+    const char *value = nullptr;
+    size_t valueLen = 0;
+    if (!findHeader(buffer, headerLen, "content-length", &value, &valueLen) || valueLen == 0 || valueLen > 10) return -1;
+    int64_t result = 0;
+    for (size_t i = 0; i < valueLen; i++) {
+        if (value[i] < '0' || value[i] > '9') return -1;
+        result = result * 10 + (value[i] - '0');
+    }
+    return result;
+}
+
+bool httpIsChunked(const uint8_t *buffer, size_t headerLen) {
+    const char *value = nullptr;
+    size_t valueLen = 0;
+    if (!findHeader(buffer, headerLen, "transfer-encoding", &value, &valueLen)) return false;
+    static const char CHUNKED[] = "chunked";
+    const size_t chunkedLen = sizeof(CHUNKED) - 1;
+    for (size_t i = 0; i + chunkedLen <= valueLen; i++) {
+        bool match = true;
+        for (size_t k = 0; k < chunkedLen && match; k++) match = lower(value[i + k]) == CHUNKED[k];
+        if (match) return true;
+    }
+    return false;
+}
+
+Chunked decodeChunked(const uint8_t *in, size_t len, uint8_t *out, size_t cap, size_t *outLen) {
+    if (in == nullptr || out == nullptr || outLen == nullptr) return Chunked::MALFORMED;
+    *outLen = 0;
+    size_t pos = 0;
+    while (pos < len) {
+        size_t size = 0;
+        int digits = 0;
+        while (pos < len && hexValue(static_cast<char>(in[pos])) >= 0) {
+            if (++digits > 7) return Chunked::MALFORMED; // > 256 MB chunk: not a LAN device reply
+            size = size * 16 + static_cast<size_t>(hexValue(static_cast<char>(in[pos])));
+            pos++;
+        }
+        if (digits == 0) return pos >= len ? Chunked::INCOMPLETE : Chunked::MALFORMED;
+        while (pos < len && in[pos] != '\n') pos++; // skip chunk extensions and CR
+        if (pos >= len) return Chunked::INCOMPLETE;
+        pos++;
+        if (size == 0) return Chunked::COMPLETE;
+        size_t available = len - pos < size ? len - pos : size;
+        size_t room = cap - *outLen;
+        size_t copy = available < room ? available : room;
+        memcpy(out + *outLen, in + pos, copy);
+        *outLen += copy;
+        if (copy < size) return Chunked::INCOMPLETE; // input ended or output full mid-chunk
+        pos += size;
+        if (pos + 2 > len) return Chunked::INCOMPLETE;
+        if (in[pos] != '\r' || in[pos + 1] != '\n') return Chunked::MALFORMED;
+        pos += 2;
+    }
+    return Chunked::INCOMPLETE;
 }
 
 bool isModbusReadFunction(uint8_t fc) { return fc >= 1 && fc <= 4; }
