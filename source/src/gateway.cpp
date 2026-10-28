@@ -220,190 +220,251 @@ namespace Gateway
     // Primitives
     // ==========
 
-    // HTTP/1.1 (the Sonoff eWeLink LAN API silently drops HTTP/1.0) with
-    // Connection: close, so the server ends the body by closing; a chunked body
-    // is decoded. Every read is bounded by one absolute deadline. HTTPClient was
-    // dropped because its header and body loops have no overall deadline: a LAN
-    // host trickling bytes kept the gateway busy forever.
+    // Connects and sends `data` in one write. A request that fits lwIP's TCP send
+    // buffer is copied in a single send() and never blocks, so the deadline also
+    // covers the send phase; callers keep requests under HTTP_REQUEST_MAX_BYTES.
+    static bool _connectAndSend(WiFiClient& client, const uint8_t octets[4], uint16_t port, uint32_t timeoutMs,
+                                uint32_t deadline, const uint8_t* data, size_t length, JsonDocument& doc) {
+        if (!client.connect(IPAddress(octets[0], octets[1], octets[2], octets[3]), port, (int32_t)timeoutMs)) {
+            _fail(doc, _beforeDeadline(deadline) ? "CONNECT_FAILED" : "TIMEOUT", "TCP connect failed");
+            return false;
+        }
+        if (client.write(data, length) != length) {
+            client.stop();
+            _fail(doc, "CONNECT_FAILED", "Could not send the request");
+            return false;
+        }
+        return true;
+    }
+
+    static constexpr size_t HTTP_REQUEST_MAX_BYTES = CONFIG_LWIP_TCP_SND_BUF_DEFAULT;
+    static constexpr size_t HTTP_REQUEST_HEAD_OVERHEAD = 160;  // request line, Host, Connection, Content-Length, blank line
+    static constexpr size_t HTTP_CHUNK_OVERHEAD_BYTES = 512;   // chunk-size lines on top of the body cap
+    static constexpr size_t HTTP_RAW_CAP = GatewayLogic::HTTP_HEADER_CAP_BYTES + GatewayLogic::RESPONSE_CAP_BYTES + HTTP_CHUNK_OVERHEAD_BYTES;
+    static constexpr uint32_t HTTP_POLL_MS = 2;
+
+    struct HttpRequest {
+        const char* method;
+        const char* path;
+        JsonObjectConst headers;
+        size_t headersLength;
+        uint8_t* decodedBody; // owned, freed by the caller
+        const uint8_t* body;
+        size_t bodyLength;
+    };
+
+    static bool _readHttpArgs(JsonObjectConst args, JsonDocument& doc, HttpRequest* request) {
+        request->method = _readString(args, "method", "GET");
+        if (!GatewayLogic::isAllowedHttpMethod(request->method)) {
+            _reject(doc, "BAD_ARGS", "method must be GET, POST, PUT, PATCH or DELETE");
+            return false;
+        }
+        request->path = _readString(args, "path", "/");
+        if (!GatewayLogic::isValidHttpPath(request->path)) {
+            _reject(doc, "BAD_ARGS", "path must start with / and contain no spaces or control characters");
+            return false;
+        }
+
+        JsonVariantConst headers = args["headers"];
+        if (!headers.isNull() && !headers.is<JsonObjectConst>()) {
+            _reject(doc, "BAD_ARGS", "headers must be an object of strings");
+            return false;
+        }
+        request->headers = headers.as<JsonObjectConst>();
+        for (JsonPairConst header : request->headers) {
+            const char* name = header.key().c_str();
+            const char* value = header.value().as<const char*>();
+            if (!header.value().is<const char*>() || !GatewayLogic::isValidHeaderName(name) || !GatewayLogic::isValidHeaderValue(value)) {
+                _reject(doc, "BAD_ARGS", "Invalid header name or value");
+                return false;
+            }
+            if (GatewayLogic::isReservedHeaderName(name)) {
+                _reject(doc, "BAD_ARGS", "Host, Content-Length, Transfer-Encoding and Connection are set by the device");
+                return false;
+            }
+            request->headersLength += strlen(name) + strlen(value) + 4;
+        }
+
+        const char* bodyB64 = _readString(args, "body_b64", nullptr);
+        const char* bodyText = _readString(args, "body", nullptr);
+        if ((!args["body_b64"].isNull() && bodyB64 == nullptr) || (!args["body"].isNull() && bodyText == nullptr)) {
+            _reject(doc, "BAD_ARGS", "body and body_b64 must be strings");
+            return false;
+        }
+        if (bodyB64 != nullptr) {
+            if (!_decodeBase64(bodyB64, &request->decodedBody, &request->bodyLength, HTTP_REQUEST_MAX_BYTES)) {
+                _reject(doc, "BAD_ARGS", "body_b64 is not valid base64 or is too large");
+                return false;
+            }
+            request->body = request->decodedBody;
+        } else if (bodyText != nullptr) {
+            request->body = (const uint8_t*)bodyText;
+            request->bodyLength = strlen(bodyText);
+        }
+        return true;
+    }
+
+    // The whole request in one PSRAM buffer (caller frees): naive embedded servers
+    // (Sonoff eWeLink LAN) parse each TCP segment as a separate request.
+    static char* _buildHttpRequest(const HttpRequest& request, const char* ip, uint16_t port, size_t* length) {
+        size_t headCap = strlen(request.method) + strlen(request.path) + request.headersLength + HTTP_REQUEST_HEAD_OVERHEAD;
+        char* buffer = (char*)ps_malloc(headCap + request.bodyLength);
+        if (buffer == nullptr) return nullptr;
+        size_t used = (size_t)snprintf(buffer, headCap, "%s %s HTTP/1.1\r\nHost: %s:%u\r\nConnection: close\r\n",
+                                       request.method, request.path, ip, port);
+        for (JsonPairConst header : request.headers) {
+            used += (size_t)snprintf(buffer + used, headCap - used, "%s: %s\r\n", header.key().c_str(), header.value().as<const char*>());
+        }
+        if (request.bodyLength > 0 || GatewayLogic::httpMethodHasBody(request.method)) {
+            used += (size_t)snprintf(buffer + used, headCap - used, "Content-Length: %u\r\n", (unsigned)request.bodyLength);
+        }
+        used += (size_t)snprintf(buffer + used, headCap - used, "\r\n");
+        if (request.bodyLength > 0) memcpy(buffer + used, request.body, request.bodyLength);
+        *length = used + request.bodyLength;
+        return buffer;
+    }
+
+    struct HttpResponse {
+        size_t length;
+        size_t headerEnd;
+        int64_t contentLength;
+        bool chunked;
+        bool closed;
+        bool full;
+    };
+
+    // Reads until the body is complete, the peer closes, the buffer fills or the
+    // deadline passes. Only idle polls count against the loop bound; every read
+    // consumes at least one byte, so reads are bounded by the buffer size.
+    static void _receiveHttp(WiFiClient& client, uint8_t* raw, uint32_t deadline, uint32_t timeoutMs, HttpResponse* response) {
+        *response = {0, 0, -1, false, false, false};
+        uint32_t idle = 0;
+        size_t reads = 0;
+        const uint32_t maxIdle = _pollBound(timeoutMs, HTTP_POLL_MS);
+        while (_beforeDeadline(deadline)) {
+            int available = client.available();
+            if (available <= 0) {
+                if (!client.connected()) {
+                    response->closed = true;
+                    break;
+                }
+                if (++idle > maxIdle) break;
+                delay(HTTP_POLL_MS);
+                continue;
+            }
+            if (++reads > HTTP_RAW_CAP) break;
+            size_t room = HTTP_RAW_CAP - response->length;
+            int n = client.read(raw + response->length, (size_t)available < room ? (size_t)available : room);
+            if (n > 0) response->length += (size_t)n;
+
+            if (response->headerEnd == 0) {
+                response->headerEnd = GatewayLogic::httpHeaderEnd(raw, response->length);
+                if (response->headerEnd == 0 && response->length >= GatewayLogic::HTTP_HEADER_CAP_BYTES) break;
+                if (response->headerEnd != 0) {
+                    response->contentLength = GatewayLogic::httpContentLength(raw, response->headerEnd);
+                    response->chunked = GatewayLogic::httpIsChunked(raw, response->headerEnd);
+                }
+            }
+            if (response->length == HTTP_RAW_CAP) {
+                response->full = true;
+                break;
+            }
+            if (response->headerEnd != 0) {
+                size_t received = response->length - response->headerEnd;
+                if (response->chunked && GatewayLogic::httpChunkedEnded(raw + response->headerEnd, received)) break;
+                if (!response->chunked && response->contentLength >= 0 && received >= (size_t)response->contentLength) break;
+            }
+        }
+    }
+
+    // Own HTTP/1.1 client (the Sonoff eWeLink LAN API silently drops HTTP/1.0):
+    // connect, send and the whole response share one absolute deadline, so a LAN
+    // host trickling bytes cannot hold the gateway.
     static void _runHttp(JsonObjectConst args, JsonDocument& doc, const char* executionId) {
         const char* ip = nullptr;
         uint8_t octets[4];
         uint16_t port = 0;
         uint32_t timeoutMs = 0;
-        if (!_readTarget(args, doc, &ip, octets) || !_readPort(args, 80, doc, &port) || !_readTimeout(args, doc, &timeoutMs)) return;
-
-        const char* method = _readString(args, "method", "GET");
-        if (!GatewayLogic::isAllowedHttpMethod(method)) {
-            _reject(doc, "BAD_ARGS", "method must be GET, POST, PUT, PATCH or DELETE");
-            return;
-        }
-        const char* path = _readString(args, "path", "/");
-        if (!GatewayLogic::isValidHttpPath(path)) {
-            _reject(doc, "BAD_ARGS", "path must start with / and contain no spaces or control characters");
+        HttpRequest request = {};
+        if (!_readTarget(args, doc, &ip, octets) || !_readPort(args, 80, doc, &port) || !_readTimeout(args, doc, &timeoutMs) ||
+            !_readHttpArgs(args, doc, &request)) {
+            free(request.decodedBody);
             return;
         }
 
-        JsonVariantConst headers = args["headers"];
-        size_t headersLength = 0;
-        if (!headers.isNull()) {
-            if (!headers.is<JsonObjectConst>()) {
-                _reject(doc, "BAD_ARGS", "headers must be an object of strings");
-                return;
-            }
-            for (JsonPairConst header : headers.as<JsonObjectConst>()) {
-                const char* name = header.key().c_str();
-                if (!header.value().is<const char*>() || !GatewayLogic::isValidHeaderName(name) ||
-                    !GatewayLogic::isValidHeaderValue(header.value().as<const char*>())) {
-                    _reject(doc, "BAD_ARGS", "Invalid header name or value");
-                    return;
-                }
-                if (GatewayLogic::isReservedHeaderName(name)) {
-                    _reject(doc, "BAD_ARGS", "Host, Content-Length, Transfer-Encoding and Connection are set by the device");
-                    return;
-                }
-                headersLength += strlen(name) + strlen(header.value().as<const char*>()) + 4;
-            }
-        }
+        LOG_INFO("Gateway %s: http_request %s %s:%u%s", executionId, request.method, ip, port, request.path);
 
-        uint8_t* decodedBody = nullptr;
-        const uint8_t* body = nullptr;
-        size_t bodyLength = 0;
-        const char* bodyB64 = _readString(args, "body_b64", nullptr);
-        const char* bodyText = _readString(args, "body", nullptr);
-        if ((!args["body_b64"].isNull() && bodyB64 == nullptr) || (!args["body"].isNull() && bodyText == nullptr)) {
-            _reject(doc, "BAD_ARGS", "body and body_b64 must be strings");
-            return;
-        }
-        if (bodyB64 != nullptr) {
-            if (!_decodeBase64(bodyB64, &decodedBody, &bodyLength, GATEWAY_ARGS_MAX_BYTES)) {
-                _reject(doc, "BAD_ARGS", "body_b64 is not valid base64 or is too large");
-                return;
-            }
-            body = decodedBody;
-        } else if (bodyText != nullptr) {
-            body = (const uint8_t*)bodyText;
-            bodyLength = strlen(bodyText);
-        }
-
-        LOG_INFO("Gateway %s: http_request %s %s:%u%s", executionId, method, ip, port, path);
-
-        // Head and body go out in one write: naive embedded servers (Sonoff eWeLink
-        // LAN) parse each TCP segment as a separate request.
-        size_t headCap = strlen(method) + strlen(path) + headersLength + 160;
-        size_t rawCap = GatewayLogic::HTTP_HEADER_CAP_BYTES + GatewayLogic::RESPONSE_CAP_BYTES + 512;
-        char* request = (char*)ps_malloc(headCap + bodyLength);
-        uint8_t* raw = (uint8_t*)ps_malloc(rawCap);
-        uint8_t* chunkedBody = nullptr;
-        if (request == nullptr || raw == nullptr) {
-            free(decodedBody);
-            free(request);
-            free(raw);
+        size_t requestLength = 0;
+        char* requestText = _buildHttpRequest(request, ip, port, &requestLength);
+        free(request.decodedBody);
+        uint8_t* raw = requestText != nullptr ? (uint8_t*)ps_malloc(HTTP_RAW_CAP) : nullptr;
+        if (raw == nullptr) {
+            free(requestText);
             _fail(doc, "NO_MEMORY", "Could not allocate the HTTP buffers");
             return;
         }
-
-        size_t used = (size_t)snprintf(request, headCap, "%s %s HTTP/1.1\r\nHost: %s:%u\r\nConnection: close\r\n", method, path, ip, port);
-        if (!headers.isNull()) {
-            for (JsonPairConst header : headers.as<JsonObjectConst>()) {
-                used += (size_t)snprintf(request + used, headCap - used, "%s: %s\r\n", header.key().c_str(), header.value().as<const char*>());
-            }
+        if (requestLength > HTTP_REQUEST_MAX_BYTES) {
+            free(requestText);
+            free(raw);
+            _reject(doc, "BAD_ARGS", "HTTP request larger than one TCP send buffer");
+            return;
         }
-        bool sendsBody = bodyLength > 0 || strcmp(method, "POST") == 0 || strcmp(method, "PUT") == 0 || strcmp(method, "PATCH") == 0;
-        if (sendsBody) used += (size_t)snprintf(request + used, headCap - used, "Content-Length: %u\r\n", (unsigned)bodyLength);
-        used += (size_t)snprintf(request + used, headCap - used, "\r\n");
-        if (bodyLength > 0) memcpy(request + used, body, bodyLength);
-        size_t requestLength = used + bodyLength;
-        free(decodedBody);
 
         uint32_t deadline = millis() + timeoutMs;
         WiFiClient client;
-        if (!client.connect(IPAddress(octets[0], octets[1], octets[2], octets[3]), port, (int32_t)timeoutMs)) {
-            free(request);
-            free(raw);
-            _fail(doc, _beforeDeadline(deadline) ? "CONNECT_FAILED" : "TIMEOUT", "TCP connect failed");
-            return;
-        }
-        bool sent = client.write((const uint8_t*)request, requestLength) == requestLength;
-        free(request);
+        bool sent = _connectAndSend(client, octets, port, timeoutMs, deadline, (const uint8_t*)requestText, requestLength, doc);
+        free(requestText);
         if (!sent) {
-            client.stop();
             free(raw);
-            _fail(doc, "CONNECT_FAILED", "Could not send the HTTP request");
             return;
         }
-
-        size_t length = 0;
-        size_t headerEnd = 0;
-        int64_t contentLength = -1;
-        bool closed = false;
-        bool rawFull = false;
-        uint32_t loops = 0;
-        const uint32_t maxLoops = _pollBound(timeoutMs, 2);
-        while (_beforeDeadline(deadline) && loops++ < maxLoops) {
-            int available = client.available();
-            if (available > 0) {
-                size_t room = rawCap - length;
-                int n = client.read(raw + length, (size_t)available < room ? (size_t)available : room);
-                if (n > 0) length += (size_t)n;
-                if (length == rawCap) {
-                    rawFull = true;
-                    break;
-                }
-                if (headerEnd == 0) {
-                    headerEnd = GatewayLogic::httpHeaderEnd(raw, length);
-                    if (headerEnd == 0 && length >= GatewayLogic::HTTP_HEADER_CAP_BYTES) break;
-                    if (headerEnd != 0) contentLength = GatewayLogic::httpContentLength(raw, headerEnd);
-                }
-                if (headerEnd != 0 && contentLength >= 0 && length - headerEnd >= (size_t)contentLength) break;
-            } else if (!client.connected()) {
-                closed = true;
-                break;
-            } else {
-                delay(2);
-            }
-        }
+        HttpResponse response;
+        _receiveHttp(client, raw, deadline, timeoutMs, &response);
         client.stop();
 
         int statusCode = 0;
-        if (headerEnd == 0 || !GatewayLogic::httpStatusCode(raw, headerEnd, &statusCode)) {
+        if (response.headerEnd == 0 || response.headerEnd > GatewayLogic::HTTP_HEADER_CAP_BYTES ||
+            !GatewayLogic::httpStatusCode(raw, response.headerEnd, &statusCode)) {
             free(raw);
-            if (!closed && !rawFull && length < GatewayLogic::HTTP_HEADER_CAP_BYTES) _fail(doc, "TIMEOUT", "No complete HTTP response header within timeout_ms");
-            else _fail(doc, "BAD_RESPONSE", "Missing, oversized or malformed HTTP header");
+            if (response.headerEnd == 0 && !response.closed && response.length < GatewayLogic::HTTP_HEADER_CAP_BYTES) {
+                _fail(doc, "TIMEOUT", "No complete HTTP response header within timeout_ms");
+            } else {
+                _fail(doc, "BAD_RESPONSE", "Missing, oversized or malformed HTTP header");
+            }
             return;
         }
 
-        const uint8_t* responseBody = raw + headerEnd;
-        size_t received = length - headerEnd;
-        size_t bodyOut = 0;
-        bool truncated = false;
-        if (GatewayLogic::httpIsChunked(raw, headerEnd)) {
-            // Allowed by HTTP/1.1 even with Connection: close.
+        const uint8_t* body = raw + response.headerEnd;
+        size_t received = response.length - response.headerEnd;
+        size_t bodyLength = received;
+        bool truncated;
+        uint8_t* chunkedBody = nullptr;
+        if (response.chunked) {
             chunkedBody = (uint8_t*)ps_malloc(GatewayLogic::RESPONSE_CAP_BYTES);
             if (chunkedBody == nullptr) {
                 free(raw);
                 _fail(doc, "NO_MEMORY", "Could not allocate the chunked body buffer");
                 return;
             }
-            truncated = GatewayLogic::decodeChunked(responseBody, received, chunkedBody, GatewayLogic::RESPONSE_CAP_BYTES, &bodyOut) !=
+            truncated = GatewayLogic::decodeChunked(body, received, chunkedBody, GatewayLogic::RESPONSE_CAP_BYTES, &bodyLength) !=
                         GatewayLogic::Chunked::COMPLETE;
-            responseBody = chunkedBody;
-        } else if (contentLength >= 0) {
-            size_t expected = (size_t)contentLength;
-            bodyOut = received < expected ? received : expected;
+            body = chunkedBody;
+        } else if (response.contentLength >= 0) {
+            size_t expected = (size_t)response.contentLength;
+            if (received > expected) bodyLength = expected;
             truncated = received < expected;
         } else {
-            bodyOut = received;
-            truncated = !closed || rawFull;
+            truncated = !response.closed || response.full;
         }
-        if (bodyOut > GatewayLogic::RESPONSE_CAP_BYTES) {
-            bodyOut = GatewayLogic::RESPONSE_CAP_BYTES;
+        if (bodyLength > GatewayLogic::RESPONSE_CAP_BYTES) {
+            bodyLength = GatewayLogic::RESPONSE_CAP_BYTES;
             truncated = true;
         }
 
         JsonObject result = _succeed(doc);
         _setNumber(result, "status_code", statusCode);
         _setBool(result, "truncated", truncated);
-        if (!_setBinary(result, "body", responseBody, bodyOut)) {
+        if (!_setBinary(result, "body", body, bodyLength)) {
             doc.clear();
             _fail(doc, "NO_MEMORY", "Could not encode the response body");
         }
@@ -430,6 +491,10 @@ namespace Gateway
         xSemaphoreGive(((PingContext*)arg)->done);
     }
 
+    static constexpr uint32_t PING_REPLY_TIMEOUT_MAX_MS = 1000;
+    static constexpr uint32_t PING_INTERVAL_MS = 200;
+    static constexpr uint32_t PING_END_GRACE_MS = 1000;
+
     static void _runPing(JsonObjectConst args, JsonDocument& doc, const char* executionId) {
         const char* ip = nullptr;
         uint8_t octets[4];
@@ -437,7 +502,7 @@ namespace Gateway
         int64_t count = 0;
         if (!_readTarget(args, doc, &ip, octets) || !_readTimeout(args, doc, &timeoutMs) || !_requireInt(args, "count", 0, doc, &count)) return;
         uint32_t pings = GatewayLogic::clampPingCount(count);
-        uint32_t perPingTimeoutMs = timeoutMs < 1000 ? timeoutMs : 1000;
+        uint32_t perPingTimeoutMs = timeoutMs < PING_REPLY_TIMEOUT_MAX_MS ? timeoutMs : PING_REPLY_TIMEOUT_MAX_MS;
 
         LOG_INFO("Gateway %s: ping %s x%u", executionId, ip, pings);
 
@@ -450,7 +515,7 @@ namespace Gateway
         esp_ping_config_t config = ESP_PING_DEFAULT_CONFIG();
         IP_ADDR4(&config.target_addr, octets[0], octets[1], octets[2], octets[3]);
         config.count = pings;
-        config.interval_ms = 200;
+        config.interval_ms = PING_INTERVAL_MS;
         config.timeout_ms = perPingTimeoutMs;
 
         esp_ping_callbacks_t callbacks = {};
@@ -465,7 +530,7 @@ namespace Gateway
             return;
         }
         esp_ping_start(handle);
-        uint32_t waitMs = pings * (perPingTimeoutMs + config.interval_ms) + 1000;
+        uint32_t waitMs = pings * (perPingTimeoutMs + PING_INTERVAL_MS) + PING_END_GRACE_MS;
         bool finished = xSemaphoreTake(context.done, pdMS_TO_TICKS(waitMs)) == pdTRUE;
         esp_ping_stop(handle);
         esp_ping_delete_session(handle);
@@ -479,8 +544,9 @@ namespace Gateway
         if (context.received > 0) _setNumber(result, "rtt_avg_ms", context.rttSumMs / context.received);
     }
 
-    // NetworkUDP::parsePacket() never reads more than one MTU of payload.
-    static constexpr size_t UDP_MAX_REPLY_BYTES = 1460;
+    // NetworkUDP buffers one MTU of payload: it reads at most 1460 bytes, and a
+    // longer write is split into two datagrams.
+    static constexpr size_t UDP_MAX_DATAGRAM_BYTES = 1460;
 
     static void _runUdp(JsonObjectConst args, JsonDocument& doc, const char* executionId) {
         const char* ip = nullptr;
@@ -493,8 +559,8 @@ namespace Gateway
         uint8_t* payload = nullptr;
         size_t payloadLength = 0;
         const char* payloadB64 = _readString(args, "payload_b64", nullptr);
-        if (payloadB64 == nullptr || !_decodeBase64(payloadB64, &payload, &payloadLength, 1472)) {
-            _reject(doc, "BAD_ARGS", "payload_b64 must be base64 of 1-1472 bytes");
+        if (payloadB64 == nullptr || !_decodeBase64(payloadB64, &payload, &payloadLength, UDP_MAX_DATAGRAM_BYTES)) {
+            _reject(doc, "BAD_ARGS", "payload_b64 must be base64 of 1-1460 bytes");
             return;
         }
 
@@ -520,7 +586,7 @@ namespace Gateway
             return;
         }
 
-        uint8_t* reply = (uint8_t*)ps_malloc(UDP_MAX_REPLY_BYTES);
+        uint8_t* reply = (uint8_t*)ps_malloc(UDP_MAX_DATAGRAM_BYTES);
         if (reply == nullptr) {
             udp.stop();
             _fail(doc, "NO_MEMORY", "Could not allocate the reply buffer");
@@ -534,7 +600,7 @@ namespace Gateway
         while (_beforeDeadline(deadline) && loops++ < maxLoops) {
             if (udp.parsePacket() > 0) {
                 if (udp.remoteIP() == target) {
-                    replyLength = udp.read(reply, UDP_MAX_REPLY_BYTES);
+                    replyLength = udp.read(reply, UDP_MAX_DATAGRAM_BYTES);
                     gotReply = true;
                     break;
                 }
@@ -551,7 +617,7 @@ namespace Gateway
         }
         JsonObject result = _succeed(doc);
         _setBool(result, "sent", true);
-        _setBool(result, "truncated", replyLength >= UDP_MAX_REPLY_BYTES);
+        _setBool(result, "truncated", replyLength >= UDP_MAX_DATAGRAM_BYTES);
         bool encoded = _setBinary(result, "reply", reply, replyLength);
         free(reply);
         if (!encoded) {
@@ -591,7 +657,7 @@ namespace Gateway
 
         if (!write) {
             int64_t requested = 0;
-            if (!_readInt(args, "count", -1, &requested) || requested < 1 || requested > 2000 ||
+            if (!_readInt(args, "count", -1, &requested) || requested < 0 || requested > UINT16_MAX ||
                 !GatewayLogic::isModbusReadFunction(*fc) || !GatewayLogic::isValidModbusReadCount(*fc, (uint32_t)requested)) {
                 _reject(doc, "BAD_ARGS", "function must be 1-4 with count 1-2000 (bits) or 1-125 (registers)");
                 return false;
@@ -652,15 +718,7 @@ namespace Gateway
 
         uint32_t deadline = millis() + timeoutMs;
         WiFiClient client;
-        if (!client.connect(IPAddress(octets[0], octets[1], octets[2], octets[3]), port, (int32_t)timeoutMs)) {
-            _fail(doc, "CONNECT_FAILED", "TCP connect failed");
-            return;
-        }
-        if (client.write(frame, frameLength) != frameLength) {
-            client.stop();
-            _fail(doc, "CONNECT_FAILED", "Could not send the Modbus request");
-            return;
-        }
+        if (!_connectAndSend(client, octets, port, timeoutMs, deadline, frame, frameLength, doc)) return;
 
         uint8_t response[GatewayLogic::MODBUS_MAX_FRAME];
         const uint32_t maxLoops = _pollBound(timeoutMs, 5);
@@ -718,7 +776,7 @@ namespace Gateway
 
     struct ScanHost {
         uint32_t ip; // network byte order, as lwIP stores it
-        uint8_t mac[6];
+        uint8_t mac[ETH_HWADDR_LEN];
     };
 
     static void _collectArpEntries(struct netif* scanNetif, ScanHost* hosts, size_t* hostCount) {
@@ -732,7 +790,7 @@ namespace Gateway
             for (size_t j = 0; j < *hostCount && !known; j++) known = hosts[j].ip == address;
             if (known || *hostCount >= GATEWAY_SCAN_MAX_HOSTS) continue;
             hosts[*hostCount].ip = address;
-            memcpy(hosts[*hostCount].mac, entryMac->addr, 6);
+            memcpy(hosts[*hostCount].mac, entryMac->addr, ETH_HWADDR_LEN);
             (*hostCount)++;
         }
     }
@@ -740,7 +798,7 @@ namespace Gateway
     enum class SweepResult { DONE, TIME_CAP, NETWORK_DOWN, INTERFACE_CHANGED, NO_MEMORY };
 
     // ARP-sweeps the /24 around the active interface's address.
-    static SweepResult _sweepArp(ScanHost* hosts, size_t* hostCount) {
+    static SweepResult _sweepArp(ScanHost* hosts, size_t* hostCount, uint32_t maxDurationMs) {
         LOCK_TCPIP_CORE();
         struct netif* scanNetif = netif_default;
         bool up = scanNetif != nullptr && netif_is_up(scanNetif) && netif_is_link_up(scanNetif) &&
@@ -757,7 +815,7 @@ namespace Gateway
         SweepResult outcome = SweepResult::DONE;
         uint32_t start = millis();
         for (size_t offset = 0; offset < targetCount; offset += GATEWAY_SCAN_BATCH_SIZE) {
-            if (millis() - start > GATEWAY_SCAN_MAX_DURATION_MS) {
+            if (millis() - start > maxDurationMs) {
                 outcome = SweepResult::TIME_CAP;
                 break;
             }
@@ -813,7 +871,9 @@ namespace Gateway
             return;
         }
         size_t hostCount = 0;
-        SweepResult sweep = _sweepArp(hosts, &hostCount);
+        // ESPmDNS queryService() blocks for its own 3 s timeout; keep the whole scan within the cap.
+        uint32_t sweepBudgetMs = GATEWAY_SCAN_MAX_DURATION_MS - (service[0] != '\0' ? GATEWAY_MDNS_QUERY_MS : 0);
+        SweepResult sweep = _sweepArp(hosts, &hostCount, sweepBudgetMs);
         if (sweep == SweepResult::NETWORK_DOWN || sweep == SweepResult::INTERFACE_CHANGED || sweep == SweepResult::NO_MEMORY) {
             free(hosts);
             if (sweep == SweepResult::NO_MEMORY) _fail(doc, "NO_MEMORY", "Could not allocate the scan targets");
@@ -828,7 +888,7 @@ namespace Gateway
             ip4_addr_t address;
             ip4_addr_set_u32(&address, hosts[i].ip);
             char ipText[IP_ADDRESS_BUFFER_SIZE];
-            char macText[13];
+            char macText[ETH_HWADDR_LEN * 2 + 1];
             const uint8_t* m = hosts[i].mac;
             snprintf(ipText, sizeof(ipText), "%s", ip4addr_ntoa(&address));
             snprintf(macText, sizeof(macText), "%02x%02x%02x%02x%02x%02x", m[0], m[1], m[2], m[3], m[4], m[5]);
@@ -909,7 +969,7 @@ namespace Gateway
         bool shouldRun = true;
         while (shouldRun) {
             Request request;
-            if (xQueueReceive(_queue, &request, pdMS_TO_TICKS(1000)) == pdTRUE) {
+            if (xQueueReceive(_queue, &request, pdMS_TO_TICKS(GATEWAY_QUEUE_WAIT_MS)) == pdTRUE) {
                 _run(request);
                 free(request.args);
             }
@@ -957,21 +1017,23 @@ namespace Gateway
 
     bool isEnabled() { return _enabled; }
 
-    void setEnabled(bool enabled) {
-        if (!acquireMutex(&_stateMutex)) {
+    bool setEnabled(bool enabled) {
+        // Created here too: the REST switch can run before begin().
+        if (!createMutexIfNeeded(&_stateMutex) || !acquireMutex(&_stateMutex)) {
             LOG_ERROR("Failed to acquire the gateway state mutex");
-            return;
+            return false;
         }
         Preferences preferences;
-        if (preferences.begin(PREFERENCES_NAMESPACE_GATEWAY, false)) {
-            preferences.putBool(GATEWAY_ENABLED_KEY, enabled);
-            preferences.end();
+        bool persisted = preferences.begin(PREFERENCES_NAMESPACE_GATEWAY, false) && preferences.putBool(GATEWAY_ENABLED_KEY, enabled) > 0;
+        preferences.end();
+        if (persisted) {
+            if (_enabled != enabled) LOG_INFO("Gateway %s", enabled ? "enabled" : "disabled");
+            _enabled = enabled;
         } else {
             LOG_ERROR("Failed to persist the gateway switch");
         }
-        if (_enabled != enabled) LOG_INFO("Gateway %s", enabled ? "enabled" : "disabled");
-        _enabled = enabled;
         releaseMutex(&_stateMutex);
+        return persisted;
     }
 
     SubmitResult submit(const char* executionId, Op op, JsonVariantConst args) {
@@ -980,6 +1042,7 @@ namespace Gateway
         char* argsJson = nullptr;
         if (args.is<JsonObjectConst>()) {
             size_t length = measureJson(args) + 1;
+            if (length > GATEWAY_ARGS_MAX_BYTES + 1) return SubmitResult::BAD_ARGS;
             argsJson = (char*)ps_malloc(length);
             if (argsJson == nullptr) return SubmitResult::NO_MEMORY;
             serializeJson(args, argsJson, length);

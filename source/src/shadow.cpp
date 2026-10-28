@@ -737,9 +737,12 @@ static bool _applySystem(JsonObjectConst delta, JsonObject reported) {
     if (!v.isNull()) {
         if (v.is<bool>()) {
             bool e = v.as<bool>();
-            Gateway::setEnabled(e);
-            reported["gateway_enabled"] = e;
-            applied = true;
+            if (Gateway::setEnabled(e)) {
+                reported["gateway_enabled"] = e;
+                applied = true;
+            } else {
+                LOG_WARNING("Could not apply gateway_enabled");
+            }
         } else {
             LOG_WARNING("Rejected gateway_enabled: not a boolean");
         }

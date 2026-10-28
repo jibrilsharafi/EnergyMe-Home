@@ -1497,7 +1497,7 @@ namespace Mqtt
                     return;
                 case Gateway::SubmitResult::NOT_ENABLED:
                     reasonCode = "GATEWAY_DISABLED";
-                    description = "Gateway not running";
+                    description = "Enable the gateway from the cloud (system shadow gateway_enabled)";
                     break;
                 case Gateway::SubmitResult::BUSY:
                     reasonCode = "GATEWAY_BUSY";

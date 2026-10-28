@@ -3800,7 +3800,10 @@ namespace CustomServer
                 }
 
                 bool enabled = json["enabled"];
-                Gateway::setEnabled(enabled);
+                if (!Gateway::setEnabled(enabled)) {
+                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Could not persist the LAN gateway switch");
+                    return;
+                }
 
                 _sendSuccessResponse(request, enabled ? "LAN gateway enabled" : "LAN gateway disabled");
             });

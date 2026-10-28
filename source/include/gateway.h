@@ -26,7 +26,9 @@
 #define GATEWAY_SCAN_MAX_HOSTS 254
 #define GATEWAY_SCAN_BATCH_SIZE 8           // Below lwIP's 10-entry ARP table so a batch is read before eviction
 #define GATEWAY_SCAN_BATCH_WAIT_MS 300
-#define GATEWAY_SCAN_MAX_DURATION_MS (30 * 1000)
+#define GATEWAY_SCAN_MAX_DURATION_MS (30 * 1000) // Whole scan, mDNS query included
+#define GATEWAY_MDNS_QUERY_MS 3000               // ESPmDNS queryService() timeout
+#define GATEWAY_QUEUE_WAIT_MS 1000               // Task wakes this often to check for a stop request
 #define GATEWAY_SCAN_LIST_BUDGET 3500       // Serialized bytes per result list, so the response fits the 9 KB MQTT buffer
 // Decoded args. The inbound MQTT buffer (9 KB) is the real ceiling: 6 KB of
 // JSON is 8 KB once base64-encoded, plus the command envelope.
@@ -38,7 +40,7 @@ namespace Gateway
     void stop();
 
     bool isEnabled();
-    void setEnabled(bool enabled); // Persists to NVS; used by the system shadow and the REST emergency switch
+    bool setEnabled(bool enabled); // Persists to NVS; false if not persisted. Used by the system shadow and the REST emergency switch
 
     enum class SubmitResult { ACCEPTED, NOT_ENABLED, BUSY, BAD_ARGS, NO_MEMORY };
 
