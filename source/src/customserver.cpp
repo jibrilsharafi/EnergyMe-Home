@@ -3799,7 +3799,6 @@ namespace CustomServer
                 bool enabled = json["enabled"];
                 Gateway::setEnabled(enabled);
 
-                LOG_INFO("LAN gateway %s via API", enabled ? "enabled" : "disabled");
                 _sendSuccessResponse(request, enabled ? "LAN gateway enabled" : "LAN gateway disabled");
             });
         server.addHandler(setGatewayHandler);
