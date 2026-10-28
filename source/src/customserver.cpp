@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "customserver.h"
+#include "gateway.h"
 #include "app_image_descriptor.h"
 #include "custometh.h"
 #include "modbustcp.h" // Local integrations are started/stopped to follow the STA link
@@ -3768,6 +3769,40 @@ namespace CustomServer
                 _sendSuccessResponse(request, enabled ? "Cloud services enabled successfully" : "Cloud services disabled successfully");
             });
         server.addHandler(setCloudServicesHandler);
+
+        // LAN gateway switch (openspec capability: lan-gateway). Same setter as the
+        // system shadow's gateway_enabled, so either side can flip it.
+        server.on("/api/v1/gateway", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            doc["enabled"] = !globalCommunityMode && Gateway::isEnabled();
+            _sendJsonResponse(request, doc);
+        });
+
+        static AsyncCallbackJsonWebHandler *setGatewayHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/gateway",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (globalCommunityMode) {
+                    _sendErrorResponse(request, HTTP_CODE_FORBIDDEN, "The LAN gateway is not available in community mode");
+                    return;
+                }
+                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_GATEWAY)) return;
+
+                if (!json.is<JsonObject>() || !json["enabled"].is<bool>())
+                {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid JSON structure. Expected: {\"enabled\": true/false}");
+                    return;
+                }
+
+                bool enabled = json["enabled"];
+                Gateway::setEnabled(enabled);
+
+                LOG_INFO("LAN gateway %s via API", enabled ? "enabled" : "disabled");
+                _sendSuccessResponse(request, enabled ? "LAN gateway enabled" : "LAN gateway disabled");
+            });
+        server.addHandler(setGatewayHandler);
     }
 
     // === INFLUXDB ENDPOINTS ===
