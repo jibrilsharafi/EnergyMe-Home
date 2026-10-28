@@ -5,6 +5,7 @@
 #include "app_image_descriptor.h"
 #include "backoff_schedule.h"
 #include "custometh.h"
+#include "gateway.h"
 #include "duration_format.h"
 #include "sha256_hex.h"
 #include "version_compare.h"
@@ -701,6 +702,7 @@ static void _restartTask(void* parameter) {
     Ade7953::stop();
     ModbusTcp::stop();
     if (!globalCommunityMode) Mqtt::stop();
+    if (!globalCommunityMode) Gateway::stop();
     LOG_DEBUG("Services stopped");
 
     // 3. Close log file (if this blocks, failsafe timer will restart us)

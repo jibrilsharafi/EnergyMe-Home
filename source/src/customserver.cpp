@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "customserver.h"
+#include "gateway.h"
 #include "app_image_descriptor.h"
 #include "custometh.h"
 #include "modbustcp.h" // Local integrations are started/stopped to follow the STA link
@@ -2744,7 +2745,7 @@ namespace CustomServer
             "/api/v1/shadow/inject-command",
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
-                if (!_validateRequest(request, "POST", HTTP_MAX_CONTENT_LENGTH_ADE7953_CHANNEL_DATA)) return;
+                if (!_validateRequest(request, "POST", HTTP_MAX_CONTENT_LENGTH_INJECT_COMMAND)) return;
 
                 const char *execId = json["executionId"].as<const char *>();
                 if (!execId || json["payload"].isNull()) {
@@ -3768,6 +3769,45 @@ namespace CustomServer
                 _sendSuccessResponse(request, enabled ? "Cloud services enabled successfully" : "Cloud services disabled successfully");
             });
         server.addHandler(setCloudServicesHandler);
+
+        // LAN gateway switch (openspec capability: lan-gateway). Same setter as the
+        // system shadow's gateway_enabled, so either side can flip it. REST only, as
+        // an emergency kill switch: the gateway is a cloud feature (the cloud owns the
+        // device catalogue and sends every command), so the web UI deliberately has
+        // no toggle for it. Decided 2026-10-28.
+        server.on("/api/v1/gateway", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            doc["enabled"] = !globalCommunityMode && Gateway::isEnabled();
+            _sendJsonResponse(request, doc);
+        });
+
+        static AsyncCallbackJsonWebHandler *setGatewayHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/gateway",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (globalCommunityMode) {
+                    _sendErrorResponse(request, HTTP_CODE_FORBIDDEN, "The LAN gateway is not available in community mode");
+                    return;
+                }
+                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_GATEWAY)) return;
+
+                if (!json.is<JsonObject>() || !json["enabled"].is<bool>())
+                {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid JSON structure. Expected: {\"enabled\": true/false}");
+                    return;
+                }
+
+                bool enabled = json["enabled"];
+                if (!Gateway::setEnabled(enabled)) {
+                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Could not persist the LAN gateway switch");
+                    return;
+                }
+
+                _sendSuccessResponse(request, enabled ? "LAN gateway enabled" : "LAN gateway disabled");
+            });
+        server.addHandler(setGatewayHandler);
     }
 
     // === INFLUXDB ENDPOINTS ===

@@ -20,6 +20,7 @@ static_assert(SHA256_HEX_BUFFER_SIZE == RollbackLogic::SHA256_HEX_LEN + 1,
 #include "ota_keys.h"
 #include "ota_signature.h"
 #include "sha256_hex.h"
+#include "gateway.h"
 #include "mbedtls/base64.h"
 #include "mbedtls/sha256.h"
 #include "mbedtls/pk.h"
@@ -229,6 +230,8 @@ namespace Mqtt
     static void _publishCommandStatus(const char* executionId, const char* status, const char* reasonCode, const char* reasonDescription);
     static void _queueCommand(const char* topic, const char* payload);
     static void _drainPendingCommand();
+    static void _handleGatewayCommand(const char* executionId, JsonDocument& doc);
+    static void _drainGatewayResult();
     static void _handleAwsIotJobMessage(const char* message, const char* topic);
     
     // AWS IoT Jobs OTA functions
@@ -1463,10 +1466,80 @@ namespace Mqtt
                     }
                     break;
             }
+        } else if (strcmp(operation, "gateway") == 0) {
+            _handleGatewayCommand(executionId, doc);
         } else {
             LOG_WARNING("Unknown command operation: %s", operation);
             _publishCommandStatus(executionId, "REJECTED", "UNKNOWN_OPERATION", operation);
         }
+    }
+
+    // LAN gateway (openspec capability: lan-gateway). Only the envelope is checked
+    // here; the primitive runs in the gateway task and its terminal status comes
+    // back through _drainGatewayResult, so nothing slow ever runs on this task.
+    // `args` arrives as base64 JSON from the cloud template (no quoting issues in
+    // awsJsonSubstitution) or as a plain object from the dev inject harness.
+    static void _handleGatewayCommand(const char* executionId, JsonDocument& doc) {
+        GatewayLogic::Op op = GatewayLogic::parseOp(doc["op"].as<const char*>());
+        const char* status = "REJECTED";
+        const char* reasonCode = nullptr;
+        const char* description = nullptr;
+        if (!Gateway::isEnabled()) {
+            reasonCode = "GATEWAY_DISABLED";
+            description = "Enable the gateway from the cloud (system shadow gateway_enabled)";
+        } else if (op == GatewayLogic::Op::UNKNOWN) {
+            reasonCode = "UNKNOWN_OP";
+            description = "op must be ping, net_scan, http_request, modbus_read, modbus_write or udp_send";
+        } else {
+            switch (Gateway::submit(executionId, op, doc["args"])) {
+                case Gateway::SubmitResult::ACCEPTED:
+                    LOG_DEBUG("Gateway command %s (%s) handed to the gateway task", executionId, GatewayLogic::opName(op));
+                    return;
+                case Gateway::SubmitResult::NOT_ENABLED:
+                    reasonCode = "GATEWAY_DISABLED";
+                    description = "Enable the gateway from the cloud (system shadow gateway_enabled)";
+                    break;
+                case Gateway::SubmitResult::BUSY:
+                    reasonCode = "GATEWAY_BUSY";
+                    description = "Another gateway request is running";
+                    break;
+                case Gateway::SubmitResult::BAD_ARGS:
+                    reasonCode = "BAD_ARGS";
+                    description = "args must be a JSON object or base64-encoded JSON";
+                    break;
+                case Gateway::SubmitResult::NO_MEMORY:
+                    status = "FAILED";
+                    reasonCode = "NO_MEMORY";
+                    description = "Could not queue the request";
+                    break;
+            }
+        }
+        LOG_WARNING("Gateway command %s %s: %s", executionId, status, reasonCode);
+        _publishCommandStatus(executionId, status, reasonCode, description);
+    }
+
+    static void _drainGatewayResult() {
+        char executionId[NAME_BUFFER_SIZE];
+        char* responseJson = nullptr;
+        if (!Gateway::takeResult(executionId, sizeof(executionId), &responseJson)) return;
+
+        SpiRamAllocator allocator;
+        JsonDocument doc(&allocator);
+        if (deserializeJson(doc, responseJson)) {
+            LOG_ERROR("Gateway result for %s is not valid JSON", executionId);
+            doc.clear();
+            doc["status"] = "FAILED";
+            doc["statusReason"]["reasonCode"] = "INTERNAL_ERROR";
+        }
+        LOG_DEBUG("Gateway result %s (%u bytes): %.300s", executionId, (unsigned)strlen(responseJson), responseJson);
+        free(responseJson);
+
+        // Not retried: if this publish fails the cloud sees the execution time out,
+        // the same as any command whose status never arrives.
+        char topic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructCommandTopic(executionId, "response/json", topic, sizeof(topic));
+        if (_publishJsonStreaming(doc, topic)) LOG_DEBUG("Gateway result %s published", executionId);
+        else LOG_WARNING("Failed to publish gateway result %s", executionId);
     }
 
     // Command handoff. Both the broker RX path (_subscribeCallback) and the dev
@@ -3243,6 +3316,7 @@ namespace Mqtt
         _checkPublishMqtt();
         Shadow::checkPublish(); // drain shadow deltas/local-edits/reports (MQTT task body)
         _drainPendingCommand(); // process queued IoT Command (broker RX or dev inject) off the callback
+        _drainGatewayResult(); // publish a finished LAN gateway request from the task body
 #ifdef ENV_DEV
         _drainPendingJob(); // dev-injected synthetic job, same off-the-callback rule
 #endif

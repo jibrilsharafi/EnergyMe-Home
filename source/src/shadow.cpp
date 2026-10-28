@@ -13,6 +13,7 @@
 #include "custometh.h"
 #include "customwifi.h"
 #include "factory_keys.h"
+#include "gateway.h"
 #include "globals.h"
 #include "hardware_profile.h"
 #include "issueregistry.h"
@@ -650,6 +651,7 @@ static void _reportSystem(JsonDocument& doc) {
     rep["mqtt_log_level"] = ShadowLogic::logLevelToString(Mqtt::getMqttLogLevel());
     rep["log_level_print"] = AdvancedLogger::logLevelToString(AdvancedLogger::getPrintLevel());
     rep["log_level_save"] = AdvancedLogger::logLevelToString(AdvancedLogger::getSaveLevel());
+    rep["gateway_enabled"] = Gateway::isEnabled();
 }
 
 // Parse a string log-level delta field. Returns the level (>=0) to apply, or -1
@@ -728,6 +730,21 @@ static bool _applySystem(JsonObjectConst delta, JsonObject reported) {
             applied = true;
         } else {
             LOG_WARNING("Rejected meter_publish_max_interval_ms: not a non-negative integer");
+        }
+    }
+
+    v = delta["gateway_enabled"];
+    if (!v.isNull()) {
+        if (v.is<bool>()) {
+            bool e = v.as<bool>();
+            if (Gateway::setEnabled(e)) {
+                reported["gateway_enabled"] = e;
+                applied = true;
+            } else {
+                LOG_WARNING("Could not apply gateway_enabled");
+            }
+        } else {
+            LOG_WARNING("Rejected gateway_enabled: not a boolean");
         }
     }
 
