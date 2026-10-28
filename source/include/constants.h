@@ -65,6 +65,7 @@
 #define PREFERENCES_NAMESPACE_LED "led_ns"
 #define PREFERENCES_NAMESPACE_AUTH "auth_ns" 
 #define PREFERENCES_NAMESPACE_UDP_LOG "udp_log_ns"
+#define PREFERENCES_NAMESPACE_GATEWAY "gateway_ns"
 
 // Default ESP32 NVS spaces (only for reference - should never be touched)
 #define PREFERENCES_DEFAULT_NAMESPACE_PHY "phy"
@@ -94,6 +95,7 @@
     PREFERENCES_NAMESPACE_LED, \
     PREFERENCES_NAMESPACE_AUTH, \
     PREFERENCES_NAMESPACE_UDP_LOG, \
+    PREFERENCES_NAMESPACE_GATEWAY, \
 
 // Logger
 #define LOG_PATH "/log.txt"

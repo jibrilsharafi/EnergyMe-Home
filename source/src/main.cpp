@@ -26,6 +26,7 @@
 #include "customserver.h"
 #include "led.h"
 #include "modbustcp.h"
+#include "gateway.h"
 #include "mqtt.h"
 #include "custommqtt.h"
 #include "influxdbclient.h"
@@ -300,6 +301,11 @@ void setup()
   logHeapLedger("modbus tcp");
 
   if (!globalCommunityMode) {
+    LOG_DEBUG("Setting up LAN gateway...");
+    Gateway::begin();
+    LOG_DEBUG("LAN gateway setup done");
+    logHeapLedger("lan gateway");
+
     LOG_DEBUG("Setting up MQTT client...");
     Mqtt::begin();
     LOG_DEBUG("MQTT client setup done");
