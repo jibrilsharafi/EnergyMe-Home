@@ -26,5 +26,5 @@
 
 - [x] 5.1 Build `esp32s3-dev` and `esp32s3-dev-pro`, `pio check` clean for new files
 - [x] 5.2 On-device via `/api/v1/shadow/inject-command`, on Home (192.168.2.174) and Home Pro (192.168.2.80): every primitive against the bench Shelly, Broadlink and Sonoff, rejection paths (disabled, busy, public IP, loopback, bad args), meter publishing during long requests
-- [ ] 5.3 Dev cloud end to end: shadow toggle (done on both devices, incl. local edit drift and a non-boolean value), then a real command through the MQTT broker once the `gateway` command template is deployed to dev (energyme-infra PR #787)
+- [x] 5.3 Dev cloud end to end on both devices: shadow toggle (incl. local edit drift, non-boolean value, disable then GATEWAY_DISABLED), and real StartCommandExecution runs of ping, http_request (incl. a 4 KB body), net_scan with mDNS, modbus_read and udp_send via energyme-infra tools/dispatch_command.py (templates deployed by energyme-infra PR #787)
 - [x] 5.4 Code review agents (one adversarial) + simplification agent, findings triaged
