@@ -2745,7 +2745,7 @@ namespace CustomServer
             "/api/v1/shadow/inject-command",
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
-                if (!_validateRequest(request, "POST", HTTP_MAX_CONTENT_LENGTH_ADE7953_CHANNEL_DATA)) return;
+                if (!_validateRequest(request, "POST", HTTP_MAX_CONTENT_LENGTH_INJECT_COMMAND)) return;
 
                 const char *execId = json["executionId"].as<const char *>();
                 if (!execId || json["payload"].isNull()) {
