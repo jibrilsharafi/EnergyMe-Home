@@ -632,20 +632,6 @@ class EnergyMeAPI {
     }
 
     /**
-     * Get the LAN gateway switch
-     */
-    async getLanGateway() {
-        return this.get('gateway');
-    }
-
-    /**
-     * Set the LAN gateway switch
-     */
-    async setLanGateway(enabled) {
-        return this.put('gateway', { enabled });
-    }
-
-    /**
      * Get InfluxDB status
      */
     async getInfluxDbStatus() {

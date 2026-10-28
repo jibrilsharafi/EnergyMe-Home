@@ -47,7 +47,7 @@ Every primitive that takes a target SHALL require `ip` to be a strict dotted-qua
 - **THEN** the device returns the 3xx status and its body, and makes no further request
 
 ### Requirement: Gateway disabled by default with local and cloud switch
-The gateway SHALL be disabled on a fresh device. Its state SHALL be persisted in NVS and exposed as the writable `gateway_enabled` boolean of the `system` shadow, as `GET/PUT /api/v1/gateway` on the authenticated local REST API, and as a toggle in the web UI. All three SHALL use the same setter. While disabled, every `gateway` command SHALL be rejected with reasonCode `GATEWAY_DISABLED`. Disabling SHALL NOT abort a request already running.
+The gateway SHALL be disabled on a fresh device. Its state SHALL be persisted in NVS and exposed as the writable `gateway_enabled` boolean of the `system` shadow, and as `GET/PUT /api/v1/gateway` on the authenticated local REST API (an emergency switch; the web UI SHALL NOT expose it, since the gateway is a cloud feature). Both SHALL use the same setter. While disabled, every `gateway` command SHALL be rejected with reasonCode `GATEWAY_DISABLED`. Disabling SHALL NOT abort a request already running.
 
 #### Scenario: Fresh device rejects gateway commands
 - **WHEN** a `gateway` command arrives on a device that never enabled the gateway

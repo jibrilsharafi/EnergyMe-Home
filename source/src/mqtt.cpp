@@ -1486,7 +1486,7 @@ namespace Mqtt
         const char* description = nullptr;
         if (!Gateway::isEnabled()) {
             reasonCode = "GATEWAY_DISABLED";
-            description = "Enable the gateway from the cloud or the local UI";
+            description = "Enable the gateway from the cloud (system shadow gateway_enabled)";
         } else if (op == GatewayLogic::Op::UNKNOWN) {
             reasonCode = "UNKNOWN_OP";
             description = "op must be ping, net_scan, http_request, modbus_read, modbus_write or udp_send";

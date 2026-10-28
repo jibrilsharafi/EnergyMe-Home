@@ -38,7 +38,7 @@ namespace Gateway
     void stop();
 
     bool isEnabled();
-    void setEnabled(bool enabled); // Persists to NVS; used by the system shadow, REST and UI alike
+    void setEnabled(bool enabled); // Persists to NVS; used by the system shadow and the REST emergency switch
 
     enum class SubmitResult { ACCEPTED, NOT_ENABLED, BUSY, BAD_ARGS, NO_MEMORY };
 

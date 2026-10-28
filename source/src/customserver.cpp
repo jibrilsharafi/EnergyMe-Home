@@ -3771,7 +3771,10 @@ namespace CustomServer
         server.addHandler(setCloudServicesHandler);
 
         // LAN gateway switch (openspec capability: lan-gateway). Same setter as the
-        // system shadow's gateway_enabled, so either side can flip it.
+        // system shadow's gateway_enabled, so either side can flip it. REST only, as
+        // an emergency kill switch: the gateway is a cloud feature (the cloud owns the
+        // device catalogue and sends every command), so the web UI deliberately has
+        // no toggle for it. Decided 2026-10-28.
         server.on("/api/v1/gateway", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
             SpiRamAllocator allocator;

@@ -8,7 +8,7 @@ Decision (Notion "Home device control", 2026-10-28): the firmware exposes generi
 
 - New IoT Command `gateway` carrying one primitive per execution: `ping`, `net_scan`, `http_request`, `modbus_read`, `modbus_write`, `udp_send`. Results return in the IoT Commands `result` map.
 - Targets are IPv4 literals in the private ranges only (10/8, 172.16/12, 192.168/16). No hostnames, no HTTP redirects, so the device can never reach internet hosts or itself through loopback.
-- Disabled by default. `gateway_enabled` is a writable field of the `system` shadow and of a local REST endpoint + web UI toggle, persisted in NVS. Either side can flip it at any time.
+- Disabled by default. `gateway_enabled` is a writable field of the `system` shadow and of a local REST endpoint (emergency switch, no web UI: this is a cloud feature), persisted in NVS. Either side can flip it at any time.
 - Work runs in a dedicated gateway task, one request at a time, with a per-request timeout (default 5 s, max 10 s), a 4 KB response cap and a batched ARP sweep, so metering and MQTT keep running. A second request while one is running is rejected with `GATEWAY_BUSY`.
 - Every executed request is logged at INFO with primitive and target, as the on-device audit trail.
 
@@ -25,5 +25,5 @@ Non-goals: on-device automations or schedules, TLS to LAN devices, IPv6 targets,
 
 ## Impact
 
-- Firmware: new `source/src/gateway.cpp` + `include/gateway.h` (task, primitives), new host-testable `lib/gateway_logic` (private-IP check, arg parsing, Modbus TCP framing, scan range) with Unity tests, dispatch + result drain in `mqtt.cpp`, `system` shadow field in `shadow.cpp`, REST endpoint in `customserver.cpp`, toggle in `configuration.html`, `swagger.yaml`.
+- Firmware: new `source/src/gateway.cpp` + `include/gateway.h` (task, primitives), new host-testable `lib/gateway_logic` (private-IP check, arg parsing, Modbus TCP framing, scan range) with Unity tests, dispatch + result drain in `mqtt.cpp`, `system` shadow field in `shadow.cpp`, REST endpoint in `customserver.cpp`, `swagger.yaml`.
 - Cloud (energyme-infra, separate PR): `gateway` IoT Command template for Home and Home Pro, with `op` and `args` (base64 JSON) STRING parameters plus `created_at`. Dispatchers must set `executionTimeoutSeconds` above the default 10 s for `net_scan`. No IoT policy change: the commands request/response topics are already allowed.

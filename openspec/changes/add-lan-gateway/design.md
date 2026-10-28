@@ -33,7 +33,7 @@ IoT Commands are handled in the MQTT task body (`Mqtt::_handleCommandExecution`)
 - Private ranges alone still include the device itself, and lwIP loopback is on: `http_request` to its own address reached the local admin API (with the digest nonce not validated, a default password was computable offline). The gateway therefore rejects every address of an up netif plus each subnet's network and broadcast address, checked under `LOCK_TCPIP_CORE`.
 
 ### Enable switch
-- `gateway_enabled` lives in the `system` shadow (writable) and in NVS, default false. Local REST `GET/PUT /api/v1/gateway` and a toggle on the configuration page call the same setter. A local change drift-detects into the shadow reported state like other local edits.
+- `gateway_enabled` lives in the `system` shadow (writable) and in NVS, default false. Local REST `GET/PUT /api/v1/gateway` calls the same setter, as an emergency switch only: the gateway is a cloud feature, so the web UI deliberately has no toggle. A local change drift-detects into the shadow reported state like other local edits.
 - Disabling while a request runs lets it finish (bounded by the timeout). New requests are rejected with `GATEWAY_DISABLED`.
 
 ## Risks / Trade-offs

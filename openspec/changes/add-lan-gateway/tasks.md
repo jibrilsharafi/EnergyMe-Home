@@ -21,7 +21,6 @@
 
 - [x] 4.1 `system` shadow field `gateway_enabled` (report + apply)
 - [x] 4.2 REST `GET/PUT /api/v1/gateway` + `swagger.yaml`
-- [x] 4.3 Web UI toggle on the configuration page
 
 ## 5. Validation
 
