@@ -220,10 +220,11 @@ namespace Gateway
     // Primitives
     // ==========
 
-    // HTTP/1.0 + Connection: close so the server ends the body by closing and
-    // never chunks; every read is bounded by one absolute deadline. HTTPClient
-    // was dropped because its header and body loops have no overall deadline: a
-    // LAN host trickling bytes kept the gateway busy forever.
+    // HTTP/1.1 (the Sonoff eWeLink LAN API silently drops HTTP/1.0) with
+    // Connection: close, so the server ends the body by closing; a chunked body
+    // is decoded. Every read is bounded by one absolute deadline. HTTPClient was
+    // dropped because its header and body loops have no overall deadline: a LAN
+    // host trickling bytes kept the gateway busy forever.
     static void _runHttp(JsonObjectConst args, JsonDocument& doc, const char* executionId) {
         const char* ip = nullptr;
         uint8_t octets[4];
@@ -286,43 +287,44 @@ namespace Gateway
 
         LOG_INFO("Gateway %s: http_request %s %s:%u%s", executionId, method, ip, port, path);
 
+        // Head and body go out in one write: naive embedded servers (Sonoff eWeLink
+        // LAN) parse each TCP segment as a separate request.
         size_t headCap = strlen(method) + strlen(path) + headersLength + 160;
         size_t rawCap = GatewayLogic::HTTP_HEADER_CAP_BYTES + GatewayLogic::RESPONSE_CAP_BYTES + 512;
-        char* head = (char*)ps_malloc(headCap);
+        char* request = (char*)ps_malloc(headCap + bodyLength);
         uint8_t* raw = (uint8_t*)ps_malloc(rawCap);
         uint8_t* chunkedBody = nullptr;
-        if (head == nullptr || raw == nullptr) {
+        if (request == nullptr || raw == nullptr) {
             free(decodedBody);
-            free(head);
+            free(request);
             free(raw);
             _fail(doc, "NO_MEMORY", "Could not allocate the HTTP buffers");
             return;
         }
 
-        size_t used = (size_t)snprintf(head, headCap, "%s %s HTTP/1.0\r\nHost: %s:%u\r\nConnection: close\r\n", method, path, ip, port);
+        size_t used = (size_t)snprintf(request, headCap, "%s %s HTTP/1.1\r\nHost: %s:%u\r\nConnection: close\r\n", method, path, ip, port);
         if (!headers.isNull()) {
             for (JsonPairConst header : headers.as<JsonObjectConst>()) {
-                used += (size_t)snprintf(head + used, headCap - used, "%s: %s\r\n", header.key().c_str(), header.value().as<const char*>());
+                used += (size_t)snprintf(request + used, headCap - used, "%s: %s\r\n", header.key().c_str(), header.value().as<const char*>());
             }
         }
         bool sendsBody = bodyLength > 0 || strcmp(method, "POST") == 0 || strcmp(method, "PUT") == 0 || strcmp(method, "PATCH") == 0;
-        if (sendsBody) used += (size_t)snprintf(head + used, headCap - used, "Content-Length: %u\r\n", (unsigned)bodyLength);
-        snprintf(head + used, headCap - used, "\r\n");
+        if (sendsBody) used += (size_t)snprintf(request + used, headCap - used, "Content-Length: %u\r\n", (unsigned)bodyLength);
+        used += (size_t)snprintf(request + used, headCap - used, "\r\n");
+        if (bodyLength > 0) memcpy(request + used, body, bodyLength);
+        size_t requestLength = used + bodyLength;
+        free(decodedBody);
 
         uint32_t deadline = millis() + timeoutMs;
         WiFiClient client;
         if (!client.connect(IPAddress(octets[0], octets[1], octets[2], octets[3]), port, (int32_t)timeoutMs)) {
-            free(decodedBody);
-            free(head);
+            free(request);
             free(raw);
             _fail(doc, _beforeDeadline(deadline) ? "CONNECT_FAILED" : "TIMEOUT", "TCP connect failed");
             return;
         }
-        size_t headLength = strlen(head);
-        bool sent = client.write((const uint8_t*)head, headLength) == headLength &&
-                    (bodyLength == 0 || client.write(body, bodyLength) == bodyLength);
-        free(decodedBody);
-        free(head);
+        bool sent = client.write((const uint8_t*)request, requestLength) == requestLength;
+        free(request);
         if (!sent) {
             client.stop();
             free(raw);
@@ -375,7 +377,7 @@ namespace Gateway
         size_t bodyOut = 0;
         bool truncated = false;
         if (GatewayLogic::httpIsChunked(raw, headerEnd)) {
-            // HTTP/1.0 forbids it, but some embedded servers chunk anyway.
+            // Allowed by HTTP/1.1 even with Connection: close.
             chunkedBody = (uint8_t*)ps_malloc(GatewayLogic::RESPONSE_CAP_BYTES);
             if (chunkedBody == nullptr) {
                 free(raw);

@@ -57,7 +57,7 @@ bool isValidHeaderValue(const char *value);
 bool isReservedHeaderName(const char *name);
 
 // ---------------------------------------------------------------------------
-// HTTP/1.0 response parsing (the firmware sends HTTP/1.0 + Connection: close)
+// HTTP response parsing (the firmware sends HTTP/1.1 + Connection: close)
 // ---------------------------------------------------------------------------
 
 // Offset of the first body byte (just past the blank line), or 0 if the
