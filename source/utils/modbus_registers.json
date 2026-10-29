@@ -17,14 +17,14 @@
     },
     "40101": {
         "name": "Voltage",
-        "description": "Voltage measurement",
+        "description": "Voltage measurement (channel 0 supply)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "V",
         "access": "read"
     },
     "40103": {
-        "name": "Grid frequency",
+        "name": "Grid-Frequency",
         "description": "Grid frequency measurement",
         "function_codes": [3],
         "data_type": "float",
@@ -32,72 +32,440 @@
         "access": "read"
     },
     "40201": {
-        "name": "Aggregated-Active-Power",
-        "description": "Aggregated active power with channel 0",
+        "name": "Grid-Active-Power",
+        "description": "Aggregated active power of channels with role Grid",
         "function_codes": [3],
         "data_type": "float",
         "unit": "W",
         "access": "read"
     },
     "40203": {
-        "name": "Aggregated-Reactive-Power",
-        "description": "Aggregated reactive power with channel 0",
+        "name": "Grid-Reactive-Power",
+        "description": "Aggregated reactive power of channels with role Grid",
         "function_codes": [3],
         "data_type": "float",
         "unit": "var",
         "access": "read"
     },
     "40205": {
-        "name": "Aggregated-Apparent-Power",
-        "description": "Aggregated apparent power with channel 0",
+        "name": "Grid-Apparent-Power",
+        "description": "Aggregated apparent power of channels with role Grid",
         "function_codes": [3],
         "data_type": "float",
         "unit": "VA",
         "access": "read"
     },
     "40207": {
-        "name": "Aggregated-Power-Factor",
-        "description": "Aggregated power factor with channel 0",
+        "name": "Grid-Power-Factor",
+        "description": "Aggregated power factor of channels with role Grid",
         "function_codes": [3],
         "data_type": "float",
         "unit": "",
         "access": "read"
     },
+    "40209": {
+        "name": "Grid-Active-Energy-Imported",
+        "description": "Aggregated active energy imported of channels with role Grid",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "Wh",
+        "access": "read"
+    },
     "40211": {
-        "name": "Aggregated-Active-Power-No-Ch0",
-        "description": "Aggregated active power without channel 0",
+        "name": "Grid-Active-Energy-Exported",
+        "description": "Aggregated active energy exported of channels with role Grid",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "Wh",
+        "access": "read"
+    },
+    "40213": {
+        "name": "Grid-Reactive-Energy-Imported",
+        "description": "Aggregated reactive energy imported of channels with role Grid",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "varh",
+        "access": "read"
+    },
+    "40215": {
+        "name": "Grid-Reactive-Energy-Exported",
+        "description": "Aggregated reactive energy exported of channels with role Grid",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "varh",
+        "access": "read"
+    },
+    "40217": {
+        "name": "Grid-Apparent-Energy",
+        "description": "Aggregated apparent energy of channels with role Grid",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "VAh",
+        "access": "read"
+    },
+    "40301": {
+        "name": "Load-Active-Power",
+        "description": "Aggregated active power of channels with role Load",
         "function_codes": [3],
         "data_type": "float",
         "unit": "W",
         "access": "read"
     },
-    "40213": {
-        "name": "Aggregated-Reactive-Power-No-Ch0",
-        "description": "Aggregated reactive power without channel 0",
+    "40303": {
+        "name": "Load-Reactive-Power",
+        "description": "Aggregated reactive power of channels with role Load",
         "function_codes": [3],
         "data_type": "float",
         "unit": "var",
         "access": "read"
     },
-    "40215": {
-        "name": "Aggregated-Apparent-Power-No-Ch0",
-        "description": "Aggregated apparent power without channel 0",
+    "40305": {
+        "name": "Load-Apparent-Power",
+        "description": "Aggregated apparent power of channels with role Load",
         "function_codes": [3],
         "data_type": "float",
         "unit": "VA",
         "access": "read"
     },
-    "40217": {
-        "name": "Aggregated-Power-Factor-No-Ch0",
-        "description": "Aggregated power factor without channel 0",
+    "40307": {
+        "name": "Load-Power-Factor",
+        "description": "Aggregated power factor of channels with role Load",
         "function_codes": [3],
         "data_type": "float",
         "unit": "",
         "access": "read"
     },
+    "40309": {
+        "name": "Load-Active-Energy-Imported",
+        "description": "Aggregated active energy imported of channels with role Load",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "Wh",
+        "access": "read"
+    },
+    "40311": {
+        "name": "Load-Active-Energy-Exported",
+        "description": "Aggregated active energy exported of channels with role Load",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "Wh",
+        "access": "read"
+    },
+    "40313": {
+        "name": "Load-Reactive-Energy-Imported",
+        "description": "Aggregated reactive energy imported of channels with role Load",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "varh",
+        "access": "read"
+    },
+    "40315": {
+        "name": "Load-Reactive-Energy-Exported",
+        "description": "Aggregated reactive energy exported of channels with role Load",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "varh",
+        "access": "read"
+    },
+    "40317": {
+        "name": "Load-Apparent-Energy",
+        "description": "Aggregated apparent energy of channels with role Load",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "VAh",
+        "access": "read"
+    },
+    "40401": {
+        "name": "PV-Active-Power",
+        "description": "Aggregated active power of channels with role PV",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "W",
+        "access": "read"
+    },
+    "40403": {
+        "name": "PV-Reactive-Power",
+        "description": "Aggregated reactive power of channels with role PV",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "var",
+        "access": "read"
+    },
+    "40405": {
+        "name": "PV-Apparent-Power",
+        "description": "Aggregated apparent power of channels with role PV",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "VA",
+        "access": "read"
+    },
+    "40407": {
+        "name": "PV-Power-Factor",
+        "description": "Aggregated power factor of channels with role PV",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "",
+        "access": "read"
+    },
+    "40409": {
+        "name": "PV-Active-Energy-Imported",
+        "description": "Aggregated active energy imported of channels with role PV",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "Wh",
+        "access": "read"
+    },
+    "40411": {
+        "name": "PV-Active-Energy-Exported",
+        "description": "Aggregated active energy exported of channels with role PV",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "Wh",
+        "access": "read"
+    },
+    "40413": {
+        "name": "PV-Reactive-Energy-Imported",
+        "description": "Aggregated reactive energy imported of channels with role PV",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "varh",
+        "access": "read"
+    },
+    "40415": {
+        "name": "PV-Reactive-Energy-Exported",
+        "description": "Aggregated reactive energy exported of channels with role PV",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "varh",
+        "access": "read"
+    },
+    "40417": {
+        "name": "PV-Apparent-Energy",
+        "description": "Aggregated apparent energy of channels with role PV",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "VAh",
+        "access": "read"
+    },
+    "40501": {
+        "name": "Battery-Active-Power",
+        "description": "Aggregated active power of channels with role Battery",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "W",
+        "access": "read"
+    },
+    "40503": {
+        "name": "Battery-Reactive-Power",
+        "description": "Aggregated reactive power of channels with role Battery",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "var",
+        "access": "read"
+    },
+    "40505": {
+        "name": "Battery-Apparent-Power",
+        "description": "Aggregated apparent power of channels with role Battery",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "VA",
+        "access": "read"
+    },
+    "40507": {
+        "name": "Battery-Power-Factor",
+        "description": "Aggregated power factor of channels with role Battery",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "",
+        "access": "read"
+    },
+    "40509": {
+        "name": "Battery-Active-Energy-Imported",
+        "description": "Aggregated active energy imported of channels with role Battery",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "Wh",
+        "access": "read"
+    },
+    "40511": {
+        "name": "Battery-Active-Energy-Exported",
+        "description": "Aggregated active energy exported of channels with role Battery",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "Wh",
+        "access": "read"
+    },
+    "40513": {
+        "name": "Battery-Reactive-Energy-Imported",
+        "description": "Aggregated reactive energy imported of channels with role Battery",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "varh",
+        "access": "read"
+    },
+    "40515": {
+        "name": "Battery-Reactive-Energy-Exported",
+        "description": "Aggregated reactive energy exported of channels with role Battery",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "varh",
+        "access": "read"
+    },
+    "40517": {
+        "name": "Battery-Apparent-Energy",
+        "description": "Aggregated apparent energy of channels with role Battery",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "VAh",
+        "access": "read"
+    },
+    "40601": {
+        "name": "Inverter-Active-Power",
+        "description": "Aggregated active power of channels with role Inverter",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "W",
+        "access": "read"
+    },
+    "40603": {
+        "name": "Inverter-Reactive-Power",
+        "description": "Aggregated reactive power of channels with role Inverter",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "var",
+        "access": "read"
+    },
+    "40605": {
+        "name": "Inverter-Apparent-Power",
+        "description": "Aggregated apparent power of channels with role Inverter",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "VA",
+        "access": "read"
+    },
+    "40607": {
+        "name": "Inverter-Power-Factor",
+        "description": "Aggregated power factor of channels with role Inverter",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "",
+        "access": "read"
+    },
+    "40609": {
+        "name": "Inverter-Active-Energy-Imported",
+        "description": "Aggregated active energy imported of channels with role Inverter",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "Wh",
+        "access": "read"
+    },
+    "40611": {
+        "name": "Inverter-Active-Energy-Exported",
+        "description": "Aggregated active energy exported of channels with role Inverter",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "Wh",
+        "access": "read"
+    },
+    "40613": {
+        "name": "Inverter-Reactive-Energy-Imported",
+        "description": "Aggregated reactive energy imported of channels with role Inverter",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "varh",
+        "access": "read"
+    },
+    "40615": {
+        "name": "Inverter-Reactive-Energy-Exported",
+        "description": "Aggregated reactive energy exported of channels with role Inverter",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "varh",
+        "access": "read"
+    },
+    "40617": {
+        "name": "Inverter-Apparent-Energy",
+        "description": "Aggregated apparent energy of channels with role Inverter",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "VAh",
+        "access": "read"
+    },
+    "40701": {
+        "name": "Bidirectional-Active-Power",
+        "description": "Aggregated active power of channels with role Bidirectional",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "W",
+        "access": "read"
+    },
+    "40703": {
+        "name": "Bidirectional-Reactive-Power",
+        "description": "Aggregated reactive power of channels with role Bidirectional",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "var",
+        "access": "read"
+    },
+    "40705": {
+        "name": "Bidirectional-Apparent-Power",
+        "description": "Aggregated apparent power of channels with role Bidirectional",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "VA",
+        "access": "read"
+    },
+    "40707": {
+        "name": "Bidirectional-Power-Factor",
+        "description": "Aggregated power factor of channels with role Bidirectional",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "",
+        "access": "read"
+    },
+    "40709": {
+        "name": "Bidirectional-Active-Energy-Imported",
+        "description": "Aggregated active energy imported of channels with role Bidirectional",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "Wh",
+        "access": "read"
+    },
+    "40711": {
+        "name": "Bidirectional-Active-Energy-Exported",
+        "description": "Aggregated active energy exported of channels with role Bidirectional",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "Wh",
+        "access": "read"
+    },
+    "40713": {
+        "name": "Bidirectional-Reactive-Energy-Imported",
+        "description": "Aggregated reactive energy imported of channels with role Bidirectional",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "varh",
+        "access": "read"
+    },
+    "40715": {
+        "name": "Bidirectional-Reactive-Energy-Exported",
+        "description": "Aggregated reactive energy exported of channels with role Bidirectional",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "varh",
+        "access": "read"
+    },
+    "40717": {
+        "name": "Bidirectional-Apparent-Energy",
+        "description": "Aggregated apparent energy of channels with role Bidirectional",
+        "function_codes": [3],
+        "data_type": "float",
+        "unit": "VAh",
+        "access": "read"
+    },
     "41001": {
         "name": "Ch0-Current",
-        "description": "Channel 0 current measurement",
+        "description": "Channel 0 current",
         "function_codes": [3],
         "data_type": "float",
         "unit": "A",
@@ -105,7 +473,7 @@
     },
     "41003": {
         "name": "Ch0-Active-Power",
-        "description": "Channel 0 active power measurement",
+        "description": "Channel 0 active power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "W",
@@ -113,7 +481,7 @@
     },
     "41005": {
         "name": "Ch0-Reactive-Power",
-        "description": "Channel 0 reactive power measurement",
+        "description": "Channel 0 reactive power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "var",
@@ -121,7 +489,7 @@
     },
     "41007": {
         "name": "Ch0-Apparent-Power",
-        "description": "Channel 0 apparent power measurement",
+        "description": "Channel 0 apparent power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "VA",
@@ -129,7 +497,7 @@
     },
     "41009": {
         "name": "Ch0-Power-Factor",
-        "description": "Channel 0 power factor measurement",
+        "description": "Channel 0 power factor",
         "function_codes": [3],
         "data_type": "float",
         "unit": "",
@@ -166,7 +534,8 @@
         "data_type": "float",
         "unit": "varh",
         "access": "read"
-    },    "41019": {
+    },
+    "41019": {
         "name": "Ch0-Apparent-Energy",
         "description": "Channel 0 apparent energy",
         "function_codes": [3],
@@ -176,7 +545,7 @@
     },
     "41101": {
         "name": "Ch1-Current",
-        "description": "Channel 1 current measurement",
+        "description": "Channel 1 current",
         "function_codes": [3],
         "data_type": "float",
         "unit": "A",
@@ -184,7 +553,7 @@
     },
     "41103": {
         "name": "Ch1-Active-Power",
-        "description": "Channel 1 active power measurement",
+        "description": "Channel 1 active power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "W",
@@ -192,7 +561,7 @@
     },
     "41105": {
         "name": "Ch1-Reactive-Power",
-        "description": "Channel 1 reactive power measurement",
+        "description": "Channel 1 reactive power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "var",
@@ -200,7 +569,7 @@
     },
     "41107": {
         "name": "Ch1-Apparent-Power",
-        "description": "Channel 1 apparent power measurement",
+        "description": "Channel 1 apparent power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "VA",
@@ -208,7 +577,7 @@
     },
     "41109": {
         "name": "Ch1-Power-Factor",
-        "description": "Channel 1 power factor measurement",
+        "description": "Channel 1 power factor",
         "function_codes": [3],
         "data_type": "float",
         "unit": "",
@@ -245,7 +614,8 @@
         "data_type": "float",
         "unit": "varh",
         "access": "read"
-    },    "41119": {
+    },
+    "41119": {
         "name": "Ch1-Apparent-Energy",
         "description": "Channel 1 apparent energy",
         "function_codes": [3],
@@ -255,7 +625,7 @@
     },
     "41201": {
         "name": "Ch2-Current",
-        "description": "Channel 2 current measurement",
+        "description": "Channel 2 current",
         "function_codes": [3],
         "data_type": "float",
         "unit": "A",
@@ -263,7 +633,7 @@
     },
     "41203": {
         "name": "Ch2-Active-Power",
-        "description": "Channel 2 active power measurement",
+        "description": "Channel 2 active power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "W",
@@ -271,7 +641,7 @@
     },
     "41205": {
         "name": "Ch2-Reactive-Power",
-        "description": "Channel 2 reactive power measurement",
+        "description": "Channel 2 reactive power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "var",
@@ -279,7 +649,7 @@
     },
     "41207": {
         "name": "Ch2-Apparent-Power",
-        "description": "Channel 2 apparent power measurement",
+        "description": "Channel 2 apparent power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "VA",
@@ -287,7 +657,7 @@
     },
     "41209": {
         "name": "Ch2-Power-Factor",
-        "description": "Channel 2 power factor measurement",
+        "description": "Channel 2 power factor",
         "function_codes": [3],
         "data_type": "float",
         "unit": "",
@@ -335,7 +705,7 @@
     },
     "41301": {
         "name": "Ch3-Current",
-        "description": "Channel 3 current measurement",
+        "description": "Channel 3 current",
         "function_codes": [3],
         "data_type": "float",
         "unit": "A",
@@ -343,7 +713,7 @@
     },
     "41303": {
         "name": "Ch3-Active-Power",
-        "description": "Channel 3 active power measurement",
+        "description": "Channel 3 active power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "W",
@@ -351,7 +721,7 @@
     },
     "41305": {
         "name": "Ch3-Reactive-Power",
-        "description": "Channel 3 reactive power measurement",
+        "description": "Channel 3 reactive power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "var",
@@ -359,7 +729,7 @@
     },
     "41307": {
         "name": "Ch3-Apparent-Power",
-        "description": "Channel 3 apparent power measurement",
+        "description": "Channel 3 apparent power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "VA",
@@ -367,7 +737,7 @@
     },
     "41309": {
         "name": "Ch3-Power-Factor",
-        "description": "Channel 3 power factor measurement",
+        "description": "Channel 3 power factor",
         "function_codes": [3],
         "data_type": "float",
         "unit": "",
@@ -415,7 +785,7 @@
     },
     "41401": {
         "name": "Ch4-Current",
-        "description": "Channel 4 current measurement",
+        "description": "Channel 4 current",
         "function_codes": [3],
         "data_type": "float",
         "unit": "A",
@@ -423,7 +793,7 @@
     },
     "41403": {
         "name": "Ch4-Active-Power",
-        "description": "Channel 4 active power measurement",
+        "description": "Channel 4 active power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "W",
@@ -431,7 +801,7 @@
     },
     "41405": {
         "name": "Ch4-Reactive-Power",
-        "description": "Channel 4 reactive power measurement",
+        "description": "Channel 4 reactive power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "var",
@@ -439,7 +809,7 @@
     },
     "41407": {
         "name": "Ch4-Apparent-Power",
-        "description": "Channel 4 apparent power measurement",
+        "description": "Channel 4 apparent power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "VA",
@@ -447,7 +817,7 @@
     },
     "41409": {
         "name": "Ch4-Power-Factor",
-        "description": "Channel 4 power factor measurement",
+        "description": "Channel 4 power factor",
         "function_codes": [3],
         "data_type": "float",
         "unit": "",
@@ -495,7 +865,7 @@
     },
     "41501": {
         "name": "Ch5-Current",
-        "description": "Channel 5 current measurement",
+        "description": "Channel 5 current",
         "function_codes": [3],
         "data_type": "float",
         "unit": "A",
@@ -503,7 +873,7 @@
     },
     "41503": {
         "name": "Ch5-Active-Power",
-        "description": "Channel 5 active power measurement",
+        "description": "Channel 5 active power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "W",
@@ -511,7 +881,7 @@
     },
     "41505": {
         "name": "Ch5-Reactive-Power",
-        "description": "Channel 5 reactive power measurement",
+        "description": "Channel 5 reactive power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "var",
@@ -519,7 +889,7 @@
     },
     "41507": {
         "name": "Ch5-Apparent-Power",
-        "description": "Channel 5 apparent power measurement",
+        "description": "Channel 5 apparent power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "VA",
@@ -527,7 +897,7 @@
     },
     "41509": {
         "name": "Ch5-Power-Factor",
-        "description": "Channel 5 power factor measurement",
+        "description": "Channel 5 power factor",
         "function_codes": [3],
         "data_type": "float",
         "unit": "",
@@ -575,7 +945,7 @@
     },
     "41601": {
         "name": "Ch6-Current",
-        "description": "Channel 6 current measurement",
+        "description": "Channel 6 current",
         "function_codes": [3],
         "data_type": "float",
         "unit": "A",
@@ -583,7 +953,7 @@
     },
     "41603": {
         "name": "Ch6-Active-Power",
-        "description": "Channel 6 active power measurement",
+        "description": "Channel 6 active power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "W",
@@ -591,7 +961,7 @@
     },
     "41605": {
         "name": "Ch6-Reactive-Power",
-        "description": "Channel 6 reactive power measurement",
+        "description": "Channel 6 reactive power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "var",
@@ -599,7 +969,7 @@
     },
     "41607": {
         "name": "Ch6-Apparent-Power",
-        "description": "Channel 6 apparent power measurement",
+        "description": "Channel 6 apparent power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "VA",
@@ -607,7 +977,7 @@
     },
     "41609": {
         "name": "Ch6-Power-Factor",
-        "description": "Channel 6 power factor measurement",
+        "description": "Channel 6 power factor",
         "function_codes": [3],
         "data_type": "float",
         "unit": "",
@@ -655,7 +1025,7 @@
     },
     "41701": {
         "name": "Ch7-Current",
-        "description": "Channel 7 current measurement",
+        "description": "Channel 7 current",
         "function_codes": [3],
         "data_type": "float",
         "unit": "A",
@@ -663,7 +1033,7 @@
     },
     "41703": {
         "name": "Ch7-Active-Power",
-        "description": "Channel 7 active power measurement",
+        "description": "Channel 7 active power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "W",
@@ -671,7 +1041,7 @@
     },
     "41705": {
         "name": "Ch7-Reactive-Power",
-        "description": "Channel 7 reactive power measurement",
+        "description": "Channel 7 reactive power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "var",
@@ -679,7 +1049,7 @@
     },
     "41707": {
         "name": "Ch7-Apparent-Power",
-        "description": "Channel 7 apparent power measurement",
+        "description": "Channel 7 apparent power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "VA",
@@ -687,7 +1057,7 @@
     },
     "41709": {
         "name": "Ch7-Power-Factor",
-        "description": "Channel 7 power factor measurement",
+        "description": "Channel 7 power factor",
         "function_codes": [3],
         "data_type": "float",
         "unit": "",
@@ -735,7 +1105,7 @@
     },
     "41801": {
         "name": "Ch8-Current",
-        "description": "Channel 8 current measurement",
+        "description": "Channel 8 current",
         "function_codes": [3],
         "data_type": "float",
         "unit": "A",
@@ -743,7 +1113,7 @@
     },
     "41803": {
         "name": "Ch8-Active-Power",
-        "description": "Channel 8 active power measurement",
+        "description": "Channel 8 active power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "W",
@@ -751,7 +1121,7 @@
     },
     "41805": {
         "name": "Ch8-Reactive-Power",
-        "description": "Channel 8 reactive power measurement",
+        "description": "Channel 8 reactive power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "var",
@@ -759,7 +1129,7 @@
     },
     "41807": {
         "name": "Ch8-Apparent-Power",
-        "description": "Channel 8 apparent power measurement",
+        "description": "Channel 8 apparent power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "VA",
@@ -767,7 +1137,7 @@
     },
     "41809": {
         "name": "Ch8-Power-Factor",
-        "description": "Channel 8 power factor measurement",
+        "description": "Channel 8 power factor",
         "function_codes": [3],
         "data_type": "float",
         "unit": "",
@@ -815,7 +1185,7 @@
     },
     "41901": {
         "name": "Ch9-Current",
-        "description": "Channel 9 current measurement",
+        "description": "Channel 9 current",
         "function_codes": [3],
         "data_type": "float",
         "unit": "A",
@@ -823,7 +1193,7 @@
     },
     "41903": {
         "name": "Ch9-Active-Power",
-        "description": "Channel 9 active power measurement",
+        "description": "Channel 9 active power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "W",
@@ -831,7 +1201,7 @@
     },
     "41905": {
         "name": "Ch9-Reactive-Power",
-        "description": "Channel 9 reactive power measurement",
+        "description": "Channel 9 reactive power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "var",
@@ -839,7 +1209,7 @@
     },
     "41907": {
         "name": "Ch9-Apparent-Power",
-        "description": "Channel 9 apparent power measurement",
+        "description": "Channel 9 apparent power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "VA",
@@ -847,7 +1217,7 @@
     },
     "41909": {
         "name": "Ch9-Power-Factor",
-        "description": "Channel 9 power factor measurement",
+        "description": "Channel 9 power factor",
         "function_codes": [3],
         "data_type": "float",
         "unit": "",
@@ -895,7 +1265,7 @@
     },
     "42001": {
         "name": "Ch10-Current",
-        "description": "Channel 10 current measurement",
+        "description": "Channel 10 current",
         "function_codes": [3],
         "data_type": "float",
         "unit": "A",
@@ -903,7 +1273,7 @@
     },
     "42003": {
         "name": "Ch10-Active-Power",
-        "description": "Channel 10 active power measurement",
+        "description": "Channel 10 active power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "W",
@@ -911,7 +1281,7 @@
     },
     "42005": {
         "name": "Ch10-Reactive-Power",
-        "description": "Channel 10 reactive power measurement",
+        "description": "Channel 10 reactive power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "var",
@@ -919,7 +1289,7 @@
     },
     "42007": {
         "name": "Ch10-Apparent-Power",
-        "description": "Channel 10 apparent power measurement",
+        "description": "Channel 10 apparent power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "VA",
@@ -927,7 +1297,7 @@
     },
     "42009": {
         "name": "Ch10-Power-Factor",
-        "description": "Channel 10 power factor measurement",
+        "description": "Channel 10 power factor",
         "function_codes": [3],
         "data_type": "float",
         "unit": "",
@@ -975,7 +1345,7 @@
     },
     "42101": {
         "name": "Ch11-Current",
-        "description": "Channel 11 current measurement",
+        "description": "Channel 11 current",
         "function_codes": [3],
         "data_type": "float",
         "unit": "A",
@@ -983,7 +1353,7 @@
     },
     "42103": {
         "name": "Ch11-Active-Power",
-        "description": "Channel 11 active power measurement",
+        "description": "Channel 11 active power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "W",
@@ -991,7 +1361,7 @@
     },
     "42105": {
         "name": "Ch11-Reactive-Power",
-        "description": "Channel 11 reactive power measurement",
+        "description": "Channel 11 reactive power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "var",
@@ -999,7 +1369,7 @@
     },
     "42107": {
         "name": "Ch11-Apparent-Power",
-        "description": "Channel 11 apparent power measurement",
+        "description": "Channel 11 apparent power",
         "function_codes": [3],
         "data_type": "float",
         "unit": "VA",
@@ -1007,7 +1377,7 @@
     },
     "42109": {
         "name": "Ch11-Power-Factor",
-        "description": "Channel 11 power factor measurement",
+        "description": "Channel 11 power factor",
         "function_codes": [3],
         "data_type": "float",
         "unit": "",
@@ -1055,7 +1425,7 @@
     },
     "42201": {
         "name": "Ch12-Current",
-        "description": "Channel 12 current measurement",
+        "description": "Channel 12 current (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "A",
@@ -1063,7 +1433,7 @@
     },
     "42203": {
         "name": "Ch12-Active-Power",
-        "description": "Channel 12 active power measurement",
+        "description": "Channel 12 active power (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "W",
@@ -1071,7 +1441,7 @@
     },
     "42205": {
         "name": "Ch12-Reactive-Power",
-        "description": "Channel 12 reactive power measurement",
+        "description": "Channel 12 reactive power (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "var",
@@ -1079,7 +1449,7 @@
     },
     "42207": {
         "name": "Ch12-Apparent-Power",
-        "description": "Channel 12 apparent power measurement",
+        "description": "Channel 12 apparent power (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "VA",
@@ -1087,7 +1457,7 @@
     },
     "42209": {
         "name": "Ch12-Power-Factor",
-        "description": "Channel 12 power factor measurement",
+        "description": "Channel 12 power factor (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "",
@@ -1095,7 +1465,7 @@
     },
     "42211": {
         "name": "Ch12-Active-Energy-Imported",
-        "description": "Channel 12 active energy imported",
+        "description": "Channel 12 active energy imported (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "Wh",
@@ -1103,7 +1473,7 @@
     },
     "42213": {
         "name": "Ch12-Active-Energy-Exported",
-        "description": "Channel 12 active energy exported",
+        "description": "Channel 12 active energy exported (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "Wh",
@@ -1111,7 +1481,7 @@
     },
     "42215": {
         "name": "Ch12-Reactive-Energy-Imported",
-        "description": "Channel 12 reactive energy imported",
+        "description": "Channel 12 reactive energy imported (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "varh",
@@ -1119,7 +1489,7 @@
     },
     "42217": {
         "name": "Ch12-Reactive-Energy-Exported",
-        "description": "Channel 12 reactive energy exported",
+        "description": "Channel 12 reactive energy exported (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "varh",
@@ -1127,7 +1497,7 @@
     },
     "42219": {
         "name": "Ch12-Apparent-Energy",
-        "description": "Channel 12 apparent energy",
+        "description": "Channel 12 apparent energy (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "VAh",
@@ -1135,7 +1505,7 @@
     },
     "42301": {
         "name": "Ch13-Current",
-        "description": "Channel 13 current measurement",
+        "description": "Channel 13 current (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "A",
@@ -1143,7 +1513,7 @@
     },
     "42303": {
         "name": "Ch13-Active-Power",
-        "description": "Channel 13 active power measurement",
+        "description": "Channel 13 active power (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "W",
@@ -1151,7 +1521,7 @@
     },
     "42305": {
         "name": "Ch13-Reactive-Power",
-        "description": "Channel 13 reactive power measurement",
+        "description": "Channel 13 reactive power (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "var",
@@ -1159,7 +1529,7 @@
     },
     "42307": {
         "name": "Ch13-Apparent-Power",
-        "description": "Channel 13 apparent power measurement",
+        "description": "Channel 13 apparent power (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "VA",
@@ -1167,7 +1537,7 @@
     },
     "42309": {
         "name": "Ch13-Power-Factor",
-        "description": "Channel 13 power factor measurement",
+        "description": "Channel 13 power factor (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "",
@@ -1175,7 +1545,7 @@
     },
     "42311": {
         "name": "Ch13-Active-Energy-Imported",
-        "description": "Channel 13 active energy imported",
+        "description": "Channel 13 active energy imported (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "Wh",
@@ -1183,7 +1553,7 @@
     },
     "42313": {
         "name": "Ch13-Active-Energy-Exported",
-        "description": "Channel 13 active energy exported",
+        "description": "Channel 13 active energy exported (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "Wh",
@@ -1191,7 +1561,7 @@
     },
     "42315": {
         "name": "Ch13-Reactive-Energy-Imported",
-        "description": "Channel 13 reactive energy imported",
+        "description": "Channel 13 reactive energy imported (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "varh",
@@ -1199,7 +1569,7 @@
     },
     "42317": {
         "name": "Ch13-Reactive-Energy-Exported",
-        "description": "Channel 13 reactive energy exported",
+        "description": "Channel 13 reactive energy exported (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "varh",
@@ -1207,7 +1577,7 @@
     },
     "42319": {
         "name": "Ch13-Apparent-Energy",
-        "description": "Channel 13 apparent energy",
+        "description": "Channel 13 apparent energy (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "VAh",
@@ -1215,7 +1585,7 @@
     },
     "42401": {
         "name": "Ch14-Current",
-        "description": "Channel 14 current measurement",
+        "description": "Channel 14 current (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "A",
@@ -1223,7 +1593,7 @@
     },
     "42403": {
         "name": "Ch14-Active-Power",
-        "description": "Channel 14 active power measurement",
+        "description": "Channel 14 active power (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "W",
@@ -1231,7 +1601,7 @@
     },
     "42405": {
         "name": "Ch14-Reactive-Power",
-        "description": "Channel 14 reactive power measurement",
+        "description": "Channel 14 reactive power (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "var",
@@ -1239,7 +1609,7 @@
     },
     "42407": {
         "name": "Ch14-Apparent-Power",
-        "description": "Channel 14 apparent power measurement",
+        "description": "Channel 14 apparent power (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "VA",
@@ -1247,7 +1617,7 @@
     },
     "42409": {
         "name": "Ch14-Power-Factor",
-        "description": "Channel 14 power factor measurement",
+        "description": "Channel 14 power factor (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "",
@@ -1255,7 +1625,7 @@
     },
     "42411": {
         "name": "Ch14-Active-Energy-Imported",
-        "description": "Channel 14 active energy imported",
+        "description": "Channel 14 active energy imported (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "Wh",
@@ -1263,7 +1633,7 @@
     },
     "42413": {
         "name": "Ch14-Active-Energy-Exported",
-        "description": "Channel 14 active energy exported",
+        "description": "Channel 14 active energy exported (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "Wh",
@@ -1271,7 +1641,7 @@
     },
     "42415": {
         "name": "Ch14-Reactive-Energy-Imported",
-        "description": "Channel 14 reactive energy imported",
+        "description": "Channel 14 reactive energy imported (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "varh",
@@ -1279,7 +1649,7 @@
     },
     "42417": {
         "name": "Ch14-Reactive-Energy-Exported",
-        "description": "Channel 14 reactive energy exported",
+        "description": "Channel 14 reactive energy exported (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "varh",
@@ -1287,7 +1657,7 @@
     },
     "42419": {
         "name": "Ch14-Apparent-Energy",
-        "description": "Channel 14 apparent energy",
+        "description": "Channel 14 apparent energy (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "VAh",
@@ -1295,7 +1665,7 @@
     },
     "42501": {
         "name": "Ch15-Current",
-        "description": "Channel 15 current measurement",
+        "description": "Channel 15 current (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "A",
@@ -1303,7 +1673,7 @@
     },
     "42503": {
         "name": "Ch15-Active-Power",
-        "description": "Channel 15 active power measurement",
+        "description": "Channel 15 active power (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "W",
@@ -1311,7 +1681,7 @@
     },
     "42505": {
         "name": "Ch15-Reactive-Power",
-        "description": "Channel 15 reactive power measurement",
+        "description": "Channel 15 reactive power (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "var",
@@ -1319,7 +1689,7 @@
     },
     "42507": {
         "name": "Ch15-Apparent-Power",
-        "description": "Channel 15 apparent power measurement",
+        "description": "Channel 15 apparent power (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "VA",
@@ -1327,7 +1697,7 @@
     },
     "42509": {
         "name": "Ch15-Power-Factor",
-        "description": "Channel 15 power factor measurement",
+        "description": "Channel 15 power factor (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "",
@@ -1335,7 +1705,7 @@
     },
     "42511": {
         "name": "Ch15-Active-Energy-Imported",
-        "description": "Channel 15 active energy imported",
+        "description": "Channel 15 active energy imported (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "Wh",
@@ -1343,7 +1713,7 @@
     },
     "42513": {
         "name": "Ch15-Active-Energy-Exported",
-        "description": "Channel 15 active energy exported",
+        "description": "Channel 15 active energy exported (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "Wh",
@@ -1351,7 +1721,7 @@
     },
     "42515": {
         "name": "Ch15-Reactive-Energy-Imported",
-        "description": "Channel 15 reactive energy imported",
+        "description": "Channel 15 reactive energy imported (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "varh",
@@ -1359,7 +1729,7 @@
     },
     "42517": {
         "name": "Ch15-Reactive-Energy-Exported",
-        "description": "Channel 15 reactive energy exported",
+        "description": "Channel 15 reactive energy exported (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "varh",
@@ -1367,87 +1737,7 @@
     },
     "42519": {
         "name": "Ch15-Apparent-Energy",
-        "description": "Channel 15 apparent energy",
-        "function_codes": [3],
-        "data_type": "float",
-        "unit": "VAh",
-        "access": "read"
-    },
-    "42601": {
-        "name": "Ch16-Current",
-        "description": "Channel 16 current measurement",
-        "function_codes": [3],
-        "data_type": "float",
-        "unit": "A",
-        "access": "read"
-    },
-    "42603": {
-        "name": "Ch16-Active-Power",
-        "description": "Channel 16 active power measurement",
-        "function_codes": [3],
-        "data_type": "float",
-        "unit": "W",
-        "access": "read"
-    },
-    "42605": {
-        "name": "Ch16-Reactive-Power",
-        "description": "Channel 16 reactive power measurement",
-        "function_codes": [3],
-        "data_type": "float",
-        "unit": "var",
-        "access": "read"
-    },
-    "42607": {
-        "name": "Ch16-Apparent-Power",
-        "description": "Channel 16 apparent power measurement",
-        "function_codes": [3],
-        "data_type": "float",
-        "unit": "VA",
-        "access": "read"
-    },
-    "42609": {
-        "name": "Ch16-Power-Factor",
-        "description": "Channel 16 power factor measurement",
-        "function_codes": [3],
-        "data_type": "float",
-        "unit": "",
-        "access": "read"
-    },
-    "42611": {
-        "name": "Ch16-Active-Energy-Imported",
-        "description": "Channel 16 active energy imported",
-        "function_codes": [3],
-        "data_type": "float",
-        "unit": "Wh",
-        "access": "read"
-    },
-    "42613": {
-        "name": "Ch16-Active-Energy-Exported",
-        "description": "Channel 16 active energy exported",
-        "function_codes": [3],
-        "data_type": "float",
-        "unit": "Wh",
-        "access": "read"
-    },
-    "42615": {
-        "name": "Ch16-Reactive-Energy-Imported",
-        "description": "Channel 16 reactive energy imported",
-        "function_codes": [3],
-        "data_type": "float",
-        "unit": "varh",
-        "access": "read"
-    },
-    "42617": {
-        "name": "Ch16-Reactive-Energy-Exported",
-        "description": "Channel 16 reactive energy exported",
-        "function_codes": [3],
-        "data_type": "float",
-        "unit": "varh",
-        "access": "read"
-    },
-    "42619": {
-        "name": "Ch16-Apparent-Energy",
-        "description": "Channel 16 apparent energy",
+        "description": "Channel 15 apparent energy (EnergyMe Home only)",
         "function_codes": [3],
         "data_type": "float",
         "unit": "VAh",
