@@ -17,7 +17,7 @@
     },
     "40101": {
         "name": "Voltage",
-        "description": "Voltage measurement (channel 0 supply)",
+        "description": "Voltage measurement",
         "function_codes": [3],
         "data_type": "float",
         "unit": "V",
