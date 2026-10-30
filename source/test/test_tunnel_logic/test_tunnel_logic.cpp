@@ -305,11 +305,14 @@ void test_sender_rto_retransmit_backoff_and_link_failed(void) {
     s.markRetransmitted(slot, 1000, true);
     TEST_ASSERT_EQUAL(1, s.consecutiveTimeouts());
     TEST_ASSERT_EQUAL_UINT32(2000, s.rto().rtoMs());
-    // The second frame expires too but does not count a second event.
-    TEST_ASSERT_TRUE(s.nextRetransmit(2000, &slot, &timeout));
+    // The second frame expired in the same event: resent at once, no second backoff.
+    TEST_ASSERT_TRUE(s.nextRetransmit(1000, &slot, &timeout));
     TEST_ASSERT_EQUAL(b, slot);
-    s.markRetransmitted(slot, 2000, true);
+    TEST_ASSERT_FALSE(timeout);
+    s.markRetransmitted(slot, 1000, timeout);
     TEST_ASSERT_EQUAL(1, s.consecutiveTimeouts());
+    TEST_ASSERT_EQUAL_UINT32(2000, s.rto().rtoMs());
+    TEST_ASSERT_FALSE(s.nextRetransmit(1001, &slot, &timeout));
 
     uint32_t now = 2000;
     for (int i = 0; i < 20 && s.consecutiveTimeouts() < LINK_FAILED_TIMEOUTS; i++) {

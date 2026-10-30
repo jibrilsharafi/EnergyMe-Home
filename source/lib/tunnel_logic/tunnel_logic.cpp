@@ -286,6 +286,11 @@ void ArqSender::markRetransmitted(uint8_t slot, uint32_t nowMs, bool timeout) {
     for (const auto &o : _slots) {
         if (o.used && seqBefore(o.seq, s.seq)) return;
     }
+    // Every other frame already expired belongs to this same event: resend it
+    // now instead of making it wait for the backed-off RTO.
+    for (auto &o : _slots) {
+        if (o.used && !o.sacked && &o != &s && nowMs - o.sentMs >= _rto.rtoMs()) o.rearmed = true;
+    }
     _rto.backoff();
     if (_timeouts < 255) _timeouts++;
 }

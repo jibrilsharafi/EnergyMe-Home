@@ -328,6 +328,10 @@ class ArqSender:
             return
         if any(seq_before(o.seq, slot.seq) for o in self.slots.values()):
             return
+        # Every other frame already expired belongs to this same event: resend now.
+        for o in self.slots.values():
+            if o is not slot and not o.sacked and now_ms - o.sent_ms >= self.rto.rto:
+                o.rearmed = True
         self.rto.backoff()
         self.timeouts += 1
 
