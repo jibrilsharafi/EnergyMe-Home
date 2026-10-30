@@ -7,6 +7,7 @@
 #include "custometh.h"
 #include "gateway.h"
 #include "tunnel.h"
+#include "offlineenergy.h"
 #include "duration_format.h"
 #include "sha256_hex.h"
 #include "version_compare.h"
@@ -1101,6 +1102,7 @@ void statisticsToJson(Statistics& statistics, JsonDocument &jsonDocument) {
     jsonDocument["mqtt"]["gridPointsDropped"] = statistics.mqttGridPointsDropped;
     jsonDocument["mqtt"]["offlineEnergyRecordsCaptured"] = statistics.mqttOfflineEnergyRecordsCaptured;
     jsonDocument["mqtt"]["offlineEnergySegmentsDropped"] = statistics.mqttOfflineEnergySegmentsDropped;
+    jsonDocument["mqtt"]["offlineEnergyBufferedBytes"] = OfflineEnergy::getBufferedBytes(); // Gauge: backlog still waiting for replay
 
     // Custom MQTT statistics
     jsonDocument["customMqtt"]["messagesPublished"] = statistics.customMqttMessagesPublished;
