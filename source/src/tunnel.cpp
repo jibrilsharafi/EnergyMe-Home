@@ -302,6 +302,9 @@ namespace Tunnel
 
     static void _openChannel(uint8_t id, uint32_t credit, uint32_t now) {
         Channel& c = _ch(id);
+        // Both sides sent FIN and the operator saw every byte drained (that is its
+        // reuse rule): the old channel is only waiting for _serviceChannels to free it.
+        if (c.state != ChState::FREE && c.remoteFin && c.finSent && c.ring.size() == 0) _closeChannel(id, false, NO_RST);
         if (c.state != ChState::FREE) {
             _closeChannel(id, true, NO_RST);
             _ch(id).errDue = (uint8_t)TunnelLogic::ChannelError::BUSY;
