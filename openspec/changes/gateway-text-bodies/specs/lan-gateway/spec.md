@@ -1,7 +1,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Primitive results
-On success the device SHALL publish `SUCCEEDED` with a `result` map. LAN payload bytes (`http_request` `body`, `udp_send` `reply`) SHALL use `s` with the payload as a string when it is non-empty, strict UTF-8 (no overlong sequences, surrogates or code points above U+10FFFF) and contains no C0 control character other than tab, CR and LF; otherwise they SHALL use `bin` (base64), and an empty payload SHALL be `s: ""`. When a payload was cut by its cap and ends inside a multibyte character, the incomplete trailing sequence SHALL be dropped before the check and `truncated` SHALL remain `true`. Structured lists SHALL use `s` with compact JSON, and numbers SHALL use `s` with their decimal string. Transport failures SHALL publish `FAILED` with a reasonCode: `TIMEOUT`, `CONNECT_FAILED`, `NO_REPLY`, `MODBUS_EXCEPTION` (with the exception code in reasonDescription), `BAD_RESPONSE` (a malformed HTTP header or a Modbus reply that does not match the request), `NETWORK_DOWN`, or `NO_MEMORY`.
+On success the device SHALL publish `SUCCEEDED` with a `result` map. LAN payload bytes (`http_request` `body`, `udp_send` `reply`) SHALL use `s` with the payload as a string when it is non-empty, strict UTF-8 (no overlong sequences, surrogates or code points above U+10FFFF) and contains no C0 control character other than tab, CR and LF; otherwise they SHALL use `bin` (base64). An empty payload SHALL omit the key, because AWS IoT rejects the whole command response when any result value is empty. When a payload was cut by its cap and ends inside a multibyte character, the incomplete trailing sequence SHALL be dropped before the check and `truncated` SHALL remain `true`. Structured lists SHALL use `s` with compact JSON, and numbers SHALL use `s` with their decimal string. Transport failures SHALL publish `FAILED` with a reasonCode: `TIMEOUT`, `CONNECT_FAILED`, `NO_REPLY`, `MODBUS_EXCEPTION` (with the exception code in reasonDescription), `BAD_RESPONSE` (a malformed HTTP header or a Modbus reply that does not match the request), `NETWORK_DOWN`, or `NO_MEMORY`.
 
 - `ping` `{ip, count (1-5, default 3)}` returns `sent`, `received`, and `rtt_avg_ms` when at least one reply arrived. It succeeds even with zero replies, and `received: "0"` is the answer.
 - `net_scan` `{mdns_service (optional, e.g. "_http._tcp")}` returns `hosts` (`[{"ip","mac"}]`), `host_count`, `truncated`, and, when requested, `mdns` (`[{"name","ip","port"}]`). Lists are cut to fit the MQTT buffer, which sets `truncated: true`.
@@ -17,6 +17,10 @@ On success the device SHALL publish `SUCCEEDED` with a `result` map. LAN payload
 #### Scenario: Binary reply stays base64
 - **WHEN** an `http_request` or `udp_send` reply contains a NUL byte, an invalid UTF-8 sequence or a control character other than tab, CR and LF
 - **THEN** the payload is published with the `bin` attribute
+
+#### Scenario: Empty reply body
+- **WHEN** an `http_request` target answers `200` with an empty body
+- **THEN** the device publishes `SUCCEEDED` with `status_code` and `truncated` and no `body` key
 
 #### Scenario: Text cut inside a multibyte character
 - **WHEN** an `http_request` reply of UTF-8 text exceeds 4096 bytes and byte 4096 falls inside a multibyte character

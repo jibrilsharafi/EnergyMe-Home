@@ -7,7 +7,7 @@ The first site visit using the LAN gateway (Sapore di Mare San Giuliano, 2026-10
 - `http_request` `body` and `udp_send` `reply` are published as a string attribute (`s`) when the bytes are UTF-8 text, and as `bin` (base64) otherwise, as before.
 - Text means non-empty, strict UTF-8 (no overlongs, surrogates or code points above U+10FFFF) with no C0 control characters other than tab, CR and LF. Excluding the other controls keeps binary protocols on `bin` and caps the JSON escaping overhead at twice the byte count.
 - A reply cut by its cap (4096 bytes for HTTP, 1460 for UDP) can end inside a multibyte character: the incomplete trailing sequence is dropped from the string and `truncated` stays `true`.
-- An empty reply is still `s: ""`.
+- An empty reply omits the key. Until now it was sent as `s: ""`, which AWS IoT rejects for the whole response, so the execution timed out with `$NO_RESPONSE_FROM_DEVICE` (found on the bench, present since 2.6.0).
 
 Cloud side: `command_events.result` already stores any attribute type, so a text body now reads `{"body":{"S":"..."}}`. Consumers must accept both `S` and `BIN` for these two keys.
 
