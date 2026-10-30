@@ -3783,7 +3783,7 @@ namespace CustomServer
             doc["enabled"] = !globalCommunityMode && Gateway::isEnabled();
             doc["tunnel"] = !globalCommunityMode && Tunnel::isEnabled();
             if (globalCommunityMode) doc["tunnel_active"] = nullptr;
-            else Tunnel::activeToJson(doc["tunnel_active"]);
+            else Tunnel::activeToJson(doc.as<JsonObject>(), "tunnel_active");
             _sendJsonResponse(request, doc);
         });
 

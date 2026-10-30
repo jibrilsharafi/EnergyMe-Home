@@ -655,7 +655,7 @@ static void _reportSystem(JsonDocument& doc) {
     rep["gateway_enabled"] = Gateway::isEnabled();
     rep["tunnel_enabled"] = Tunnel::isEnabled();
     Tunnel::portsToJson(rep["tunnel_ports"].to<JsonArray>());
-    Tunnel::activeToJson(rep["tunnel_active"]);
+    Tunnel::activeToJson(rep, "tunnel_active");
 }
 
 // Parse a string log-level delta field. Returns the level (>=0) to apply, or -1

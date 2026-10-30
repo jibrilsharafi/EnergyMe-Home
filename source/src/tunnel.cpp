@@ -196,12 +196,13 @@ namespace Tunnel
 
     bool isActive() { return _phase.load() != Phase::IDLE; }
 
-    void activeToJson(JsonVariant out) {
+    void activeToJson(JsonObject parent, const char* key) {
         ActiveInfo active;
         if (!getActive(&active)) {
-            out.set(nullptr);
+            parent[key] = nullptr;
             return;
         }
+        JsonObject out = parent[key].to<JsonObject>();
         out["sid"] = active.sid;
         out["ip"] = active.ip;
         out["port"] = active.port;

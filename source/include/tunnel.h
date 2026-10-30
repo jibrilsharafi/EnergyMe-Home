@@ -71,7 +71,7 @@ namespace Tunnel
         uint64_t since; // unix seconds
     };
     bool getActive(ActiveInfo* info); // false when no session is open
-    void activeToJson(JsonVariant out);   // {sid, ip, port, since}, or null without a session
+    void activeToJson(JsonObject parent, const char* key); // parent[key] = {sid, ip, port, since}, or null without a session
     void portsToJson(JsonArray out);
     bool isActive();                  // a session exists (open, closing or awaiting finish)
 
