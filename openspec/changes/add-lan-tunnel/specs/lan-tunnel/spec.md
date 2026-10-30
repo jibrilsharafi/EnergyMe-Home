@@ -72,11 +72,15 @@ A sender SHALL NOT put more DATA bytes on a channel than the receiver's cumulati
 - **THEN** channel 1 stops receiving operator data once its credit is used and channel 2 keeps flowing
 
 ### Requirement: Channels
-The operator SHALL open a channel with `CH_OPEN` on a free channel id 1-4. The device SHALL connect to the session target with a 5 s deadline and answer `CH_OK`, or `CH_ERR` with reason `CONNECT_FAILED` (1), `TIMEOUT` (2), `REFUSED` (3), `NO_SOCKET` (4) or `BUSY` (5). LAN end-of-stream SHALL be sent as `FIN`. The device SHALL NOT half-close the LAN socket on the operator's `FIN` (lwIP double-frees the PCB after a half-close); it SHALL close the LAN socket once both sides sent `FIN` and the channel's buffered data is written, or at once on `RST` either way. A LAN reset, a LAN write stalled for 120 s, or a data or `FIN` frame for a channel that is not open SHALL produce `RST`. The operator SHALL reuse a channel id only after the device sent `FIN` or `RST` for it and, after a `FIN`, granted credit for every byte the operator sent.
+The operator SHALL open a channel with `CH_OPEN` on a free channel id 1-4. The device SHALL connect to the session target with a 5 s deadline and answer every `CH_OPEN` with exactly one `CH_OK` or `CH_ERR`, the latter with reason `CONNECT_FAILED` (1), `TIMEOUT` (2), `REFUSED` (3), `NO_SOCKET` (4) or `BUSY` (5), also when the channel is reset before it was answered. LAN end-of-stream SHALL be sent as `FIN`. The device SHALL NOT half-close the LAN socket on the operator's `FIN` (lwIP double-frees the PCB after a half-close); it SHALL close the LAN socket once both sides sent `FIN` and the channel's buffered data is written, or at once on `RST` either way. If the LAN host has not closed 5 s after the operator's `FIN` (and every buffered byte is written), the device SHALL close the LAN socket and send its own `FIN`, so a keep-alive server cannot hold a channel. A LAN reset, a LAN write stalled for 120 s, or a data or `FIN` frame for a channel that is not open SHALL produce `RST`. The operator SHALL reuse a channel id only after the device sent `FIN` or `RST` for it and, after a `FIN`, granted credit for every byte the operator sent.
 
 #### Scenario: Browser loads a page over several channels
 - **WHEN** the operator opens 4 channels to an HTTP server and requests a page and its assets
 - **THEN** every response arrives complete and each channel closes cleanly
+
+#### Scenario: Keep-alive server after the client closed
+- **WHEN** the operator's client closes a channel to an HTTP server that keeps the connection open
+- **THEN** about 5 s later the device closes the LAN socket, sends `FIN`, and the channel id is free again
 
 #### Scenario: Refused connection
 - **WHEN** `CH_OPEN` targets a closed port on a live host

@@ -31,6 +31,7 @@
 #define TUNNEL_COALESCE_MS 10             // Small LAN reads wait this long to fill a frame
 #define TUNNEL_CONNECT_TIMEOUT_MS 5000
 #define TUNNEL_WRITE_STALL_MS (120 * 1000)
+#define TUNNEL_HALF_CLOSE_LINGER_MS 5000 // after the operator's FIN, wait this long for the LAN host to close
 #define TUNNEL_CLOSE_LINGER_MS 2000       // Wait this long for the CLOSED frame's ack
 #define TUNNEL_ACK_DELAY_MS 40
 #define TUNNEL_ACK_EVERY_FRAMES 2

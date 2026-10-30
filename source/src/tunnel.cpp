@@ -48,6 +48,7 @@ namespace Tunnel
         uint32_t connectDeadlineMs;
         uint32_t readableSinceMs; // 0 = not waiting to coalesce
         uint32_t stallSinceMs;    // 0 = writes progressing
+        uint32_t remoteFinSinceMs; // 0 = no FIN from the operator yet
         TunnelLogic::ByteRing ring;
         TunnelLogic::ReceiveCredit in;
         TunnelLogic::SendCredit out;
@@ -311,6 +312,10 @@ namespace Tunnel
     // abort: RST semantics towards the LAN host (linger 0). rst: tell the operator.
     static void _closeChannel(uint8_t id, bool abort, uint8_t rstReason) {
         Channel& c = _ch(id);
+        // Every CH_OPEN gets exactly one CH_OK or CH_ERR: the operator counts the
+        // replies it still owes to opens it gave up on. A caller with a more
+        // specific reason overwrites this one.
+        bool replyOwed = c.state == ChState::CONNECTING || c.okDue;
         if (c.fd >= 0) {
             if (abort) {
                 struct linger lin = {1, 0};
@@ -319,6 +324,7 @@ namespace Tunnel
             close(c.fd);
         }
         _resetChannel(c);
+        if (replyOwed) c.errDue = (uint8_t)TunnelLogic::ChannelError::CONNECT_FAILED;
         if (rstReason != NO_RST) _rstDue[id] = rstReason;
     }
 
@@ -505,6 +511,15 @@ namespace Tunnel
                 _closeChannel(id, true, (uint8_t)TunnelLogic::RstReason::WRITE_STALL);
                 continue;
             }
+            // No half-close (below), so a LAN host that waits for the client's EOF
+            // (HTTP keep-alive, Modbus TCP) would hold the channel forever: after the
+            // operator's FIN, give it a short linger for a last reply, then end our
+            // side as if the LAN had closed.
+            if (c.state == ChState::OPEN && c.remoteFin && !c.lanEof && c.ring.size() == 0 &&
+                TunnelLogic::elapsedMs(now, c.remoteFinSinceMs) >= TUNNEL_HALF_CLOSE_LINGER_MS) {
+                c.lanEof = true;
+                c.finDue = true;
+            }
             // Free once both sides are done: operator FIN, LAN EOF (our FIN went out),
             // buffer written and its credit announced. Never shutdown(SHUT_WR): lwIP
             // freed the PCB behind the netconn after a half-close, and the later
@@ -550,7 +565,10 @@ namespace Tunnel
                 return;
             case Type::FIN:
                 if (_ch(id).state == ChState::FREE) _rstDue[id] = (uint8_t)TunnelLogic::RstReason::NOT_OPEN;
-                else _ch(id).remoteFin = true;
+                else if (!_ch(id).remoteFin) {
+                    _ch(id).remoteFin = true;
+                    _ch(id).remoteFinSinceMs = _stamp(now);
+                }
                 return;
             case Type::RST:
                 if (_ch(id).state != ChState::FREE) _closeChannel(id, true, NO_RST);
