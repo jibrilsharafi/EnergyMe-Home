@@ -2485,8 +2485,8 @@ paths:
   # LAN gateway
   /api/v1/gateway:
     get:
-      summary: Get the LAN gateway switch
-      description: Whether the cloud may run LAN gateway primitives (ping, scan, HTTP, Modbus TCP, UDP) towards private IPv4 targets. Always false in community mode.
+      summary: Get the LAN gateway and tunnel switches
+      description: Whether the cloud may run LAN gateway primitives (ping, scan, HTTP, Modbus TCP, UDP) towards private IPv4 targets, whether it may open a LAN TCP tunnel (needs both switches), and the open tunnel session if any. Always false in community mode.
       tags:
         - MQTT
       responses:
@@ -2503,11 +2503,33 @@ paths:
                     type: boolean
                     description: Whether the LAN gateway is enabled
                     example: false
+                  tunnel:
+                    type: boolean
+                    description: Whether the LAN tunnel is enabled (effective only while the gateway is enabled too)
+                    example: false
+                  tunnel_active:
+                    type: object
+                    nullable: true
+                    description: The open tunnel session, null when none
+                    properties:
+                      sid:
+                        type: string
+                        example: 0123456789abcdef
+                      ip:
+                        type: string
+                        example: 192.168.2.80
+                      port:
+                        type: integer
+                        example: 80
+                      since:
+                        type: integer
+                        description: Unix seconds
+                        example: 1793350000
         '500':
           $ref: '#/components/responses/InternalServerError'
     put:
-      summary: Set the LAN gateway switch
-      description: Enable or disable the LAN gateway. Persisted to NVS and reported in the system shadow as gateway_enabled. Not available in community mode.
+      summary: Set the LAN gateway and tunnel switches
+      description: Enable or disable the LAN gateway and/or the LAN tunnel (at least one field). Persisted to NVS and reported in the system shadow as gateway_enabled and tunnel_enabled. Turning either off closes an open tunnel session at once. Not available in community mode.
       tags:
         - MQTT
       requestBody:
@@ -2516,16 +2538,18 @@ paths:
           application/json:
             schema:
               type: object
-              required:
-                - enabled
               properties:
                 enabled:
                   type: boolean
                   description: Whether to enable or disable the LAN gateway
                   example: true
+                tunnel:
+                  type: boolean
+                  description: Whether to enable or disable the LAN tunnel
+                  example: false
       responses:
         '200':
-          description: LAN gateway switch updated
+          description: LAN gateway settings updated
           content:
             application/json:
               schema:
