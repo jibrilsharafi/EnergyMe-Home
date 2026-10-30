@@ -31,6 +31,8 @@ JSON/base64 would inflate data by a third and add a parse per frame. The ARQ is 
 
 Channel-id reuse: in-order delivery guarantees the device processes the operator's `FIN` before a later `CH_OPEN` on the same id, but the device may still be draining that channel's buffer. The operator therefore reuses an id only after the device's `FIN`/`RST` and, after a `FIN`, a grant covering every byte it sent (the device always flushes its credit when a buffer empties). A `CH_OPEN` on a still-busy id resets the old channel and answers `CH_ERR BUSY`.
 
+No TCP half-close towards the LAN: after `shutdown(SHUT_WR)` lwIP 2.1 (IDF 5.5.1) freed the PCB behind the netconn once the LAN host acknowledged our FIN, and the later `close()` freed it again (heap-poisoning panic in `tcp_free`, reproduced twice on the Home bench under channel churn). The device records the operator's `FIN` and closes the socket once the LAN host has closed too. A LAN protocol that needs a client half-close to finish waits for its own timeout or the session idle limit.
+
 Close handshake: the closing side sends `CLOSE`/`CLOSED` (sequenced) and lingers up to 2 s for its ack, then tears down. The operator tool exits on `CLOSED` or after the linger and reads the terminal status from `GetCommandExecution`.
 
 ### Tasks and ownership
