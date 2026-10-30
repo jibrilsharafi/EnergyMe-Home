@@ -389,6 +389,93 @@ void test_http_chunked_ended(void) {
     TEST_ASSERT_FALSE(httpChunkedEnded(nullptr, 0));
 }
 
+// ============================================================================
+// UTF-8 text bodies
+// ============================================================================
+
+static bool text(const uint8_t *data, size_t len, bool truncated, size_t *textLen) {
+    *textLen = 12345;
+    return utf8TextLength(data, len, truncated, textLen);
+}
+
+void test_utf8_ascii_and_json(void) {
+    size_t n;
+    const char *json = "{\"ok\":true,\"rows\":[1,2]}\r\n\tend";
+    TEST_ASSERT_TRUE(text(u(json), strlen(json), false, &n));
+    TEST_ASSERT_EQUAL_size_t(strlen(json), n);
+}
+
+void test_utf8_multibyte(void) {
+    size_t n;
+    const char *mixed = "\xC3\xA8 \xE2\x82\xAC \xF0\x9F\x98\x80 \xED\x9F\xBF \xF4\x8F\xBF\xBF"; // e-grave, euro, emoji, U+D7FF, U+10FFFF
+    TEST_ASSERT_TRUE(text(u(mixed), strlen(mixed), false, &n));
+    TEST_ASSERT_EQUAL_size_t(strlen(mixed), n);
+}
+
+void test_utf8_rejects_invalid(void) {
+    size_t n;
+    const uint8_t bad[][4] = {
+        {0x80, 0, 0, 0},             // stray continuation
+        {0xC0, 0xAF, 0, 0},          // overlong '/'
+        {0xC1, 0xBF, 0, 0},          // overlong
+        {0xE0, 0x9F, 0xBF, 0},       // overlong 3-byte
+        {0xED, 0xA0, 0x80, 0},       // surrogate U+D800
+        {0xF0, 0x8F, 0xBF, 0xBF},    // overlong 4-byte
+        {0xF4, 0x90, 0x80, 0x80},    // above U+10FFFF
+        {0xF5, 0x80, 0x80, 0x80},    // F5-FF never valid
+        {0xE2, 0x28, 0xA1, 0},       // bad continuation
+    };
+    const size_t lens[] = {1, 2, 2, 3, 3, 4, 4, 4, 3};
+    for (size_t i = 0; i < sizeof(lens) / sizeof(lens[0]); i++) {
+        TEST_ASSERT_FALSE_MESSAGE(text(bad[i], lens[i], false, &n), "untruncated");
+        TEST_ASSERT_FALSE_MESSAGE(text(bad[i], lens[i], true, &n), "truncated");
+    }
+    const uint8_t latin1[] = {'c', 'a', 'f', 0xE9}; // ISO-8859-1, not UTF-8
+    TEST_ASSERT_FALSE(text(latin1, sizeof(latin1), false, &n));
+}
+
+void test_utf8_rejects_nul_and_controls(void) {
+    size_t n;
+    const uint8_t nul[] = {'a', 0x00, 'b'};
+    TEST_ASSERT_FALSE(text(nul, sizeof(nul), false, &n));
+    const uint8_t esc[] = {'a', 0x1B, 'b'};
+    TEST_ASSERT_FALSE(text(esc, sizeof(esc), false, &n));
+    const uint8_t del[] = {'a', 0x7F, 'b'};
+    TEST_ASSERT_TRUE(text(del, sizeof(del), false, &n));
+}
+
+void test_utf8_empty_is_not_text(void) {
+    size_t n;
+    TEST_ASSERT_FALSE(text(u(""), 0, false, &n));
+    TEST_ASSERT_FALSE(utf8TextLength(nullptr, 0, false, &n));
+    TEST_ASSERT_FALSE(utf8TextLength(u("a"), 1, false, nullptr));
+}
+
+void test_utf8_truncated_at_cap(void) {
+    static uint8_t body[RESPONSE_CAP_BYTES];
+    memset(body, 'x', sizeof(body));
+    body[sizeof(body) - 2] = 0xE2; // euro sign cut after its second byte
+    body[sizeof(body) - 1] = 0x82;
+    size_t n;
+    TEST_ASSERT_TRUE(text(body, sizeof(body), true, &n));
+    TEST_ASSERT_EQUAL_size_t(sizeof(body) - 2, n);
+    TEST_ASSERT_FALSE(text(body, sizeof(body), false, &n)); // the same bytes in a complete reply are invalid
+
+    body[sizeof(body) - 1] = 0xF0; // lead byte alone at the very end
+    body[sizeof(body) - 2] = 'x';
+    TEST_ASSERT_TRUE(text(body, sizeof(body), true, &n));
+    TEST_ASSERT_EQUAL_size_t(sizeof(body) - 1, n);
+
+    body[sizeof(body) - 2] = 0xE2; // invalid prefix: a lead byte cannot follow a lead byte
+    TEST_ASSERT_FALSE(text(body, sizeof(body), true, &n));
+}
+
+void test_utf8_truncated_to_nothing_is_not_text(void) {
+    size_t n;
+    const uint8_t lone[] = {0xE2};
+    TEST_ASSERT_FALSE(text(lone, sizeof(lone), true, &n));
+}
+
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_parse_op_known_and_unknown);
@@ -422,5 +509,12 @@ int main(int, char **) {
     RUN_TEST(test_http_method_has_body);
     RUN_TEST(test_http_content_length_digit_cap);
     RUN_TEST(test_http_chunked_ended);
+    RUN_TEST(test_utf8_ascii_and_json);
+    RUN_TEST(test_utf8_multibyte);
+    RUN_TEST(test_utf8_rejects_invalid);
+    RUN_TEST(test_utf8_rejects_nul_and_controls);
+    RUN_TEST(test_utf8_empty_is_not_text);
+    RUN_TEST(test_utf8_truncated_at_cap);
+    RUN_TEST(test_utf8_truncated_to_nothing_is_not_text);
     return UNITY_END();
 }

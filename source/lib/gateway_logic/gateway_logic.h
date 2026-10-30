@@ -82,6 +82,13 @@ enum class Chunked { COMPLETE, INCOMPLETE, MALFORMED };
 // ends before the terminating zero chunk or `out` fills up first.
 Chunked decodeChunked(const uint8_t *in, size_t len, uint8_t *out, size_t cap, size_t *outLen);
 
+// True when a LAN reply can be published as a plain string instead of base64:
+// non-empty, strict UTF-8 (no overlongs, surrogates or code points above
+// U+10FFFF) and no C0 controls other than tab, CR and LF, so the escaped JSON
+// stays at most twice the byte count. When `truncated`, an incomplete trailing
+// sequence cut by the cap is dropped and `textLen` excludes it.
+bool utf8TextLength(const uint8_t *data, size_t len, bool truncated, size_t *textLen);
+
 // ---------------------------------------------------------------------------
 // Modbus TCP
 // ---------------------------------------------------------------------------

@@ -286,6 +286,45 @@ Chunked decodeChunked(const uint8_t *in, size_t len, uint8_t *out, size_t cap, s
     return Chunked::INCOMPLETE;
 }
 
+bool utf8TextLength(const uint8_t *data, size_t len, bool truncated, size_t *textLen) {
+    if (data == nullptr || textLen == nullptr) return false;
+    size_t pos = 0;
+    while (pos < len) {
+        uint8_t lead = data[pos];
+        size_t continuation;
+        uint8_t low = 0x80, high = 0xBF; // allowed range of the first continuation byte
+        if (lead < 0x80) {
+            if (lead < 0x20 && lead != '\t' && lead != '\n' && lead != '\r') return false;
+            pos++;
+            continue;
+        } else if (lead >= 0xC2 && lead <= 0xDF) {
+            continuation = 1;
+        } else if (lead >= 0xE0 && lead <= 0xEF) {
+            continuation = 2;
+            if (lead == 0xE0) low = 0xA0;  // overlong
+            if (lead == 0xED) high = 0x9F; // UTF-16 surrogates
+        } else if (lead >= 0xF0 && lead <= 0xF4) {
+            continuation = 3;
+            if (lead == 0xF0) low = 0x90;  // overlong
+            if (lead == 0xF4) high = 0x8F; // above U+10FFFF
+        } else {
+            return false; // stray continuation byte, C0/C1 overlong or F5-FF
+        }
+        for (size_t i = 1; i <= continuation; i++) {
+            if (pos + i >= len) {
+                if (!truncated) return false;
+                len = pos; // a valid prefix cut by the cap: drop it
+                break;
+            }
+            uint8_t byte = data[pos + i];
+            if (byte < (i == 1 ? low : 0x80) || byte > (i == 1 ? high : 0xBF)) return false;
+        }
+        if (pos < len) pos += continuation + 1;
+    }
+    *textLen = len;
+    return len > 0;
+}
+
 bool isModbusReadFunction(uint8_t fc) { return fc >= 1 && fc <= 4; }
 
 bool isModbusWriteFunction(uint8_t fc) { return fc == 5 || fc == 6 || fc == 15 || fc == 16; }
