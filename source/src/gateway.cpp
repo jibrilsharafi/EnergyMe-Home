@@ -190,17 +190,23 @@ namespace Gateway
         return TargetCheck::OK;
     }
 
+    const char* targetCheckDescription(TargetCheck check) {
+        switch (check) {
+            case TargetCheck::NOT_PRIVATE: return "Target must be a private IPv4 literal";
+            case TargetCheck::NOT_ALLOWED: return "Target is this device or a network/broadcast address";
+            default: return nullptr;
+        }
+    }
+
     static bool _readTarget(JsonObjectConst args, JsonDocument& doc, const char** ip, uint8_t octets[4]) {
         *ip = _readString(args, "ip", nullptr);
         if (*ip == nullptr) {
             _reject(doc, "BAD_ARGS", "ip must be an IPv4 string");
             return false;
         }
-        switch (validateTarget(*ip, octets)) {
-            case TargetCheck::OK: return true;
-            case TargetCheck::NOT_PRIVATE: _reject(doc, "TARGET_NOT_PRIVATE", "Target must be a private IPv4 literal"); return false;
-            case TargetCheck::NOT_ALLOWED: _reject(doc, "TARGET_NOT_ALLOWED", "Target is this device or a network/broadcast address"); return false;
-        }
+        TargetCheck check = validateTarget(*ip, octets);
+        if (check == TargetCheck::OK) return true;
+        _reject(doc, check == TargetCheck::NOT_PRIVATE ? "TARGET_NOT_PRIVATE" : "TARGET_NOT_ALLOWED", targetCheckDescription(check));
         return false;
     }
 
