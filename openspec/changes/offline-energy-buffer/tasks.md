@@ -31,7 +31,7 @@
 
 ## 6. Verification
 
-- [ ] 6.1 `pio test -e native` (WSL), then build both `esp32s3-dev` and `esp32s3-prod`.
+- [x] 6.1 `pio test -e native` (WSL), then build both `esp32s3-dev` and `esp32s3-prod`.
 - [ ] 6.2 Bench on .174 and .80 against dev cloud: block WAN for about 2 h, restore it, and check in dev ClickHouse that `meter_state` has per-minute active energy for the gap with no duplicate keys after `FINAL`.
 - [ ] 6.3 Bench: reboot mid-outage and mid-replay. Check that the segments written before the reboot are replayed and that a re-sent hour merges without duplicates.
 - [x] 6.4 Code-review and simplification agents on the branch diff, then fix findings and re-run 6.1.
