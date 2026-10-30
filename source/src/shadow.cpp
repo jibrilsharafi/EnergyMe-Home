@@ -14,6 +14,7 @@
 #include "customwifi.h"
 #include "factory_keys.h"
 #include "gateway.h"
+#include "tunnel.h"
 #include "globals.h"
 #include "hardware_profile.h"
 #include "issueregistry.h"
@@ -652,6 +653,20 @@ static void _reportSystem(JsonDocument& doc) {
     rep["log_level_print"] = AdvancedLogger::logLevelToString(AdvancedLogger::getPrintLevel());
     rep["log_level_save"] = AdvancedLogger::logLevelToString(AdvancedLogger::getSaveLevel());
     rep["gateway_enabled"] = Gateway::isEnabled();
+    rep["tunnel_enabled"] = Tunnel::isEnabled();
+    uint16_t ports[TunnelLogic::PORTS_MAX];
+    size_t portCount = Tunnel::getPorts(ports, TunnelLogic::PORTS_MAX);
+    JsonArray portList = rep["tunnel_ports"].to<JsonArray>();
+    for (size_t i = 0; i < portCount; i++) portList.add(ports[i]);
+    Tunnel::ActiveInfo active;
+    if (Tunnel::getActive(&active)) {
+        rep["tunnel_active"]["sid"] = active.sid;
+        rep["tunnel_active"]["ip"] = active.ip;
+        rep["tunnel_active"]["port"] = active.port;
+        rep["tunnel_active"]["since"] = active.since;
+    } else {
+        rep["tunnel_active"] = nullptr;
+    }
 }
 
 // Parse a string log-level delta field. Returns the level (>=0) to apply, or -1
@@ -745,6 +760,44 @@ static bool _applySystem(JsonObjectConst delta, JsonObject reported) {
             }
         } else {
             LOG_WARNING("Rejected gateway_enabled: not a boolean");
+        }
+    }
+
+    v = delta["tunnel_enabled"];
+    if (!v.isNull()) {
+        if (v.is<bool>()) {
+            bool e = v.as<bool>();
+            if (Tunnel::setEnabled(e)) {
+                reported["tunnel_enabled"] = e;
+                applied = true;
+            } else {
+                LOG_WARNING("Could not apply tunnel_enabled");
+            }
+        } else {
+            LOG_WARNING("Rejected tunnel_enabled: not a boolean");
+        }
+    }
+
+    v = delta["tunnel_ports"];
+    if (!v.isNull()) {
+        uint16_t ports[TunnelLogic::PORTS_MAX];
+        size_t count = 0;
+        bool valid = v.is<JsonArrayConst>() && v.as<JsonArrayConst>().size() <= TunnelLogic::PORTS_MAX;
+        if (valid) {
+            for (JsonVariantConst port : v.as<JsonArrayConst>()) {
+                if (!port.is<int>() || port.as<int>() < 1 || port.as<int>() > 65535) {
+                    valid = false;
+                    break;
+                }
+                ports[count++] = (uint16_t)port.as<int>();
+            }
+        }
+        if (valid && Tunnel::setPorts(ports, count)) {
+            JsonArray applied_ = reported["tunnel_ports"].to<JsonArray>();
+            for (size_t i = 0; i < count; i++) applied_.add(ports[i]);
+            applied = true;
+        } else {
+            LOG_WARNING("Rejected tunnel_ports: expected up to %u ports 1-65535", (unsigned)TunnelLogic::PORTS_MAX);
         }
     }
 
