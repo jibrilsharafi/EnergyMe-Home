@@ -58,7 +58,6 @@ namespace Tunnel
         bool lanEof;
         bool finDue;
         bool finSent;
-        bool shutWr;
     };
 
     // Persistent settings
@@ -437,7 +436,7 @@ namespace Tunnel
             Channel& c = _ch(id);
             if (c.state == ChState::FREE) continue;
             bool watch = false;
-            if (c.state == ChState::CONNECTING || (c.ring.size() > 0 && !c.shutWr)) {
+            if (c.state == ChState::CONNECTING || c.ring.size() > 0) {
                 FD_SET(c.fd, &writeSet);
                 watch = true;
             }
@@ -487,11 +486,16 @@ namespace Tunnel
                 _closeChannel(id, true, (uint8_t)TunnelLogic::RstReason::WRITE_STALL);
                 continue;
             }
-            if (c.state == ChState::OPEN && c.remoteFin && !c.shutWr && c.ring.size() == 0) {
-                shutdown(c.fd, SHUT_WR);
-                c.shutWr = true;
+            // Free once both sides are done: operator FIN, LAN EOF (our FIN went out),
+            // buffer written and its credit announced. Never shutdown(SHUT_WR): lwIP
+            // freed the PCB behind the netconn after a half-close, and the later
+            // close() freed it again (heap-poisoning panic in tcp_free, twice on the
+            // bench). A LAN protocol that waits for a client half-close therefore
+            // waits for its own timeout or the session's idle limit instead.
+            if (c.state == ChState::OPEN && c.remoteFin && c.lanEof && c.finSent && c.ring.size() == 0 &&
+                !c.in.shouldAdvertise()) {
+                _closeChannel(id, false, NO_RST);
             }
-            if (c.finSent && c.shutWr && c.ring.size() == 0 && !c.in.shouldAdvertise()) _closeChannel(id, false, NO_RST);
         }
     }
 
