@@ -33,7 +33,7 @@ namespace OfflineEnergy
     void begin();
 
     // Appends one record holding `readings`, trimming old data first. The
-    // record is based on its earliest reading rather than the nominal minute,
+    // record is based on its latest reading rather than the nominal minute,
     // so a capture that ran late still fits the codec's per-channel offset.
     // Dropped when `generation` is stale, i.e. the buffer was cleared since the
     // readings were taken. Returns false when nothing was stored.

@@ -2677,7 +2677,7 @@ namespace Mqtt
 
         if (_publishJsonStreaming(doc, _mqttTopicEnergy)) {
             _lastLiveEnergyBoundaryUnixSecond = _nextEnergyPublishUnixSecond;
-            if (_heldCaptureCount > 0 && _heldCaptureBoundary == _nextEnergyPublishUnixSecond) _heldCaptureCount = 0;
+            if (_heldCaptureBoundary == _nextEnergyPublishUnixSecond) _heldCaptureCount = 0;
             _publishMqtt.energy = false;
             _nextEnergyPublishUnixSecond = MqttGridSchedule::nextAlignedBoundarySeconds(CustomTime::getUnixTime(), MQTT_ENERGY_PUBLISH_ALIGN_SECONDS);
         }
@@ -2957,6 +2957,12 @@ namespace Mqtt
         }
     }
 
+    static void _flushHeldCapture() {
+        if (_heldCaptureCount == 0) return;
+        OfflineEnergy::append(_heldCapture, _heldCaptureCount, _heldCaptureGeneration);
+        _heldCaptureCount = 0;
+    }
+
     static void _checkCloudOutageRestart(bool linkUp, bool connected) {
         uint64_t now = millis64();
         uint64_t elapsed = now - _lastOutageTickMillis;
@@ -2982,16 +2988,22 @@ namespace Mqtt
 
         uint64_t nowUnixSecond = CustomTime::getUnixTime();
 
-        // Clock stepped back: re-arm instead of waiting for it to catch up
+        // Clock stepped back: re-arm both targets instead of waiting for the clock to catch up
         if (_nextOfflineCaptureUnixSecond > nowUnixSecond + 2 * MQTT_ENERGY_PUBLISH_ALIGN_SECONDS) {
+            _flushHeldCapture();
             _nextOfflineCaptureUnixSecond = 0;
-            _heldCaptureCount = 0;
+            _nextEnergyPublishUnixSecond = 0;
+            _publishMqtt.energy = false;
         }
 
-        // Disconnected with a minute still held: its live publish can no longer happen
+        // Disconnected with a minute still held: it goes to flash, so a live retry of the same
+        // boundary after a brief link flap must not send it again with a later timestamp
         if (!connected && _heldCaptureCount > 0) {
-            OfflineEnergy::append(_heldCapture, _heldCaptureCount, _heldCaptureGeneration);
-            _heldCaptureCount = 0;
+            if (_nextEnergyPublishUnixSecond == _heldCaptureBoundary) {
+                _publishMqtt.energy = false;
+                _nextEnergyPublishUnixSecond = 0;
+            }
+            _flushHeldCapture();
         }
 
         if (_nextOfflineCaptureUnixSecond == 0) {
@@ -3008,10 +3020,7 @@ namespace Mqtt
         }
 
         // The minute held one boundary ago never made it out live (a live success clears it in _publishEnergy)
-        if (_heldCaptureCount > 0) {
-            OfflineEnergy::append(_heldCapture, _heldCaptureCount, _heldCaptureGeneration);
-            _heldCaptureCount = 0;
-        }
+        _flushHeldCapture();
 
         uint64_t boundary = _nextOfflineCaptureUnixSecond;
         _nextOfflineCaptureUnixSecond = MqttGridSchedule::nextAlignedBoundarySeconds(nowUnixSecond, MQTT_ENERGY_PUBLISH_ALIGN_SECONDS);
@@ -3020,13 +3029,9 @@ namespace Mqtt
         if (_lastLiveEnergyBoundaryUnixSecond == boundary) return;
 
         _snapshotActiveEnergy((uint32_t)boundary);
-        if (_heldCaptureCount == 0) return;
 
         // Offline: no live publish can follow, write it now rather than a minute later
-        if (!connected) {
-            OfflineEnergy::append(_heldCapture, _heldCaptureCount, _heldCaptureGeneration);
-            _heldCaptureCount = 0;
-        }
+        if (!connected) _flushHeldCapture();
     }
 
     static void _checkOfflineEnergyReplay() {

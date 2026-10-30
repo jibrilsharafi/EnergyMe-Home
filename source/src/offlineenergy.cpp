@@ -16,6 +16,7 @@ namespace OfflineEnergy
     // replay never have to scan the directory
     static Segment* _segments = nullptr;
     static size_t _segmentCount = 0;
+    static volatile uint32_t _totalBytes = 0; // Kept under the mutex, read lock-free by statistics from other tasks
 
     // Replay position inside the oldest segment; offered by prepareReplayChunk()
     // and only applied by commitReplayChunk() once the chunk is published
@@ -52,6 +53,7 @@ namespace OfflineEnergy
             _pathFor(_segments[i].hourUnixSeconds, path, sizeof(path));
             if (!LittleFS.remove(path)) LOG_WARNING("Failed to remove offline energy segment %s", path);
             if (_segments[i].hourUnixSeconds == _replayHour) _resetReplayCursor();
+            _totalBytes = _totalBytes - (uint32_t)_segments[i].bytes;
         }
         memmove(_segments, _segments + count, (_segmentCount - count) * sizeof(Segment));
         _segmentCount -= count;
@@ -63,17 +65,20 @@ namespace OfflineEnergy
         while (pos > 0 && _segments[pos - 1].hourUnixSeconds > hour) pos--;
         if (pos > 0 && _segments[pos - 1].hourUnixSeconds == hour) {
             _segments[pos - 1].bytes += bytes;
+            _totalBytes = _totalBytes + (uint32_t)bytes;
             return true;
         }
         if (_segmentCount >= OFFLINE_ENERGY_MAX_SEGMENTS) return false;
         memmove(_segments + pos + 1, _segments + pos, (_segmentCount - pos) * sizeof(Segment));
         _segments[pos] = {hour, bytes};
         _segmentCount++;
+        _totalBytes = _totalBytes + (uint32_t)bytes;
         return true;
     }
 
     static void _scanDirectory() {
         _segmentCount = 0;
+        _totalBytes = 0;
         if (!LittleFS.exists(OFFLINE_ENERGY_DIR) && !LittleFS.mkdir(OFFLINE_ENERGY_DIR)) {
             LOG_ERROR("Failed to create %s", OFFLINE_ENERGY_DIR);
             return;
@@ -123,11 +128,13 @@ namespace OfflineEnergy
     bool append(const OfflineEnergyRecord::ChannelReading* readings, size_t count, uint32_t generation) {
         if (!_isReady() || readings == nullptr || count == 0) return false;
 
-        uint64_t earliestMs = UINT64_MAX;
+        // Based on the latest reading: a channel whose reads stalled keeps an old timestamp
+        // and is the one that falls out of the offset range, not every fresh channel
+        uint64_t latestMs = 0;
         for (size_t i = 0; i < count; i++) {
-            if (readings[i].unixTimeMs < earliestMs) earliestMs = readings[i].unixTimeMs;
+            if (readings[i].unixTimeMs > latestMs) latestMs = readings[i].unixTimeMs;
         }
-        uint32_t boundaryUnixSeconds = (uint32_t)(earliestMs / 1000);
+        uint32_t boundaryUnixSeconds = (uint32_t)(latestMs / 1000);
 
         uint8_t record[OfflineEnergyRecord::MAX_RECORD_BYTES];
         size_t length = OfflineEnergyRecord::encode(boundaryUnixSeconds, readings, count, record, sizeof(record));
@@ -225,6 +232,7 @@ namespace OfflineEnergy
         if (!file) {
             LOG_WARNING("Offline energy segment %s missing, dropping it from the table", path);
             _dropFront(1);
+            statistics.mqttOfflineEnergySegmentsDropped++;
             releaseMutex(&_mutex);
             return false;
         }
@@ -285,15 +293,13 @@ namespace OfflineEnergy
         _pendingOffset = _replayOffset + pos;
         _pendingSegmentDone = _pendingOffset >= fileSize;
         _pendingValid = true;
+        releaseMutex(&_mutex);
 
         // Nothing publishable in what was read (stale or corrupt): move past it now
         if (elements == 0) {
-            releaseMutex(&_mutex);
             commitReplayChunk();
             return false;
         }
-
-        releaseMutex(&_mutex);
         return true;
     }
 
@@ -350,9 +356,6 @@ namespace OfflineEnergy
     }
 
     uint32_t getBufferedBytes() {
-        if (_segments == nullptr) return 0;
-        size_t total = 0;
-        for (size_t i = 0; i < _segmentCount; i++) total += _segments[i].bytes;
-        return (uint32_t)total;
+        return _totalBytes;
     }
 }
