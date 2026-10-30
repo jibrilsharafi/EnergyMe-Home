@@ -248,6 +248,11 @@ namespace Mqtt
     // stay wedged until keepalive times out. Safe from any task (sets a flag).
     void requestReconnect();
 
+#ifdef ENV_DEV
+    // Bench aid: keeps the cloud session down for `seconds` (0 ends it early)
+    void simulateCloudOutage(uint32_t seconds);
+#endif
+
     // Cloud services methods
     void setCloudServicesEnabled(bool enabled);
     bool isCloudServicesEnabled();

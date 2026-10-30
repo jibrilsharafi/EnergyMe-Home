@@ -3109,6 +3109,21 @@ namespace CustomServer
         });
 
         LOG_DEBUG("Registered dev-only crash test endpoints: null-deref, abort, stack-overflow");
+
+        // Bench aid for the offline energy buffer: drops the cloud session and keeps it down
+        // for `seconds` (0 ends it), without touching the LAN the web UI and tunnel use
+        server.on("/api/v1/debug/mqtt/outage", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
+            if (!_validateRequest(request, "POST")) return;
+
+            long seconds = request->hasParam("seconds") ? request->getParam("seconds")->value().toInt() : -1;
+            if (seconds < 0 || seconds > 24L * 60 * 60) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "seconds must be 0..86400");
+                return;
+            }
+            Mqtt::simulateCloudOutage((uint32_t)seconds);
+            _sendSuccessResponse(request, "Simulated cloud outage set");
+        });
     }
 #endif
 

@@ -69,6 +69,20 @@ namespace Mqtt
         _reconnectRequested = true;
     }
 
+#ifdef ENV_DEV
+    static volatile uint64_t _simulatedOutageUntilMillis = 0;
+
+    void simulateCloudOutage(uint32_t seconds) {
+        _simulatedOutageUntilMillis = seconds == 0 ? 0 : millis64() + (uint64_t)seconds * 1000;
+        if (seconds > 0) _reconnectRequested = true;
+        LOG_WARNING("Simulated cloud outage %s (%lu s)", seconds > 0 ? "started" : "ended", (unsigned long)seconds);
+    }
+
+    static bool _isSimulatedOutage() {
+        return _simulatedOutageUntilMillis != 0 && millis64() < _simulatedOutageUntilMillis;
+    }
+#endif
+
     // Connection state fact for the issue registry, updated once per task loop
     // (the registry tick must not call _clientMqtt.connected() cross-task)
     static volatile bool _lastConnectedState = false;
@@ -3458,6 +3472,10 @@ namespace Mqtt
             LOG_DEBUG("Waiting for time sync before MQTT connection");
             return;
         }
+
+#ifdef ENV_DEV
+        if (_isSimulatedOutage()) return;
+#endif
 
         if (millis64() >= _nextMqttConnectionAttemptMillis) {
             // Small delay to allow LWIP/SNTP operations to complete
