@@ -33,6 +33,8 @@ import boto3
 from awscrt import auth, mqtt5
 from awsiot import mqtt5_client_builder
 
+from . import protocol as p
+
 from .operator_session import OperatorSession
 
 
@@ -143,9 +145,14 @@ async def run_tunnel(args: argparse.Namespace, cloud: Cloud) -> int:
 
     def on_success(_data) -> None:
         # Clean session: the /u subscription is gone after every reconnect.
+        async def resubscribe() -> None:
+            await subscribe()
+            session.set_connected(True)  # resend only once frames can come back
+
         def resumed() -> None:
             if connected.is_set():
-                loop.create_task(subscribe())
+                loop.create_task(resubscribe())
+                return
             session.set_connected(True)
             connected.set()
 
@@ -200,8 +207,10 @@ async def run_tunnel(args: argparse.Namespace, cloud: Cloud) -> int:
             reason = await session.wait_closed()
             if session.closed_by_device:
                 print("  device closed the session:", reason.name)
-            else:  # the device may still be holding it (e.g. its MQTT is down): it reports later
+            elif reason == p.CloseReason.OPERATOR_LOST:  # the device may still hold it (e.g. its MQTT is down)
                 print("  no frame from the device for 30 s, giving up; waiting for its terminal status")
+            else:
+                print("  session ended:", reason.name)
         except asyncio.CancelledError:
             print("  closing...")
             await session.close()
