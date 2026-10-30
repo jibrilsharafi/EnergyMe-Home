@@ -2488,7 +2488,8 @@ namespace Mqtt
         memcpy(_otaCurrentSignature, decodedSignature, decodedSignatureLen);
         _otaCurrentSignatureLen = decodedSignatureLen;
 
-        Tunnel::requestClose(TunnelLogic::CloseReason::OTA_STARTED); // before the download takes the heap
+        // Before the download takes the heap: the LAN sockets are gone when this returns.
+        Tunnel::closeAndWait(TunnelLogic::CloseReason::OTA_STARTED, TUNNEL_OTA_CLOSE_WAIT_MS);
 
         LOG_DEBUG("Starting OTA task with %d bytes stack", OTA_TASK_STACK_SIZE);
 

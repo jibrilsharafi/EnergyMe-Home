@@ -44,6 +44,7 @@
 #define TUNNEL_OPEN_MIN_MAX_BLOCK (16 * 1024)
 #define TUNNEL_LOW_HEAP (30 * 1024)
 #define TUNNEL_KEEPALIVE_IDLE_S 60
+#define TUNNEL_OTA_CLOSE_WAIT_MS 500
 #define TUNNEL_SID_BUFFER_SIZE (TunnelLogic::SID_LENGTH + 1)
 #define TUNNEL_IP_BUFFER_SIZE 16
 #define TUNNEL_MQTT_UPLINK_BUDGET 4       // Frames the MQTT task publishes per loop iteration
@@ -81,6 +82,10 @@ namespace Tunnel
 
     // Any task: close the open session (no-op without one, first reason wins).
     void requestClose(TunnelLogic::CloseReason reason);
+
+    // requestClose() then wait (bounded) until the LAN sockets are closed. The
+    // CLOSED frame and terminal status follow from the MQTT task later.
+    void closeAndWait(TunnelLogic::CloseReason reason, uint32_t timeoutMs);
 
     // Valid from open() until finish(); nullptr otherwise.
     const char* downlinkTopic();

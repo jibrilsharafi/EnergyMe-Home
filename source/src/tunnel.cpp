@@ -970,6 +970,11 @@ namespace Tunnel
         if (_taskHandle != nullptr) xTaskNotify(_taskHandle, NOTIFY_WORK_BIT, eSetBits);
     }
 
+    void closeAndWait(CloseReason reason, uint32_t timeoutMs) {
+        requestClose(reason);
+        for (uint32_t waited = 0; _phase.load() == Phase::ACTIVE && waited < timeoutMs; waited += 10) delay(10);
+    }
+
     const char* downlinkTopic() { return _phase.load() == Phase::IDLE ? nullptr : _downTopic; }
     const char* uplinkTopic() { return _phase.load() == Phase::IDLE ? nullptr : _upTopic; }
 
