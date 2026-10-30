@@ -313,13 +313,13 @@ bool utf8TextLength(const uint8_t *data, size_t len, bool truncated, size_t *tex
         for (size_t i = 1; i <= continuation; i++) {
             if (pos + i >= len) {
                 if (!truncated) return false;
-                len = pos; // a valid prefix cut by the cap: drop it
-                break;
+                *textLen = pos; // a valid prefix cut by the cap: drop it
+                return pos > 0;
             }
             uint8_t byte = data[pos + i];
             if (byte < (i == 1 ? low : 0x80) || byte > (i == 1 ? high : 0xBF)) return false;
         }
-        if (pos < len) pos += continuation + 1;
+        pos += continuation + 1;
     }
     *textLen = len;
     return len > 0;
