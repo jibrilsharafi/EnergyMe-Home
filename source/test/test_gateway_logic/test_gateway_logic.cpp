@@ -25,6 +25,8 @@ void test_parse_op_known_and_unknown(void) {
     TEST_ASSERT_TRUE(parseOp("http_request") == Op::HTTP_REQUEST);
     TEST_ASSERT_TRUE(parseOp("net_scan") == Op::NET_SCAN);
     TEST_ASSERT_TRUE(parseOp("udp_send") == Op::UDP_SEND);
+    TEST_ASSERT_TRUE(parseOp("tunnel_open") == Op::TUNNEL_OPEN);
+    TEST_ASSERT_TRUE(parseOp("tunnel_close") == Op::TUNNEL_CLOSE);
     TEST_ASSERT_TRUE(parseOp("telnet") == Op::UNKNOWN);
     TEST_ASSERT_TRUE(parseOp("HTTP_REQUEST") == Op::UNKNOWN);
     TEST_ASSERT_TRUE(parseOp(nullptr) == Op::UNKNOWN);

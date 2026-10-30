@@ -184,21 +184,24 @@ namespace Gateway
         return local;
     }
 
+    TargetCheck validateTarget(const char* ip, uint8_t octets[4]) {
+        if (!GatewayLogic::parseIpv4(ip, octets) || !GatewayLogic::isPrivateIpv4(octets)) return TargetCheck::NOT_PRIVATE;
+        if (_isLocalOrBroadcast(octets)) return TargetCheck::NOT_ALLOWED;
+        return TargetCheck::OK;
+    }
+
     static bool _readTarget(JsonObjectConst args, JsonDocument& doc, const char** ip, uint8_t octets[4]) {
         *ip = _readString(args, "ip", nullptr);
         if (*ip == nullptr) {
             _reject(doc, "BAD_ARGS", "ip must be an IPv4 string");
             return false;
         }
-        if (!GatewayLogic::parseIpv4(*ip, octets) || !GatewayLogic::isPrivateIpv4(octets)) {
-            _reject(doc, "TARGET_NOT_PRIVATE", "Target must be a private IPv4 literal");
-            return false;
+        switch (validateTarget(*ip, octets)) {
+            case TargetCheck::OK: return true;
+            case TargetCheck::NOT_PRIVATE: _reject(doc, "TARGET_NOT_PRIVATE", "Target must be a private IPv4 literal"); return false;
+            case TargetCheck::NOT_ALLOWED: _reject(doc, "TARGET_NOT_ALLOWED", "Target is this device or a network/broadcast address"); return false;
         }
-        if (_isLocalOrBroadcast(octets)) {
-            _reject(doc, "TARGET_NOT_ALLOWED", "Target is this device or a network/broadcast address");
-            return false;
-        }
-        return true;
+        return false;
     }
 
     static bool _readPort(JsonObjectConst args, int64_t defaultPort, JsonDocument& doc, uint16_t* port) {
@@ -1041,6 +1044,20 @@ namespace Gateway
         }
         releaseMutex(&_stateMutex);
         return persisted;
+    }
+
+    bool parseArgs(JsonVariantConst args, JsonDocument& out) {
+        if (args.is<JsonObjectConst>()) {
+            if (measureJson(args) > GATEWAY_ARGS_MAX_BYTES) return false;
+            return out.set(args);
+        }
+        const char* encoded = args.is<const char*>() ? args.as<const char*>() : nullptr;
+        uint8_t* decoded = nullptr;
+        size_t length = 0;
+        if (encoded == nullptr || !_decodeBase64(encoded, &decoded, &length, GATEWAY_ARGS_MAX_BYTES)) return false;
+        bool ok = !deserializeJson(out, (const char*)decoded, length);
+        free(decoded);
+        return ok;
     }
 
     SubmitResult submit(const char* executionId, Op op, JsonVariantConst args) {

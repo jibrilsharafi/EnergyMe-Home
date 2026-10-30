@@ -42,6 +42,16 @@ namespace Gateway
     bool isEnabled();
     bool setEnabled(bool enabled); // Persists to NVS; false if not persisted. Used by the system shadow and the REST emergency switch
 
+    // Same target rules as the primitives: strict private IPv4 literal, not this
+    // device and not a network/broadcast address of its subnets. Shared with the
+    // LAN tunnel. `octets` is filled on success.
+    enum class TargetCheck { OK, NOT_PRIVATE, NOT_ALLOWED };
+    TargetCheck validateTarget(const char* ip, uint8_t octets[4]);
+
+    // Decodes `args` (a JSON object, or a string holding its base64 encoding) into
+    // `out`. False when neither form parses or the decoded JSON exceeds GATEWAY_ARGS_MAX_BYTES.
+    bool parseArgs(JsonVariantConst args, JsonDocument& out);
+
     enum class SubmitResult { ACCEPTED, NOT_ENABLED, BUSY, BAD_ARGS, NO_MEMORY };
 
     // Hands a request to the gateway task. `args` is the JSON object itself
