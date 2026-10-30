@@ -91,7 +91,7 @@ void test_no_segments_and_no_space_cannot_append(void) {
 // ============================================================================
 
 void test_name_round_trip(void) {
-    char name[NAME_BUFFER_SIZE];
+    char name[SEGMENT_NAME_BUFFER_SIZE];
     TEST_ASSERT_TRUE(formatName(HOUR, name, sizeof(name)));
     TEST_ASSERT_EQUAL_STRING("1793318400.bin", name);
     uint32_t hour = 0;

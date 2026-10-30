@@ -15,7 +15,7 @@
 namespace OfflineEnergySegments {
 
 constexpr uint32_t SEGMENT_SECONDS = 3600;
-constexpr size_t NAME_BUFFER_SIZE = 16; // "<10-digit hour>.bin" + null terminator
+constexpr size_t SEGMENT_NAME_BUFFER_SIZE = 16; // "<10-digit hour>.bin" + null terminator
 
 struct Segment {
     uint32_t hourUnixSeconds;
