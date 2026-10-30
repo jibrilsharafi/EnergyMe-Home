@@ -154,9 +154,12 @@
 #define MQTT_METER_PUBLISH_MAX_INTERVAL_MS_MAX (24UL * 60 * 60 * 1000) // 24 h ceiling - a long interval is just "batch a lot"
 
 #define MQTT_INITIAL_RETRY_INTERVAL (15 * 1000) // Base delay for exponential backoff in milliseconds
-#define MQTT_MAX_RETRY_INTERVAL (60 * 60 * 1000) // Maximum delay for exponential backoff in milliseconds
+#define MQTT_MAX_RETRY_INTERVAL (10 * 60 * 1000) // Maximum delay for exponential backoff in milliseconds. Short enough that the offline energy replay starts soon after the link returns
 #define MQTT_RETRY_MULTIPLIER 2 // Multiplier for exponential backoff
-#define MQTT_MAX_CONNECTION_ATTEMPTS 10 // Maximum number of connection attempts before restarting the device. High since we don't want a reboot cycle
+// Restart only after this long without a successful connect while the network link is up.
+// The restart recovers a wedged TLS/lwIP stack; it does nothing for a WAN outage, and without
+// an RTC it can cost the valid clock the offline energy buffer depends on - hence a full day.
+#define MQTT_MAX_DISCONNECTED_BEFORE_RESTART_MS (24ULL * 60 * 60 * 1000)
 #define MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY "en_cloud"
 #define MQTT_PREFERENCES_SEND_POWER_DATA_KEY "send_power"
 #define MQTT_PREFERENCES_SEND_GRID_DATA_KEY "send_grid"

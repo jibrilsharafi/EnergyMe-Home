@@ -60,6 +60,7 @@ namespace Mqtt
     // Connection attempt tracking
     static uint32_t _mqttConnectionAttempt = 0;
     static uint64_t _nextMqttConnectionAttemptMillis = 0;
+    static uint64_t _lastMqttConnectedMillis = 0; // Last successful connect (or task start), for the outage restart
 
     // Set from other tasks on interface failover; consumed by _handleConnectedState.
     static volatile bool _reconnectRequested = false;
@@ -1010,7 +1011,8 @@ namespace Mqtt
 
         _nextMqttConnectionAttemptMillis = 0;
         _mqttConnectionAttempt = 0;
-        
+        _lastMqttConnectedMillis = millis64();
+
         LOG_DEBUG("Starting MQTT task with %d bytes stack", MQTT_TASK_STACK_SIZE);
 
         BaseType_t result = xTaskCreate(
@@ -2949,6 +2951,7 @@ namespace Mqtt
 
             _mqttConnectionAttempt = 0; // Reset attempt counter on success
             _nextMqttConnectionAttemptMillis = 0; // Reset next attempt time
+            _lastMqttConnectedMillis = millis64();
             statistics.mqttConnections++;
 
             _subscribeToTopics();
@@ -2975,12 +2978,6 @@ namespace Mqtt
                 } else {
                     LOG_ERROR("MQTT connection failed");
                 }
-            }
-
-            // If we exceed the maximum number of connection attempts, we restart the device
-            if (_mqttConnectionAttempt >= MQTT_MAX_CONNECTION_ATTEMPTS) {
-                LOG_ERROR("Exceeded maximum MQTT connection attempts. Restarting device...");
-                setRestartSystem("Exceeded maximum MQTT connection attempts");
             }
 
             uint64_t backoffDelay = calculateExponentialBackoff(_mqttConnectionAttempt, MQTT_INITIAL_RETRY_INTERVAL, MQTT_MAX_RETRY_INTERVAL, MQTT_RETRY_MULTIPLIER);
@@ -3360,6 +3357,14 @@ namespace Mqtt
         // drop, and leaving it set would kill the FIRST session established over
         // the new route for no reason.
         _reconnectRequested = false;
+
+        // Checked before the time-sync wait: a WAN outage also blocks NTP, and the
+        // restart must still fire after a day of link-up-but-no-cloud
+        if (millis64() - _lastMqttConnectedMillis >= MQTT_MAX_DISCONNECTED_BEFORE_RESTART_MS) {
+            LOG_ERROR("No MQTT connection for %llu ms with the network link up. Restarting device...", MQTT_MAX_DISCONNECTED_BEFORE_RESTART_MS);
+            setRestartSystem("No MQTT connection for 24 hours");
+            return;
+        }
 
         // Wait for time sync before attempting connection to avoid LWIP lock conflicts
         if (!CustomTime::isTimeSynched()) {
