@@ -135,10 +135,13 @@ public:
     void reset();
     void sample(uint32_t rttMs);
     void backoff();
-    // Ack progress proves the path works again: drop the backoff even without a
-    // Karn-valid sample (at 20 % loss most acked frames were resends, so the RTO
-    // otherwise stayed at 5 s and a lost tail frame waited that long).
-    void clearBackoff();
+    // Ack progress without a Karn-valid sample (at 20 % loss most acked frames
+    // were resends): drop the backoff, but never below `observedMs`, the time
+    // from the newest freed frame's first send to this ack. That bound keeps a
+    // risen RTT from being met with ever-repeating spurious timeouts.
+    void clearBackoff(uint32_t observedMs);
+    // Wait before resending a SACK hole: SRTT plus the larger of SRTT/4 and 2 RTTVAR.
+    uint32_t holeWaitMs() const;
     uint32_t rtoMs() const { return _rto; }
     uint32_t srttMs() const { return _srtt; }
     bool hasSample() const { return _hasSample; }
@@ -208,6 +211,7 @@ private:
         uint8_t transmissions;
         uint32_t seq;
         uint32_t sentMs;
+        uint32_t firstSentMs;
     };
 
     Slot _slots[WINDOW] = {};

@@ -195,7 +195,17 @@ void RtoEstimator::sample(uint32_t rttMs) {
 
 void RtoEstimator::backoff() { _rto = _clampRto(_rto * 2); }
 
-void RtoEstimator::clearBackoff() { _rto = _hasSample ? _clampRto(_srtt + 4 * _rttvar) : RTO_INITIAL_MS; }
+void RtoEstimator::clearBackoff(uint32_t observedMs) {
+    uint32_t base = _hasSample ? _srtt + 4 * _rttvar : RTO_INITIAL_MS;
+    _rto = _clampRto(base > observedMs ? base : observedMs);
+}
+
+uint32_t RtoEstimator::holeWaitMs() const {
+    if (!_hasSample) return _rto;
+    uint32_t margin = _srtt / 4 > 2 * _rttvar ? _srtt / 4 : 2 * _rttvar;
+    uint32_t wait = _srtt + margin;
+    return wait < FAST_RETRANSMIT_MIN_MS ? FAST_RETRANSMIT_MIN_MS : wait;
+}
 
 // ArqSender
 // =========
@@ -211,7 +221,7 @@ void ArqSender::resetAt(uint32_t nextSeq) {
 uint32_t ArqSender::allocate(uint32_t nowMs, uint8_t *slot) {
     uint32_t seq = _nextSeq++;
     uint8_t index = static_cast<uint8_t>(seq % WINDOW);
-    _slots[index] = {true, false, false, false, 1, seq, nowMs};
+    _slots[index] = {true, false, false, false, 1, seq, nowMs, nowMs};
     _inFlight++;
     *slot = index;
     return seq;
@@ -224,6 +234,8 @@ uint8_t ArqSender::onAck(uint32_t ack, uint16_t sack, uint32_t nowMs) {
     // Newest freed first-transmission frame gives the freshest RTT sample.
     uint32_t sampleSeq = 0;
     uint32_t sampleSentMs = 0;
+    uint32_t newestSeq = 0;
+    uint32_t newestFirstSentMs = 0;
     for (auto &s : _slots) {
         if (!s.used || seqBefore(ack, s.seq)) continue;
         if (s.transmissions == 1 && (!sampled || seqBefore(sampleSeq, s.seq))) {
@@ -231,12 +243,16 @@ uint8_t ArqSender::onAck(uint32_t ack, uint16_t sack, uint32_t nowMs) {
             sampleSeq = s.seq;
             sampleSentMs = s.sentMs;
         }
+        if (freed == 0 || seqBefore(newestSeq, s.seq)) {
+            newestSeq = s.seq;
+            newestFirstSentMs = s.firstSentMs;
+        }
         s.used = false;
         _inFlight--;
         freed++;
     }
     if (sampled) _rto.sample(nowMs - sampleSentMs);
-    else if (freed > 0) _rto.clearBackoff();
+    else if (freed > 0) _rto.clearBackoff(nowMs - newestFirstSentMs);
     if (freed > 0) _timeouts = 0;
 
     for (uint32_t i = 0; i < 16; i++) {
@@ -256,21 +272,21 @@ uint8_t ArqSender::onAck(uint32_t ack, uint16_t sack, uint32_t nowMs) {
 }
 
 bool ArqSender::nextRetransmit(uint32_t nowMs, uint8_t *slot, bool *timeout) {
-    uint32_t holeWaitMs = _rto.rtoMs();
-    if (_rto.hasSample()) {
-        holeWaitMs = _rto.srttMs() + _rto.srttMs() / 4;
-        if (holeWaitMs < FAST_RETRANSMIT_MIN_MS) holeWaitMs = FAST_RETRANSMIT_MIN_MS;
-    }
+    uint32_t holeWaitMs = _rto.holeWaitMs();
+    // Uncounted resends first (reconnect rearm, SACK hole), oldest seq first.
+    int best = -1;
     for (uint8_t i = 0; i < WINDOW; i++) {
         const Slot &s = _slots[i];
-        bool holeDue = s.hole && !s.sacked && s.transmissions < HOLE_TRANSMISSIONS_MAX && nowMs - s.sentMs >= holeWaitMs;
-        if (s.used && (s.rearmed || holeDue)) {
-            *slot = i;
-            *timeout = false;
-            return true;
-        }
+        if (!s.used || s.sacked) continue;
+        bool holeDue = s.hole && s.transmissions < HOLE_TRANSMISSIONS_MAX && nowMs - s.sentMs >= holeWaitMs;
+        if (!s.rearmed && !holeDue) continue;
+        if (best < 0 || seqBefore(s.seq, _slots[best].seq)) best = i;
     }
-    int best = -1;
+    if (best >= 0) {
+        *slot = static_cast<uint8_t>(best);
+        *timeout = false;
+        return true;
+    }
     for (uint8_t i = 0; i < WINDOW; i++) {
         const Slot &s = _slots[i];
         if (!s.used || s.sacked || nowMs - s.sentMs < _rto.rtoMs()) continue;

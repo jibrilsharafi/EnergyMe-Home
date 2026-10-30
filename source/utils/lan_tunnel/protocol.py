@@ -250,9 +250,15 @@ class RtoEstimator:
     def backoff(self) -> None:
         self.rto = self._clamp(self.rto * 2)
 
-    def clear_backoff(self) -> None:
-        """Ack progress: drop the backoff even without a Karn-valid sample."""
-        self.rto = self._clamp(self.srtt + 4 * self.rttvar) if self.has_sample else RTO_INITIAL_MS
+    def clear_backoff(self, observed_ms: int) -> None:
+        """Ack progress without a Karn sample: drop the backoff, never below observed_ms."""
+        base = self.srtt + 4 * self.rttvar if self.has_sample else RTO_INITIAL_MS
+        self.rto = self._clamp(max(base, observed_ms))
+
+    def hole_wait(self) -> int:
+        if not self.has_sample:
+            return self.rto
+        return max(self.srtt + max(self.srtt // 4, 2 * self.rttvar), FAST_RETRANSMIT_MIN_MS)
 
 
 @dataclass
@@ -264,6 +270,11 @@ class _Slot:
     sacked: bool = False
     hole: bool = False  # a later frame was SACKed
     rearmed: bool = False  # resend after a reconnect: not an RTO event
+    first_sent_ms: int = -1
+
+    def __post_init__(self) -> None:
+        if self.first_sent_ms < 0:
+            self.first_sent_ms = self.sent_ms
 
 
 class ArqSender:
@@ -294,7 +305,11 @@ class ArqSender:
         if sample is not None:
             self.rto.sample(now_ms - sample.sent_ms)
         elif freed:
-            self.rto.clear_backoff()
+            newest = freed[0]
+            for s in freed[1:]:
+                if seq_before(newest.seq, s.seq):
+                    newest = s
+            self.rto.clear_backoff(now_ms - newest.first_sent_ms)
         if freed:
             self.timeouts = 0
         for i in range(16):
@@ -312,15 +327,18 @@ class ArqSender:
 
     def next_retransmit(self, now_ms: int):
         """(slot, timeout) due for retransmission, or None."""
-        hole_wait = self.rto.rto
-        if self.rto.has_sample:
-            hole_wait = max(self.rto.srtt + self.rto.srtt // 4, FAST_RETRANSMIT_MIN_MS)
-        for s in self.slots.values():
-            hole_due = (
-                s.hole and not s.sacked and s.transmissions < HOLE_TRANSMISSIONS_MAX and now_ms - s.sent_ms >= hole_wait
-            )
-            if s.rearmed or hole_due:
-                return s, False
+        hole_wait = self.rto.hole_wait()
+        uncounted = [
+            s for s in self.slots.values()
+            if not s.sacked
+            and (s.rearmed or (s.hole and s.transmissions < HOLE_TRANSMISSIONS_MAX and now_ms - s.sent_ms >= hole_wait))
+        ]
+        if uncounted:
+            oldest = uncounted[0]
+            for s in uncounted[1:]:
+                if seq_before(s.seq, oldest.seq):
+                    oldest = s
+            return oldest, False
         due = [s for s in self.slots.values() if not s.sacked and now_ms - s.sent_ms >= self.rto.rto]
         if not due:
             return None
