@@ -1,7 +1,7 @@
 ## 1. Preconditions
 
 - [ ] 1.1 Bench (.174): sync NTP, block WAN at the router, reboot via API, and record whether `CustomTime` reports a valid time after boot. Then power-cycle and record it again. Note the result in design.md Risks.
-- [ ] 1.2 Infra (`energyme-infra`, separate change): make `reactiveEnergyImported`, `reactiveEnergyExported` and `apparentEnergy` optional in `EnergyReading`, handle `None` in the state point builder, and cover both the Home and Home Pro pipelines with unit tests. Deploy to dev.
+- [x] 1.2 Infra (`energyme-infra`, separate change): make `reactiveEnergyImported`, `reactiveEnergyExported` and `apparentEnergy` optional in `EnergyReading`, handle `None` in the state point builder, and cover both the Home and Home Pro pipelines with unit tests. Deploy to dev. (energyme-infra#797, merged as 2ed43fb, dev deployed 2026-10-30.)
 - [ ] 1.3 Infra prod deploy of 1.2. Needs Jibril's explicit consent. **Gate: groups 4-5 must not be released before this is in prod.**
 
 ## 2. Reconnect policy
