@@ -17,7 +17,7 @@ from .link import PUMP_INTERVAL_S, Bridge, Link, now_ms
 log = logging.getLogger("lan_tunnel")
 
 OPERATOR_CREDIT = 64 * 1024
-PING_INTERVAL_MS = 10_000
+PING_INTERVAL_MS = 5_000  # six chances inside the device's 30 s silence limit
 DEVICE_SILENCE_MS = 30_000
 OPEN_TIMEOUT_S = 15
 CHANNEL_OPEN_TIMEOUT_S = 10
@@ -37,7 +37,9 @@ class OperatorSession:
         self._opened_event = asyncio.Event()
         self._closed_event = asyncio.Event()
         self._channels: dict[int, Bridge | None] = {}  # id -> bridge, None while opening
-        self._open_waiters: dict[int, asyncio.Future] = {}
+        self._pending: dict[int, tuple] = {}  # id -> (reader, writer, reply future) until CH_OK/CH_ERR
+        self._skip_replies: dict[int, int] = {}  # replies owed to CH_OPENs we gave up on
+        self._dropping: set[int] = set()
         self._free = asyncio.Condition()
         self._last_ping = now_ms()
         self._pump_task: asyncio.Task | None = None
@@ -81,19 +83,19 @@ class OperatorSession:
         for bridge in list(self._channels.values()):
             if bridge is not None:
                 bridge.abort(notify=False)
-        for fut in self._open_waiters.values():
+        for _, _, fut in self._pending.values():
             if not fut.done():
                 fut.set_exception(SessionEnded())
         self._closed_event.set()
+        asyncio.get_running_loop().create_task(self._release())  # wake connections waiting for an id
         if self._pump_task and self._pump_task is not asyncio.current_task():
             self._pump_task.cancel()
 
     async def _pump(self) -> None:
         while not self._closed_event.is_set():
             now = now_ms()
-            if now - self._last_ping >= PING_INTERVAL_MS:
+            if now - self._last_ping >= PING_INTERVAL_MS and self.link.ping():
                 self._last_ping = now
-                self.link.ping()
             if self.link.connected and now - self.link.last_rx_ms >= DEVICE_SILENCE_MS:
                 log.warning("device silent for %d s, giving up", DEVICE_SILENCE_MS // 1000)
                 self._end(p.CloseReason.OPERATOR_LOST)
@@ -119,31 +121,25 @@ class OperatorSession:
                 self._channels[channel] = None
             for _ in range(2):  # BUSY: the device has just reset its stale channel, one retry
                 fut = asyncio.get_running_loop().create_future()
-                self._open_waiters[channel] = fut
+                self._pending[channel] = (reader, writer, fut)
                 self.link.submit(p.Type.CH_OPEN, channel, p.u32(self.credit))
                 error = await asyncio.wait_for(fut, CHANNEL_OPEN_TIMEOUT_S)
                 if error != p.ChannelError.BUSY:
                     break
         except (SessionEnded, asyncio.TimeoutError, ConnectionError):
-            if channel is not None:
-                self._open_waiters.pop(channel, None)
-                self.link.submit(p.Type.RST, channel, bytes([int(p.RstReason.ABORT)]))  # in case CH_OK is late
+            if channel is not None and self._pending.pop(channel, None) is not None:
+                # The device still owes a reply to this CH_OPEN: skip it (and, after a
+                # late CH_OK, the old channel's frames) so it cannot answer a reuse.
+                self._skip_replies[channel] = self._skip_replies.get(channel, 0) + 1
+                self.link.submit(p.Type.RST, channel, bytes([int(p.RstReason.ABORT)]))
+            if channel is not None and self._channels.get(channel) is None:
                 await self._release(channel)
             writer.transport.abort()
             return
-        self._open_waiters.pop(channel, None)
         if error is not None:
             log.warning("channel %d: device could not connect (%s)", channel, p.ChannelError(error).name)
             await self._release(channel)
             writer.transport.abort()
-            return
-        bridge = Bridge(
-            self.link, channel, reader, writer,
-            peer_credit=opened.channel_credit, own_credit=self.credit, on_closed=self._on_bridge_closed,
-        )
-        self._channels[channel] = bridge
-        self.channels_opened += 1
-        bridge.start()
 
     def _free_id(self, opened: p.Opened):
         for channel in range(1, min(opened.channels_max, p.CHANNELS_MAX) + 1):
@@ -154,12 +150,41 @@ class OperatorSession:
     def _on_bridge_closed(self, bridge: Bridge) -> None:
         asyncio.get_running_loop().create_task(self._release(bridge.channel))
 
-    async def _release(self, channel: int) -> None:
+    async def _release(self, channel: int | None = None) -> None:
         async with self._free:
-            self._channels.pop(channel, None)
+            if channel is not None:
+                self._channels.pop(channel, None)
             self._free.notify_all()
 
     # Frames from the device -------------------------------------------
+
+    def _channel_reply(self, h: p.Header, payload: bytes) -> None:
+        if self._skip_replies.get(h.channel, 0) > 0:
+            self._skip_replies[h.channel] -= 1
+            if h.type == p.Type.CH_OK:
+                self._dropping.add(h.channel)  # the old channel's frames follow until our RST lands
+            return
+        self._dropping.discard(h.channel)
+        pending = self._pending.pop(h.channel, None)
+        if pending is None:
+            return
+        reader, writer, fut = pending
+        if h.type == p.Type.CH_OK:
+            # Created now, not when handle_client resumes: a server that speaks first
+            # (SSH, telnet banners) has its DATA right behind this CH_OK.
+            assert self.opened is not None
+            bridge = Bridge(
+                self.link, h.channel, reader, writer,
+                peer_credit=self.opened.channel_credit, own_credit=self.credit, on_closed=self._on_bridge_closed,
+            )
+            self._channels[h.channel] = bridge
+            self.channels_opened += 1
+            bridge.start()
+            error = None
+        else:
+            error = payload[0]
+        if not fut.done():
+            fut.set_result(error)
 
     def _deliver(self, h: p.Header, payload: bytes) -> None:
         if h.type == p.Type.OPENED:
@@ -169,16 +194,12 @@ class OperatorSession:
             reason = p.CloseReason(payload[0]) if payload[0] in p.CloseReason._value2member_map_ else p.CloseReason.NONE
             self._end(reason)
         elif h.type in (p.Type.CH_OK, p.Type.CH_ERR):
-            fut = self._open_waiters.get(h.channel)
-            if fut and not fut.done():
-                fut.set_result(None if h.type == p.Type.CH_OK else payload[0])
+            self._channel_reply(h, payload)
+        elif h.channel in self._dropping:
+            return
         else:
             bridge = self._channels.get(h.channel)
             if bridge is None:
-                if h.type == p.Type.RST and h.channel in self._open_waiters:
-                    fut = self._open_waiters[h.channel]
-                    if not fut.done():
-                        fut.set_result(int(p.ChannelError.CONNECT_FAILED))
                 return
             if h.type == p.Type.DATA:
                 bridge.on_data(payload)

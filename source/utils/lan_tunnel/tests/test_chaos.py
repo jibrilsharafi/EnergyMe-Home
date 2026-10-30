@@ -67,9 +67,22 @@ class ChaosPipe:
             self.target(frame)
 
 
+async def banner_handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+    """Speaks first, like SSH or telnet: banner plus a body on accept, then echo."""
+    try:
+        writer.write(b"BANNER\n" + blob(20_000))
+        await writer.drain()
+        while data := await reader.read(65536):
+            writer.write(data)
+            await writer.drain()
+        writer.close()
+    except ConnectionError:
+        pass
+
+
 class Harness:
-    async def start(self, loss=0.0, dup=0.0, jitter_ms=0, target_port=None):
-        self.lan = await asyncio.start_server(lan_handler, "127.0.0.1", 0)
+    async def start(self, loss=0.0, dup=0.0, jitter_ms=0, target_port=None, handler=lan_handler):
+        self.lan = await asyncio.start_server(handler, "127.0.0.1", 0)
         port = target_port or self.lan.sockets[0].getsockname()[1]
         self.down = ChaosPipe(loss, dup, jitter_ms, seed=2)
         self.up = ChaosPipe(loss, dup, jitter_ms, seed=3)
@@ -214,6 +227,47 @@ def test_device_close_ends_the_session():
         h = await Harness().start()
         h.device.close(p.CloseReason.IDLE_TIMEOUT)
         assert await asyncio.wait_for(h.op.wait_closed(), 5) == p.CloseReason.IDLE_TIMEOUT
+        h.device.stop()
+        h.listener.close()
+        h.lan.close()
+
+    run(body())
+
+
+@pytest.mark.parametrize("loss", [0.0, 0.2])
+def test_server_speaks_first(loss):
+    async def body():
+        h = await Harness().start(loss=loss, jitter_ms=20, handler=banner_handler)
+
+        async def one():
+            reader, writer = await asyncio.open_connection("127.0.0.1", h.port)
+            first = await asyncio.wait_for(reader.readexactly(7 + 20_000), 30)
+            writer.write(b"ping")
+            await writer.drain()
+            writer.write_eof()
+            rest = await asyncio.wait_for(reader.read(-1), 30)
+            writer.close()
+            return first, rest
+
+        for first, rest in await asyncio.gather(*(one() for _ in range(6))):
+            assert first == b"BANNER\n" + blob(20_000)
+            assert rest == b"ping"
+        await h.stop()
+
+    run(body())
+
+
+def test_session_end_releases_waiting_connections():
+    async def body():
+        h = await Harness().start()
+        conns = [await asyncio.open_connection("127.0.0.1", h.port) for _ in range(6)]  # 2 wait for an id
+        for _, w in conns:
+            w.write(b"ECHO\n")
+        await asyncio.sleep(0.5)
+        h.device.close(p.CloseReason.CLOUD_CLOSED)
+        await asyncio.wait_for(h.op.wait_closed(), 5)
+        for reader, _ in conns:
+            assert await asyncio.wait_for(reader.read(-1), 5) == b""  # every one ends, none hangs
         h.device.stop()
         h.listener.close()
         h.lan.close()

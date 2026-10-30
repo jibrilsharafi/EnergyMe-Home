@@ -61,8 +61,8 @@ class Link:
         """Queue a sequenced frame; it goes out as the window and rate allow."""
         self.queue.append((t, channel, payload))
 
-    def ping(self) -> None:
-        self._emit_unsequenced(p.Type.PING)
+    def ping(self) -> bool:
+        return self._emit_unsequenced(p.Type.PING)
 
     @property
     def backlog(self) -> int:
