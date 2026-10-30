@@ -691,7 +691,7 @@ namespace Tunnel
         bool connected = _cloudConnected.load();
         if (connected && !_wasConnected) {
             // Back online: nothing sent while down arrived, resend it all now.
-            _sender.rearmAll(now);
+            _sender.rearmAll();
             _clock.lastDownlinkMs = now;
             _clock.disconnectedSinceMs = 0;
         } else if (!connected && _wasConnected) {

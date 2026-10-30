@@ -85,7 +85,7 @@ class Link:
 
     def set_connected(self, connected: bool) -> None:
         if connected and not self.connected:
-            self.sender.rearm_all(self.clock())
+            self.sender.rearm_all()
             self.last_rx_ms = self.clock()
         self.connected = connected
 

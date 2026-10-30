@@ -209,7 +209,7 @@ void ArqSender::resetAt(uint32_t nextSeq) {
 uint32_t ArqSender::allocate(uint32_t nowMs, uint8_t *slot) {
     uint32_t seq = _nextSeq++;
     uint8_t index = static_cast<uint8_t>(seq % WINDOW);
-    _slots[index] = {true, false, false, false, 1, seq, nowMs};
+    _slots[index] = {true, false, false, false, false, 1, seq, nowMs};
     _inFlight++;
     *slot = index;
     return seq;
@@ -254,7 +254,7 @@ uint8_t ArqSender::onAck(uint32_t ack, uint16_t sack, uint32_t nowMs) {
 
 bool ArqSender::nextRetransmit(uint32_t nowMs, uint8_t *slot, bool *timeout) {
     for (uint8_t i = 0; i < WINDOW; i++) {
-        if (_slots[i].used && _slots[i].fastPending) {
+        if (_slots[i].used && (_slots[i].fastPending || _slots[i].rearmed)) {
             *slot = i;
             *timeout = false;
             return true;
@@ -278,6 +278,7 @@ void ArqSender::markRetransmitted(uint8_t slot, uint32_t nowMs, bool timeout) {
         s.fastPending = false;
         s.fastDone = true;
     }
+    s.rearmed = false;
     if (s.transmissions < 255) s.transmissions++;
     s.sentMs = nowMs;
     if (!timeout) return;
@@ -289,9 +290,9 @@ void ArqSender::markRetransmitted(uint8_t slot, uint32_t nowMs, bool timeout) {
     if (_timeouts < 255) _timeouts++;
 }
 
-void ArqSender::rearmAll(uint32_t nowMs) {
+void ArqSender::rearmAll() {
     for (auto &s : _slots) {
-        if (s.used && !s.sacked) s.sentMs = nowMs - _rto.rtoMs();
+        if (s.used && !s.sacked) s.rearmed = true;
     }
 }
 
@@ -342,6 +343,11 @@ void TokenBucket::_refill(uint32_t nowMs) {
     _lastMs = nowMs;
     uint64_t tokens = static_cast<uint64_t>(_milliTokens) + static_cast<uint64_t>(elapsed) * _rate;
     _milliTokens = tokens > _burstMilli ? _burstMilli : static_cast<uint32_t>(tokens);
+}
+
+bool TokenBucket::ready(uint32_t nowMs) const {
+    uint64_t tokens = static_cast<uint64_t>(_milliTokens) + static_cast<uint64_t>(nowMs - _lastMs) * _rate;
+    return tokens >= 1000;
 }
 
 bool TokenBucket::take(uint32_t nowMs) {

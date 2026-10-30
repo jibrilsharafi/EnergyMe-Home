@@ -258,6 +258,7 @@ class _Slot:
     sacked: bool = False
     fast_pending: bool = False
     fast_done: bool = False
+    rearmed: bool = False  # resend after a reconnect: not an RTO event
 
 
 class ArqSender:
@@ -305,7 +306,7 @@ class ArqSender:
     def next_retransmit(self, now_ms: int):
         """(slot, timeout) due for retransmission, or None."""
         for s in self.slots.values():
-            if s.fast_pending:
+            if s.fast_pending or s.rearmed:
                 return s, False
         due = [s for s in self.slots.values() if not s.sacked and now_ms - s.sent_ms >= self.rto.rto]
         if not due:
@@ -320,6 +321,7 @@ class ArqSender:
         if slot.fast_pending:
             slot.fast_pending = False
             slot.fast_done = True
+        slot.rearmed = False
         slot.transmissions += 1
         slot.sent_ms = now_ms
         if not timeout:
@@ -329,10 +331,10 @@ class ArqSender:
         self.rto.backoff()
         self.timeouts += 1
 
-    def rearm_all(self, now_ms: int) -> None:
+    def rearm_all(self) -> None:
         for s in self.slots.values():
             if not s.sacked:
-                s.sent_ms = now_ms - self.rto.rto
+                s.rearmed = True
 
 
 @dataclass

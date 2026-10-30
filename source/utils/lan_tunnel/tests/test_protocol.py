@@ -144,3 +144,15 @@ def test_token_bucket():
     assert sum(t.take(0) for _ in range(20)) == 8
     assert not t.take(39)
     assert t.take(40)
+
+
+def test_rearm_is_not_a_timeout():
+    s = p.ArqSender()
+    s.allocate(0, "x")
+    for _ in range(10):
+        s.rearm_all()
+        slot, timeout = s.next_retransmit(1)
+        assert not timeout
+        s.mark_retransmitted(slot, 1, timeout)
+        assert s.next_retransmit(1) is None
+    assert s.timeouts == 0 and s.rto.rto == p.RTO_INITIAL_MS

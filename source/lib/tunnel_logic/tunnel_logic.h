@@ -174,7 +174,7 @@ public:
 
     // After an MQTT reconnect: everything unacked is due now, without counting
     // a timeout (nothing could be delivered while disconnected).
-    void rearmAll(uint32_t nowMs);
+    void rearmAll();
 
     uint32_t seqOf(uint8_t slot) const { return _slots[slot].seq; }
     bool isUsed(uint8_t slot) const { return _slots[slot].used; }
@@ -187,6 +187,7 @@ private:
         bool sacked;
         bool fastPending;
         bool fastDone;
+        bool rearmed; // resend after a reconnect: not an RTO event
         uint8_t transmissions;
         uint32_t seq;
         uint32_t sentMs;
@@ -262,6 +263,7 @@ class TokenBucket {
 public:
     void reset(uint32_t ratePerSecond, uint32_t burst, uint32_t nowMs);
     bool take(uint32_t nowMs);
+    bool ready(uint32_t nowMs) const; // a token is available, without taking it
 
 private:
     void _refill(uint32_t nowMs);

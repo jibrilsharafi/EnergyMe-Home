@@ -350,9 +350,25 @@ void test_sender_rearm_after_reconnect(void) {
     bool timeout;
     s.allocate(1000, &slot);
     TEST_ASSERT_FALSE(s.nextRetransmit(1100, &slot, &timeout));
-    s.rearmAll(1100);
-    TEST_ASSERT_TRUE(s.nextRetransmit(1100, &slot, &timeout));
+    for (int reconnect = 0; reconnect < 10; reconnect++) {
+        s.rearmAll();
+        TEST_ASSERT_TRUE(s.nextRetransmit(1100, &slot, &timeout));
+        TEST_ASSERT_FALSE(timeout);
+        s.markRetransmitted(slot, 1100, timeout);
+        TEST_ASSERT_FALSE(s.nextRetransmit(1100, &slot, &timeout)); // once per rearm
+    }
     TEST_ASSERT_EQUAL(0, s.consecutiveTimeouts());
+    TEST_ASSERT_EQUAL_UINT32(RTO_INITIAL_MS, s.rto().rtoMs());
+}
+
+void test_token_bucket_ready_peeks(void) {
+    TokenBucket t;
+    t.reset(25, 1, 0);
+    TEST_ASSERT_TRUE(t.ready(0));
+    TEST_ASSERT_TRUE(t.ready(0)); // peeking does not consume
+    TEST_ASSERT_TRUE(t.take(0));
+    TEST_ASSERT_FALSE(t.ready(39));
+    TEST_ASSERT_TRUE(t.ready(40));
 }
 
 // ============================================================================
@@ -569,6 +585,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_receive_credit_batching);
     RUN_TEST(test_byte_ring_wraps);
     RUN_TEST(test_token_bucket);
+    RUN_TEST(test_token_bucket_ready_peeks);
     RUN_TEST(test_sid_validation);
     RUN_TEST(test_clamps);
     RUN_TEST(test_port_allowlist);
