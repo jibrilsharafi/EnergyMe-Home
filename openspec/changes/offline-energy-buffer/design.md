@@ -23,7 +23,12 @@ See proposal.md for motivation. The current state that shapes the approach:
 ## Decisions
 
 ### D1. Capture runs in the MQTT task, outside the connected branch
-A new step in `_mqttTask` runs on every loop pass whenever cloud services are enabled and the device is not in community mode, whatever the connection state. It owns its own "next boundary" target and reuses `MqttEnergyPublishGate::shouldPublishNow` and `_allActiveChannelsFreshSinceBoundary`, so the captured readings match what a live snapshot at that boundary would have contained. While connected, the live path runs as today. A boundary is handed to the buffer when the live publish did not happen for it: either the device was disconnected when the gate opened, or `_publishJsonStreaming` failed.
+A new step in `_mqttTask` runs on every loop pass whenever cloud services are enabled and the device is not in community mode, whatever the connection state. It owns its own "next boundary" target and reuses `MqttEnergyPublishGate::shouldPublishNow` and `_allActiveChannelsFreshSinceBoundary`, so the captured readings match what a live snapshot at that boundary would have contained. While connected, the live path runs as today. The live snapshot runs first in each loop pass.
+- A boundary already sent live is skipped.
+- While connected, an unsent boundary is held in RAM. A live success for the same boundary clears it. It is written to flash at the next boundary, or as soon as the link drops.
+- While disconnected, it is written at once.
+- The live target resets on every connect.
+- A live retry gives up one minute after its boundary, so a late live send can never duplicate a buffered minute with a later timestamp.
 *Alternative*: a separate FreeRTOS task. Rejected because it needs another internal-RAM stack and its own synchronisation with the publish state the MQTT task already owns.
 
 ### D2. Record format: absolute uint32 at 0.1 Wh, per-channel ms offset
@@ -32,7 +37,8 @@ One binary record per captured minute:
 That is 12 + 10·n + 2 bytes: 174 B with 16 channels, 94 B with 8.
 - The counters are absolute values in 0.1 Wh units. That is the published resolution, so storage is lossless, and the user asked for absolute values. A uint32 covers 429 MWh per counter. A counter above that is omitted from the record and logged, never wrapped.
 - float32 was rejected: it drops to whole-Wh steps above about 16 MWh. double (8 B) was rejected because it is twice the size for no gain over the published 0.1 Wh.
-- The per-channel `offset ms` from the boundary keeps the real read time, which the live contract requires and which makes replay idempotent. The gate bounds the offset to about [-15 s, +15 s], well inside i16's ±32.7 s. A channel outside that range is skipped (spec scenario).
+- The per-channel `offset ms` keeps the real read time, which the live contract requires and which makes replay idempotent.
+- The header's base second is the record's latest reading, not the nominal minute. A capture delayed by a stalled task still fits, and only a channel whose reads stalled for more than 32.7 s falls outside i16 and is skipped (spec scenario).
 - The channel mask makes each record self-describing, so a channel enabled or disabled mid-outage stays decodable.
 - The CRC lets a torn tail after power loss be detected and skipped.
 The codec (encode, decode, CRC, offset range check) goes in `source/lib/offline_energy_record/` with native Unity tests.
@@ -48,16 +54,17 @@ Records are appended to `/offline_energy/<boundary-hour-unix>.bin`, one file per
 
 ### D4. Replay pacing
 Replay runs in `_handleConnectedState()` after alarms and the live publishes, one chunk per pass, with at least `OFFLINE_ENERGY_REPLAY_INTERVAL_MS` (1 s) between chunks.
-- A chunk is the decoded records serialized into the energy array until it reaches about 64 KB (well under the 128 KB IoT limit). It is published through the existing `_publishJsonStreaming` path, so the 9 KB PubSubClient buffer is not a ceiling.
+- A chunk holds decoded records up to 48 KB, sized with a 114 B worst-case element. It is published through `_publishJsonStreaming`, so the 9 KB PubSubClient buffer is not a ceiling.
+- The real ceiling is PubSubClient's 16-bit remaining length (64 KiB, see `CrashArchivePolicy`), which bites well before AWS's 128 KB limit.
 - Elements older than 14 days at build time are dropped (the cloud would reject the whole message).
-- A full 14-day, 16-channel backlog is about 650 chunks, which takes about 11 minutes at the minimum pace.
+- A full 14-day, 16-channel backlog is about 750 chunks, which takes about 13 minutes at the minimum pace.
 
 ### D5. Delivery semantics: at-least-once, idempotent by key
 A replayed object carries exactly the timestamp captured for it, and only minutes whose live publish did not happen are captured. In `meter_state`, a duplicate therefore merges onto the same `(device_id, channel, ts)` key through `anyLast`, and Iceberg dedups on the same key. QoS 0 means a chunk accepted by the socket but lost when the link drops is not retried. That costs at most one chunk per outage end, and it is the same risk the live path already accepts.
 
 ### D6. Restart rule and backoff ceiling
 - `MQTT_MAX_RETRY_INTERVAL` goes from 60 min to 10 min.
-- The attempt-count restart is replaced by "no successful MQTT connection for 24 h while `CustomNet::isFullyConnected()`". The 24 h is measured with `millis64()`, so it does not depend on the clock.
+- The attempt-count restart is replaced by a timer that accumulates only time with the link up and MQTT down. It resets on any connected pass and fires once. Neither a long-lived session dropping nor a long link-down period trips it. It is measured with `millis64()`, so it does not depend on the clock.
 - The attempt counter stays, for backoff only.
 The restart exists to recover a wedged TLS/lwIP stack. It does not help a WAN outage, and today, at about 2 h, it also ends buffering if the clock does not survive the reboot.
 
