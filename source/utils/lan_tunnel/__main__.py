@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import ipaddress
 import json
 import logging
 import random
@@ -107,6 +108,10 @@ async def wait_terminal(cloud: Cloud, execution_id: str, timeout_s: float) -> di
 async def run_tunnel(args: argparse.Namespace, cloud: Cloud) -> int:
     loop = asyncio.get_running_loop()
     host, _, port_text = args.target.rpartition(":")
+    try:
+        host = str(ipaddress.IPv4Address(host))  # the device takes IPv4 literals only
+    except ValueError:
+        raise SystemExit(f"{host}: the target must be an IPv4 literal") from None
     if host in BLOCKED_TARGETS:
         raise SystemExit(f"{host} is blocked as a tunnel target")
     sid = secrets.token_hex(8)
@@ -126,8 +131,23 @@ async def run_tunnel(args: argparse.Namespace, cloud: Cloud) -> int:
         if packet.topic == up and not (args.loss and rng.random() < args.loss):
             loop.call_soon_threadsafe(session.on_raw, bytes(packet.payload))
 
+    async def subscribe() -> None:
+        suback = await asyncio.wrap_future(
+            client.subscribe(mqtt5.SubscribePacket([mqtt5.Subscription(up, mqtt5.QoS.AT_MOST_ONCE)]))
+        )
+        codes = [int(c) for c in suback.reason_codes]
+        if any(c >= 0x80 for c in codes):
+            raise SystemExit(f"subscribe to {up} refused (reason codes {codes}): check the IAM policy")
+
     def on_success(_data) -> None:
-        loop.call_soon_threadsafe(lambda: (session.set_connected(True), connected.set()))
+        # Clean session: the /u subscription is gone after every reconnect.
+        def resumed() -> None:
+            if connected.is_set():
+                loop.create_task(subscribe())
+            session.set_connected(True)
+            connected.set()
+
+        loop.call_soon_threadsafe(resumed)
 
     def on_disconnect(_data) -> None:
         loop.call_soon_threadsafe(session.set_connected, False)
@@ -142,11 +162,11 @@ async def run_tunnel(args: argparse.Namespace, cloud: Cloud) -> int:
         on_lifecycle_disconnection=on_disconnect,
     )
     client.start()
+    execution_id = None
+    listening = False
     try:
         await asyncio.wait_for(connected.wait(), 20)
-        await asyncio.wrap_future(
-            client.subscribe(mqtt5.SubscribePacket([mqtt5.Subscription(up, mqtt5.QoS.AT_MOST_ONCE)]))
-        )
+        await subscribe()
         execution_id = await asyncio.to_thread(
             cloud.dispatch,
             "tunnel_open",
@@ -156,16 +176,19 @@ async def run_tunnel(args: argparse.Namespace, cloud: Cloud) -> int:
         print(f"tunnel_open {cloud.device} -> {args.target}  sid={sid}  executionId={execution_id}")
         session.start()
 
-        opened_task = asyncio.ensure_future(session.wait_opened())
+        opened_task = asyncio.ensure_future(session.wait_opened(20))
         rejected_task = asyncio.ensure_future(wait_terminal(cloud, execution_id, 20))
         done, _ = await asyncio.wait({opened_task, rejected_task}, return_when=asyncio.FIRST_COMPLETED)
-        if opened_task not in done:
+        if opened_task not in done or opened_task.exception() is not None:
             opened_task.cancel()
-            status = rejected_task.result()
-            print("  open failed:", describe(status) if status else "no OPENED and no status")
+            status = await rejected_task
+            print("  open failed:", describe(status) if status else "no OPENED and no terminal status")
+            if status is None:
+                await asyncio.to_thread(cloud.dispatch, "tunnel_close", {"sid": sid}, 30)  # do not leave it open
             return 2
         rejected_task.cancel()
         opened = opened_task.result()
+        listening = True
         print(f"  OPENED: {opened.channels_max} channels, window {opened.window}, "
               f"max {opened.max_duration_s} s, idle {opened.idle_s} s")
 
@@ -184,6 +207,11 @@ async def run_tunnel(args: argparse.Namespace, cloud: Cloud) -> int:
         print(f"  operator: retx {session.link.frames_retx}, dropped {session.link.frames_dropped}, "
               f"channels {session.channels_opened}")
         return 0 if status and status["status"] == "SUCCEEDED" else 1
+    except asyncio.CancelledError:
+        # Ctrl-C before the session was serving: make sure the device lets go of it.
+        if execution_id is not None and not listening:
+            await asyncio.to_thread(cloud.dispatch, "tunnel_close", {"sid": sid}, 30)
+        raise
     finally:
         client.stop()
 
