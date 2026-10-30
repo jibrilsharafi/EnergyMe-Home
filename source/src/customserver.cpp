@@ -3782,15 +3782,8 @@ namespace CustomServer
             JsonDocument doc(&allocator);
             doc["enabled"] = !globalCommunityMode && Gateway::isEnabled();
             doc["tunnel"] = !globalCommunityMode && Tunnel::isEnabled();
-            Tunnel::ActiveInfo active;
-            if (!globalCommunityMode && Tunnel::getActive(&active)) {
-                doc["tunnel_active"]["sid"] = active.sid;
-                doc["tunnel_active"]["ip"] = active.ip;
-                doc["tunnel_active"]["port"] = active.port;
-                doc["tunnel_active"]["since"] = active.since;
-            } else {
-                doc["tunnel_active"] = nullptr;
-            }
+            if (globalCommunityMode) doc["tunnel_active"] = nullptr;
+            else Tunnel::activeToJson(doc["tunnel_active"]);
             _sendJsonResponse(request, doc);
         });
 

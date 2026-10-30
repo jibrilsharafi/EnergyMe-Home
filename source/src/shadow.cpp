@@ -654,19 +654,8 @@ static void _reportSystem(JsonDocument& doc) {
     rep["log_level_save"] = AdvancedLogger::logLevelToString(AdvancedLogger::getSaveLevel());
     rep["gateway_enabled"] = Gateway::isEnabled();
     rep["tunnel_enabled"] = Tunnel::isEnabled();
-    uint16_t ports[TunnelLogic::PORTS_MAX];
-    size_t portCount = Tunnel::getPorts(ports, TunnelLogic::PORTS_MAX);
-    JsonArray portList = rep["tunnel_ports"].to<JsonArray>();
-    for (size_t i = 0; i < portCount; i++) portList.add(ports[i]);
-    Tunnel::ActiveInfo active;
-    if (Tunnel::getActive(&active)) {
-        rep["tunnel_active"]["sid"] = active.sid;
-        rep["tunnel_active"]["ip"] = active.ip;
-        rep["tunnel_active"]["port"] = active.port;
-        rep["tunnel_active"]["since"] = active.since;
-    } else {
-        rep["tunnel_active"] = nullptr;
-    }
+    Tunnel::portsToJson(rep["tunnel_ports"].to<JsonArray>());
+    Tunnel::activeToJson(rep["tunnel_active"]);
 }
 
 // Parse a string log-level delta field. Returns the level (>=0) to apply, or -1
@@ -785,7 +774,7 @@ static bool _applySystem(JsonObjectConst delta, JsonObject reported) {
         bool valid = v.is<JsonArrayConst>() && v.as<JsonArrayConst>().size() <= TunnelLogic::PORTS_MAX;
         if (valid) {
             for (JsonVariantConst port : v.as<JsonArrayConst>()) {
-                if (!port.is<int>() || port.as<int>() < 1 || port.as<int>() > 65535) {
+                if (!port.is<int>() || !GatewayLogic::isValidPort(port.as<int>())) {
                     valid = false;
                     break;
                 }
@@ -793,8 +782,7 @@ static bool _applySystem(JsonObjectConst delta, JsonObject reported) {
             }
         }
         if (valid && Tunnel::setPorts(ports, count)) {
-            JsonArray applied_ = reported["tunnel_ports"].to<JsonArray>();
-            for (size_t i = 0; i < count; i++) applied_.add(ports[i]);
+            Tunnel::portsToJson(reported["tunnel_ports"].to<JsonArray>());
             applied = true;
         } else {
             LOG_WARNING("Rejected tunnel_ports: expected up to %u ports 1-65535", (unsigned)TunnelLogic::PORTS_MAX);
