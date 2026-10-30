@@ -33,10 +33,8 @@ import boto3
 from awscrt import auth, mqtt5
 from awsiot import mqtt5_client_builder
 
-from . import protocol as p
 from .operator_session import OperatorSession
 
-log = logging.getLogger("lan_tunnel")
 
 # The PROD bench meter on the office LAN; never a tunnel target.
 BLOCKED_TARGETS = {"192.168.2.155"}
@@ -74,6 +72,10 @@ class Cloud:
             executionTimeoutSeconds=timeout_s,
         )
         return response["executionId"]
+
+    def close(self, sid: str) -> str:
+        """Out-of-band kill: gateway op tunnel_close."""
+        return self.dispatch("tunnel_close", {"sid": sid}, 30)
 
     def status(self, execution_id: str) -> dict:
         return self.iot.get_command_execution(executionId=execution_id, targetArn=self.target_arn, includeResult=True)
@@ -184,7 +186,7 @@ async def run_tunnel(args: argparse.Namespace, cloud: Cloud) -> int:
             status = await rejected_task
             print("  open failed:", describe(status) if status else "no OPENED and no terminal status")
             if status is None:
-                await asyncio.to_thread(cloud.dispatch, "tunnel_close", {"sid": sid}, 30)  # do not leave it open
+                await asyncio.to_thread(cloud.close, sid)  # do not leave it open
             return 2
         rejected_task.cancel()
         opened = opened_task.result()
@@ -213,7 +215,7 @@ async def run_tunnel(args: argparse.Namespace, cloud: Cloud) -> int:
     except asyncio.CancelledError:
         # Ctrl-C before the session was serving: make sure the device lets go of it.
         if execution_id is not None and not listening:
-            await asyncio.to_thread(cloud.dispatch, "tunnel_close", {"sid": sid}, 30)
+            await asyncio.to_thread(cloud.close, sid)
         raise
     finally:
         client.stop()
@@ -243,7 +245,7 @@ def main() -> int:
     cloud = Cloud(args.device, args.env, args.region)
 
     if args.close:
-        execution_id = cloud.dispatch("tunnel_close", {"sid": args.close}, 30)
+        execution_id = cloud.close(args.close)
         print(f"tunnel_close {args.close}  executionId={execution_id}")
         status = asyncio.run(wait_terminal(cloud, execution_id, 20))
         print("  ", describe(status) if status else "not yet terminal")
