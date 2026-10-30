@@ -1078,6 +1078,7 @@ namespace Mqtt
 
         _clientMqtt.disconnect();
         _lastConnectedState = false;
+        Tunnel::setCloudConnected(false); // cloud services off: the tunnel's reconnect grace starts now
         LOG_DEBUG("MQTT task stopping");
         _taskHandle = nullptr;
         vTaskDelete(nullptr);
