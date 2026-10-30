@@ -117,10 +117,13 @@ class OperatorSession:
                     raise SessionEnded()
                 channel = self._free_id(opened)
                 self._channels[channel] = None
-            fut = asyncio.get_running_loop().create_future()
-            self._open_waiters[channel] = fut
-            self.link.submit(p.Type.CH_OPEN, channel, p.u32(self.credit))
-            error = await asyncio.wait_for(fut, CHANNEL_OPEN_TIMEOUT_S)
+            for _ in range(2):  # BUSY: the device has just reset its stale channel, one retry
+                fut = asyncio.get_running_loop().create_future()
+                self._open_waiters[channel] = fut
+                self.link.submit(p.Type.CH_OPEN, channel, p.u32(self.credit))
+                error = await asyncio.wait_for(fut, CHANNEL_OPEN_TIMEOUT_S)
+                if error != p.ChannelError.BUSY:
+                    break
         except (SessionEnded, asyncio.TimeoutError, ConnectionError):
             if channel is not None:
                 self._open_waiters.pop(channel, None)
