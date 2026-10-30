@@ -20,7 +20,7 @@ OPERATOR_CREDIT = 64 * 1024
 PING_INTERVAL_MS = 5_000  # six chances inside the device's 30 s silence limit
 DEVICE_SILENCE_MS = 30_000
 OPEN_TIMEOUT_S = 15
-CHANNEL_OPEN_TIMEOUT_S = 10
+CHANNEL_OPEN_TIMEOUT_S = 30  # several backed-off RTOs on a lossy link
 CLOSE_WAIT_S = 3
 
 
