@@ -236,6 +236,7 @@ namespace Mqtt
     static void _drainGatewayResult();
     static void _handleTunnelCommand(const char* executionId, GatewayLogic::Op op, JsonDocument& doc);
     static void _serviceTunnel();
+    static void _publishCommandResponse(const char* executionId, char* responseJson);
     static void _handleAwsIotJobMessage(const char* message, const char* topic);
     
     // AWS IoT Jobs OTA functions
@@ -1601,42 +1602,35 @@ namespace Mqtt
         char* responseJson = nullptr;
         if (!Tunnel::takeTerminal(executionId, sizeof(executionId), &responseJson)) return;
         _clientMqtt.unsubscribe(Tunnel::downlinkTopic());
+        _publishCommandResponse(executionId, responseJson);
+        Tunnel::finish();
+    }
+
+    // Publishes a finished command's response document (PSRAM JSON, freed here).
+    // Not retried: if this publish fails the cloud sees the execution time out,
+    // the same as any command whose status never arrives.
+    static void _publishCommandResponse(const char* executionId, char* responseJson) {
         SpiRamAllocator allocator;
         JsonDocument doc(&allocator);
         if (responseJson == nullptr || deserializeJson(doc, responseJson)) {
+            LOG_ERROR("Command response for %s is not valid JSON", executionId);
             doc.clear();
             doc["status"] = "FAILED";
             doc["statusReason"]["reasonCode"] = "INTERNAL_ERROR";
         }
         free(responseJson);
-        char statusTopic[MQTT_TOPIC_BUFFER_SIZE];
-        _constructCommandTopic(executionId, "response/json", statusTopic, sizeof(statusTopic));
-        if (!_publishJsonStreaming(doc, statusTopic)) LOG_WARNING("Failed to publish tunnel result %s", executionId);
-        Tunnel::finish();
+        char topic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructCommandTopic(executionId, "response/json", topic, sizeof(topic));
+        if (_publishJsonStreaming(doc, topic)) LOG_DEBUG("Command response %s published", executionId);
+        else LOG_WARNING("Failed to publish command response %s", executionId);
     }
 
     static void _drainGatewayResult() {
         char executionId[NAME_BUFFER_SIZE];
         char* responseJson = nullptr;
         if (!Gateway::takeResult(executionId, sizeof(executionId), &responseJson)) return;
-
-        SpiRamAllocator allocator;
-        JsonDocument doc(&allocator);
-        if (deserializeJson(doc, responseJson)) {
-            LOG_ERROR("Gateway result for %s is not valid JSON", executionId);
-            doc.clear();
-            doc["status"] = "FAILED";
-            doc["statusReason"]["reasonCode"] = "INTERNAL_ERROR";
-        }
         LOG_DEBUG("Gateway result %s (%u bytes): %.300s", executionId, (unsigned)strlen(responseJson), responseJson);
-        free(responseJson);
-
-        // Not retried: if this publish fails the cloud sees the execution time out,
-        // the same as any command whose status never arrives.
-        char topic[MQTT_TOPIC_BUFFER_SIZE];
-        _constructCommandTopic(executionId, "response/json", topic, sizeof(topic));
-        if (_publishJsonStreaming(doc, topic)) LOG_DEBUG("Gateway result %s published", executionId);
-        else LOG_WARNING("Failed to publish gateway result %s", executionId);
+        _publishCommandResponse(executionId, responseJson);
     }
 
     // Command handoff. Both the broker RX path (_subscribeCallback) and the dev
