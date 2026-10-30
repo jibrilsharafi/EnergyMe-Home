@@ -418,22 +418,22 @@ bool closeReasonSucceeded(CloseReason reason) {
 
 CloseReason checkClose(const SessionState &s, uint32_t nowMs) {
     if (!s.enabled) return CloseReason::TUNNEL_DISABLED;
-    if (!s.cloudConnected && s.disconnectedSinceMs != 0 && nowMs - s.disconnectedSinceMs >= CLOUD_GRACE_MS)
+    if (!s.cloudConnected && s.disconnectedSinceMs != 0 && elapsedMs(nowMs, s.disconnectedSinceMs) >= CLOUD_GRACE_MS)
         return CloseReason::CLOUD_DISCONNECTED;
-    if (s.lowHeapSinceMs != 0 && nowMs - s.lowHeapSinceMs >= LOW_HEAP_GRACE_MS) return CloseReason::LOW_MEMORY;
+    if (s.lowHeapSinceMs != 0 && elapsedMs(nowMs, s.lowHeapSinceMs) >= LOW_HEAP_GRACE_MS) return CloseReason::LOW_MEMORY;
     if (s.consecutiveTimeouts >= LINK_FAILED_TIMEOUTS) return CloseReason::LINK_FAILED;
     if (s.channelBytes >= BYTE_CAP) return CloseReason::BYTE_CAP;
     // Operator silence only counts while we can hear the operator at all.
-    if (s.cloudConnected && nowMs - s.lastDownlinkMs >= OPERATOR_SILENCE_MS) return CloseReason::OPERATOR_LOST;
-    if (nowMs - s.openedMs >= s.maxDurationMs) return CloseReason::MAX_DURATION;
-    if (nowMs - s.lastDataMs >= s.idleMs) return CloseReason::IDLE_TIMEOUT;
+    if (s.cloudConnected && elapsedMs(nowMs, s.lastDownlinkMs) >= OPERATOR_SILENCE_MS) return CloseReason::OPERATOR_LOST;
+    if (elapsedMs(nowMs, s.openedMs) >= s.maxDurationMs) return CloseReason::MAX_DURATION;
+    if (elapsedMs(nowMs, s.lastDataMs) >= s.idleMs) return CloseReason::IDLE_TIMEOUT;
     return CloseReason::NONE;
 }
 
 bool shouldReadNow(size_t available, size_t limit, uint32_t readableSinceMs, uint32_t nowMs, uint32_t coalesceMs) {
     if (limit == 0) return false;
     if (available == 0) return true; // EOF or error: recv() reports it
-    return available >= limit || nowMs - readableSinceMs >= coalesceMs;
+    return available >= limit || elapsedMs(nowMs, readableSinceMs) >= coalesceMs;
 }
 
 } // namespace TunnelLogic

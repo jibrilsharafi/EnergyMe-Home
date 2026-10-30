@@ -546,6 +546,15 @@ void test_check_close_triggers(void) {
     s.lastDownlinkMs = t0 + 89000;
     TEST_ASSERT_TRUE(checkClose(s, t0 + 90000) == CloseReason::MAX_DURATION);
 
+    // A start stamp 1 ms in the future (stamped just before now was sampled) is not "forever ago"
+    s = _healthy(t0);
+    s.cloudConnected = false;
+    s.disconnectedSinceMs = t0 + 1;
+    s.lowHeapSinceMs = t0 + 1;
+    TEST_ASSERT_TRUE(checkClose(s, t0) == CloseReason::NONE);
+    TEST_ASSERT_EQUAL_UINT32(0, elapsedMs(t0, t0 + 1));
+    TEST_ASSERT_EQUAL_UINT32(5, elapsedMs(0x00000002u, 0xFFFFFFFDu));
+
     // millis() wrap does not trip timers
     s = _healthy(0xFFFFFF00u);
     TEST_ASSERT_TRUE(checkClose(s, 0x00000100u) == CloseReason::NONE);

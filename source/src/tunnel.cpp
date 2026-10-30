@@ -205,6 +205,10 @@ namespace Tunnel
         return true;
     }
 
+    // Start time for the "...SinceMs" fields, where 0 means "not started". Never
+    // `now | 1`: on an even millisecond that is now + 1 and `now - since` wraps.
+    static uint32_t _stamp(uint32_t now) { return now != 0 ? now : 1; }
+
     // Frame emission (tunnel task)
     // ============================
 
@@ -375,7 +379,7 @@ namespace Tunnel
                 continue;
             }
             if (sent < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-                if (c.stallSinceMs == 0) c.stallSinceMs = now | 1;
+                if (c.stallSinceMs == 0) c.stallSinceMs = _stamp(now);
                 return;
             }
             _closeChannel(id, true, (uint8_t)TunnelLogic::RstReason::LAN_RESET);
@@ -387,7 +391,7 @@ namespace Tunnel
     // window, a free slot and a rate token, and not inside a coalescing wait.
     // Otherwise select() would return at once and the task would spin.
     static bool _canRead(const Channel& c, uint32_t now) {
-        bool coalescing = c.readableSinceMs != 0 && now - c.readableSinceMs < TUNNEL_COALESCE_MS;
+        bool coalescing = c.readableSinceMs != 0 && TunnelLogic::elapsedMs(now, c.readableSinceMs) < TUNNEL_COALESCE_MS;
         return c.state == ChState::OPEN && !c.okDue && !c.lanEof && c.out.available() > 0 && !coalescing &&
                _canSendSequenced() && _bucket.ready(now);
     }
@@ -397,7 +401,7 @@ namespace Tunnel
         int available = 0;
         ioctl(c.fd, FIONREAD, &available);
         size_t limit = c.out.available() < TunnelLogic::DATA_MAX ? c.out.available() : TunnelLogic::DATA_MAX;
-        if (c.readableSinceMs == 0) c.readableSinceMs = now | 1;
+        if (c.readableSinceMs == 0) c.readableSinceMs = _stamp(now);
         if (!TunnelLogic::shouldReadNow(available > 0 ? (size_t)available : 0, limit, c.readableSinceMs, now, TUNNEL_COALESCE_MS)) return;
         // Slot and rate token first: bytes taken out of lwIP must go out in a frame.
         int out = _claimOut(now);
@@ -477,9 +481,9 @@ namespace Tunnel
             }
             // Started here, not only on EAGAIN: lwIP may never report the socket
             // writable again, and then _writeChannel never runs.
-            if (c.ring.size() > 0 && c.stallSinceMs == 0) c.stallSinceMs = now | 1;
+            if (c.ring.size() > 0 && c.stallSinceMs == 0) c.stallSinceMs = _stamp(now);
             if (c.ring.size() == 0) c.stallSinceMs = 0;
-            if (c.ring.size() > 0 && now - c.stallSinceMs >= TUNNEL_WRITE_STALL_MS) {
+            if (c.ring.size() > 0 && TunnelLogic::elapsedMs(now, c.stallSinceMs) >= TUNNEL_WRITE_STALL_MS) {
                 _closeChannel(id, true, (uint8_t)TunnelLogic::RstReason::WRITE_STALL);
                 continue;
             }
@@ -558,7 +562,7 @@ namespace Tunnel
         uint8_t reorderSlot = 0;
         switch (_receiver.onFrame(h.seq, &reorderSlot)) {
             case TunnelLogic::ArqReceiver::Verdict::DELIVER: {
-                if (_unacked++ == 0) _unackedSinceMs = now | 1;
+                if (_unacked++ == 0) _unackedSinceMs = _stamp(now);
                 if (_phase.load() == Phase::ACTIVE) _deliver(h, slot.data + TunnelLogic::HEADER_SIZE, now);
                 _releaseRx(index);
                 size_t loops = 0;
@@ -637,7 +641,7 @@ namespace Tunnel
         if (_pongDue && _sendUnsequenced(Type::PONG, now)) _pongDue = false;
 
         bool ackDue = _ackNow || _unacked >= TUNNEL_ACK_EVERY_FRAMES ||
-                      (_unacked > 0 && now - _unackedSinceMs >= TUNNEL_ACK_DELAY_MS);
+                      (_unacked > 0 && TunnelLogic::elapsedMs(now, _unackedSinceMs) >= TUNNEL_ACK_DELAY_MS);
         if (ackDue) _sendUnsequenced(Type::ACK, now);
     }
 
@@ -712,7 +716,7 @@ namespace Tunnel
             _clock.lastDownlinkMs = now;
             _clock.disconnectedSinceMs = 0;
         } else if (!connected && _wasConnected) {
-            _clock.disconnectedSinceMs = now | 1;
+            _clock.disconnectedSinceMs = _stamp(now);
         }
         _wasConnected = connected;
 
@@ -729,7 +733,7 @@ namespace Tunnel
 
         size_t freeHeap = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
         if (freeHeap < TUNNEL_LOW_HEAP) {
-            if (_clock.lowHeapSinceMs == 0) _clock.lowHeapSinceMs = now | 1;
+            if (_clock.lowHeapSinceMs == 0) _clock.lowHeapSinceMs = _stamp(now);
         } else {
             _clock.lowHeapSinceMs = 0;
         }

@@ -84,6 +84,11 @@ struct Opened {
 void encodeOpened(const Opened &opened, uint8_t out[OPENED_SIZE]);
 Opened decodeOpened(const uint8_t in[OPENED_SIZE]);
 
+// millis() elapsed since `since`, 0 if `since` is (slightly) in the future.
+inline uint32_t elapsedMs(uint32_t nowMs, uint32_t sinceMs) {
+    return static_cast<int32_t>(nowMs - sinceMs) > 0 ? nowMs - sinceMs : 0;
+}
+
 // 32-bit serial arithmetic: true when `a` comes before `b`.
 inline bool seqBefore(uint32_t a, uint32_t b) { return static_cast<int32_t>(a - b) < 0; }
 
