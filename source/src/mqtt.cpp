@@ -60,7 +60,11 @@ namespace Mqtt
     // Connection attempt tracking
     static uint32_t _mqttConnectionAttempt = 0;
     static uint64_t _nextMqttConnectionAttemptMillis = 0;
-    static uint64_t _lastMqttConnectedMillis = 0; // Last successful connect (or task start), for the outage restart
+    // Cloud-outage restart: only time with the network link up and MQTT down counts,
+    // so neither a long-lived session dropping nor a long link-down period trips it
+    static uint64_t _cloudOutageLinkUpMillis = 0;
+    static uint64_t _lastOutageTickMillis = 0;
+    static bool _cloudOutageRestartRequested = false;
 
     // Set from other tasks on interface failover; consumed by _handleConnectedState.
     static volatile bool _reconnectRequested = false;
@@ -70,16 +74,17 @@ namespace Mqtt
     }
 
 #ifdef ENV_DEV
-    static volatile uint64_t _simulatedOutageUntilMillis = 0;
+    static volatile uint32_t _simulatedOutageUntilSeconds = 0; // Uptime seconds; 32-bit so the cross-task read cannot tear
 
     void simulateCloudOutage(uint32_t seconds) {
-        _simulatedOutageUntilMillis = seconds == 0 ? 0 : millis64() + (uint64_t)seconds * 1000;
+        _simulatedOutageUntilSeconds = seconds == 0 ? 0 : (uint32_t)(millis64() / 1000) + seconds;
         if (seconds > 0) _reconnectRequested = true;
         LOG_WARNING("Simulated cloud outage %s (%lu s)", seconds > 0 ? "started" : "ended", (unsigned long)seconds);
     }
 
     static bool _isSimulatedOutage() {
-        return _simulatedOutageUntilMillis != 0 && millis64() < _simulatedOutageUntilMillis;
+        uint32_t until = _simulatedOutageUntilSeconds;
+        return until != 0 && (uint32_t)(millis64() / 1000) < until;
     }
 #endif
 
@@ -107,6 +112,7 @@ namespace Mqtt
     static OfflineEnergyRecord::ChannelReading _heldCapture[MAX_CHANNEL_COUNT];
     static size_t _heldCaptureCount = 0;
     static uint32_t _heldCaptureBoundary = 0;
+    static uint32_t _heldCaptureGeneration = 0; // Buffer generation at snapshot: a clear in between discards it
     static uint64_t _lastOfflineReplayMillis = 0;
 
     // Configuration
@@ -301,6 +307,7 @@ namespace Mqtt
     static void _checkIfPublishEnergyNeeded();
     static void _checkOfflineEnergyCapture(bool connected);
     static void _checkOfflineEnergyReplay();
+    static void _checkCloudOutageRestart(bool linkUp, bool connected);
     static void _checkIfPublishSystemDynamicNeeded();
     static void _checkIfPublishStatisticsNeeded();
     static void _checkIfPublishCrashNeeded();
@@ -1040,7 +1047,13 @@ namespace Mqtt
 
         _nextMqttConnectionAttemptMillis = 0;
         _mqttConnectionAttempt = 0;
-        _lastMqttConnectedMillis = millis64();
+        _cloudOutageLinkUpMillis = 0;
+        _lastOutageTickMillis = millis64();
+        _cloudOutageRestartRequested = false;
+
+        // A minute held from before a stop (cloud disabled, buffer cleared) must not be written back
+        _nextOfflineCaptureUnixSecond = 0;
+        _heldCaptureCount = 0;
 
         LOG_DEBUG("Starting MQTT task with %d bytes stack", MQTT_TASK_STACK_SIZE);
 
@@ -1074,7 +1087,8 @@ namespace Mqtt
             TASK_HEARTBEAT(_mqttHeartbeat);
 
             bool connectedNow = false;
-            if (CustomNet::isFullyConnected()) {
+            bool linkUp = CustomNet::isFullyConnected();
+            if (linkUp) {
                 if (_clientMqtt.connected()) {
                     connectedNow = true;
                     _handleConnectedState();
@@ -1085,6 +1099,7 @@ namespace Mqtt
             _lastConnectedState = connectedNow;
             Tunnel::setCloudConnected(connectedNow);
             _checkOfflineEnergyCapture(connectedNow);
+            _checkCloudOutageRestart(linkUp, connectedNow);
 
             // If we receive a signal to stop the task, we try to publish all the data and flushing the queues so we avoid losing data
             if (_lastLoopToPublishData) {
@@ -2607,6 +2622,17 @@ namespace Mqtt
         // Bare array of self-contained objects (cross-repo contract v1): one
         // voltage object, then one energy object per active channel with valid
         // measurements. Unconditional - independent of _sendPowerDataEnabled.
+
+        // A retry still failing a whole minute after its boundary gives way: the offline
+        // capture owns that minute, and a late send would duplicate it with a later timestamp
+        uint64_t nowUnixSecond = CustomTime::getUnixTime();
+        if (nowUnixSecond >= _nextEnergyPublishUnixSecond + MQTT_ENERGY_PUBLISH_ALIGN_SECONDS) {
+            LOG_WARNING("Energy snapshot for %llu not published within a minute, leaving it to the offline buffer", _nextEnergyPublishUnixSecond);
+            _publishMqtt.energy = false;
+            _nextEnergyPublishUnixSecond = MqttGridSchedule::nextAlignedBoundarySeconds(nowUnixSecond, MQTT_ENERGY_PUBLISH_ALIGN_SECONDS);
+            return;
+        }
+
         SpiRamAllocator allocator;
         JsonDocument doc(&allocator);
 
@@ -2651,6 +2677,7 @@ namespace Mqtt
 
         if (_publishJsonStreaming(doc, _mqttTopicEnergy)) {
             _lastLiveEnergyBoundaryUnixSecond = _nextEnergyPublishUnixSecond;
+            if (_heldCaptureCount > 0 && _heldCaptureBoundary == _nextEnergyPublishUnixSecond) _heldCaptureCount = 0;
             _publishMqtt.energy = false;
             _nextEnergyPublishUnixSecond = MqttGridSchedule::nextAlignedBoundarySeconds(CustomTime::getUnixTime(), MQTT_ENERGY_PUBLISH_ALIGN_SECONDS);
         }
@@ -2915,6 +2942,7 @@ namespace Mqtt
 
     static void _snapshotActiveEnergy(uint32_t boundaryUnixSecond) {
         _heldCaptureBoundary = boundaryUnixSecond;
+        _heldCaptureGeneration = OfflineEnergy::getGeneration();
         _heldCaptureCount = 0;
         for (uint8_t i = 0; i < globalHwProfile->totalChannelCount && _heldCaptureCount < MAX_CHANNEL_COUNT; i++) {
             if (!Ade7953::isChannelActive(i) || !Ade7953::hasChannelValidMeasurements(i)) continue;
@@ -2929,11 +2957,43 @@ namespace Mqtt
         }
     }
 
+    static void _checkCloudOutageRestart(bool linkUp, bool connected) {
+        uint64_t now = millis64();
+        uint64_t elapsed = now - _lastOutageTickMillis;
+        _lastOutageTickMillis = now;
+
+        if (connected) {
+            _cloudOutageLinkUpMillis = 0;
+            return;
+        }
+        if (!linkUp) return; // Link recovery belongs to the network layer
+        _cloudOutageLinkUpMillis += elapsed;
+
+        if (_cloudOutageLinkUpMillis >= MQTT_MAX_DISCONNECTED_BEFORE_RESTART_MS && !_cloudOutageRestartRequested) {
+            _cloudOutageRestartRequested = true;
+            LOG_ERROR("No MQTT connection for %llu ms with the network link up. Restarting device...", _cloudOutageLinkUpMillis);
+            setRestartSystem("No MQTT connection for 24 hours");
+        }
+    }
+
     static void _checkOfflineEnergyCapture(bool connected) {
         // Without a synced clock a record would carry a wrong absolute time; nothing is captured
         if (!CustomTime::isTimeSynched()) return;
 
         uint64_t nowUnixSecond = CustomTime::getUnixTime();
+
+        // Clock stepped back: re-arm instead of waiting for it to catch up
+        if (_nextOfflineCaptureUnixSecond > nowUnixSecond + 2 * MQTT_ENERGY_PUBLISH_ALIGN_SECONDS) {
+            _nextOfflineCaptureUnixSecond = 0;
+            _heldCaptureCount = 0;
+        }
+
+        // Disconnected with a minute still held: its live publish can no longer happen
+        if (!connected && _heldCaptureCount > 0) {
+            OfflineEnergy::append(_heldCapture, _heldCaptureCount, _heldCaptureGeneration);
+            _heldCaptureCount = 0;
+        }
+
         if (_nextOfflineCaptureUnixSecond == 0) {
             _nextOfflineCaptureUnixSecond = MqttGridSchedule::nextAlignedBoundarySeconds(nowUnixSecond, MQTT_ENERGY_PUBLISH_ALIGN_SECONDS);
             return;
@@ -2947,21 +3007,24 @@ namespace Mqtt
             return;
         }
 
-        // The minute held one boundary ago never made it out live: keep it
-        if (_heldCaptureCount > 0 && _heldCaptureBoundary != _lastLiveEnergyBoundaryUnixSecond) {
-            OfflineEnergy::append(_heldCaptureBoundary, _heldCapture, _heldCaptureCount);
+        // The minute held one boundary ago never made it out live (a live success clears it in _publishEnergy)
+        if (_heldCaptureCount > 0) {
+            OfflineEnergy::append(_heldCapture, _heldCaptureCount, _heldCaptureGeneration);
+            _heldCaptureCount = 0;
         }
-        _heldCaptureCount = 0;
 
-        uint32_t boundary = (uint32_t)_nextOfflineCaptureUnixSecond;
+        uint64_t boundary = _nextOfflineCaptureUnixSecond;
         _nextOfflineCaptureUnixSecond = MqttGridSchedule::nextAlignedBoundarySeconds(nowUnixSecond, MQTT_ENERGY_PUBLISH_ALIGN_SECONDS);
 
-        _snapshotActiveEnergy(boundary);
+        // The live snapshot runs earlier in the same loop pass and may already have sent this boundary
+        if (_lastLiveEnergyBoundaryUnixSecond == boundary) return;
+
+        _snapshotActiveEnergy((uint32_t)boundary);
         if (_heldCaptureCount == 0) return;
 
         // Offline: no live publish can follow, write it now rather than a minute later
         if (!connected) {
-            OfflineEnergy::append(_heldCaptureBoundary, _heldCapture, _heldCaptureCount);
+            OfflineEnergy::append(_heldCapture, _heldCaptureCount, _heldCaptureGeneration);
             _heldCaptureCount = 0;
         }
     }
@@ -2974,6 +3037,10 @@ namespace Mqtt
         SpiRamAllocator allocator;
         JsonDocument doc(&allocator);
         if (!OfflineEnergy::prepareReplayChunk(doc, MQTT_OFFLINE_ENERGY_REPLAY_MAX_PAYLOAD_BYTES)) return;
+        if (doc.overflowed()) {
+            LOG_WARNING("Offline energy replay chunk overflowed PSRAM, retrying later");
+            return;
+        }
 
         if (_publishJsonStreaming(doc, _mqttTopicEnergy)) {
             OfflineEnergy::commitReplayChunk();
@@ -3051,7 +3118,11 @@ namespace Mqtt
 
             _mqttConnectionAttempt = 0; // Reset attempt counter on success
             _nextMqttConnectionAttemptMillis = 0; // Reset next attempt time
-            _lastMqttConnectedMillis = millis64();
+
+            // A target left over from before the outage would publish current readings under an
+            // old boundary that the offline capture already holds. Restart at the next boundary.
+            _nextEnergyPublishUnixSecond = 0;
+            _publishMqtt.energy = false;
             statistics.mqttConnections++;
 
             _subscribeToTopics();
@@ -3457,14 +3528,6 @@ namespace Mqtt
         // drop, and leaving it set would kill the FIRST session established over
         // the new route for no reason.
         _reconnectRequested = false;
-
-        // Checked before the time-sync wait: a WAN outage also blocks NTP, and the
-        // restart must still fire after a day of link-up-but-no-cloud
-        if (millis64() - _lastMqttConnectedMillis >= MQTT_MAX_DISCONNECTED_BEFORE_RESTART_MS) {
-            LOG_ERROR("No MQTT connection for %llu ms with the network link up. Restarting device...", MQTT_MAX_DISCONNECTED_BEFORE_RESTART_MS);
-            setRestartSystem("No MQTT connection for 24 hours");
-            return;
-        }
 
         // Wait for time sync before attempting connection to avoid LWIP lock conflicts
         if (!CustomTime::isTimeSynched()) {

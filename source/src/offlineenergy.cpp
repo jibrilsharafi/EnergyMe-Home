@@ -26,6 +26,12 @@ namespace OfflineEnergy
     static bool _pendingValid = false;
 
     static uint8_t* _readBuffer = nullptr; // One whole segment, in PSRAM
+    static OfflineEnergyRecord::DecodedChannel _decoded[OfflineEnergyRecord::MAX_CHANNELS]; // Static: the MQTT task stack is tight
+    static volatile uint32_t _generation = 0;
+
+    static bool _isReady() {
+        return _segments != nullptr && _readBuffer != nullptr;
+    }
 
     static void _pathFor(uint32_t hour, char* out, size_t outSize) {
         char name[OfflineEnergySegments::SEGMENT_NAME_BUFFER_SIZE];
@@ -110,17 +116,33 @@ namespace OfflineEnergy
         if (segments > 0) LOG_INFO("Offline energy buffer holds %lu segments to replay", (unsigned long)segments);
     }
 
-    bool append(uint32_t boundaryUnixSeconds, const OfflineEnergyRecord::ChannelReading* readings, size_t count) {
-        if (_segments == nullptr) return false;
+    uint32_t getGeneration() {
+        return _generation;
+    }
+
+    bool append(const OfflineEnergyRecord::ChannelReading* readings, size_t count, uint32_t generation) {
+        if (!_isReady() || readings == nullptr || count == 0) return false;
+
+        uint64_t earliestMs = UINT64_MAX;
+        for (size_t i = 0; i < count; i++) {
+            if (readings[i].unixTimeMs < earliestMs) earliestMs = readings[i].unixTimeMs;
+        }
+        uint32_t boundaryUnixSeconds = (uint32_t)(earliestMs / 1000);
 
         uint8_t record[OfflineEnergyRecord::MAX_RECORD_BYTES];
         size_t length = OfflineEnergyRecord::encode(boundaryUnixSeconds, readings, count, record, sizeof(record));
         if (length == 0) {
-            LOG_DEBUG("No encodable channel for offline energy record at %lu", (unsigned long)boundaryUnixSeconds);
+            LOG_WARNING("No encodable channel for offline energy record at %lu, dropping it", (unsigned long)boundaryUnixSeconds);
             return false;
         }
 
         if (!acquireMutex(&_mutex, OFFLINE_ENERGY_MUTEX_TIMEOUT_MS)) return false;
+
+        if (generation != _generation) {
+            releaseMutex(&_mutex);
+            LOG_DEBUG("Offline energy record taken before a buffer clear, dropping it");
+            return false;
+        }
 
         uint32_t hour = OfflineEnergySegments::segmentHour(boundaryUnixSeconds);
         size_t fsFree = LittleFS.totalBytes() - LittleFS.usedBytes();
@@ -166,11 +188,11 @@ namespace OfflineEnergy
     }
 
     bool hasBacklog() {
-        return _segmentCount > 0;
+        return _isReady() && _segmentCount > 0;
     }
 
     bool prepareReplayChunk(JsonDocument& doc, size_t maxPayloadBytes) {
-        if (_segments == nullptr || _readBuffer == nullptr) return false;
+        if (!_isReady()) return false;
         if (!acquireMutex(&_mutex, OFFLINE_ENERGY_MUTEX_TIMEOUT_MS)) return false;
 
         _pendingValid = false;
@@ -209,24 +231,35 @@ namespace OfflineEnergy
 
         size_t fileSize = file.size();
         size_t length = 0;
-        if (_replayOffset < fileSize && file.seek(_replayOffset)) {
+        bool readFailed = false;
+        if (_replayOffset < fileSize) {
             size_t toRead = fileSize - _replayOffset;
             if (toRead > OFFLINE_ENERGY_SEGMENT_MAX_BYTES) toRead = OFFLINE_ENERGY_SEGMENT_MAX_BYTES;
-            length = file.read(_readBuffer, toRead);
+            readFailed = !file.seek(_replayOffset);
+            if (!readFailed) length = file.read(_readBuffer, toRead);
+            readFailed = readFailed || length == 0;
         }
         file.close();
+
+        // An unreadable segment would otherwise block every newer one until it ages out
+        if (readFailed) {
+            LOG_WARNING("Failed to read offline energy segment %s, dropping it", path);
+            _dropFront(1);
+            statistics.mqttOfflineEnergySegmentsDropped++;
+            releaseMutex(&_mutex);
+            return false;
+        }
 
         size_t maxElements = maxPayloadBytes / OFFLINE_ENERGY_ELEMENT_MAX_JSON_BYTES;
         size_t elements = 0;
         size_t pos = 0;
         uint32_t loops = 0;
-        OfflineEnergyRecord::DecodedChannel channels[OfflineEnergyRecord::MAX_CHANNELS];
 
         while (pos < length && loops++ < MAX_LOOP_ITERATIONS) {
             uint32_t boundary = 0;
             size_t channelCount = 0;
             size_t used = OfflineEnergyRecord::decode(_readBuffer + pos, length - pos, boundary,
-                                                      channels, OfflineEnergyRecord::MAX_CHANNELS, channelCount);
+                                                      _decoded, OfflineEnergyRecord::MAX_CHANNELS, channelCount);
             if (used == 0) {
                 // A record cut by the read limit is read whole on the next chunk, not skipped as torn
                 bool moreInFile = _replayOffset + length < fileSize;
@@ -237,7 +270,7 @@ namespace OfflineEnergy
             if (elements > 0 && elements + channelCount > maxElements) break;
 
             for (size_t i = 0; i < channelCount; i++) {
-                const OfflineEnergyRecord::DecodedChannel& c = channels[i];
+                const OfflineEnergyRecord::DecodedChannel& c = _decoded[i];
                 if (!OfflineEnergySegments::isReadingFresh(c.unixTimeMs, nowUnixSeconds, OFFLINE_ENERGY_MAX_AGE_SECONDS)) continue;
                 JsonObject obj = doc.add<JsonObject>();
                 obj["unixTime"] = c.unixTimeMs;
@@ -307,6 +340,7 @@ namespace OfflineEnergy
         }
 
         _resetReplayCursor();
+        _generation = _generation + 1;
         releaseMutex(&_mutex);
         LOG_INFO("Offline energy buffer cleared");
     }

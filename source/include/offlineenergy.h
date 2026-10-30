@@ -26,15 +26,21 @@
 #define OFFLINE_ENERGY_HEADROOM_BYTES (512UL * 1024) // Free LittleFS kept for logs and the energy CSVs
 #define OFFLINE_ENERGY_MAX_SEGMENTS 400 // Above the 336 hourly segments of 14 days, to absorb clock jumps
 #define OFFLINE_ENERGY_SEGMENT_MAX_BYTES (60 * OfflineEnergyRecord::MAX_RECORD_BYTES) // One record per minute of the hour
-#define OFFLINE_ENERGY_ELEMENT_MAX_JSON_BYTES 113 // Worst-case replay element plus its separating comma
+#define OFFLINE_ENERGY_ELEMENT_MAX_JSON_BYTES 114 // Worst-case replay element (counters in exponent form) plus its separating comma
 
 namespace OfflineEnergy
 {
     void begin();
 
-    // Appends one record for `boundaryUnixSeconds`, trimming old data first.
-    // Returns false when nothing could be stored (no encodable channel, or no room).
-    bool append(uint32_t boundaryUnixSeconds, const OfflineEnergyRecord::ChannelReading* readings, size_t count);
+    // Appends one record holding `readings`, trimming old data first. The
+    // record is based on its earliest reading rather than the nominal minute,
+    // so a capture that ran late still fits the codec's per-channel offset.
+    // Dropped when `generation` is stale, i.e. the buffer was cleared since the
+    // readings were taken. Returns false when nothing was stored.
+    bool append(const OfflineEnergyRecord::ChannelReading* readings, size_t count, uint32_t generation);
+
+    // Incremented by every clear()
+    uint32_t getGeneration();
 
     bool hasBacklog();
 
