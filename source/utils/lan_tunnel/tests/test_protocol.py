@@ -116,24 +116,24 @@ def test_rto_matches_firmware_vectors():
     for _ in range(10):
         e.backoff()
     e.clear_backoff(900)
-    assert e.rto == 900
+    assert e.rto == 2 * p.RTO_MIN_MS
 
 
 def test_sender_fast_retransmit_and_link_failed():
     s = p.ArqSender()
     for i in range(5):
         s.allocate(0, i)
-    s.on_ack(1, 0x0003, 50)  # RTT 50, RTTVAR 25 -> hole wait 100
-    assert s.next_retransmit(99) is None
-    slot, timeout = s.next_retransmit(100)
+    s.on_ack(1, 0x0003, 50)  # RTT 50 -> hole wait 62
+    assert s.next_retransmit(61) is None
+    slot, timeout = s.next_retransmit(62)
     assert (slot.seq, timeout) == (2, False)
-    s.mark_retransmitted(slot, 100, False)
-    assert s.next_retransmit(199) is None
-    slot, timeout = s.next_retransmit(200)  # the hole is resent again, no backoff
+    s.mark_retransmitted(slot, 62, False)
+    assert s.next_retransmit(100) is None
+    slot, timeout = s.next_retransmit(124)  # the hole is resent again, no backoff
     assert (slot.seq, timeout) == (2, False)
-    s.mark_retransmitted(slot, 200, False)
+    s.mark_retransmitted(slot, 124, False)
     assert s.timeouts == 0
-    now = 200
+    now = 124
     while s.timeouts < p.LINK_FAILED_TIMEOUTS:
         now += p.RTO_MAX_MS
         while (due := s.next_retransmit(now)) is not None:
@@ -176,7 +176,7 @@ def test_ack_progress_clears_backoff_without_sample():
     slot, timeout = s.next_retransmit(1000)
     s.mark_retransmitted(slot, 1000, timeout)
     assert s.rto.rto == 2000
-    s.on_ack(1, 0, 1100)  # acks the resent frame: no sample, but not below the 1100 ms seen
+    s.on_ack(1, 0, 1100)  # acks the resent frame: no sample, floor min(1100, 2 * 1000)
     assert s.rto.rto == 1100 and s.timeouts == 0
 
 

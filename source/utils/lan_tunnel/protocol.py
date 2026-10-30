@@ -252,13 +252,13 @@ class RtoEstimator:
 
     def clear_backoff(self, observed_ms: int) -> None:
         """Ack progress without a Karn sample: drop the backoff, never below observed_ms."""
-        base = self.srtt + 4 * self.rttvar if self.has_sample else RTO_INITIAL_MS
-        self.rto = self._clamp(max(base, observed_ms))
+        base = self._clamp(self.srtt + 4 * self.rttvar if self.has_sample else RTO_INITIAL_MS)
+        self.rto = self._clamp(max(base, min(observed_ms, 2 * base)))
 
     def hole_wait(self) -> int:
         if not self.has_sample:
             return self.rto
-        return max(self.srtt + max(self.srtt // 4, 2 * self.rttvar), FAST_RETRANSMIT_MIN_MS)
+        return max(self.srtt + self.srtt // 4, FAST_RETRANSMIT_MIN_MS)
 
 
 @dataclass

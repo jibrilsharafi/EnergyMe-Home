@@ -196,14 +196,16 @@ void RtoEstimator::sample(uint32_t rttMs) {
 void RtoEstimator::backoff() { _rto = _clampRto(_rto * 2); }
 
 void RtoEstimator::clearBackoff(uint32_t observedMs) {
-    uint32_t base = _hasSample ? _srtt + 4 * _rttvar : RTO_INITIAL_MS;
-    _rto = _clampRto(base > observedMs ? base : observedMs);
+    uint32_t base = _clampRto(_hasSample ? _srtt + 4 * _rttvar : RTO_INITIAL_MS);
+    // Capped at 2x: under heavy loss the first-send delay is mostly resend
+    // waits, not RTT, and an uncapped floor slowed recovery on the bench.
+    uint32_t floor = observedMs < 2 * base ? observedMs : 2 * base;
+    _rto = _clampRto(base > floor ? base : floor);
 }
 
 uint32_t RtoEstimator::holeWaitMs() const {
     if (!_hasSample) return _rto;
-    uint32_t margin = _srtt / 4 > 2 * _rttvar ? _srtt / 4 : 2 * _rttvar;
-    uint32_t wait = _srtt + margin;
+    uint32_t wait = _srtt + _srtt / 4; // a spurious resend costs one token, a late one costs latency
     return wait < FAST_RETRANSMIT_MIN_MS ? FAST_RETRANSMIT_MIN_MS : wait;
 }
 

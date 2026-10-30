@@ -138,9 +138,10 @@ public:
     // Ack progress without a Karn-valid sample (at 20 % loss most acked frames
     // were resends): drop the backoff, but never below `observedMs`, the time
     // from the newest freed frame's first send to this ack. That bound keeps a
-    // risen RTT from being met with ever-repeating spurious timeouts.
+    // risen RTT from being met with ever-repeating spurious timeouts. The floor
+    // is capped at twice the computed RTO.
     void clearBackoff(uint32_t observedMs);
-    // Wait before resending a SACK hole: SRTT plus the larger of SRTT/4 and 2 RTTVAR.
+    // Wait before resending a SACK hole: 1.25 SRTT (at least FAST_RETRANSMIT_MIN_MS).
     uint32_t holeWaitMs() const;
     uint32_t rtoMs() const { return _rto; }
     uint32_t srttMs() const { return _srtt; }
