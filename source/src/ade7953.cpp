@@ -2736,6 +2736,7 @@ namespace Ade7953
         // Perform the clearing operation
         if (channelIndex == CLEAR_ALL_CHANNELS_SENTINEL) {
             _clearAllHistoricalData();
+            OfflineEnergy::clear();
         } else {
             _clearChannelHistoricalData(channelIndex);
         }

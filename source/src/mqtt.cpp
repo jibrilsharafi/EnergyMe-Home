@@ -83,6 +83,17 @@ namespace Mqtt
     static uint64_t _nextGridPublishUnixSecond = 0;
     // Next energy publish deadline (unix seconds, wall-clock aligned); 0 = not yet scheduled
     static uint64_t _nextEnergyPublishUnixSecond = 0;
+    // Boundary of the last energy snapshot that reached the broker
+    static uint64_t _lastLiveEnergyBoundaryUnixSecond = 0;
+
+    // Offline energy capture runs in every connection state on its own boundary
+    // target. While connected, a boundary is held here for one minute and only
+    // written to flash if the live snapshot for it never got out.
+    static uint64_t _nextOfflineCaptureUnixSecond = 0;
+    static OfflineEnergyRecord::ChannelReading _heldCapture[MAX_CHANNEL_COUNT];
+    static size_t _heldCaptureCount = 0;
+    static uint32_t _heldCaptureBoundary = 0;
+    static uint64_t _lastOfflineReplayMillis = 0;
 
     // Configuration
     static bool _cloudServicesEnabled = DEFAULT_CLOUD_SERVICES_ENABLED;
@@ -274,6 +285,8 @@ namespace Mqtt
     static void _checkIfPublishGridNeeded();
     static bool _allActiveChannelsFreshSinceBoundary(uint64_t boundaryUnixMs);
     static void _checkIfPublishEnergyNeeded();
+    static void _checkOfflineEnergyCapture(bool connected);
+    static void _checkOfflineEnergyReplay();
     static void _checkIfPublishSystemDynamicNeeded();
     static void _checkIfPublishStatisticsNeeded();
     static void _checkIfPublishCrashNeeded();
@@ -338,6 +351,7 @@ namespace Mqtt
 
         _setupTopics();
         _loadConfigFromPreferences();
+        OfflineEnergy::begin();
         Shadow::begin();
         _initializeLogQueue();
         _initializeMeterQueue();
@@ -460,6 +474,7 @@ namespace Mqtt
 
         _cloudServicesEnabled = enabled;
         _saveCloudServicesEnabledToPreferences(enabled);
+        if (!enabled) OfflineEnergy::clear();
 
         if (_cloudServicesEnabled && _certificatesLoaded) _startTask();
         else if (_cloudServicesEnabled && !_certificatesLoaded) LOG_WARNING("Cannot start MQTT task: device certificates not loaded - reprovision required");
@@ -1055,6 +1070,7 @@ namespace Mqtt
             }
             _lastConnectedState = connectedNow;
             Tunnel::setCloudConnected(connectedNow);
+            _checkOfflineEnergyCapture(connectedNow);
 
             // If we receive a signal to stop the task, we try to publish all the data and flushing the queues so we avoid losing data
             if (_lastLoopToPublishData) {
@@ -2620,6 +2636,7 @@ namespace Mqtt
         }
 
         if (_publishJsonStreaming(doc, _mqttTopicEnergy)) {
+            _lastLiveEnergyBoundaryUnixSecond = _nextEnergyPublishUnixSecond;
             _publishMqtt.energy = false;
             _nextEnergyPublishUnixSecond = MqttGridSchedule::nextAlignedBoundarySeconds(CustomTime::getUnixTime(), MQTT_ENERGY_PUBLISH_ALIGN_SECONDS);
         }
@@ -2879,6 +2896,75 @@ namespace Mqtt
                                                      MQTT_ENERGY_PUBLISH_DEADLINE_SECONDS, allFresh)) {
             _publishMqtt.energy = true;
             LOG_DEBUG("Set flag to publish energy data");
+        }
+    }
+
+    static void _snapshotActiveEnergy(uint32_t boundaryUnixSecond) {
+        _heldCaptureBoundary = boundaryUnixSecond;
+        _heldCaptureCount = 0;
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount && _heldCaptureCount < MAX_CHANNEL_COUNT; i++) {
+            if (!Ade7953::isChannelActive(i) || !Ade7953::hasChannelValidMeasurements(i)) continue;
+            MeterValues meterValues;
+            if (!Ade7953::getMeterValues(meterValues, i)) continue;
+            _heldCapture[_heldCaptureCount++] = {
+                i,
+                meterValues.lastUnixTimeMilliseconds,
+                meterValues.activeEnergyImported,
+                meterValues.activeEnergyExported
+            };
+        }
+    }
+
+    static void _checkOfflineEnergyCapture(bool connected) {
+        // Without a synced clock a record would carry a wrong absolute time; nothing is captured
+        if (!CustomTime::isTimeSynched()) return;
+
+        uint64_t nowUnixSecond = CustomTime::getUnixTime();
+        if (_nextOfflineCaptureUnixSecond == 0) {
+            _nextOfflineCaptureUnixSecond = MqttGridSchedule::nextAlignedBoundarySeconds(nowUnixSecond, MQTT_ENERGY_PUBLISH_ALIGN_SECONDS);
+            return;
+        }
+
+        // Same gate as the live snapshot, so a buffered minute holds the readings a live one would have
+        bool allFresh = nowUnixSecond >= _nextOfflineCaptureUnixSecond &&
+                        _allActiveChannelsFreshSinceBoundary(_nextOfflineCaptureUnixSecond * 1000ULL);
+        if (!MqttEnergyPublishGate::shouldPublishNow(nowUnixSecond, _nextOfflineCaptureUnixSecond,
+                                                     MQTT_ENERGY_PUBLISH_DEADLINE_SECONDS, allFresh)) {
+            return;
+        }
+
+        // The minute held one boundary ago never made it out live: keep it
+        if (_heldCaptureCount > 0 && _heldCaptureBoundary != _lastLiveEnergyBoundaryUnixSecond) {
+            OfflineEnergy::append(_heldCaptureBoundary, _heldCapture, _heldCaptureCount);
+        }
+        _heldCaptureCount = 0;
+
+        uint32_t boundary = (uint32_t)_nextOfflineCaptureUnixSecond;
+        _nextOfflineCaptureUnixSecond = MqttGridSchedule::nextAlignedBoundarySeconds(nowUnixSecond, MQTT_ENERGY_PUBLISH_ALIGN_SECONDS);
+
+        _snapshotActiveEnergy(boundary);
+        if (_heldCaptureCount == 0) return;
+
+        // Offline: no live publish can follow, write it now rather than a minute later
+        if (!connected) {
+            OfflineEnergy::append(_heldCaptureBoundary, _heldCapture, _heldCaptureCount);
+            _heldCaptureCount = 0;
+        }
+    }
+
+    static void _checkOfflineEnergyReplay() {
+        if (!OfflineEnergy::hasBacklog()) return;
+        if (millis64() - _lastOfflineReplayMillis < MQTT_OFFLINE_ENERGY_REPLAY_INTERVAL_MS) return;
+        _lastOfflineReplayMillis = millis64();
+
+        SpiRamAllocator allocator;
+        JsonDocument doc(&allocator);
+        if (!OfflineEnergy::prepareReplayChunk(doc, MQTT_OFFLINE_ENERGY_REPLAY_MAX_PAYLOAD_BYTES)) return;
+
+        if (_publishJsonStreaming(doc, _mqttTopicEnergy)) {
+            OfflineEnergy::commitReplayChunk();
+            LOG_DEBUG("Replayed %u offline energy readings (%lu segments left)",
+                      (unsigned)doc.size(), (unsigned long)OfflineEnergy::getSegmentCount());
         }
     }
 
@@ -3421,6 +3507,7 @@ namespace Mqtt
         _checkIfPublishStatisticsNeeded();
         _checkIfPublishCrashNeeded();
         _checkPublishMqtt();
+        _checkOfflineEnergyReplay(); // After the live publishes, so a backlog never delays them
         Shadow::checkPublish(); // drain shadow deltas/local-edits/reports (MQTT task body)
         _drainPendingCommand(); // process queued IoT Command (broker RX or dev inject) off the callback
         _drainGatewayResult(); // publish a finished LAN gateway request from the task body

@@ -22,6 +22,7 @@
 #include "customnet.h"
 #include "customlog.h"
 #include "globals.h"
+#include "offlineenergy.h"
 #include "structs.h"
 #include "utils.h"
 
@@ -101,6 +102,10 @@
 // on the longest gap between reads of any channel - rather than a separate literal, so the two never
 // drift apart: this deadline can never fire before the scheduler's own worst-case has had a chance to catch up.
 #define MQTT_ENERGY_PUBLISH_DEADLINE_SECONDS (CHANNEL_MAX_GAP_MS / 1000)
+// Offline energy replay: one chunk per pass, spaced so live publishing keeps its cadence. The
+// payload stays well under the 64 KiB PubSubClient remaining-length ceiling (see CrashArchivePolicy).
+#define MQTT_OFFLINE_ENERGY_REPLAY_INTERVAL_MS 1000
+#define MQTT_OFFLINE_ENERGY_REPLAY_MAX_PAYLOAD_BYTES (48 * 1024)
 #ifdef ENV_DEV
 // In dev: send system_dynamic and statistics every minute so post-mortem
 // telemetry has the resolution needed to investigate behavior.
