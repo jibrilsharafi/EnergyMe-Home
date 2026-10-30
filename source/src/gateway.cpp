@@ -69,12 +69,7 @@ namespace Gateway
 
     static void _setBool(JsonObject result, const char* key, bool value) { result[key]["b"] = value; }
 
-    // AWS requires at least one byte in a bin value, so an empty payload is reported as an empty string instead.
     static bool _setBinary(JsonObject result, const char* key, const uint8_t* data, size_t length) {
-        if (length == 0) {
-            result[key]["s"] = "";
-            return true;
-        }
         size_t encodedLength = 0;
         mbedtls_base64_encode(nullptr, 0, &encodedLength, data, length);
         char* encoded = (char*)ps_malloc(encodedLength + 1);
@@ -87,6 +82,17 @@ namespace Gateway
         }
         free(encoded);
         return ok;
+    }
+
+    // UTF-8 text goes out as a plain string so the cloud can read it without decoding; anything else stays base64.
+    // AWS rejects the whole response when a value is empty (no "s": "" or zero-byte "bin"), so an empty payload omits the key.
+    static bool _setPayload(JsonObject result, const char* key, const uint8_t* data, size_t length, bool truncated) {
+        if (length == 0) return true;
+        size_t textLength = 0;
+        if (GatewayLogic::utf8TextLength(data, length, truncated, &textLength)) {
+            return result[key]["s"].set(JsonString((const char*)data, textLength)); // not static -> ArduinoJson copies
+        }
+        return _setBinary(result, key, data, length);
     }
 
     // Decodes base64 into a new NUL-terminated PSRAM buffer (caller frees).
@@ -464,7 +470,7 @@ namespace Gateway
         JsonObject result = _succeed(doc);
         _setNumber(result, "status_code", statusCode);
         _setBool(result, "truncated", truncated);
-        if (!_setBinary(result, "body", body, bodyLength)) {
+        if (!_setPayload(result, "body", body, bodyLength, truncated)) {
             doc.clear();
             _fail(doc, "NO_MEMORY", "Could not encode the response body");
         }
@@ -617,8 +623,9 @@ namespace Gateway
         }
         JsonObject result = _succeed(doc);
         _setBool(result, "sent", true);
-        _setBool(result, "truncated", replyLength >= UDP_MAX_DATAGRAM_BYTES);
-        bool encoded = _setBinary(result, "reply", reply, replyLength);
+        bool truncated = replyLength >= UDP_MAX_DATAGRAM_BYTES;
+        _setBool(result, "truncated", truncated);
+        bool encoded = _setPayload(result, "reply", reply, replyLength, truncated);
         free(reply);
         if (!encoded) {
             doc.clear();
