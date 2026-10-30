@@ -122,6 +122,7 @@
 #define MQTT_OVERRIDE_KEEPALIVE 30 // 30 is the minimum value supported by AWS IoT Core (in seconds)
 
 #define MQTT_LOOP_INTERVAL 100 // Interval between two MQTT loop checks
+#define MQTT_LOOP_INTERVAL_TUNNEL 10 // While a LAN tunnel session is open
 
 // Notification bit alongside TASK_NOTIFY_SHUTDOWN_BIT (constants.h) that wakes
 // the MQTT task immediately instead of waiting up to MQTT_LOOP_INTERVAL - see
@@ -174,6 +175,7 @@
 #define MQTT_TOPIC_STATISTICS "statistics"
 #define MQTT_TOPIC_CRASH "crash"
 #define MQTT_TOPIC_LOG "log"
+#define MQTT_TOPIC_TUNNEL "tunnel" // tunnel/<sid>/{d,u}: no rule, the device policy wildcard covers it
 #define MQTT_TOPIC_ALARM "alarm" // Routed via its own rule (AWS_IOT_CORE_RULE_ALARM_HOME / _HOMEPRO, awsconfig.h); requires that rule to exist server-side
 // Subscribe topics. The legacy `command` topic is retired (-> IoT Commands +
 // system shadow); only AWS IoT Jobs (OTA) and shadow/command reserved topics remain.
