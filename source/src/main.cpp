@@ -27,6 +27,7 @@
 #include "led.h"
 #include "modbustcp.h"
 #include "gateway.h"
+#include "tunnel.h"
 #include "mqtt.h"
 #include "custommqtt.h"
 #include "influxdbclient.h"
@@ -305,6 +306,11 @@ void setup()
     Gateway::begin();
     LOG_DEBUG("LAN gateway setup done");
     logHeapLedger("lan gateway");
+
+    LOG_DEBUG("Setting up LAN tunnel...");
+    Tunnel::begin();
+    LOG_DEBUG("LAN tunnel setup done");
+    logHeapLedger("lan tunnel");
 
     LOG_DEBUG("Setting up MQTT client...");
     Mqtt::begin();
