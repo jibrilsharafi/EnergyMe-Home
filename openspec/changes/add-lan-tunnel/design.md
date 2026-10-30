@@ -56,6 +56,9 @@ The session survives an MQTT drop of up to 30 s: RTO timers and the operator-sil
 ### Operator tool in this repo for now
 `source/utils/lan_tunnel/` (asyncio, `awsiotsdk` MQTT5 over WSS with SigV4, boto3 for `StartCommandExecution`), run with the existing `source/pyproject.toml`. Client id `tunnel-<sid>`, never a thing name (which would kick the meter off the broker). It refuses `--env prod` without a typed device-id confirmation and has a hard block on the PROD bench address. It moves to energyme-infra with the IAM work. The protocol module is shared by the tool and a Python reference device used in the host chaos tests.
 
+### ARQ tuning from the bench
+Found and fixed on hardware at 20 % injected loss: a lost CH_OK stalled the RTO path for seconds, so a SACK hole is resent every 1.25 SRTT (capped at 6 sends, after which the counted RTO path leads to LINK_FAILED); frames expired in the same RTO event are resent together with one backoff; an ack of resent frames (no Karn sample) drops the backoff but not below the delay it proves, capped at twice the computed RTO. A risen RTT more than twice the estimate still causes repeated resends until a clean sample arrives; a timestamp echo in ACK would remove that ambiguity (later).
+
 ## Risks / Trade-offs
 
 - [A blocking TLS `publish()` stalls the MQTT task on a congested uplink] → per-iteration budget and token bucket; telemetry is queued in PSRAM; worst loop time measured in the soak.
@@ -73,4 +76,4 @@ Firmware only, off by default (`tunnel_enabled` false), so an OTA changes nothin
 ## Open Questions
 
 - Requester audit for `command_events` (CloudTrail on `StartCommandExecution` vs an ADR-010 requester column): infra, later.
-- Whether a terminal status lands after 60 minutes: needs the 65-minute dev test.
+- Terminal status after 60 minutes: verified in dev (a 66-minute session ended SUCCEEDED MAX_DURATION and was accepted). The 3300 s clamp stays until the operator use case needs longer sessions.
