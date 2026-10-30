@@ -333,17 +333,30 @@ void test_sender_sack_fast_retransmit(void) {
     uint8_t slot;
     bool timeout;
     for (int i = 0; i < 5; i++) s.allocate(0, &slot);
-    // Peer has 1, misses 2, has 3 and 4 -> ack 1, sack bit0 = 3, bit1 = 4
+    // Peer has 1, misses 2, has 3 and 4 -> ack 1, sack bit0 = 3, bit1 = 4. RTT 50 -> hole wait 62.
     s.onAck(1, 0x0003, 50);
-    TEST_ASSERT_TRUE(s.nextRetransmit(60, &slot, &timeout));
+    TEST_ASSERT_FALSE(s.nextRetransmit(61, &slot, &timeout));
+    TEST_ASSERT_TRUE(s.nextRetransmit(62, &slot, &timeout));
     TEST_ASSERT_FALSE(timeout);
     TEST_ASSERT_EQUAL_UINT32(2, s.seqOf(slot));
-    s.markRetransmitted(slot, 60, false);
-    // Fast retransmit fires once; seq 5 (one later SACK) is not due yet.
-    TEST_ASSERT_FALSE(s.nextRetransmit(70, &slot, &timeout));
-    // SACKed frames are never retransmitted on RTO.
-    TEST_ASSERT_TRUE(s.nextRetransmit(2000, &slot, &timeout));
-    TEST_ASSERT_TRUE(s.seqOf(slot) == 2 || s.seqOf(slot) == 5);
+    s.markRetransmitted(slot, 62, false);
+    TEST_ASSERT_FALSE(s.nextRetransmit(100, &slot, &timeout));
+    // Still a hole one SRTT later (the resend was lost too): resent again, no backoff.
+    TEST_ASSERT_TRUE(s.nextRetransmit(124, &slot, &timeout));
+    TEST_ASSERT_FALSE(timeout);
+    TEST_ASSERT_EQUAL_UINT32(2, s.seqOf(slot));
+    s.markRetransmitted(slot, 124, false);
+    TEST_ASSERT_EQUAL(0, s.consecutiveTimeouts());
+    TEST_ASSERT_EQUAL_UINT32(300, s.rto().rtoMs());
+    // SACKed frames (3, 4) are never resent; seq 5 only on RTO.
+    for (uint32_t now = 200; now < 20000; now += 50) {
+        while (s.nextRetransmit(now, &slot, &timeout)) {
+            TEST_ASSERT_TRUE(s.seqOf(slot) == 2 || s.seqOf(slot) == 5);
+            s.markRetransmitted(slot, now, timeout);
+        }
+    }
+    // A hole that never fills ends up on the counted RTO path.
+    TEST_ASSERT_TRUE(s.consecutiveTimeouts() > 0);
 }
 
 void test_sender_rearm_after_reconnect(void) {

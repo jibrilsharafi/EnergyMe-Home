@@ -26,7 +26,9 @@ RTO_INITIAL_MS = 1000
 RTO_MIN_MS = 300
 RTO_MAX_MS = 5000
 LINK_FAILED_TIMEOUTS = 8
-FAST_RETRANSMIT_SACKS = 2
+FAST_RETRANSMIT_SACKS = 1  # see tunnel_logic.h: holes are resent every ~SRTT
+FAST_RETRANSMIT_MIN_MS = 20
+HOLE_TRANSMISSIONS_MAX = 6  # then the counted RTO path takes over (LINK_FAILED)
 CREDIT_UPDATE_BYTES = 2048
 
 _HEADER = struct.Struct("<BBBBIIHH")
@@ -229,17 +231,17 @@ class RtoEstimator:
         self.srtt = 0
         self.rttvar = 0
         self.rto = RTO_INITIAL_MS
-        self._has_sample = False
+        self.has_sample = False
 
     @staticmethod
     def _clamp(value: int) -> int:
         return max(RTO_MIN_MS, min(RTO_MAX_MS, value))
 
     def sample(self, rtt_ms: int) -> None:
-        if not self._has_sample:
+        if not self.has_sample:
             self.srtt = rtt_ms
             self.rttvar = rtt_ms // 2
-            self._has_sample = True
+            self.has_sample = True
         else:
             self.rttvar = (3 * self.rttvar + abs(self.srtt - rtt_ms)) // 4
             self.srtt = (7 * self.srtt + rtt_ms) // 8
@@ -256,8 +258,7 @@ class _Slot:
     item: object
     transmissions: int = 1
     sacked: bool = False
-    fast_pending: bool = False
-    fast_done: bool = False
+    hole: bool = False  # a later frame was SACKed
     rearmed: bool = False  # resend after a reconnect: not an RTO event
 
 
@@ -296,17 +297,23 @@ class ArqSender:
                 if s:
                     s.sacked = True
         for s in self.slots.values():
-            if s.sacked or s.fast_done:
+            if s.sacked:
                 continue
             later = sum(1 for o in self.slots.values() if o.sacked and seq_before(s.seq, o.seq))
             if later >= FAST_RETRANSMIT_SACKS:
-                s.fast_pending = True
+                s.hole = True
         return len(freed)
 
     def next_retransmit(self, now_ms: int):
         """(slot, timeout) due for retransmission, or None."""
+        hole_wait = self.rto.rto
+        if self.rto.has_sample:
+            hole_wait = max(self.rto.srtt + self.rto.srtt // 4, FAST_RETRANSMIT_MIN_MS)
         for s in self.slots.values():
-            if s.fast_pending or s.rearmed:
+            hole_due = (
+                s.hole and not s.sacked and s.transmissions < HOLE_TRANSMISSIONS_MAX and now_ms - s.sent_ms >= hole_wait
+            )
+            if s.rearmed or hole_due:
                 return s, False
         due = [s for s in self.slots.values() if not s.sacked and now_ms - s.sent_ms >= self.rto.rto]
         if not due:
@@ -318,9 +325,6 @@ class ArqSender:
         return oldest, True
 
     def mark_retransmitted(self, slot: _Slot, now_ms: int, timeout: bool) -> None:
-        if slot.fast_pending:
-            slot.fast_pending = False
-            slot.fast_done = True
         slot.rearmed = False
         slot.transmissions += 1
         slot.sent_ms = now_ms

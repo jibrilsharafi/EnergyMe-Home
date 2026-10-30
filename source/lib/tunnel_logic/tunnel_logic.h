@@ -136,6 +136,7 @@ public:
     void backoff();
     uint32_t rtoMs() const { return _rto; }
     uint32_t srttMs() const { return _srtt; }
+    bool hasSample() const { return _hasSample; }
 
 private:
     bool _hasSample = false;
@@ -149,7 +150,13 @@ private:
 // ---------------------------------------------------------------------------
 
 inline constexpr uint8_t LINK_FAILED_TIMEOUTS = 8;
-inline constexpr uint8_t FAST_RETRANSMIT_SACKS = 2;
+// A frame below a SACKed one is resent after about one SRTT, without backoff,
+// and again every SRTT while the hole stays open. On a sparse, lossy link there
+// are rarely enough later frames for a duplicate-ack count, and waiting for the
+// backed-off RTO let a lost CH_OK sit for 12 s (dev bench, 20 % loss).
+inline constexpr uint8_t FAST_RETRANSMIT_SACKS = 1;
+inline constexpr uint32_t FAST_RETRANSMIT_MIN_MS = 20;
+inline constexpr uint8_t HOLE_TRANSMISSIONS_MAX = 6; // then the counted RTO path takes over (LINK_FAILED)
 
 class ArqSender {
 public:
@@ -169,7 +176,8 @@ public:
     // progress and arms fast retransmit. Returns the number of slots freed.
     uint8_t onAck(uint32_t ack, uint16_t sack, uint32_t nowMs);
 
-    // A slot due for retransmission: fast retransmit first, then RTO expiry.
+    // A slot due for retransmission: reconnect rearm and SACK holes first (not RTO
+    // events), then RTO expiry.
     // `*timeout` tells the caller whether this counts as an RTO event.
     bool nextRetransmit(uint32_t nowMs, uint8_t *slot, bool *timeout);
 
@@ -190,8 +198,7 @@ private:
     struct Slot {
         bool used;
         bool sacked;
-        bool fastPending;
-        bool fastDone;
+        bool hole; // a later frame was SACKed: this one is most likely lost
         bool rearmed; // resend after a reconnect: not an RTO event
         uint8_t transmissions;
         uint32_t seq;

@@ -117,12 +117,17 @@ def test_sender_fast_retransmit_and_link_failed():
     s = p.ArqSender()
     for i in range(5):
         s.allocate(0, i)
-    s.on_ack(1, 0x0003, 50)
-    slot, timeout = s.next_retransmit(60)
+    s.on_ack(1, 0x0003, 50)  # RTT 50 -> hole wait 62
+    assert s.next_retransmit(61) is None
+    slot, timeout = s.next_retransmit(62)
     assert (slot.seq, timeout) == (2, False)
-    s.mark_retransmitted(slot, 60, False)
-    assert s.next_retransmit(70) is None
-    now = 70
+    s.mark_retransmitted(slot, 62, False)
+    assert s.next_retransmit(100) is None
+    slot, timeout = s.next_retransmit(124)  # the hole is resent every SRTT, no backoff
+    assert (slot.seq, timeout) == (2, False)
+    s.mark_retransmitted(slot, 124, False)
+    assert s.timeouts == 0
+    now = 124
     while s.timeouts < p.LINK_FAILED_TIMEOUTS:
         now += p.RTO_MAX_MS
         while (due := s.next_retransmit(now)) is not None:

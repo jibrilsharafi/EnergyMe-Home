@@ -209,7 +209,7 @@ void ArqSender::resetAt(uint32_t nextSeq) {
 uint32_t ArqSender::allocate(uint32_t nowMs, uint8_t *slot) {
     uint32_t seq = _nextSeq++;
     uint8_t index = static_cast<uint8_t>(seq % WINDOW);
-    _slots[index] = {true, false, false, false, false, 1, seq, nowMs};
+    _slots[index] = {true, false, false, false, 1, seq, nowMs};
     _inFlight++;
     *slot = index;
     return seq;
@@ -242,19 +242,26 @@ uint8_t ArqSender::onAck(uint32_t ack, uint16_t sack, uint32_t nowMs) {
         if (s.used && s.seq == ack + 2 + i) s.sacked = true;
     }
     for (auto &s : _slots) {
-        if (!s.used || s.sacked || s.fastDone) continue;
+        if (!s.used || s.sacked) continue;
         uint8_t later = 0;
         for (const auto &o : _slots) {
             if (o.used && o.sacked && seqBefore(s.seq, o.seq)) later++;
         }
-        if (later >= FAST_RETRANSMIT_SACKS) s.fastPending = true;
+        if (later >= FAST_RETRANSMIT_SACKS) s.hole = true;
     }
     return freed;
 }
 
 bool ArqSender::nextRetransmit(uint32_t nowMs, uint8_t *slot, bool *timeout) {
+    uint32_t holeWaitMs = _rto.rtoMs();
+    if (_rto.hasSample()) {
+        holeWaitMs = _rto.srttMs() + _rto.srttMs() / 4;
+        if (holeWaitMs < FAST_RETRANSMIT_MIN_MS) holeWaitMs = FAST_RETRANSMIT_MIN_MS;
+    }
     for (uint8_t i = 0; i < WINDOW; i++) {
-        if (_slots[i].used && (_slots[i].fastPending || _slots[i].rearmed)) {
+        const Slot &s = _slots[i];
+        bool holeDue = s.hole && !s.sacked && s.transmissions < HOLE_TRANSMISSIONS_MAX && nowMs - s.sentMs >= holeWaitMs;
+        if (s.used && (s.rearmed || holeDue)) {
             *slot = i;
             *timeout = false;
             return true;
@@ -274,10 +281,6 @@ bool ArqSender::nextRetransmit(uint32_t nowMs, uint8_t *slot, bool *timeout) {
 
 void ArqSender::markRetransmitted(uint8_t slot, uint32_t nowMs, bool timeout) {
     Slot &s = _slots[slot];
-    if (s.fastPending) {
-        s.fastPending = false;
-        s.fastDone = true;
-    }
     s.rearmed = false;
     if (s.transmissions < 255) s.transmissions++;
     s.sentMs = nowMs;
