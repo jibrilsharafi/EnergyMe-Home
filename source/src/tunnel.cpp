@@ -15,7 +15,6 @@
 #include "gateway.h"
 #include "mqtt.h"
 #include "shadow.h"
-#include "structs.h"
 #include "taskprofiler.h"
 #include "utils.h"
 
@@ -109,6 +108,7 @@ namespace Tunnel
     static uint32_t _unackedSinceMs = 0;
     static CloseReason _closeReason = CloseReason::NONE;
     static uint32_t _closingSinceMs = 0;
+    static uint32_t _heapSampledMs = 0;
     static bool _wasConnected = false;
     static TunnelLogic::SessionState _clock;
     static char* _terminalJson = nullptr;
@@ -171,7 +171,7 @@ namespace Tunnel
     bool setPorts(const uint16_t* ports, size_t count) {
         if (count > TunnelLogic::PORTS_MAX) return false;
         for (size_t i = 0; i < count; i++) {
-            if (ports[i] == 0) return false;
+            if (!GatewayLogic::isValidPort(ports[i])) return false;
         }
         if (!createMutexIfNeeded(&_stateMutex) || !acquireMutex(&_stateMutex)) return false;
         Preferences preferences;
@@ -195,6 +195,24 @@ namespace Tunnel
 
     bool isActive() { return _phase.load() != Phase::IDLE; }
 
+    void activeToJson(JsonVariant out) {
+        ActiveInfo active;
+        if (!getActive(&active)) {
+            out.set(nullptr);
+            return;
+        }
+        out["sid"] = active.sid;
+        out["ip"] = active.ip;
+        out["port"] = active.port;
+        out["since"] = active.since;
+    }
+
+    void portsToJson(JsonArray out) {
+        uint16_t ports[TunnelLogic::PORTS_MAX];
+        size_t count = getPorts(ports, TunnelLogic::PORTS_MAX);
+        for (size_t i = 0; i < count; i++) out.add(ports[i]);
+    }
+
     bool getActive(ActiveInfo* info) {
         Phase phase = _phase.load();
         if (phase != Phase::ACTIVE && phase != Phase::CLOSING) return false;
@@ -211,9 +229,9 @@ namespace Tunnel
     // Frame emission (tunnel task)
     // ============================
 
-    static int _freeOutSlot() {
-        uint8_t index;
-        return xQueueReceive(_outFree, &index, 0) == pdTRUE ? index : -1;
+    static void _releaseSlot(QueueHandle_t queue, int index) {
+        uint8_t i = (uint8_t)index;
+        xQueueSend(queue, &i, 0);
     }
 
     static void _queueOut(uint8_t index) {
@@ -229,7 +247,8 @@ namespace Tunnel
     static int _claimOut(uint32_t now) {
         if (uxQueueMessagesWaiting(_outFree) == 0) return -1;
         if (!_bucket.take(now)) return -1;
-        return _freeOutSlot();
+        uint8_t index;
+        return xQueueReceive(_outFree, &index, 0) == pdTRUE ? index : -1;
     }
 
     static Header _header(Type type, uint8_t channel, uint32_t seq, uint8_t flags) {
@@ -238,16 +257,16 @@ namespace Tunnel
 
     static bool _canSendSequenced() { return _sender.canSend() && uxQueueMessagesWaiting(_outFree) > 0; }
 
-    static void _releaseOut(int index) {
-        uint8_t i = (uint8_t)index;
-        xQueueSend(_outFree, &i, 0);
+    static void _emitOut(int out, const Header& header, const uint8_t* payload, size_t length) {
+        _outPool[out].length = (uint16_t)TunnelLogic::buildFrame(_outPool[out].data, sizeof(_outPool[out].data), header, payload, length);
+        _queueOut((uint8_t)out);
     }
 
     // Copies the payload into the retransmit ring, then into outbound slot `out`
     // (claimed here when negative).
     static bool _sendSequenced(Type type, uint8_t channel, const uint8_t* payload, size_t length, uint32_t now, int out = -1) {
         if (!_sender.canSend()) {
-            if (out >= 0) _releaseOut(out);
+            if (out >= 0) _releaseSlot(_outFree, out);
             return false;
         }
         if (out < 0) out = _claimOut(now);
@@ -259,16 +278,14 @@ namespace Tunnel
         r.channel = channel;
         r.length = (uint16_t)length;
         if (length > 0 && payload != r.payload) memcpy(r.payload, payload, length);
-        _outPool[out].length = (uint16_t)TunnelLogic::buildFrame(_outPool[out].data, sizeof(_outPool[out].data), _header(type, channel, seq, 0), r.payload, length);
-        _queueOut((uint8_t)out);
+        _emitOut(out, _header(type, channel, seq, 0), r.payload, length);
         return true;
     }
 
     static bool _sendUnsequenced(Type type, uint32_t now) {
         int out = _claimOut(now);
         if (out < 0) return false;
-        _outPool[out].length = (uint16_t)TunnelLogic::buildFrame(_outPool[out].data, sizeof(_outPool[out].data), _header(type, 0, 0, 0), nullptr, 0);
-        _queueOut((uint8_t)out);
+        _emitOut(out, _header(type, 0, 0, 0), nullptr, 0);
         return true;
     }
 
@@ -276,9 +293,7 @@ namespace Tunnel
         int out = _claimOut(now);
         if (out < 0) return false;
         const RetxSlot& r = _retx[slot];
-        _outPool[out].length = (uint16_t)TunnelLogic::buildFrame(_outPool[out].data, sizeof(_outPool[out].data),
-                                                                 _header(r.type, r.channel, _sender.seqOf(slot), TunnelLogic::FLAG_RETX), r.payload, r.length);
-        _queueOut((uint8_t)out);
+        _emitOut(out, _header(r.type, r.channel, _sender.seqOf(slot), TunnelLogic::FLAG_RETX), r.payload, r.length);
         _counters.framesRetx++;
         return true;
     }
@@ -287,6 +302,11 @@ namespace Tunnel
     // ======================
 
     static Channel& _ch(uint8_t id) { return _channels[id - 1]; }
+
+    static void _resetChannel(Channel& c) {
+        c = {};
+        c.fd = -1;
+    }
 
     // abort: RST semantics towards the LAN host (linger 0). rst: tell the operator.
     static void _closeChannel(uint8_t id, bool abort, uint8_t rstReason) {
@@ -298,8 +318,7 @@ namespace Tunnel
             }
             close(c.fd);
         }
-        c = {};
-        c.fd = -1;
+        _resetChannel(c);
         if (rstReason != NO_RST) _rstDue[id] = rstReason;
     }
 
@@ -310,7 +329,7 @@ namespace Tunnel
         if (c.state != ChState::FREE && c.remoteFin && c.finSent && c.ring.size() == 0) _closeChannel(id, false, NO_RST);
         if (c.state != ChState::FREE) {
             _closeChannel(id, true, NO_RST);
-            _ch(id).errDue = (uint8_t)TunnelLogic::ChannelError::BUSY;
+            c.errDue = (uint8_t)TunnelLogic::ChannelError::BUSY;
             return;
         }
         _rstDue[id] = NO_RST;
@@ -361,7 +380,7 @@ namespace Tunnel
         }
         uint8_t reason = (uint8_t)(error == ECONNREFUSED ? TunnelLogic::ChannelError::REFUSED : TunnelLogic::ChannelError::CONNECT_FAILED);
         _closeChannel(id, false, NO_RST);
-        _ch(id).errDue = reason;
+        c.errDue = reason;
     }
 
     static void _writeChannel(uint8_t id, uint32_t now) {
@@ -408,9 +427,8 @@ namespace Tunnel
         c.readableSinceMs = 0;
 
         // Straight into the retransmit slot the next seq will use (free: canSend()).
-        uint8_t* buffer = _retx[_sender.nextSeq() % TunnelLogic::WINDOW].payload;
+        uint8_t* buffer = _retx[_sender.nextSlot()].payload;
         ssize_t received = recv(c.fd, buffer, limit, MSG_DONTWAIT);
-        if (received <= 0) _releaseOut(out);
         if (received > 0) {
             _sendSequenced(Type::DATA, id, buffer, (size_t)received, now, out); // canSend() checked by _canRead
             c.out.consume((uint32_t)received);
@@ -418,6 +436,7 @@ namespace Tunnel
             _clock.lastDataMs = now;
             return;
         }
+        _releaseSlot(_outFree, out);
         if (received == 0) {
             c.lanEof = true;
             c.finDue = true;
@@ -464,7 +483,7 @@ namespace Tunnel
                 if (c.state == ChState::CONNECTING) _finishConnect(id);
                 else _writeChannel(id, now);
             }
-            if (_ch(id).state != ChState::FREE && _ch(id).fd == fd && FD_ISSET(fd, &readSet) && _canRead(_ch(id), now)) _readChannel(id, now);
+            if (c.state != ChState::FREE && c.fd == fd && FD_ISSET(fd, &readSet) && _canRead(c, now)) _readChannel(id, now);
         }
     }
 
@@ -475,13 +494,13 @@ namespace Tunnel
             if (c.state == ChState::FREE) continue;
             if (c.state == ChState::CONNECTING && (int32_t)(now - c.connectDeadlineMs) >= 0) {
                 _closeChannel(id, true, NO_RST);
-                _ch(id).errDue = (uint8_t)TunnelLogic::ChannelError::TIMEOUT;
+                c.errDue = (uint8_t)TunnelLogic::ChannelError::TIMEOUT;
                 continue;
             }
             // Started here, not only on EAGAIN: lwIP may never report the socket
             // writable again, and then _writeChannel never runs.
-            if (c.ring.size() > 0 && c.stallSinceMs == 0) c.stallSinceMs = _stamp(now);
             if (c.ring.size() == 0) c.stallSinceMs = 0;
+            else if (c.stallSinceMs == 0) c.stallSinceMs = _stamp(now);
             if (c.ring.size() > 0 && TunnelLogic::elapsedMs(now, c.stallSinceMs) >= TUNNEL_WRITE_STALL_MS) {
                 _closeChannel(id, true, (uint8_t)TunnelLogic::RstReason::WRITE_STALL);
                 continue;
@@ -541,17 +560,12 @@ namespace Tunnel
         }
     }
 
-    static void _releaseRx(int index) {
-        uint8_t i = (uint8_t)index;
-        xQueueSend(_rxFree, &i, 0);
-    }
-
     static void _handleFrame(int index, uint32_t now) {
         Slot& slot = _rxPool[index];
         Header h;
         if (TunnelLogic::decodeFrame(slot.data, slot.length, &h) != TunnelLogic::Decode::OK) {
             _counters.framesDropped++;
-            _releaseRx(index);
+            _releaseSlot(_rxFree, index);
             return;
         }
         _clock.lastDownlinkMs = now;
@@ -559,24 +573,25 @@ namespace Tunnel
 
         if (!TunnelLogic::isSequenced(h.type)) {
             if (h.type == Type::PING) _pongDue = true;
-            _releaseRx(index);
+            _releaseSlot(_rxFree, index);
             return;
         }
 
+        bool active = _phase.load() == Phase::ACTIVE; // CLOSING: only acks still matter
         uint8_t reorderSlot = 0;
         switch (_receiver.onFrame(h.seq, &reorderSlot)) {
             case TunnelLogic::ArqReceiver::Verdict::DELIVER: {
                 if (_unacked++ == 0) _unackedSinceMs = _stamp(now);
-                if (_phase.load() == Phase::ACTIVE) _deliver(h, slot.data + TunnelLogic::HEADER_SIZE, now);
-                _releaseRx(index);
+                if (active) _deliver(h, slot.data + TunnelLogic::HEADER_SIZE, now);
+                _releaseSlot(_rxFree, index);
                 size_t loops = 0;
                 while (_receiver.popReady(&reorderSlot) && loops++ < TunnelLogic::WINDOW) {
                     int buffered = _reorder[reorderSlot];
                     _reorder[reorderSlot] = -1;
                     Header bh;
                     TunnelLogic::decodeFrame(_rxPool[buffered].data, _rxPool[buffered].length, &bh);
-                    if (_phase.load() == Phase::ACTIVE) _deliver(bh, _rxPool[buffered].data + TunnelLogic::HEADER_SIZE, now);
-                    _releaseRx(buffered);
+                    if (active) _deliver(bh, _rxPool[buffered].data + TunnelLogic::HEADER_SIZE, now);
+                    _releaseSlot(_rxFree, buffered);
                     _unacked++;
                 }
                 return;
@@ -588,7 +603,7 @@ namespace Tunnel
             default:
                 // Duplicate (our ack was lost) or beyond the window: re-ack now.
                 _ackNow = true;
-                _releaseRx(index);
+                _releaseSlot(_rxFree, index);
                 return;
         }
     }
@@ -605,7 +620,7 @@ namespace Tunnel
             _sender.markRetransmitted(slot, now, timeout);
         }
 
-        if (_openedDue && _canSendSequenced()) {
+        if (_openedDue) {
             TunnelLogic::Opened opened = {(uint16_t)TunnelLogic::DATA_MAX, TunnelLogic::WINDOW, TunnelLogic::CHANNELS_MAX,
                                           TUNNEL_CHANNEL_BUFFER, _maxDurationS, _idleS};
             uint8_t payload[TunnelLogic::OPENED_SIZE];
@@ -615,29 +630,21 @@ namespace Tunnel
 
         for (uint8_t id = 1; id <= TunnelLogic::CHANNELS_MAX; id++) {
             Channel& c = _ch(id);
-            if (_rstDue[id] != NO_RST && _canSendSequenced()) {
-                if (_sendSequenced(Type::RST, id, &_rstDue[id], 1, now)) _rstDue[id] = NO_RST;
-            }
-            if (c.errDue != 0 && _canSendSequenced()) {
-                if (_sendSequenced(Type::CH_ERR, id, &c.errDue, 1, now)) c.errDue = 0;
-            }
-            if (c.okDue && _canSendSequenced()) {
-                if (_sendSequenced(Type::CH_OK, id, nullptr, 0, now)) c.okDue = false;
-            }
-            if (c.state != ChState::FREE && c.in.shouldAdvertise() && _canSendSequenced()) {
+            if (_rstDue[id] != NO_RST && _sendSequenced(Type::RST, id, &_rstDue[id], 1, now)) _rstDue[id] = NO_RST;
+            if (c.errDue != 0 && _sendSequenced(Type::CH_ERR, id, &c.errDue, 1, now)) c.errDue = 0;
+            if (c.okDue && _sendSequenced(Type::CH_OK, id, nullptr, 0, now)) c.okDue = false;
+            if (c.state != ChState::FREE && c.in.shouldAdvertise()) {
                 uint8_t payload[4];
                 TunnelLogic::putU32(payload, c.in.grant());
                 if (_sendSequenced(Type::CH_CREDIT, id, payload, sizeof(payload), now)) c.in.advertised = c.in.grant();
             }
-            if (c.finDue && _canSendSequenced()) {
-                if (_sendSequenced(Type::FIN, id, nullptr, 0, now)) {
-                    c.finDue = false;
-                    c.finSent = true;
-                }
+            if (c.finDue && _sendSequenced(Type::FIN, id, nullptr, 0, now)) {
+                c.finDue = false;
+                c.finSent = true;
             }
         }
 
-        if (_closedDue && _canSendSequenced()) {
+        if (_closedDue) {
             uint8_t reason = (uint8_t)_closeReason;
             if (_sendSequenced(Type::CLOSED, 0, &reason, 1, now)) _closedDue = false;
         }
@@ -660,37 +667,32 @@ namespace Tunnel
         doc["status"] = succeeded ? "SUCCEEDED" : "FAILED";
         doc["statusReason"]["reasonCode"] = reason;
         JsonObject result = doc["result"].to<JsonObject>();
-        char buffer[24];
+        uint32_t durationS = (now - _clock.openedMs) / 1000;
+        uint32_t dropped = _counters.framesDropped + _rxDropped.load();
+        auto putNumber = [&result](const char* key, unsigned long long value) {
+            char buffer[24];
+            snprintf(buffer, sizeof(buffer), "%llu", value);
+            result[key]["s"] = buffer;
+        };
         result["sid"]["s"] = _info.sid;
         result["reason"]["s"] = reason;
-        snprintf(buffer, sizeof(buffer), "%lu", (unsigned long)((now - _clock.openedMs) / 1000));
-        result["duration_s"]["s"] = buffer;
-        snprintf(buffer, sizeof(buffer), "%llu", (unsigned long long)_counters.bytesUp);
-        result["bytes_up"]["s"] = buffer;
-        snprintf(buffer, sizeof(buffer), "%llu", (unsigned long long)_counters.bytesDown);
-        result["bytes_down"]["s"] = buffer;
-        snprintf(buffer, sizeof(buffer), "%lu", (unsigned long)_counters.channelsOpened);
-        result["channels_opened"]["s"] = buffer;
-        snprintf(buffer, sizeof(buffer), "%lu", (unsigned long)_counters.framesRetx);
-        result["frames_retx"]["s"] = buffer;
-        snprintf(buffer, sizeof(buffer), "%lu", (unsigned long)(_counters.framesDropped + _rxDropped.load()));
-        result["frames_dropped"]["s"] = buffer;
+        putNumber("duration_s", durationS);
+        putNumber("bytes_up", _counters.bytesUp);
+        putNumber("bytes_down", _counters.bytesDown);
+        putNumber("channels_opened", _counters.channelsOpened);
+        putNumber("frames_retx", _counters.framesRetx);
+        putNumber("frames_dropped", dropped);
 
         size_t length = measureJson(doc) + 1;
         _terminalJson = (char*)ps_malloc(length);
         if (_terminalJson != nullptr) serializeJson(doc, _terminalJson, length);
 
-        if (succeeded) {
-            LOG_INFO("Tunnel %s closed: %s after %lu s, up %llu B, down %llu B, %lu channels, %lu retx, %lu dropped",
-                     _executionId, reason, (unsigned long)((now - _clock.openedMs) / 1000), (unsigned long long)_counters.bytesUp,
-                     (unsigned long long)_counters.bytesDown, (unsigned long)_counters.channelsOpened,
-                     (unsigned long)_counters.framesRetx, (unsigned long)(_counters.framesDropped + _rxDropped.load()));
-        } else {
-            LOG_WARNING("Tunnel %s closed: %s after %lu s, up %llu B, down %llu B, %lu channels, %lu retx, %lu dropped",
-                        _executionId, reason, (unsigned long)((now - _clock.openedMs) / 1000), (unsigned long long)_counters.bytesUp,
-                        (unsigned long long)_counters.bytesDown, (unsigned long)_counters.channelsOpened,
-                        (unsigned long)_counters.framesRetx, (unsigned long)(_counters.framesDropped + _rxDropped.load()));
-        }
+        char summary[160];
+        snprintf(summary, sizeof(summary), "%s after %lu s, up %llu B, down %llu B, %lu channels, %lu retx, %lu dropped", reason,
+                 (unsigned long)durationS, (unsigned long long)_counters.bytesUp, (unsigned long long)_counters.bytesDown,
+                 (unsigned long)_counters.channelsOpened, (unsigned long)_counters.framesRetx, (unsigned long)dropped);
+        if (succeeded) LOG_INFO("Tunnel %s closed: %s", _executionId, summary);
+        else LOG_WARNING("Tunnel %s closed: %s", _executionId, summary);
     }
 
     static void _closeAllChannels(bool abort) {
@@ -702,8 +704,7 @@ namespace Tunnel
 
     static void _beginClose(CloseReason reason, uint32_t now) {
         _closeReason = reason;
-        _closeAllChannels(reason != CloseReason::OPERATOR_CLOSED && reason != CloseReason::CLOUD_CLOSED &&
-                          reason != CloseReason::IDLE_TIMEOUT && reason != CloseReason::MAX_DURATION);
+        _closeAllChannels(!TunnelLogic::closeReasonSucceeded(reason)); // a failure aborts, a normal end closes
         _openedDue = false;
         _closedDue = true;
         _closingSinceMs = now;
@@ -735,11 +736,11 @@ namespace Tunnel
             return false;
         }
 
-        size_t freeHeap = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-        if (freeHeap < TUNNEL_LOW_HEAP) {
-            if (_clock.lowHeapSinceMs == 0) _clock.lowHeapSinceMs = _stamp(now);
-        } else {
-            _clock.lowHeapSinceMs = 0;
+        // Sampled, not every pass: the LOW_MEMORY trigger needs 5 s below the floor anyway.
+        if (now - _heapSampledMs >= TUNNEL_HEAP_SAMPLE_MS) {
+            _heapSampledMs = now;
+            if (heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) >= TUNNEL_LOW_HEAP) _clock.lowHeapSinceMs = 0;
+            else if (_clock.lowHeapSinceMs == 0) _clock.lowHeapSinceMs = _stamp(now);
         }
         _clock.enabled = _enabled && Gateway::isEnabled();
         _clock.cloudConnected = connected;
@@ -771,16 +772,11 @@ namespace Tunnel
         while (shouldRun) {
             TASK_HEARTBEAT(_heartbeat);
             Phase phase = _phase.load();
-            if (phase == Phase::ACTIVE || phase == Phase::CLOSING) {
-                _runSession();
-                uint32_t bits = 0;
-                xTaskNotifyWait(0, TASK_NOTIFY_SHUTDOWN_BIT | NOTIFY_WORK_BIT, &bits, 0);
-                if (bits & TASK_NOTIFY_SHUTDOWN_BIT) shouldRun = false;
-            } else {
-                uint32_t bits = 0;
-                xTaskNotifyWait(0, TASK_NOTIFY_SHUTDOWN_BIT | NOTIFY_WORK_BIT, &bits, pdMS_TO_TICKS(TUNNEL_IDLE_WAIT_MS));
-                if (bits & TASK_NOTIFY_SHUTDOWN_BIT) shouldRun = false;
-            }
+            bool open = phase == Phase::ACTIVE || phase == Phase::CLOSING;
+            if (open) _runSession(); // paced by its own select()/notify wait
+            uint32_t bits = 0;
+            xTaskNotifyWait(0, TASK_NOTIFY_SHUTDOWN_BIT | NOTIFY_WORK_BIT, &bits, open ? 0 : pdMS_TO_TICKS(TUNNEL_IDLE_WAIT_MS));
+            if (bits & TASK_NOTIFY_SHUTDOWN_BIT) shouldRun = false;
         }
         if (_phase.load() == Phase::ACTIVE || _phase.load() == Phase::CLOSING) _closeAllChannels(true);
         LOG_DEBUG("Tunnel task stopping");
@@ -847,8 +843,7 @@ namespace Tunnel
 
     static void _resetSessionState(uint32_t now) {
         for (uint8_t id = 1; id <= TunnelLogic::CHANNELS_MAX; id++) {
-            _channels[id - 1] = {};
-            _channels[id - 1].fd = -1;
+            _resetChannel(_channels[id - 1]);
             _rstDue[id] = NO_RST;
         }
         for (auto& r : _reorder) r = -1;
@@ -913,14 +908,10 @@ namespace Tunnel
             return OpenResult::BAD_ARGS;
         }
         uint8_t octets[4];
-        switch (Gateway::validateTarget(ip, octets)) {
-            case Gateway::TargetCheck::NOT_PRIVATE:
-                *description = "Target must be a private IPv4 literal";
-                return OpenResult::TARGET_NOT_PRIVATE;
-            case Gateway::TargetCheck::NOT_ALLOWED:
-                *description = "Target is this device or a network/broadcast address";
-                return OpenResult::TARGET_NOT_ALLOWED;
-            default: break;
+        Gateway::TargetCheck check = Gateway::validateTarget(ip, octets);
+        if (check != Gateway::TargetCheck::OK) {
+            *description = Gateway::targetCheckDescription(check);
+            return check == Gateway::TargetCheck::NOT_PRIVATE ? OpenResult::TARGET_NOT_PRIVATE : OpenResult::TARGET_NOT_ALLOWED;
         }
         uint16_t ports[TunnelLogic::PORTS_MAX];
         size_t portCount = getPorts(ports, TunnelLogic::PORTS_MAX);

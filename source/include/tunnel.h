@@ -44,6 +44,7 @@
 #define TUNNEL_OPEN_MIN_MAX_BLOCK (16 * 1024)
 #define TUNNEL_LOW_HEAP (30 * 1024)
 #define TUNNEL_KEEPALIVE_IDLE_S 60
+#define TUNNEL_HEAP_SAMPLE_MS 500
 #define TUNNEL_OTA_CLOSE_WAIT_MS 500
 #define TUNNEL_SID_BUFFER_SIZE (TunnelLogic::SID_LENGTH + 1)
 #define TUNNEL_IP_BUFFER_SIZE 16
@@ -69,6 +70,8 @@ namespace Tunnel
         uint64_t since; // unix seconds
     };
     bool getActive(ActiveInfo* info); // false when no session is open
+    void activeToJson(JsonVariant out);   // {sid, ip, port, since}, or null without a session
+    void portsToJson(JsonArray out);
     bool isActive();                  // a session exists (open, closing or awaiting finish)
 
     enum class OpenResult { ACCEPTED, NOT_ENABLED, BUSY, BAD_ARGS, TARGET_NOT_PRIVATE, TARGET_NOT_ALLOWED, PORT_NOT_ALLOWED, NO_MEMORY };

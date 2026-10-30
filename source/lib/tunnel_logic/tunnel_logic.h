@@ -34,6 +34,7 @@ enum class Type : uint8_t {
 
 enum class ChannelError : uint8_t { CONNECT_FAILED = 1, TIMEOUT = 2, REFUSED = 3, NO_SOCKET = 4, BUSY = 5 };
 
+// SESSION_CLOSED here and CloseReason::SHUTDOWN are reserved wire values, not sent today.
 enum class RstReason : uint8_t { ABORT = 0, LAN_RESET = 1, WRITE_STALL = 2, NOT_OPEN = 3, PROTOCOL = 4, SESSION_CLOSED = 5 };
 
 struct Header {
@@ -170,6 +171,7 @@ public:
     bool canSend() const { return _inFlight < WINDOW; }
     uint8_t inFlight() const { return _inFlight; }
     uint32_t nextSeq() const { return _nextSeq; }
+    uint8_t nextSlot() const { return static_cast<uint8_t>(_nextSeq % WINDOW); } // free while canSend()
 
     // Claims the next seq, records its first transmission at `nowMs` and returns
     // the slot that must hold its copy until acked. Call only when canSend().
@@ -194,7 +196,6 @@ public:
     void rearmAll();
 
     uint32_t seqOf(uint8_t slot) const { return _slots[slot].seq; }
-    bool isUsed(uint8_t slot) const { return _slots[slot].used; }
     uint8_t consecutiveTimeouts() const { return _timeouts; }
     const RtoEstimator &rto() const { return _rto; }
 
@@ -262,7 +263,6 @@ public:
     // Longest contiguous readable run starting at the head.
     size_t peek(const uint8_t **data) const;
     void consume(size_t len);
-    void clear() { _head = _size = 0; }
 
 private:
     uint8_t *_buffer = nullptr;
