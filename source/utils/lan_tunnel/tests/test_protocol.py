@@ -111,6 +111,8 @@ def test_rto_matches_firmware_vectors():
     assert e.rto == p.RTO_MIN_MS
     e.backoff()
     assert e.rto == 600
+    e.clear_backoff()
+    assert e.rto == p.RTO_MIN_MS
 
 
 def test_sender_fast_retransmit_and_link_failed():
@@ -161,3 +163,14 @@ def test_rearm_is_not_a_timeout():
         s.mark_retransmitted(slot, 1, timeout)
         assert s.next_retransmit(1) is None
     assert s.timeouts == 0 and s.rto.rto == p.RTO_INITIAL_MS
+
+
+def test_ack_progress_clears_backoff_without_sample():
+    s = p.ArqSender()
+    s.allocate(0, "a")
+    s.allocate(0, "b")
+    slot, timeout = s.next_retransmit(1000)
+    s.mark_retransmitted(slot, 1000, timeout)
+    assert s.rto.rto == 2000
+    s.on_ack(1, 0, 1100)  # acks the resent frame: Karn gives no sample
+    assert s.rto.rto == p.RTO_INITIAL_MS and s.timeouts == 0

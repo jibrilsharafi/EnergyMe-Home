@@ -270,6 +270,8 @@ void test_rto_rfc6298(void) {
     TEST_ASSERT_EQUAL_UINT32(600, e.rtoMs());
     for (int i = 0; i < 10; i++) e.backoff();
     TEST_ASSERT_EQUAL_UINT32(RTO_MAX_MS, e.rtoMs());
+    e.clearBackoff();
+    TEST_ASSERT_EQUAL_UINT32(RTO_MIN_MS, e.rtoMs());
 }
 
 void test_sender_window_blocks_and_ack_frees(void) {
@@ -320,11 +322,14 @@ void test_sender_rto_retransmit_backoff_and_link_failed(void) {
         while (s.nextRetransmit(now, &slot, &timeout)) s.markRetransmitted(slot, now, timeout);
     }
     TEST_ASSERT_EQUAL(LINK_FAILED_TIMEOUTS, s.consecutiveTimeouts());
-    // Karn: an ack of retransmitted frames gives no RTT sample, but resets the streak.
+    // Karn: an ack of retransmitted frames gives no RTT sample, but resets the
+    // streak and drops the backoff (no sample yet: back to the initial RTO).
+    TEST_ASSERT_EQUAL_UINT32(RTO_MAX_MS, s.rto().rtoMs());
     uint32_t srtt = s.rto().srttMs();
     s.onAck(2, 0, now + 10);
     TEST_ASSERT_EQUAL_UINT32(srtt, s.rto().srttMs());
     TEST_ASSERT_EQUAL(0, s.consecutiveTimeouts());
+    TEST_ASSERT_EQUAL_UINT32(RTO_INITIAL_MS, s.rto().rtoMs());
 }
 
 void test_sender_sack_fast_retransmit(void) {

@@ -250,6 +250,10 @@ class RtoEstimator:
     def backoff(self) -> None:
         self.rto = self._clamp(self.rto * 2)
 
+    def clear_backoff(self) -> None:
+        """Ack progress: drop the backoff even without a Karn-valid sample."""
+        self.rto = self._clamp(self.srtt + 4 * self.rttvar) if self.has_sample else RTO_INITIAL_MS
+
 
 @dataclass
 class _Slot:
@@ -289,6 +293,8 @@ class ArqSender:
             del self.slots[s.seq]
         if sample is not None:
             self.rto.sample(now_ms - sample.sent_ms)
+        elif freed:
+            self.rto.clear_backoff()
         if freed:
             self.timeouts = 0
         for i in range(16):

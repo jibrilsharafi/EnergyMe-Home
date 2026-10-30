@@ -195,6 +195,8 @@ void RtoEstimator::sample(uint32_t rttMs) {
 
 void RtoEstimator::backoff() { _rto = _clampRto(_rto * 2); }
 
+void RtoEstimator::clearBackoff() { _rto = _hasSample ? _clampRto(_srtt + 4 * _rttvar) : RTO_INITIAL_MS; }
+
 // ArqSender
 // =========
 
@@ -234,6 +236,7 @@ uint8_t ArqSender::onAck(uint32_t ack, uint16_t sack, uint32_t nowMs) {
         freed++;
     }
     if (sampled) _rto.sample(nowMs - sampleSentMs);
+    else if (freed > 0) _rto.clearBackoff();
     if (freed > 0) _timeouts = 0;
 
     for (uint32_t i = 0; i < 16; i++) {
