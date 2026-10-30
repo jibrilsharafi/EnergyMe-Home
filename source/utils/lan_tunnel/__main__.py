@@ -196,13 +196,16 @@ async def run_tunnel(args: argparse.Namespace, cloud: Cloud) -> int:
         print(f"  listening on {args.bind}:{args.local} (Ctrl-C to close)")
         try:
             reason = await session.wait_closed()
-            print("  device closed the session:", reason.name)
+            if session.closed_by_device:
+                print("  device closed the session:", reason.name)
+            else:  # the device may still be holding it (e.g. its MQTT is down): it reports later
+                print("  no frame from the device for 30 s, giving up; waiting for its terminal status")
         except asyncio.CancelledError:
             print("  closing...")
             await session.close()
         server.close()
 
-        status = await wait_terminal(cloud, execution_id, 15)
+        status = await wait_terminal(cloud, execution_id, 15 if session.closed_by_device else 90)
         print("  terminal:", describe(status) if status else "not yet terminal")
         print(f"  operator: retx {session.link.frames_retx}, dropped {session.link.frames_dropped}, "
               f"channels {session.channels_opened}")

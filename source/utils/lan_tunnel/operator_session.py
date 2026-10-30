@@ -34,6 +34,7 @@ class OperatorSession:
         self.credit = credit
         self.opened: p.Opened | None = None
         self.closed_reason: p.CloseReason | None = None
+        self.closed_by_device = False  # a CLOSED frame arrived, vs we gave up or closed
         self._opened_event = asyncio.Event()
         self._closed_event = asyncio.Event()
         self._channels: dict[int, Bridge | None] = {}  # id -> bridge, None while opening
@@ -192,6 +193,7 @@ class OperatorSession:
             self._opened_event.set()
         elif h.type == p.Type.CLOSED:
             reason = p.CloseReason(payload[0]) if payload[0] in p.CloseReason._value2member_map_ else p.CloseReason.NONE
+            self.closed_by_device = True
             self._end(reason)
         elif h.type in (p.Type.CH_OK, p.Type.CH_ERR):
             self._channel_reply(h, payload)
