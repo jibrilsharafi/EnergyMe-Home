@@ -311,6 +311,8 @@ namespace Tunnel
             return;
         }
         _rstDue[id] = NO_RST;
+        c.errDue = 0; // a failed open earlier in the same batch must not answer this one
+        c.okDue = false;
         int fd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
         if (fd < 0) {
             c.errDue = (uint8_t)TunnelLogic::ChannelError::NO_SOCKET;
@@ -381,8 +383,13 @@ namespace Tunnel
         }
     }
 
-    static bool _canRead(const Channel& c) {
-        return c.state == ChState::OPEN && !c.okDue && !c.lanEof && c.out.available() > 0 && _canSendSequenced();
+    // Watch a socket for reading only when a frame could go out right now: credit,
+    // window, a free slot and a rate token, and not inside a coalescing wait.
+    // Otherwise select() would return at once and the task would spin.
+    static bool _canRead(const Channel& c, uint32_t now) {
+        bool coalescing = c.readableSinceMs != 0 && now - c.readableSinceMs < TUNNEL_COALESCE_MS;
+        return c.state == ChState::OPEN && !c.okDue && !c.lanEof && c.out.available() > 0 && !coalescing &&
+               _canSendSequenced() && _bucket.ready(now);
     }
 
     static void _readChannel(uint8_t id, uint32_t now) {
@@ -430,7 +437,7 @@ namespace Tunnel
                 FD_SET(c.fd, &writeSet);
                 watch = true;
             }
-            if (_canRead(c)) {
+            if (_canRead(c, now)) {
                 FD_SET(c.fd, &readSet);
                 watch = true;
             }
@@ -454,7 +461,7 @@ namespace Tunnel
                 if (c.state == ChState::CONNECTING) _finishConnect(id);
                 else _writeChannel(id, now);
             }
-            if (_ch(id).state != ChState::FREE && _ch(id).fd == fd && FD_ISSET(fd, &readSet) && _canRead(_ch(id))) _readChannel(id, now);
+            if (_ch(id).state != ChState::FREE && _ch(id).fd == fd && FD_ISSET(fd, &readSet) && _canRead(_ch(id), now)) _readChannel(id, now);
         }
     }
 
@@ -468,7 +475,11 @@ namespace Tunnel
                 _ch(id).errDue = (uint8_t)TunnelLogic::ChannelError::TIMEOUT;
                 continue;
             }
-            if (c.ring.size() > 0 && c.stallSinceMs != 0 && now - c.stallSinceMs >= TUNNEL_WRITE_STALL_MS) {
+            // Started here, not only on EAGAIN: lwIP may never report the socket
+            // writable again, and then _writeChannel never runs.
+            if (c.ring.size() > 0 && c.stallSinceMs == 0) c.stallSinceMs = now | 1;
+            if (c.ring.size() == 0) c.stallSinceMs = 0;
+            if (c.ring.size() > 0 && now - c.stallSinceMs >= TUNNEL_WRITE_STALL_MS) {
                 _closeChannel(id, true, (uint8_t)TunnelLogic::RstReason::WRITE_STALL);
                 continue;
             }
@@ -488,8 +499,12 @@ namespace Tunnel
         switch (h.type) {
             case Type::DATA: {
                 Channel& c = _ch(id);
-                if (c.state == ChState::FREE || c.remoteFin) {
+                if (c.state == ChState::FREE) {
                     _rstDue[id] = (uint8_t)TunnelLogic::RstReason::NOT_OPEN;
+                    return;
+                }
+                if (c.remoteFin) {
+                    _closeChannel(id, true, (uint8_t)TunnelLogic::RstReason::PROTOCOL);
                     return;
                 }
                 if (!c.in.accepts(h.length)) {
@@ -687,7 +702,9 @@ namespace Tunnel
         _phase.store(Phase::CLOSING);
     }
 
-    static void _serviceSession(uint32_t now) {
+    // True once the session is DONE: the MQTT task may free and reuse everything
+    // from then on, so the caller must not touch session state again.
+    static bool _serviceSession(uint32_t now) {
         bool connected = _cloudConnected.load();
         if (connected && !_wasConnected) {
             // Back online: nothing sent while down arrived, resend it all now.
@@ -705,8 +722,9 @@ namespace Tunnel
                 _closeAllChannels(true);
                 _buildTerminal(now);
                 _phase.store(Phase::DONE);
+                return true;
             }
-            return;
+            return false;
         }
 
         size_t freeHeap = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
@@ -723,6 +741,7 @@ namespace Tunnel
         CloseReason reason = (CloseReason)_closeRequest.load();
         if (reason == CloseReason::NONE) reason = TunnelLogic::checkClose(_clock, now);
         if (reason != CloseReason::NONE) _beginClose(reason, now);
+        return false;
     }
 
     static void _runSession() {
@@ -731,8 +750,7 @@ namespace Tunnel
         uint8_t index;
         while (loops++ < TUNNEL_RX_BATCH && xQueueReceive(_rxReady, &index, 0) == pdTRUE) _handleFrame(index, now);
 
-        _serviceSession(now);
-        if (_phase.load() == Phase::DONE) return;
+        if (_serviceSession(now)) return;
         if (_phase.load() == Phase::ACTIVE) _serviceChannels(now);
         _emit(now);
         _pollSockets(now);
