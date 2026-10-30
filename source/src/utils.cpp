@@ -1099,6 +1099,8 @@ void statisticsToJson(Statistics& statistics, JsonDocument &jsonDocument) {
     jsonDocument["mqtt"]["connectionErrors"] = statistics.mqttConnectionErrors;
     jsonDocument["mqtt"]["meterPointsDropped"] = statistics.mqttMeterPointsDropped;
     jsonDocument["mqtt"]["gridPointsDropped"] = statistics.mqttGridPointsDropped;
+    jsonDocument["mqtt"]["offlineEnergyRecordsCaptured"] = statistics.mqttOfflineEnergyRecordsCaptured;
+    jsonDocument["mqtt"]["offlineEnergySegmentsDropped"] = statistics.mqttOfflineEnergySegmentsDropped;
 
     // Custom MQTT statistics
     jsonDocument["customMqtt"]["messagesPublished"] = statistics.customMqttMessagesPublished;
