@@ -69,12 +69,7 @@ namespace Gateway
 
     static void _setBool(JsonObject result, const char* key, bool value) { result[key]["b"] = value; }
 
-    // AWS requires at least one byte in a bin value, so an empty payload is reported as an empty string instead.
     static bool _setBinary(JsonObject result, const char* key, const uint8_t* data, size_t length) {
-        if (length == 0) {
-            result[key]["s"] = "";
-            return true;
-        }
         size_t encodedLength = 0;
         mbedtls_base64_encode(nullptr, 0, &encodedLength, data, length);
         char* encoded = (char*)ps_malloc(encodedLength + 1);
@@ -90,7 +85,9 @@ namespace Gateway
     }
 
     // UTF-8 text goes out as a plain string so the cloud can read it without decoding; anything else stays base64.
+    // AWS rejects the whole response when a value is empty (no "s": "" or zero-byte "bin"), so an empty payload omits the key.
     static bool _setPayload(JsonObject result, const char* key, const uint8_t* data, size_t length, bool truncated) {
+        if (length == 0) return true;
         size_t textLength = 0;
         if (GatewayLogic::utf8TextLength(data, length, truncated, &textLength)) {
             return result[key]["s"].set(JsonString((const char*)data, textLength)); // not static -> ArduinoJson copies
