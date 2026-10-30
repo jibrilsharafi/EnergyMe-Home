@@ -89,6 +89,15 @@ namespace Gateway
         return ok;
     }
 
+    // UTF-8 text goes out as a plain string so the cloud can read it without decoding; anything else stays base64.
+    static bool _setPayload(JsonObject result, const char* key, const uint8_t* data, size_t length, bool truncated) {
+        size_t textLength = 0;
+        if (GatewayLogic::utf8TextLength(data, length, truncated, &textLength)) {
+            return result[key]["s"].set(JsonString((const char*)data, textLength)); // not static -> ArduinoJson copies
+        }
+        return _setBinary(result, key, data, length);
+    }
+
     // Decodes base64 into a new NUL-terminated PSRAM buffer (caller frees).
     static bool _decodeBase64(const char* text, uint8_t** out, size_t* outLength, size_t maxLength) {
         size_t textLength = strlen(text);
@@ -464,7 +473,7 @@ namespace Gateway
         JsonObject result = _succeed(doc);
         _setNumber(result, "status_code", statusCode);
         _setBool(result, "truncated", truncated);
-        if (!_setBinary(result, "body", body, bodyLength)) {
+        if (!_setPayload(result, "body", body, bodyLength, truncated)) {
             doc.clear();
             _fail(doc, "NO_MEMORY", "Could not encode the response body");
         }
@@ -617,8 +626,9 @@ namespace Gateway
         }
         JsonObject result = _succeed(doc);
         _setBool(result, "sent", true);
-        _setBool(result, "truncated", replyLength >= UDP_MAX_DATAGRAM_BYTES);
-        bool encoded = _setBinary(result, "reply", reply, replyLength);
+        bool truncated = replyLength >= UDP_MAX_DATAGRAM_BYTES;
+        _setBool(result, "truncated", truncated);
+        bool encoded = _setPayload(result, "reply", reply, replyLength, truncated);
         free(reply);
         if (!encoded) {
             doc.clear();
