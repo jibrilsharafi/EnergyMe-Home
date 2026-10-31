@@ -313,6 +313,12 @@ namespace GatewayExec
         size_t length = 0;
         if (!_expand(rq, context, rq.path, b.path, Buffers::PATH - 1, b.scratch, expansion, &length, result)) return false;
         b.path[length] = '\0';
+        // Grant and declaration matching and the path rules run on the expanded path, so a
+        // sensitive value there would turn refusals into an oracle on it.
+        if (expansion->sensitive) {
+            setOutcome(result, Status::REJECTED, "BAD_TEMPLATE", "Sensitive placeholders are not allowed in the path");
+            return false;
+        }
         if (!isValidHttpPath((const char*)b.path)) {
             setOutcome(result, Status::REJECTED, "BAD_ARGS", "path must start with / and contain no spaces or control characters");
             return false;
