@@ -6,6 +6,7 @@
 #include "backoff_schedule.h"
 #include "custometh.h"
 #include "gateway.h"
+#include "tunnel.h"
 #include "duration_format.h"
 #include "sha256_hex.h"
 #include "version_compare.h"
@@ -282,6 +283,7 @@ void populateSystemDynamicInfo(SystemDynamicInfo& info) {
     info.ade7953GridSamplerTaskInfo = Ade7953::getGridSamplerTaskInfo();
     info.maintenanceTaskInfo = getMaintenanceTaskInfo();
     info.issueRegistryTaskInfo = IssueRegistry::getTaskInfo();
+    if (!globalCommunityMode) info.tunnelTaskInfo = Tunnel::getTaskInfo();
 
     LOG_DEBUG("Dynamic system info populated");
 }
@@ -472,6 +474,7 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument &doc) {
     addTask("influxDb", info.influxDbTaskInfo);
     addTask("crashMonitor", info.crashMonitorTaskInfo);
     addTask("buttonHandler", info.buttonHandlerTaskInfo);
+    addTask("tunnel", info.tunnelTaskInfo);
     addTask("udpLog", info.udpLogTaskInfo);
     addTask("customWifi", info.customWifiTaskInfo);
     if (globalHwProfile->hasEthernet) addTask("customEth", info.customEthTaskInfo);
@@ -703,6 +706,7 @@ static void _restartTask(void* parameter) {
     ModbusTcp::stop();
     if (!globalCommunityMode) Mqtt::stop();
     if (!globalCommunityMode) Gateway::stop();
+    if (!globalCommunityMode) Tunnel::stop();
     LOG_DEBUG("Services stopped");
 
     // 3. Close log file (if this blocks, failsafe timer will restart us)

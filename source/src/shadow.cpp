@@ -14,6 +14,7 @@
 #include "customwifi.h"
 #include "factory_keys.h"
 #include "gateway.h"
+#include "tunnel.h"
 #include "globals.h"
 #include "hardware_profile.h"
 #include "issueregistry.h"
@@ -652,6 +653,9 @@ static void _reportSystem(JsonDocument& doc) {
     rep["log_level_print"] = AdvancedLogger::logLevelToString(AdvancedLogger::getPrintLevel());
     rep["log_level_save"] = AdvancedLogger::logLevelToString(AdvancedLogger::getSaveLevel());
     rep["gateway_enabled"] = Gateway::isEnabled();
+    rep["tunnel_enabled"] = Tunnel::isEnabled();
+    Tunnel::portsToJson(rep["tunnel_ports"].to<JsonArray>());
+    Tunnel::activeToJson(rep, "tunnel_active");
 }
 
 // Parse a string log-level delta field. Returns the level (>=0) to apply, or -1
@@ -745,6 +749,43 @@ static bool _applySystem(JsonObjectConst delta, JsonObject reported) {
             }
         } else {
             LOG_WARNING("Rejected gateway_enabled: not a boolean");
+        }
+    }
+
+    v = delta["tunnel_enabled"];
+    if (!v.isNull()) {
+        if (v.is<bool>()) {
+            bool e = v.as<bool>();
+            if (Tunnel::setEnabled(e)) {
+                reported["tunnel_enabled"] = e;
+                applied = true;
+            } else {
+                LOG_WARNING("Could not apply tunnel_enabled");
+            }
+        } else {
+            LOG_WARNING("Rejected tunnel_enabled: not a boolean");
+        }
+    }
+
+    v = delta["tunnel_ports"];
+    if (!v.isNull()) {
+        uint16_t ports[TunnelLogic::PORTS_MAX];
+        size_t count = 0;
+        bool valid = v.is<JsonArrayConst>() && v.as<JsonArrayConst>().size() <= TunnelLogic::PORTS_MAX;
+        if (valid) {
+            for (JsonVariantConst port : v.as<JsonArrayConst>()) {
+                if (!port.is<int>() || !GatewayLogic::isValidPort(port.as<int>())) {
+                    valid = false;
+                    break;
+                }
+                ports[count++] = (uint16_t)port.as<int>();
+            }
+        }
+        if (valid && Tunnel::setPorts(ports, count)) {
+            Tunnel::portsToJson(reported["tunnel_ports"].to<JsonArray>());
+            applied = true;
+        } else {
+            LOG_WARNING("Rejected tunnel_ports: expected up to %u ports 1-65535", (unsigned)TunnelLogic::PORTS_MAX);
         }
     }
 

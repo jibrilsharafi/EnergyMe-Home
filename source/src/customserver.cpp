@@ -3,6 +3,7 @@
 
 #include "customserver.h"
 #include "gateway.h"
+#include "tunnel.h"
 #include "app_image_descriptor.h"
 #include "custometh.h"
 #include "modbustcp.h" // Local integrations are started/stopped to follow the STA link
@@ -3780,6 +3781,9 @@ namespace CustomServer
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
             doc["enabled"] = !globalCommunityMode && Gateway::isEnabled();
+            doc["tunnel"] = !globalCommunityMode && Tunnel::isEnabled();
+            if (globalCommunityMode) doc["tunnel_active"] = nullptr;
+            else Tunnel::activeToJson(doc.as<JsonObject>(), "tunnel_active");
             _sendJsonResponse(request, doc);
         });
 
@@ -3793,19 +3797,27 @@ namespace CustomServer
                 }
                 if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_GATEWAY)) return;
 
-                if (!json.is<JsonObject>() || !json["enabled"].is<bool>())
+                // "enabled" (gateway) and/or "tunnel". Turning either off closes an open
+                // tunnel session at once (the tunnel task polls both switches).
+                bool hasEnabled = json["enabled"].is<bool>();
+                bool hasTunnel = json["tunnel"].is<bool>();
+                if (!json.is<JsonObject>() || (!hasEnabled && !hasTunnel) ||
+                    (!json["enabled"].isNull() && !hasEnabled) || (!json["tunnel"].isNull() && !hasTunnel))
                 {
-                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid JSON structure. Expected: {\"enabled\": true/false}");
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid JSON structure. Expected: {\"enabled\": true/false, \"tunnel\": true/false} (either or both)");
                     return;
                 }
 
-                bool enabled = json["enabled"];
-                if (!Gateway::setEnabled(enabled)) {
+                if (hasEnabled && !Gateway::setEnabled(json["enabled"].as<bool>())) {
                     _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Could not persist the LAN gateway switch");
                     return;
                 }
+                if (hasTunnel && !Tunnel::setEnabled(json["tunnel"].as<bool>())) {
+                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Could not persist the LAN tunnel switch");
+                    return;
+                }
 
-                _sendSuccessResponse(request, enabled ? "LAN gateway enabled" : "LAN gateway disabled");
+                _sendSuccessResponse(request, "LAN gateway settings updated");
             });
         server.addHandler(setGatewayHandler);
     }

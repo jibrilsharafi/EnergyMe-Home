@@ -281,6 +281,7 @@ struct SystemDynamicInfo {
     TaskInfo ade7953GridSamplerTaskInfo;
     TaskInfo maintenanceTaskInfo;
     TaskInfo issueRegistryTaskInfo;
+    TaskInfo tunnelTaskInfo;
 
     SystemDynamicInfo() {
         memset(this, 0, sizeof(*this));

@@ -21,6 +21,8 @@ constexpr OpEntry OPS[] = {
     {"modbus_read", Op::MODBUS_READ},
     {"modbus_write", Op::MODBUS_WRITE},
     {"udp_send", Op::UDP_SEND},
+    {"tunnel_open", Op::TUNNEL_OPEN},
+    {"tunnel_close", Op::TUNNEL_CLOSE},
 };
 
 void putU16(uint8_t *p, uint16_t v) {

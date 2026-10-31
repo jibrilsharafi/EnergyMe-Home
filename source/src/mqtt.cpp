@@ -21,6 +21,7 @@ static_assert(SHA256_HEX_BUFFER_SIZE == RollbackLogic::SHA256_HEX_LEN + 1,
 #include "ota_signature.h"
 #include "sha256_hex.h"
 #include "gateway.h"
+#include "tunnel.h"
 #include "mbedtls/base64.h"
 #include "mbedtls/sha256.h"
 #include "mbedtls/pk.h"
@@ -109,6 +110,7 @@ namespace Mqtt
     // Task variables
     static TaskHandle_t _taskHandle = nullptr;
     static bool _lastLoopToPublishData = false;
+    static bool _lastPacketWasTunnel = false; // set by the RX callback's tunnel branch
     static bool _taskShouldRun = false;
 
     // AWS IoT Jobs OTA task (global to ensure they work and do not get dereferenced)
@@ -232,6 +234,9 @@ namespace Mqtt
     static void _drainPendingCommand();
     static void _handleGatewayCommand(const char* executionId, JsonDocument& doc);
     static void _drainGatewayResult();
+    static void _handleTunnelCommand(const char* executionId, GatewayLogic::Op op, JsonDocument& doc);
+    static void _serviceTunnel();
+    static void _publishCommandResponse(const char* executionId, char* responseJson);
     static void _handleAwsIotJobMessage(const char* message, const char* topic);
     
     // AWS IoT Jobs OTA functions
@@ -1047,6 +1052,7 @@ namespace Mqtt
                 }
             }
             _lastConnectedState = connectedNow;
+            Tunnel::setCloudConnected(connectedNow);
 
             // If we receive a signal to stop the task, we try to publish all the data and flushing the queues so we avoid losing data
             if (_lastLoopToPublishData) {
@@ -1057,7 +1063,9 @@ namespace Mqtt
                 // instead of waiting the full interval. Only the shutdown bit takes
                 // the flush-and-stop branch below.
                 uint32_t notifiedBits = 0;
-                xTaskNotifyWait(0, ULONG_MAX, &notifiedBits, pdMS_TO_TICKS(MQTT_LOOP_INTERVAL));
+                // 10 ms while a tunnel session is open, so frames do not wait a full interval.
+                xTaskNotifyWait(0, ULONG_MAX, &notifiedBits,
+                                pdMS_TO_TICKS(Tunnel::isActive() ? MQTT_LOOP_INTERVAL_TUNNEL : MQTT_LOOP_INTERVAL));
 
                 if (notifiedBits & TASK_NOTIFY_SHUTDOWN_BIT) {
                     _lastLoopToPublishData = true;
@@ -1071,6 +1079,7 @@ namespace Mqtt
 
         _clientMqtt.disconnect();
         _lastConnectedState = false;
+        Tunnel::setCloudConnected(false); // cloud services off: the tunnel's reconnect grace starts now
         LOG_DEBUG("MQTT task stopping");
         _taskHandle = nullptr;
         vTaskDelete(nullptr);
@@ -1173,6 +1182,8 @@ namespace Mqtt
         // reconnect storm; the corrected topic is safe even before a dispatcher exists.
         if (MQTT_IOT_COMMANDS_SUBSCRIBE_ENABLED) _subscribeIotCommands();
         Shadow::onMqttConnected(); // subscribe shadow deltas + queue initial reports
+        const char* tunnelTopic = Tunnel::downlinkTopic();
+        if (tunnelTopic != nullptr && !_clientMqtt.subscribe(tunnelTopic, 0)) LOG_WARNING("Failed to re-subscribe the tunnel topic");
 
         LOG_DEBUG("Subscribed to topics");
     }
@@ -1241,6 +1252,14 @@ namespace Mqtt
 
     static void _subscribeCallback(const char* topic, byte *payload, uint32_t length)
     {
+        // Tunnel frames are binary: copied straight into the tunnel's PSRAM pool,
+        // never through the text buffer below (which would cut them at a NUL).
+        // No log, no publish, no allocation on this path.
+        if (Tunnel::pushDownlink(topic, payload, length)) {
+            _lastPacketWasTunnel = true;
+            return;
+        }
+
         // Allocate message buffer in PSRAM to save stack memory
         char *message = (char*)ps_malloc(MQTT_SUBSCRIBE_MESSAGE_BUFFER_SIZE);
         if (!message) {
@@ -1484,12 +1503,16 @@ namespace Mqtt
         const char* status = "REJECTED";
         const char* reasonCode = nullptr;
         const char* description = nullptr;
+        if (op == GatewayLogic::Op::TUNNEL_OPEN || op == GatewayLogic::Op::TUNNEL_CLOSE) {
+            _handleTunnelCommand(executionId, op, doc);
+            return;
+        }
         if (!Gateway::isEnabled()) {
             reasonCode = "GATEWAY_DISABLED";
             description = "Enable the gateway from the cloud (system shadow gateway_enabled)";
         } else if (op == GatewayLogic::Op::UNKNOWN) {
             reasonCode = "UNKNOWN_OP";
-            description = "op must be ping, net_scan, http_request, modbus_read, modbus_write or udp_send";
+            description = "op must be ping, net_scan, http_request, modbus_read, modbus_write, udp_send, tunnel_open or tunnel_close";
         } else {
             switch (Gateway::submit(executionId, op, doc["args"])) {
                 case Gateway::SubmitResult::ACCEPTED:
@@ -1518,28 +1541,96 @@ namespace Mqtt
         _publishCommandStatus(executionId, status, reasonCode, description);
     }
 
-    static void _drainGatewayResult() {
+    // LAN tunnel (openspec capability: lan-tunnel). tunnel_open keeps its command
+    // IN_PROGRESS for the whole session; its terminal status comes from
+    // _serviceTunnel once the tunnel task has closed the session.
+    static void _handleTunnelCommand(const char* executionId, GatewayLogic::Op op, JsonDocument& doc) {
+        if (op == GatewayLogic::Op::TUNNEL_CLOSE) {
+            if (Tunnel::closeFromCloud(doc["args"])) {
+                LOG_INFO("Tunnel close requested by command %s", executionId);
+                _publishCommandStatus(executionId, "SUCCEEDED", nullptr, nullptr);
+            } else {
+                LOG_WARNING("Tunnel close %s REJECTED: NO_SUCH_SESSION", executionId);
+                _publishCommandStatus(executionId, "REJECTED", "NO_SUCH_SESSION", "No open tunnel session with that sid");
+            }
+            return;
+        }
+
+        const char* status = "REJECTED";
+        const char* reasonCode = nullptr;
+        const char* description = nullptr;
+        if (_otaTaskHandle != nullptr || _otaRebootPending) {
+            reasonCode = "OTA_IN_PROGRESS";
+            description = "A firmware update is running";
+        } else {
+            char topicBase[MQTT_TOPIC_BUFFER_SIZE];
+            _constructMqttTopic(MQTT_TOPIC_TUNNEL, topicBase, sizeof(topicBase));
+            switch (Tunnel::open(executionId, doc["args"], topicBase, &description)) {
+                case Tunnel::OpenResult::ACCEPTED:
+                    if (!_clientMqtt.subscribe(Tunnel::downlinkTopic(), 0)) LOG_WARNING("Failed to subscribe the tunnel topic");
+                    return;
+                case Tunnel::OpenResult::NOT_ENABLED: reasonCode = "TUNNEL_DISABLED"; break;
+                case Tunnel::OpenResult::BUSY: reasonCode = "TUNNEL_BUSY"; break;
+                case Tunnel::OpenResult::BAD_ARGS: reasonCode = "BAD_ARGS"; break;
+                case Tunnel::OpenResult::TARGET_NOT_PRIVATE: reasonCode = "TARGET_NOT_PRIVATE"; break;
+                case Tunnel::OpenResult::TARGET_NOT_ALLOWED: reasonCode = "TARGET_NOT_ALLOWED"; break;
+                case Tunnel::OpenResult::PORT_NOT_ALLOWED: reasonCode = "PORT_NOT_ALLOWED"; break;
+                case Tunnel::OpenResult::NO_MEMORY:
+                    status = "FAILED";
+                    reasonCode = "NO_MEMORY";
+                    break;
+            }
+        }
+        LOG_WARNING("Tunnel open %s %s: %s", executionId, status, reasonCode);
+        _publishCommandStatus(executionId, status, reasonCode, description);
+    }
+
+    // Publishes queued uplink frames (budgeted, QoS0, binary overload: the
+    // const char* one would stop at the first NUL), then the session's terminal
+    // status once the tunnel task has closed it and every frame is out.
+    static void _serviceTunnel() {
+        if (!Tunnel::isActive()) return;
+        const char* topic = Tunnel::uplinkTopic();
+        const uint8_t* frame = nullptr;
+        size_t length = 0;
+        for (int i = 0; i < TUNNEL_MQTT_UPLINK_BUDGET && Tunnel::takeUplink(&frame, &length); i++) {
+            _clientMqtt.publish(topic, frame, (unsigned int)length, false); // a failed publish is resent by the ARQ
+            Tunnel::releaseUplink();
+        }
+
         char executionId[NAME_BUFFER_SIZE];
         char* responseJson = nullptr;
-        if (!Gateway::takeResult(executionId, sizeof(executionId), &responseJson)) return;
+        if (!Tunnel::takeTerminal(executionId, sizeof(executionId), &responseJson)) return;
+        _clientMqtt.unsubscribe(Tunnel::downlinkTopic());
+        _publishCommandResponse(executionId, responseJson);
+        Tunnel::finish();
+    }
 
+    // Publishes a finished command's response document (PSRAM JSON, freed here).
+    // Not retried: if this publish fails the cloud sees the execution time out,
+    // the same as any command whose status never arrives.
+    static void _publishCommandResponse(const char* executionId, char* responseJson) {
         SpiRamAllocator allocator;
         JsonDocument doc(&allocator);
-        if (deserializeJson(doc, responseJson)) {
-            LOG_ERROR("Gateway result for %s is not valid JSON", executionId);
+        if (responseJson == nullptr || deserializeJson(doc, responseJson)) {
+            LOG_ERROR("Command response for %s is not valid JSON", executionId);
             doc.clear();
             doc["status"] = "FAILED";
             doc["statusReason"]["reasonCode"] = "INTERNAL_ERROR";
         }
-        LOG_DEBUG("Gateway result %s (%u bytes): %.300s", executionId, (unsigned)strlen(responseJson), responseJson);
         free(responseJson);
-
-        // Not retried: if this publish fails the cloud sees the execution time out,
-        // the same as any command whose status never arrives.
         char topic[MQTT_TOPIC_BUFFER_SIZE];
         _constructCommandTopic(executionId, "response/json", topic, sizeof(topic));
-        if (_publishJsonStreaming(doc, topic)) LOG_DEBUG("Gateway result %s published", executionId);
-        else LOG_WARNING("Failed to publish gateway result %s", executionId);
+        if (_publishJsonStreaming(doc, topic)) LOG_DEBUG("Command response %s published", executionId);
+        else LOG_WARNING("Failed to publish command response %s", executionId);
+    }
+
+    static void _drainGatewayResult() {
+        char executionId[NAME_BUFFER_SIZE];
+        char* responseJson = nullptr;
+        if (!Gateway::takeResult(executionId, sizeof(executionId), &responseJson)) return;
+        LOG_DEBUG("Gateway result %s (%u bytes): %.300s", executionId, (unsigned)strlen(responseJson), responseJson);
+        _publishCommandResponse(executionId, responseJson);
     }
 
     // Command handoff. Both the broker RX path (_subscribeCallback) and the dev
@@ -2390,6 +2481,9 @@ namespace Mqtt
         snprintf(_otaCurrentJobId, sizeof(_otaCurrentJobId), "%s", jobId);
         memcpy(_otaCurrentSignature, decodedSignature, decodedSignatureLen);
         _otaCurrentSignatureLen = decodedSignatureLen;
+
+        // Before the download takes the heap: the LAN sockets are gone when this returns.
+        Tunnel::closeAndWait(TunnelLogic::CloseReason::OTA_STARTED, TUNNEL_OTA_CLOSE_WAIT_MS);
 
         LOG_DEBUG("Starting OTA task with %d bytes stack", OTA_TASK_STACK_SIZE);
 
@@ -3293,7 +3387,15 @@ namespace Mqtt
         // Use vars explicitly here so later in the logs they have the same exact values
         bool wifiOk = CustomNet::isFullyConnected();
         bool mqttConnected = _clientMqtt.connected();
+        _lastPacketWasTunnel = false;
         bool mqttLoopOk = _clientMqtt.loop(); // Also process incoming messages with loop()
+        // loop() reads one packet per call. While tunnel frames keep arriving, read
+        // more of them now; any other packet stops the spin, so the single-slot
+        // command and shadow handoffs still see one packet per drain.
+        for (int spin = 0; mqttLoopOk && _lastPacketWasTunnel && spin < TUNNEL_MQTT_RX_SPIN && _net.available() > 0; spin++) {
+            _lastPacketWasTunnel = false;
+            mqttLoopOk = _clientMqtt.loop();
+        }
 
         if (!wifiOk || !mqttConnected || !mqttLoopOk) {
             LOG_DEBUG(
@@ -3317,6 +3419,7 @@ namespace Mqtt
         Shadow::checkPublish(); // drain shadow deltas/local-edits/reports (MQTT task body)
         _drainPendingCommand(); // process queued IoT Command (broker RX or dev inject) off the callback
         _drainGatewayResult(); // publish a finished LAN gateway request from the task body
+        _serviceTunnel(); // tunnel uplink frames and terminal status, after telemetry
 #ifdef ENV_DEV
         _drainPendingJob(); // dev-injected synthetic job, same off-the-callback rule
 #endif
