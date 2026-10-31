@@ -3,6 +3,7 @@
 
 #include "customserver.h"
 #include "gateway.h"
+#include "gateway_executor.h"
 #include "tunnel.h"
 #include "app_image_descriptor.h"
 #include "custometh.h"
@@ -3799,6 +3800,7 @@ namespace CustomServer
             doc["tunnel"] = !globalCommunityMode && Tunnel::isEnabled();
             if (globalCommunityMode) doc["tunnel_active"] = nullptr;
             else Tunnel::activeToJson(doc.as<JsonObject>(), "tunnel_active");
+            GatewayExec::grantsToJson(doc["write_grants"].to<JsonArray>());
             _sendJsonResponse(request, doc);
         });
 
@@ -3812,15 +3814,26 @@ namespace CustomServer
                 }
                 if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_GATEWAY)) return;
 
-                // "enabled" (gateway) and/or "tunnel". Turning either off closes an open
-                // tunnel session at once (the tunnel task polls both switches).
+                // "enabled" (gateway), "tunnel" and/or "write_grants" (the whole list,
+                // same setter as the system shadow). Turning either switch off closes an
+                // open tunnel session at once (the tunnel task polls both switches).
                 bool hasEnabled = json["enabled"].is<bool>();
                 bool hasTunnel = json["tunnel"].is<bool>();
-                if (!json.is<JsonObject>() || (!hasEnabled && !hasTunnel) ||
-                    (!json["enabled"].isNull() && !hasEnabled) || (!json["tunnel"].isNull() && !hasTunnel))
+                bool hasGrants = json["write_grants"].is<JsonArray>();
+                if (!json.is<JsonObject>() || (!hasEnabled && !hasTunnel && !hasGrants) ||
+                    (!json["enabled"].isNull() && !hasEnabled) || (!json["tunnel"].isNull() && !hasTunnel) ||
+                    (!json["write_grants"].isNull() && !hasGrants))
                 {
-                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid JSON structure. Expected: {\"enabled\": true/false, \"tunnel\": true/false} (either or both)");
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid JSON structure. Expected: {\"enabled\": true/false, \"tunnel\": true/false, \"write_grants\": [...]} (any of them)");
                     return;
+                }
+
+                if (hasGrants) {
+                    char error[160] = "";
+                    if (!GatewayExec::setGrants(json["write_grants"].as<JsonArrayConst>(), error, sizeof(error))) {
+                        _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, error);
+                        return;
+                    }
                 }
 
                 if (hasEnabled && !Gateway::setEnabled(json["enabled"].as<bool>())) {

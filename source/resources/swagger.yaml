@@ -2486,7 +2486,7 @@ paths:
   /api/v1/gateway:
     get:
       summary: Get the LAN gateway and tunnel switches
-      description: Whether the cloud may run LAN gateway primitives (ping, scan, HTTP, Modbus TCP, UDP) towards private IPv4 targets, whether it may open a LAN TCP tunnel (needs both switches), and the open tunnel session if any. Always false in community mode.
+      description: Whether the cloud may run LAN gateway primitives (ping, scan, HTTP, HTTPS, Modbus TCP, raw TCP, UDP) towards private IPv4 targets, the write grants and read declarations, whether it may open a LAN TCP tunnel (needs both switches), and the open tunnel session if any. Always false in community mode.
       tags:
         - MQTT
       responses:
@@ -2507,6 +2507,45 @@ paths:
                     type: boolean
                     description: Whether the LAN tunnel is enabled (effective only while the gateway is enabled too)
                     example: false
+                  write_grants:
+                    type: array
+                    maxItems: 8
+                    description: Write grants and read declarations (openspec gateway-modules). Every LAN target is read-only unless a write grant matches; a non-GET HTTP request or a raw tcp/udp payload is read only when a read declaration lists it. At most 3072 bytes as compact JSON. Same list as the system shadow field gateway_write_grants.
+                    items:
+                      type: object
+                      required:
+                        - ip
+                        - port
+                        - module
+                        - allow
+                      properties:
+                        ip:
+                          type: string
+                          description: Private IPv4 literal
+                          example: 192.168.2.50
+                        port:
+                          type: integer
+                          example: 502
+                        module:
+                          type: string
+                          enum: [http, https, modbus_tcp, tcp, udp]
+                        kind:
+                          type: string
+                          enum: [write, read]
+                          default: write
+                          description: read entries (read declarations) are not allowed for modbus_tcp
+                        mac:
+                          type: string
+                          description: Target MAC (lowercase aa:bb:cc:dd:ee:ff), required for on-link targets and compared with ARP before the first byte
+                          example: 00:11:22:33:44:66
+                        allow:
+                          type: array
+                          minItems: 1
+                          maxItems: 4
+                          description: 'http/https write: paths (exact, or prefix ending in *), or ["*"]. http/https read: "<POST|PUT|PATCH|DELETE> <path>". modbus_tcp: u<unit>/<co|hr><start>:<count>[=<min>..<max>]. tcp/udp: 64-hex SHA-256 of an exact payload, or ["*"] (write only). Strings at most 48 bytes.'
+                          items:
+                            type: string
+                          example: ["u1/hr100:2=0..400"]
                   tunnel_active:
                     type: object
                     nullable: true
@@ -2529,7 +2568,7 @@ paths:
           $ref: '#/components/responses/InternalServerError'
     put:
       summary: Set the LAN gateway and tunnel switches
-      description: Enable or disable the LAN gateway and/or the LAN tunnel (at least one field). Persisted to NVS and reported in the system shadow as gateway_enabled and tunnel_enabled. Turning either off closes an open tunnel session at once. Not available in community mode.
+      description: Enable or disable the LAN gateway and/or the LAN tunnel, and/or replace the write grant list (at least one field). Persisted to NVS and reported in the system shadow as gateway_enabled, tunnel_enabled and gateway_write_grants. An invalid write_grants list is refused with 400 and leaves the stored list unchanged; [] clears it. Turning either off closes an open tunnel session at once. Not available in community mode.
       tags:
         - MQTT
       requestBody:
@@ -2547,6 +2586,45 @@ paths:
                   type: boolean
                   description: Whether to enable or disable the LAN tunnel
                   example: false
+                write_grants:
+                  type: array
+                  maxItems: 8
+                  description: Write grants and read declarations (openspec gateway-modules). Every LAN target is read-only unless a write grant matches; a non-GET HTTP request or a raw tcp/udp payload is read only when a read declaration lists it. At most 3072 bytes as compact JSON. Same list as the system shadow field gateway_write_grants.
+                  items:
+                    type: object
+                    required:
+                      - ip
+                      - port
+                      - module
+                      - allow
+                    properties:
+                      ip:
+                        type: string
+                        description: Private IPv4 literal
+                        example: 192.168.2.50
+                      port:
+                        type: integer
+                        example: 502
+                      module:
+                        type: string
+                        enum: [http, https, modbus_tcp, tcp, udp]
+                      kind:
+                        type: string
+                        enum: [write, read]
+                        default: write
+                        description: read entries (read declarations) are not allowed for modbus_tcp
+                      mac:
+                        type: string
+                        description: Target MAC (lowercase aa:bb:cc:dd:ee:ff), required for on-link targets and compared with ARP before the first byte
+                        example: 00:11:22:33:44:66
+                      allow:
+                        type: array
+                        minItems: 1
+                        maxItems: 4
+                        description: 'http/https write: paths (exact, or prefix ending in *), or ["*"]. http/https read: "<POST|PUT|PATCH|DELETE> <path>". modbus_tcp: u<unit>/<co|hr><start>:<count>[=<min>..<max>]. tcp/udp: 64-hex SHA-256 of an exact payload, or ["*"] (write only). Strings at most 48 bytes.'
+                        items:
+                          type: string
+                        example: ["u1/hr100:2=0..400"]
       responses:
         '200':
           description: LAN gateway settings updated
