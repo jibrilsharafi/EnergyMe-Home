@@ -20,7 +20,6 @@
 #include "gateway_modules.h"
 #include "gateway_stream.h"
 #include "tunnel.h"
-#include "utils.h"
 
 using namespace GatewayLogic;
 
@@ -30,8 +29,12 @@ namespace GatewayExec
     // gateway task, which copies it into _snapshot at request start.
     static GrantEntry _grants[GRANT_MAX_ENTRIES];
     static size_t _grantCount = 0;
-    static SemaphoreHandle_t _grantsMutex = nullptr;
+    static bool _grantsLoaded = false;
     static GrantEntry _snapshot[GRANT_MAX_ENTRIES]; // gateway task only
+    static constexpr uint32_t GRANTS_MUTEX_WAIT_MS = 1000;
+
+    static bool _lockGrants();
+    static void _unlockGrants();
 
     static constexpr uint32_t ARP_POLL_MS = 20;
     static constexpr uint32_t ARP_WAIT_MAX_MS = 500;
@@ -138,8 +141,7 @@ namespace GatewayExec
         GatewayNet::Status status = connection.connect(prepared.octets, rq.port, prepared.deadline);
         result.connectMs = elapsedSince(prepared.start);
         if (status != GatewayNet::Status::OK) {
-            if (status == GatewayNet::Status::NO_MEMORY) setOutcome(result, Status::FAILED, "NO_MEMORY", "Could not open a socket");
-            else setOutcome(result, Status::FAILED, beforeDeadline(prepared.deadline) ? "CONNECT_FAILED" : "TIMEOUT", "TCP connect failed");
+            setOutcome(result, Status::FAILED, beforeDeadline(prepared.deadline) ? "CONNECT_FAILED" : "TIMEOUT", "TCP connect failed");
             return false;
         }
         result.connected = true;
@@ -192,8 +194,8 @@ namespace GatewayExec
                     setOutcome(result, Status::REJECTED, "BAD_ARGS", "method must be GET, POST, PUT, PATCH or DELETE");
                     return false;
                 }
-                if (rq.headerCount > MAX_HEADERS || (rq.headerCount > 0 && rq.headers == nullptr)) {
-                    setOutcome(result, Status::REJECTED, "BAD_ARGS", "At most 16 headers");
+                if (rq.headerCount > 0 && rq.headers == nullptr) {
+                    setOutcome(result, Status::REJECTED, "BAD_ARGS", "Invalid header name or value");
                     return false;
                 }
                 for (size_t i = 0; i < rq.headerCount; i++) {
@@ -288,7 +290,8 @@ namespace GatewayExec
         *length = expansion->length;
         if (status == ExpandStatus::OK) return true;
         if (status == ExpandStatus::TOO_LONG) {
-            setOutcome(result, Status::REJECTED, "BAD_ARGS", "Expanded request exceeds its size limit");
+            bool http = rq.module == Module::HTTP || rq.module == Module::HTTPS;
+            setOutcome(result, Status::REJECTED, "BAD_ARGS", http ? "HTTP request larger than one TCP send buffer" : "Expanded request exceeds its size limit");
         } else if (status == ExpandStatus::RESOLVER_FAILED && expansion->reasonCode != nullptr) {
             setOutcome(result, Status::REJECTED, expansion->reasonCode, "%s", expansion->reasonDetail);
         } else {
@@ -320,7 +323,7 @@ namespace GatewayExec
                 return false;
             }
             int n = snprintf((char*)b.wire + used, Buffers::WIRE - used, "%s: %s\r\n", rq.headers[i].name, (const char*)b.field);
-            if (n < 0 || used + (size_t)n >= Buffers::WIRE) {
+            if (n < 0 || used + (size_t)n > GATEWAY_REQUEST_MAX) { // keeps every later write inside WIRE
                 setOutcome(result, Status::REJECTED, "BAD_ARGS", "HTTP request larger than one TCP send buffer");
                 return false;
             }
@@ -333,14 +336,14 @@ namespace GatewayExec
             if (!_expand(rq, context, rq.body, b.field, Buffers::FIELD - 1, b.scratch, expansion, &bodyLength, result)) return false;
             body = b.field;
         }
-        if (bodyLength > 0 || httpMethodHasBody(rq.method)) {
-            used += (size_t)snprintf((char*)b.wire + used, Buffers::WIRE - used, "Content-Length: %u\r\n", (unsigned)bodyLength);
-        }
-        used += (size_t)snprintf((char*)b.wire + used, Buffers::WIRE - used, "\r\n");
-        if (used + bodyLength > GATEWAY_REQUEST_MAX) {
+        int n = bodyLength > 0 || httpMethodHasBody(rq.method)
+                    ? snprintf((char*)b.wire + used, Buffers::WIRE - used, "Content-Length: %u\r\n\r\n", (unsigned)bodyLength)
+                    : snprintf((char*)b.wire + used, Buffers::WIRE - used, "\r\n");
+        if (n < 0 || used + (size_t)n + bodyLength > GATEWAY_REQUEST_MAX) {
             setOutcome(result, Status::REJECTED, "BAD_ARGS", "HTTP request larger than one TCP send buffer");
             return false;
         }
+        used += (size_t)n;
         if (bodyLength > 0) memcpy(b.wire + used, body, bodyLength);
         b.bodyLength = bodyLength;
         b.wireLength = used + bodyLength;
@@ -362,12 +365,13 @@ namespace GatewayExec
     // Executor
     // ========
 
+    // A failed lock leaves the list empty for this request: every write is refused.
     static size_t _snapshotGrants() {
         size_t count = 0;
-        if (_grantsMutex != nullptr && acquireMutex(&_grantsMutex)) {
+        if (_lockGrants()) {
             memcpy(_snapshot, _grants, sizeof(GrantEntry) * _grantCount);
             count = _grantCount;
-            releaseMutex(&_grantsMutex);
+            _unlockGrants();
         }
         return count;
     }
@@ -549,31 +553,40 @@ namespace GatewayExec
     // Grant storage
     // =============
 
-    void begin() {
-        if (!createMutexIfNeeded(&_grantsMutex)) {
-            LOG_ERROR("Failed to create the gateway grants mutex");
-            return;
-        }
+    // Created on first use (thread-safe static init): REST can set grants before
+    // Gateway::begin(), and community mode never calls it.
+    static SemaphoreHandle_t _grantsMutex() {
+        static SemaphoreHandle_t mutex = xSemaphoreCreateMutex();
+        return mutex;
+    }
+
+    // Takes the lock and loads the stored list on first use, so a REST write can
+    // never be overwritten by a later boot-time load.
+    static bool _lockGrants() {
+        SemaphoreHandle_t mutex = _grantsMutex();
+        if (mutex == nullptr || xSemaphoreTake(mutex, pdMS_TO_TICKS(GRANTS_MUTEX_WAIT_MS)) != pdTRUE) return false;
+        if (_grantsLoaded) return true;
+        _grantsLoaded = true;
         uint8_t* blob = (uint8_t*)ps_malloc(GRANT_BLOB_MAX_BYTES);
-        if (blob == nullptr) return;
         size_t length = 0;
         Preferences preferences;
-        if (preferences.begin(PREFERENCES_NAMESPACE_GATEWAY, true)) {
+        if (blob != nullptr && preferences.begin(PREFERENCES_NAMESPACE_GATEWAY, true)) {
             if (preferences.isKey(GATEWAY_WGRANTS_KEY)) length = preferences.getBytes(GATEWAY_WGRANTS_KEY, blob, GRANT_BLOB_MAX_BYTES);
             preferences.end();
         }
-        size_t count = 0;
-        if (length > 0 && !deserializeGrants(blob, length, _snapshot, GRANT_MAX_ENTRIES, &count)) {
+        if (length > 0 && !deserializeGrants(blob, length, _grants, GRANT_MAX_ENTRIES, &_grantCount)) {
             LOG_ERROR("Stored gateway write grants are invalid, ignoring them");
-            count = 0;
+            _grantCount = 0;
         }
         free(blob);
-        if (acquireMutex(&_grantsMutex)) {
-            memcpy(_grants, _snapshot, sizeof(GrantEntry) * count);
-            _grantCount = count;
-            releaseMutex(&_grantsMutex);
-        }
-        if (count > 0) LOG_INFO("Gateway write grants loaded: %u entries", (unsigned)count);
+        if (_grantCount > 0) LOG_INFO("Gateway write grants loaded: %u entries", (unsigned)_grantCount);
+        return true;
+    }
+
+    static void _unlockGrants() { xSemaphoreGive(_grantsMutex()); }
+
+    void begin() {
+        if (_lockGrants()) _unlockGrants();
     }
 
     bool setGrants(JsonArrayConst list, char* error, size_t errorSize) {
@@ -627,7 +640,7 @@ namespace GatewayExec
 
         size_t length = valid ? serializeGrants(entries, count, blob, GRANT_BLOB_MAX_BYTES) : 0;
         bool persisted = false;
-        if (valid && length > 0 && createMutexIfNeeded(&_grantsMutex) && acquireMutex(&_grantsMutex)) {
+        if (valid && length > 0 && _lockGrants()) {
             Preferences preferences;
             persisted = preferences.begin(PREFERENCES_NAMESPACE_GATEWAY, false) && preferences.putBytes(GATEWAY_WGRANTS_KEY, blob, length) == length;
             preferences.end();
@@ -635,7 +648,7 @@ namespace GatewayExec
                 memcpy(_grants, entries, sizeof(GrantEntry) * count);
                 _grantCount = count;
             }
-            releaseMutex(&_grantsMutex);
+            _unlockGrants();
             if (!persisted) snprintf(error, errorSize, "Could not persist the write grants");
         }
         free(entries);
@@ -648,10 +661,10 @@ namespace GatewayExec
         GrantEntry* entries = (GrantEntry*)ps_malloc(sizeof(GrantEntry) * GRANT_MAX_ENTRIES);
         if (entries == nullptr) return;
         size_t count = 0;
-        if (createMutexIfNeeded(&_grantsMutex) && acquireMutex(&_grantsMutex)) {
+        if (_lockGrants()) {
             memcpy(entries, _grants, sizeof(GrantEntry) * _grantCount);
             count = _grantCount;
-            releaseMutex(&_grantsMutex);
+            _unlockGrants();
         }
         for (size_t i = 0; i < count; i++) {
             const GrantEntry& e = entries[i];

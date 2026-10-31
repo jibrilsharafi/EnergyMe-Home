@@ -33,7 +33,6 @@ namespace GatewayExec
         const char* value; // templated
     };
 
-    inline constexpr size_t MAX_HEADERS = 16;
     inline constexpr size_t HEADER_BLOCK_MAX = 2048;
     inline constexpr uint32_t UDP_REPLY_MAX = 1460;
 
