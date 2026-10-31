@@ -172,6 +172,7 @@ namespace GatewayNet
     Status Connection::read(uint8_t* buffer, size_t capacity, size_t* got, uint32_t deadline, uint32_t waitMs) {
         *got = 0;
         if (_fd < 0) return Status::CLOSED;
+        if (_remaining(deadline) <= 0) return Status::TIMEOUT; // a trickling peer cannot hold the gateway
         int rc = _ssl != nullptr ? mbedtls_ssl_read(_ssl, buffer, capacity) : _recv(&_fd, buffer, capacity);
         if (rc > 0) {
             *got = (size_t)rc;
