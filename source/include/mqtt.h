@@ -22,6 +22,7 @@
 #include "customnet.h"
 #include "customlog.h"
 #include "globals.h"
+#include "offlineenergy.h"
 #include "structs.h"
 #include "utils.h"
 
@@ -101,6 +102,10 @@
 // on the longest gap between reads of any channel - rather than a separate literal, so the two never
 // drift apart: this deadline can never fire before the scheduler's own worst-case has had a chance to catch up.
 #define MQTT_ENERGY_PUBLISH_DEADLINE_SECONDS (CHANNEL_MAX_GAP_MS / 1000)
+// Offline energy replay: one chunk per pass, spaced so live publishing keeps its cadence. The
+// payload stays well under the 64 KiB PubSubClient remaining-length ceiling (see CrashArchivePolicy).
+#define MQTT_OFFLINE_ENERGY_REPLAY_INTERVAL_MS 1000
+#define MQTT_OFFLINE_ENERGY_REPLAY_MAX_PAYLOAD_BYTES (48 * 1024)
 #ifdef ENV_DEV
 // In dev: send system_dynamic and statistics every minute so post-mortem
 // telemetry has the resolution needed to investigate behavior.
@@ -154,9 +159,12 @@
 #define MQTT_METER_PUBLISH_MAX_INTERVAL_MS_MAX (24UL * 60 * 60 * 1000) // 24 h ceiling - a long interval is just "batch a lot"
 
 #define MQTT_INITIAL_RETRY_INTERVAL (15 * 1000) // Base delay for exponential backoff in milliseconds
-#define MQTT_MAX_RETRY_INTERVAL (60 * 60 * 1000) // Maximum delay for exponential backoff in milliseconds
+#define MQTT_MAX_RETRY_INTERVAL (10 * 60 * 1000) // Maximum delay for exponential backoff in milliseconds. Short enough that the offline energy replay starts soon after the link returns
 #define MQTT_RETRY_MULTIPLIER 2 // Multiplier for exponential backoff
-#define MQTT_MAX_CONNECTION_ATTEMPTS 10 // Maximum number of connection attempts before restarting the device. High since we don't want a reboot cycle
+// Restart only after this long without a successful connect while the network link is up.
+// The restart recovers a wedged TLS/lwIP stack; it does nothing for a WAN outage, and without
+// an RTC it can cost the valid clock the offline energy buffer depends on - hence a full day.
+#define MQTT_MAX_DISCONNECTED_BEFORE_RESTART_MS (24ULL * 60 * 60 * 1000)
 #define MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY "en_cloud"
 #define MQTT_PREFERENCES_SEND_POWER_DATA_KEY "send_power"
 #define MQTT_PREFERENCES_SEND_GRID_DATA_KEY "send_grid"
@@ -239,6 +247,11 @@ namespace Mqtt
     // TLS socket is bound to the old interface's address and would otherwise
     // stay wedged until keepalive times out. Safe from any task (sets a flag).
     void requestReconnect();
+
+#ifdef ENV_DEV
+    // Bench aid: keeps the cloud session down for `seconds` (0 ends it early)
+    void simulateCloudOutage(uint32_t seconds);
+#endif
 
     // Cloud services methods
     void setCloudServicesEnabled(bool enabled);

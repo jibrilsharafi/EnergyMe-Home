@@ -24,6 +24,8 @@ struct Statistics { // This will be global and we accept the very small race con
   uint64_t mqttConnectionErrors;
   uint64_t mqttMeterPointsDropped; // Meter queue full; oldest point evicted to make room
   uint64_t mqttGridPointsDropped;  // Grid queue full; oldest point evicted to make room
+  uint64_t mqttOfflineEnergyRecordsCaptured; // Minutes whose live energy snapshot was not published, buffered to flash
+  uint64_t mqttOfflineEnergySegmentsDropped; // Hourly buffer segments discarded unsent (age, budget or free space)
 
   uint64_t customMqttMessagesPublished;
   uint64_t customMqttMessagesPublishedError;
@@ -52,6 +54,7 @@ struct Statistics { // This will be global and we accept the very small race con
   Statistics()
     : ade7953TotalInterrupts(0), ade7953TotalHandledInterrupts(0), ade7953ZxInterrupts(0), ade7953ZxtoInterrupts(0), ade7953ServicePasses(0), ade7953UnhandledInterrupts(0), ade7953ReadingCount(0), ade7953ReadingCountFailure(0),
     mqttMessagesPublished(0), mqttMessagesPublishedError(0), mqttConnections(0), mqttConnectionErrors(0), mqttMeterPointsDropped(0), mqttGridPointsDropped(0),
+    mqttOfflineEnergyRecordsCaptured(0), mqttOfflineEnergySegmentsDropped(0),
     customMqttMessagesPublished(0), customMqttMessagesPublishedError(0), modbusRequests(0), modbusRequestsError(0),
     influxdbUploadCount(0), influxdbUploadCountError(0), wifiConnection(0), wifiConnectionError(0),
     webServerRequests(0), webServerRequestsError(0),
