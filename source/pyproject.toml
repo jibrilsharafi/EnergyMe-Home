@@ -13,6 +13,7 @@ dependencies = [
     "tqdm>=4.67.1",
     "esp-coredump>=1.16.0",
     "awsiotsdk>=1.31.0",
+    "cryptography>=50.0.0",
 ]
 
 [tool.uv]
