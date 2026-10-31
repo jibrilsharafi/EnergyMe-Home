@@ -337,21 +337,24 @@ namespace Gateway
             _reject(doc, "BAD_ARGS", "headers must be an object of strings");
             return;
         }
-        GatewayExec::Header headers[GatewayExec::MAX_HEADERS];
+        JsonObjectConst headerObject = headerArg.as<JsonObjectConst>();
+        GatewayExec::Header* headers = headerObject.size() > 0 ? (GatewayExec::Header*)ps_malloc(headerObject.size() * sizeof(GatewayExec::Header)) : nullptr;
+        if (headerObject.size() > 0 && headers == nullptr) {
+            _fail(doc, "NO_MEMORY", "Could not allocate the header list");
+            return;
+        }
         size_t headerCount = 0;
-        for (JsonPairConst header : headerArg.as<JsonObjectConst>()) {
+        for (JsonPairConst header : headerObject) {
             const char* name = header.key().c_str();
             const char* value = header.value().as<const char*>();
             if (!header.value().is<const char*>() || !GatewayLogic::isValidHeaderName(name) || !GatewayLogic::isValidHeaderValue(value)) {
+                free(headers);
                 _reject(doc, "BAD_ARGS", "Invalid header name or value");
                 return;
             }
             if (GatewayLogic::isReservedHeaderName(name)) {
+                free(headers);
                 _reject(doc, "BAD_ARGS", "Host, Content-Length, Transfer-Encoding and Connection are set by the device");
-                return;
-            }
-            if (headerCount >= GatewayExec::MAX_HEADERS) {
-                _reject(doc, "BAD_ARGS", "At most 16 headers");
                 return;
             }
             headers[headerCount++] = {name, value};
@@ -362,6 +365,7 @@ namespace Gateway
         const char* bodyB64 = _readString(args, "body_b64", nullptr);
         const char* bodyText = _readString(args, "body", nullptr);
         if ((!args["body_b64"].isNull() && bodyB64 == nullptr) || (!args["body"].isNull() && bodyText == nullptr)) {
+            free(headers);
             _reject(doc, "BAD_ARGS", "body and body_b64 must be strings");
             return;
         }
@@ -369,6 +373,7 @@ namespace Gateway
         size_t decodedLength = 0;
         if (bodyB64 != nullptr) {
             if (!_decodeBase64(bodyB64, &decodedBody, &decodedLength, HTTP_REQUEST_MAX_BYTES)) {
+                free(headers);
                 _reject(doc, "BAD_ARGS", "body_b64 is not valid base64 or is too large");
                 return;
             }
@@ -380,6 +385,7 @@ namespace Gateway
 
         bool returnHeaders = false;
         if (!_readAccess(args, doc, &rq.access) || !_readFlag(args, "return_headers", doc, &returnHeaders)) {
+            free(headers);
             free(decodedBody);
             return;
         }
@@ -387,6 +393,7 @@ namespace Gateway
             rq.certSha256 = _readString(args, "cert_sha256", nullptr);
             uint8_t pin[GatewayLogic::DIGEST_BYTES];
             if (!GatewayLogic::parseHexDigest(rq.certSha256, pin)) {
+                free(headers);
                 free(decodedBody);
                 _reject(doc, "BAD_ARGS", "cert_sha256 must be 64 lowercase hex");
                 return;
@@ -395,16 +402,18 @@ namespace Gateway
 
         GatewayExec::Result result;
         GatewayExec::run(rq, result);
+        free(headers);
         free(decodedBody);
         if (!_mapStatus(result, doc)) return;
 
         JsonObject out = _succeed(doc);
         _setNumber(out, "status_code", result.protoStatus);
         _setBool(out, "truncated", result.truncated);
-        if (returnHeaders && result.headersLength > 0) {
-            out["headers"]["s"].set(JsonString(result.headers, result.headersLength)); // not static -> ArduinoJson copies
+        // Same s/bin rule as the body: a non-UTF-8 byte in a header would make AWS refuse the whole response.
+        if (returnHeaders) _setPayloadOrFail(out, "headers", (const uint8_t*)result.headers, result.headersLength, false, doc, "Could not encode the headers");
+        if (doc["status"] == "SUCCEEDED") {
+            _setPayloadOrFail(out, "body", result.body, result.bodyLength, result.truncated, doc, "Could not encode the response body");
         }
-        _setPayloadOrFail(out, "body", result.body, result.bodyLength, result.truncated, doc, "Could not encode the response body");
     }
 
     static void _runTlsProbe(JsonObjectConst args, JsonDocument& doc, const char* executionId) {
