@@ -2744,9 +2744,6 @@ paths:
                   kid:
                     type: string
                     description: SHA-256 of the device certificate DER (the AWS IoT certificate id), used to seal envelopes
-                  hwm:
-                    type: integer
-                    description: Replay high-water mark (Unix seconds)
                   max:
                     type: integer
                     example: 16
@@ -2765,20 +2762,16 @@ paths:
                         port:
                           type: integer
                           example: 80
-                        mac:
-                          type: string
-                          description: Bound target MAC, "" when unbound
-                          example: 00:11:22:33:44:55
                         set_at:
                           type: integer
-                          description: Unix seconds
+                          description: Unix seconds of the last set (0 for a local set before the clock was synchronised)
         '403':
           description: Not available in community mode
         '503':
           description: Secret store busy, retry
     put:
       summary: Store or rotate a gateway secret
-      description: Stores a value bound to one LAN target (private IPv4 and port, plus the target MAC for on-link targets). Rotating a name overwrites its slot. The value is sent in clear on the LAN, behind digest auth; remote delivery uses the encrypted secret_set gateway op instead. At most 16 secrets.
+      description: Stores a value bound to one LAN target (private IPv4 and port). The target MAC is not stored with the secret; each gateway request to an on-link target carries it. Rotating a name overwrites its slot and the last set wins. A body with a mac key is refused with 400. The value is sent in clear on the LAN, behind digest auth; remote delivery uses the encrypted secret_set gateway op instead. At most 16 secrets.
       tags:
         - MQTT
       requestBody:
@@ -2802,9 +2795,6 @@ paths:
                 port:
                   type: integer
                   example: 80
-                mac:
-                  type: string
-                  description: Target MAC, lowercase aa:bb:cc:dd:ee:ff; required for on-link targets
                 value:
                   type: string
                   description: 1-256 bytes of UTF-8 without NUL, CR or LF; never returned
@@ -2820,7 +2810,7 @@ paths:
                     type: string
                   set_at:
                     type: integer
-                    description: Unix seconds
+                    description: Device clock in Unix seconds, 0 when the clock is not synchronised
         '400':
           $ref: '#/components/responses/BadRequest'
         '403':
