@@ -673,6 +673,8 @@ namespace GatewayExec
         return persisted;
     }
 
+    size_t copyGrants(GrantEntry* out) { return _copyGrants(out); }
+
     void grantsToJson(JsonArray out) {
         GrantEntry* entries = (GrantEntry*)ps_malloc(sizeof(GrantEntry) * GRANT_MAX_ENTRIES);
         if (entries == nullptr) return;

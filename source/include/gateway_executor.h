@@ -128,4 +128,6 @@ namespace GatewayExec
     // Validates and persists; `error` gets the reason when it returns false.
     bool setGrants(JsonArrayConst list, char* error, size_t errorSize);
     void grantsToJson(JsonArray out);
+    // Copies the list into `out` (GRANT_MAX_ENTRIES entries); empty on a lock failure.
+    size_t copyGrants(GatewayLogic::GrantEntry* out);
 }
