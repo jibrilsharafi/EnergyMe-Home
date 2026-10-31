@@ -203,12 +203,14 @@ ExpandStatus expandTemplate(const char *tmpl, size_t length, const Resolver *cha
 
         ResolveStatus status = ResolveStatus::UNKNOWN;
         ResolveOutput value{};
+        const Resolver *resolver = nullptr;
         for (size_t i = 0; i < chainLength && status == ResolveStatus::UNKNOWN; i++) {
             if (chain[i].resolve == nullptr) continue;
             value = ResolveOutput{};
             value.value = buffers[0];
             value.cap = half;
             status = chain[i].resolve(chain[i].context, request, placeholder.name, placeholder.arg, &value);
+            resolver = &chain[i];
         }
         if (status == ResolveStatus::UNKNOWN) return ExpandStatus::BAD_TEMPLATE;
         if (status == ResolveStatus::FAILED) {
@@ -228,6 +230,7 @@ ExpandStatus expandTemplate(const char *tmpl, size_t length, const Resolver *cha
             result->requireMac = true;
         }
 
+        if (resolver->expanded != nullptr) resolver->expanded(resolver->context, placeholder.name, placeholder.arg, buffers[0], value.length, false);
         size_t current = 0, currentLength = value.length;
         for (size_t e = 0; e < placeholder.encodingCount; e++) {
             bool ok = false;
@@ -240,6 +243,7 @@ ExpandStatus expandTemplate(const char *tmpl, size_t length, const Resolver *cha
             if (!ok) return ExpandStatus::TOO_LONG;
             current = 1 - current;
         }
+        if (resolver->expanded != nullptr) resolver->expanded(resolver->context, placeholder.name, placeholder.arg, buffers[current], currentLength, true);
         if (!append(out, cap, &used, buffers[current], currentLength)) return ExpandStatus::TOO_LONG;
         p += placeholder.length;
     }

@@ -48,6 +48,10 @@ struct ResolveOutput {
 struct Resolver {
     ResolveStatus (*resolve)(void *context, const ResolveContext &request, const char *name, const char *arg, ResolveOutput *out);
     void *context;
+    // Optional: called after a successful resolve with the raw value (`final`
+    // false), then with the form written to the output after the encodings
+    // (`final` true), so a sensitive resolver can scrub echoes of both.
+    void (*expanded)(void *context, const char *name, const char *arg, const uint8_t *bytes, size_t length, bool final);
 };
 
 enum class ExpandStatus { OK, BAD_TEMPLATE, TOO_LONG, RESOLVER_FAILED };
