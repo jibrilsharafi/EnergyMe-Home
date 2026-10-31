@@ -34,7 +34,7 @@
 - [x] 3.7 Seventh shadow `collector` in `shadow.cpp` (`SHADOW_MAX_COUNT 7`): apply (`enabled`, `jobset`), reported state within 2048 bytes with `jobs` always sent as the whole array and `apply_error` with all four keys, health coalescing; on the device confirm in the AWS shadow that a removed job and a cleared `code` disappear
 - [x] 3.8 `collector_status` op in the MQTT task command path, `NO_SUCH_JOB`, 3500-byte cut
 - [x] 3.9 `GET/PUT /api/v1/collector` (switch plus status, no job editing), `swagger.yaml` (keep CRLF); factory reset check
-- [x] 3.10 `pio run -e esp32s3-dev` and `-e esp32s3-dev-pro` build; `pio check -e esp32s3-dev` clean for new files Evidence: Both dev builds clean for the new files.
+- [x] 3.10 `pio run -e esp32s3-dev` and `-e esp32s3-dev-pro` build; `pio check -e esp32s3-dev` clean for new files Evidence: both dev builds clean for the new files; `pio check -e esp32s3-dev` on `collector.cpp` and `collector_logic` reports no high-severity defect (only style checks and two `bugprone-implicit-widening` hits on constant macros).
 
 ## 4. Bench verification (dev devices .174 Home and .80 Home Pro)
 
