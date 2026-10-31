@@ -1,0 +1,14 @@
+{
+  "result": {
+    "reply": {
+      "S": "ping golden"
+    },
+    "sent": {
+      "B": true
+    },
+    "truncated": {
+      "B": false
+    }
+  },
+  "status": "SUCCEEDED"
+}

@@ -1,0 +1,7 @@
+{
+  "status": "REJECTED",
+  "statusReason": {
+    "reasonCode": "BAD_ARGS",
+    "reasonDescription": "function must be 1-4 with count 1-2000 (bits) or 1-125 (registers)"
+  }
+}

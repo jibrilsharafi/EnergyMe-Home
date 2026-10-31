@@ -1,0 +1,7 @@
+{
+  "status": "FAILED",
+  "statusReason": {
+    "reasonCode": "TIMEOUT",
+    "reasonDescription": "No Modbus response within timeout_ms"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "status": "FAILED",
+  "statusReason": {
+    "reasonCode": "TIMEOUT",
+    "reasonDescription": "TCP connect failed"
+  }
+}

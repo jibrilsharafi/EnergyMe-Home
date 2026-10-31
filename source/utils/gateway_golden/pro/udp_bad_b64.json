@@ -1,0 +1,7 @@
+{
+  "status": "REJECTED",
+  "statusReason": {
+    "reasonCode": "BAD_ARGS",
+    "reasonDescription": "payload_b64 must be base64 of 1-1460 bytes"
+  }
+}
