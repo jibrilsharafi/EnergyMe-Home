@@ -388,7 +388,7 @@ Secrets SHALL be scrubbed by one layer: the executor scrubs every result whose r
 
 #### Scenario: Error page echoes the credential
 - **WHEN** a step sent `Authorization: Basic ${secret:meter_basic|b64}` and the 401 page echoes the request headers
-- **THEN** the executor's scrub has replaced the encoded credential with `${secret:meter_basic}` and reported `redacted`, the collector publishes the body unchanged, `total` and `sha` match the scrubbed bytes, the header has `rd: true`, and neither the raw nor the base64 value reaches S3
+- **THEN** the executor's scrub has replaced the encoded credential in place with `****` and reported `redacted`, the collector publishes the body unchanged, `total` and `sha` match the scrubbed bytes, the header has `rd: true`, and neither the raw nor the base64 value reaches S3
 
 #### Scenario: Date header carried
 - **WHEN** an XWEB data reply carries `Date: Thu, 31 Oct 2026 12:00:00 GMT`
