@@ -26,6 +26,7 @@
 #include "customserver.h"
 #include "led.h"
 #include "modbustcp.h"
+#include "collector.h"
 #include "gateway.h"
 #include "secrets.h"
 #include "tunnel.h"
@@ -305,6 +306,7 @@ void setup()
 
   if (!globalCommunityMode) {
     LOG_DEBUG("Setting up LAN gateway...");
+    Collector::begin(); // before the gateway task, which runs its jobs
     Gateway::begin();
     LOG_DEBUG("LAN gateway setup done");
     logHeapLedger("lan gateway");
