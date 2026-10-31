@@ -259,7 +259,7 @@ struct Record {
     uint32_t payloadLength;
     uint16_t headerLength;
     uint8_t job;
-    uint8_t reserved;
+    uint8_t gen;
     uint32_t seq;
     uint32_t body;
     char sourceId[SOURCE_ID_MAX + 1];
@@ -278,7 +278,7 @@ size_t partBytes(const Record &r) { return static_cast<size_t>(r.headerLength) +
 
 bool sameTag(const PartTag &a, const PartTag &b) { return a.job == b.job && a.seq == b.seq && a.body == b.body && a.gen == b.gen; }
 
-PartTag tagOf(const Record &r) { return PartTag{r.job, r.seq, r.body, r.reserved, r.alone != 0}; }
+PartTag tagOf(const Record &r) { return PartTag{r.job, r.seq, r.body, r.gen, r.alone != 0}; }
 
 bool sameBody(const Record &r, const PartTag &tag) { return sameTag(tagOf(r), tag); }
 
@@ -372,7 +372,7 @@ bool PartQueue::push(const char *sourceId, const PartTag &tag, const char *heade
     r.payloadLength = static_cast<uint32_t>(payloadLength);
     r.headerLength = static_cast<uint16_t>(headerLength);
     r.job = tag.job;
-    r.reserved = tag.gen;
+    r.gen = tag.gen;
     r.alone = tag.alone ? 1 : 0;
     r.seq = tag.seq;
     r.body = tag.body;

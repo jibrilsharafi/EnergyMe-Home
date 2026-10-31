@@ -33,17 +33,16 @@ namespace Collector
     static std::atomic<bool> _cloudConnected{false};
     static char _boot[17] = ""; // dedup id, new at every boot
 
-    static SemaphoreHandle_t _makeMutex() { return xSemaphoreCreateMutex(); }
     static SemaphoreHandle_t _mailboxMutex() {
-        static SemaphoreHandle_t m = _makeMutex();
+        static SemaphoreHandle_t m = xSemaphoreCreateMutex();
         return m;
     }
     static SemaphoreHandle_t _snapshotMutex() {
-        static SemaphoreHandle_t m = _makeMutex();
+        static SemaphoreHandle_t m = xSemaphoreCreateMutex();
         return m;
     }
     static SemaphoreHandle_t _queueMutex() {
-        static SemaphoreHandle_t m = _makeMutex();
+        static SemaphoreHandle_t m = xSemaphoreCreateMutex();
         return m;
     }
     static bool _take(SemaphoreHandle_t m, uint32_t ms = 1000) { return m != nullptr && xSemaphoreTake(m, pdMS_TO_TICKS(ms)) == pdTRUE; }
@@ -142,6 +141,13 @@ namespace Collector
         if (p.outstanding > 0) p.outstanding--;
     }
 
+    static void _releasePending(uint8_t jobIndex) {
+        if (_take(_queueMutex(), 1000)) {
+            _pendingParts[jobIndex].active = false;
+            _give(_queueMutex());
+        }
+    }
+
     // Called from the gateway, MQTT and REST tasks: check and allocation under the queue mutex.
     static bool _allocateRing() {
         if (!_take(_queueMutex())) return false;
@@ -206,7 +212,7 @@ namespace Collector
         uint64_t cursorS; // device UTC
         uint32_t windowS;
         uint32_t seq;
-        uint64_t advanceTo; // cursor value waiting for the publish of run `advanceSeq`
+        uint64_t advanceTo; // cursor value waiting for every part of the last run to be published
         bool advancePending;
         JobSnapshot stats;
     };
@@ -226,7 +232,6 @@ namespace Collector
         uint32_t seq;
         uint64_t startMs;
         uint32_t excludedMs;
-        uint64_t nowS;  // device UTC at run start, the window end unless capped
         Window window;
         bool login;
         uint8_t index;
@@ -245,15 +250,17 @@ namespace Collector
     };
     static Run _run = {};
 
-    static void _zeroCaptures(JobState& js) {
-        for (size_t c = 0; c < CAPTURES_MAX; c++) {
-            if (js.captures[c] != nullptr) {
-                mbedtls_platform_zeroize(js.captures[c], js.captureLength[c]);
-                free(js.captures[c]);
-            }
-            js.captures[c] = nullptr;
-            js.captureLength[c] = 0;
+    static void _dropCapture(JobState& js, size_t c) {
+        if (js.captures[c] != nullptr) {
+            mbedtls_platform_zeroize(js.captures[c], js.captureLength[c]);
+            free(js.captures[c]);
         }
+        js.captures[c] = nullptr;
+        js.captureLength[c] = 0;
+    }
+
+    static void _zeroCaptures(JobState& js) {
+        for (size_t c = 0; c < CAPTURES_MAX; c++) _dropCapture(js, c);
         js.sessionHeld = false;
     }
 
@@ -584,10 +591,11 @@ namespace Collector
         out["boot"] = (const char*)_boot;
         JsonObject queue = out["queue"].to<JsonObject>();
         if (_take(_queueMutex(), 100)) {
-            queue["bytes"] = _queue.ready() ? _queue.bytes() : 0;
-            queue["parts"] = _queue.ready() ? _queue.parts() : 0;
-            queue["dropped_parts"] = _queue.ready() ? _queue.droppedParts() : 0;
-            queue["dropped_bytes"] = _queue.ready() ? _queue.droppedBytes() : 0;
+            bool ready = _queue.ready();
+            queue["bytes"] = ready ? _queue.bytes() : 0;
+            queue["parts"] = ready ? _queue.parts() : 0;
+            queue["dropped_parts"] = ready ? _queue.droppedParts() : 0;
+            queue["dropped_bytes"] = ready ? _queue.droppedBytes() : 0;
             _give(_queueMutex());
         }
         JsonObject budget = out["budget"].to<JsonObject>();
@@ -927,10 +935,7 @@ namespace Collector
         JobState& js = _states[jobIndex];
         if (abandoned) {
             _freeStage();
-            if (_take(_queueMutex(), 1000)) {
-                _pendingParts[jobIndex].active = false;
-                _give(_queueMutex());
-            }
+            _releasePending(jobIndex);
             _skipToNextSlot(jobIndex);
             _run.active = false;
             _publishSnapshot();
@@ -962,12 +967,7 @@ namespace Collector
                 js.advanceTo = _run.window.to;
             }
         }
-        if (!job.usesCursor || failed || _run.failedStep) {
-            if (_take(_queueMutex(), 1000)) {
-                _pendingParts[jobIndex].active = false;
-                _give(_queueMutex());
-            }
-        }
+        if (!job.usesCursor || failed || _run.failedStep) _releasePending(jobIndex);
         _scheduleNext(jobIndex, failed);
         _run.active = false;
         _publishSnapshot();
@@ -1043,7 +1043,6 @@ namespace Collector
             } else {
                 _run.window = {nowUtc, nowUtc}; // ${now} without ${cursor}: the run start
             }
-            _run.nowS = _run.window.to;
         }
         if (job.usesCursor && _take(_queueMutex(), 1000)) {
             _pendingParts[jobIndex] = {true, _run.seq, _gen, 0, false};
@@ -1059,15 +1058,9 @@ namespace Collector
     }
 
     static void _storeCapture(JobState& js, uint8_t c, const uint8_t* value, size_t length) {
-        if (js.captures[c] != nullptr) {
-            mbedtls_platform_zeroize(js.captures[c], js.captureLength[c]);
-            free(js.captures[c]);
-        }
+        _dropCapture(js, c);
         js.captures[c] = (uint8_t*)ps_malloc(length);
-        if (js.captures[c] == nullptr) {
-            js.captureLength[c] = 0;
-            return;
-        }
+        if (js.captures[c] == nullptr) return;
         memcpy(js.captures[c], value, length);
         js.captureLength[c] = (uint16_t)length;
     }
@@ -1115,9 +1108,8 @@ namespace Collector
         _forms[(*count)++] = {bytes, length, name};
     }
 
-    static size_t _scrubBody(const Job& job, const JobState& js, uint8_t index, StepContext& ctx, uint8_t* body, size_t length, size_t cap,
-                             bool* truncated, bool* redacted) {
-        (void)index;
+    static size_t _scrubBody(const Job& job, const JobState& js, StepContext& ctx, uint8_t* body, size_t length, size_t cap, bool* truncated,
+                             bool* redacted) {
         bool held = false;
         for (uint8_t c = 0; c < job.captureCount && !held; c++) held = js.captures[c] != nullptr;
         if (!held) return length; // nothing this step could echo
@@ -1197,6 +1189,15 @@ namespace Collector
         return status == GatewayExec::Status::OK ? "OK" : (status == GatewayExec::Status::REJECTED ? "REJECTED" : "FAILED");
     }
 
+    // Stops the run on a header-only part; `h` already carries st and rc.
+    static void _stopRun(const Job& job, uint8_t jobIndex, PartHeader& h, const char* detail, StepContext* ctx) {
+        _emitPart(job, jobIndex, h, nullptr, 0);
+        _fail(h.rc, detail);
+        _run.stopped = true;
+        if (ctx != nullptr) _freeTokens(*ctx);
+        _endRun(false);
+    }
+
     static void _runStep() {
         uint8_t jobIndex = _run.job;
         const Job& job = _active.table->jobs[jobIndex];
@@ -1220,10 +1221,7 @@ namespace Collector
             _baseHeader(job, step, login, &h);
             h.st = "REJECTED";
             h.rc = Gateway::targetCheckReasonCode(target);
-            _emitPart(job, jobIndex, h, nullptr, 0);
-            _fail(h.rc, nullptr);
-            _run.stopped = true;
-            _endRun(false);
+            _stopRun(job, jobIndex, h, nullptr, nullptr);
             return;
         }
 
@@ -1247,13 +1245,8 @@ namespace Collector
         _baseHeader(job, step, login, &h);
         h.hasDur = true;
         h.durMs = result.totalMs;
-        if (job.module == GatewayLogic::Module::HTTP || job.module == GatewayLogic::Module::HTTPS) {
-            h.hasPs = result.protoStatus != 0;
-            h.ps = result.protoStatus;
-        } else if (result.protoStatus != 0) {
-            h.hasPs = true; // Modbus exception code
-            h.ps = result.protoStatus;
-        }
+        h.hasPs = result.protoStatus != 0; // HTTP status, or the Modbus exception code
+        h.ps = result.protoStatus;
         if (job.module == GatewayLogic::Module::MODBUS_TCP) {
             h.addr = result.address;
             h.cnt = step.args.count;
@@ -1268,11 +1261,7 @@ namespace Collector
 
         if (login) {
             if (!ok) {
-                _emitPart(job, jobIndex, h, nullptr, 0);
-                _fail(h.rc, detail);
-                _run.stopped = true;
-                _freeTokens(ctx);
-                _endRun(false);
+                _stopRun(job, jobIndex, h, detail, &ctx);
                 return;
             }
             bool captured = _capture(job, js, true, _run.index, result);
@@ -1281,11 +1270,7 @@ namespace Collector
                 h.st = "FAILED";
                 h.rc = "LOGIN_FAILED";
                 _zeroCaptures(js);
-                _emitPart(job, jobIndex, h, nullptr, 0);
-                _fail("LOGIN_FAILED", nullptr);
-                _run.stopped = true;
-                _freeTokens(ctx);
-                _endRun(false);
+                _stopRun(job, jobIndex, h, nullptr, &ctx);
                 return;
             }
             _emitPart(job, jobIndex, h, nullptr, 0); // login replies: status and length only
@@ -1314,11 +1299,7 @@ namespace Collector
             h.st = "FAILED";
             h.rc = "SESSION_EXPIRED";
             _zeroCaptures(js);
-            _emitPart(job, jobIndex, h, nullptr, 0);
-            _fail("SESSION_EXPIRED", nullptr);
-            _run.stopped = true;
-            _freeTokens(ctx);
-            _endRun(false);
+            _stopRun(job, jobIndex, h, nullptr, &ctx);
             return;
         }
 
@@ -1326,11 +1307,7 @@ namespace Collector
             if (!_capture(job, js, false, _run.index, result)) {
                 h.st = "FAILED";
                 h.rc = "CAPTURE_MISSING";
-                _emitPart(job, jobIndex, h, nullptr, 0);
-                _fail("CAPTURE_MISSING", nullptr);
-                _run.stopped = true;
-                _freeTokens(ctx);
-                _endRun(false);
+                _stopRun(job, jobIndex, h, nullptr, &ctx);
                 return;
             }
             uint8_t* body = result.body;
@@ -1345,7 +1322,7 @@ namespace Collector
                 bool truncated = result.truncated;
                 bool redacted = result.redacted;
                 size_t cap = result.bodyCapacity < step.maxBytes ? result.bodyCapacity : step.maxBytes;
-                length = _scrubBody(job, js, _run.index, ctx, body, length, cap, &truncated, &redacted);
+                length = _scrubBody(job, js, ctx, body, length, cap, &truncated, &redacted);
                 result.truncated = truncated;
                 h.rd = redacted;
             }

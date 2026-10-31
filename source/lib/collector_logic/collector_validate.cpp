@@ -59,14 +59,10 @@ constexpr size_t STEP_SLOTS = LOGIN_MAX + STEPS_MAX; // login steps, then data s
 // Small helpers
 // ---------------------------------------------------------------------------
 
-void setError(ApplyError *error, const char *code, const char *job, const char *field) {
+bool fail(ApplyError *error, const char *code, const char *job, const char *field) {
     error->code = code;
     snprintf(error->job, sizeof(error->job), "%s", job != nullptr ? job : "");
     snprintf(error->field, sizeof(error->field), "%s", field != nullptr ? field : "");
-}
-
-bool fail(ApplyError *error, const char *code, const char *job, const char *field) {
-    setError(error, code, job, field);
     return false;
 }
 

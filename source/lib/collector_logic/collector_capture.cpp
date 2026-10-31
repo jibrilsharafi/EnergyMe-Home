@@ -197,14 +197,18 @@ bool readString(const uint8_t *s, size_t length, size_t *i, uint8_t *out, size_t
 
 bool isNumberChar(uint8_t c) { return (c >= '0' && c <= '9') || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E'; }
 
+bool skipString(const uint8_t *s, size_t length, size_t *i) {
+    size_t ignored = 0;
+    bool overflow = false;
+    return readString(s, length, i, nullptr, 0, &ignored, &overflow);
+}
+
 // Skips one JSON value starting at s[*i]; nested containers by a depth counter.
 bool skipValue(const uint8_t *s, size_t length, size_t *i) {
     size_t p = *i;
     if (p >= length) return false;
     if (s[p] == '"') {
-        size_t ignored = 0;
-        bool overflow = false;
-        if (!readString(s, length, &p, nullptr, 0, &ignored, &overflow)) return false;
+        if (!skipString(s, length, &p)) return false;
         *i = p;
         return true;
     }
@@ -213,9 +217,7 @@ bool skipValue(const uint8_t *s, size_t length, size_t *i) {
         while (p < length) {
             uint8_t c = s[p];
             if (c == '"') {
-                size_t ignored = 0;
-                bool overflow = false;
-                if (!readString(s, length, &p, nullptr, 0, &ignored, &overflow)) return false;
+                if (!skipString(s, length, &p)) return false;
                 continue;
             }
             if (c == '{' || c == '[') depth++;
