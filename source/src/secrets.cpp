@@ -551,7 +551,7 @@ namespace Secrets
             const SlotMeta& slot = _slots[order[k]];
             JsonObject entry = list.add<JsonObject>();
             char text[GatewayLogic::MAC_TEXT_BUFFER] = "";
-            entry["name"] = slot.name;
+            entry["name"] = (const char*)slot.name; // copied: serialized after the unlock
             _ipText(slot.ip, text, sizeof(text));
             entry["ip"] = text;
             entry["port"] = slot.port;
@@ -577,7 +577,7 @@ namespace Secrets
             JsonArray row = list.add<JsonArray>();
             char target[24];
             snprintf(target, sizeof(target), "%u.%u.%u.%u:%u", slot.ip[0], slot.ip[1], slot.ip[2], slot.ip[3], slot.port);
-            row.add(slot.name);
+            row.add((const char*)slot.name);
             row.add(target);
             row.add(slot.setAt);
             row.add(slot.hasMac ? 1 : 0);
@@ -718,7 +718,8 @@ namespace Secrets
             result.headers[result.headersLength] = '\0';
         }
         if (result.body != nullptr && result.bodyLength > 0) {
-            result.bodyLength = scrub(*state, result.body, result.bodyLength, request.maxBytes, &result.truncated, &redacted);
+            size_t cap = result.bodyCapacity < request.maxBytes ? result.bodyCapacity : request.maxBytes;
+            result.bodyLength = scrub(*state, result.body, result.bodyLength, cap, &result.truncated, &redacted);
         }
         result.redacted = redacted;
     }

@@ -88,6 +88,7 @@ namespace GatewayExec
         size_t headersLength = 0;
         uint8_t* body = nullptr; // PSRAM
         size_t bodyLength = 0;
+        size_t bodyCapacity = 0; // bytes allocated at `body`; a scrub never writes past it
         uint16_t* registers = nullptr; // PSRAM, Modbus read
         size_t registerCount = 0;
         size_t written = 0;
@@ -128,4 +129,6 @@ namespace GatewayExec
     // Validates and persists; `error` gets the reason when it returns false.
     bool setGrants(JsonArrayConst list, char* error, size_t errorSize);
     void grantsToJson(JsonArray out);
+    // Copies the list into `out` (GRANT_MAX_ENTRIES entries); empty on a lock failure.
+    size_t copyGrants(GatewayLogic::GrantEntry* out);
 }

@@ -10,6 +10,7 @@
 #include "ade7953.h"
 #include "app_image_descriptor.h"
 #include "awsconfig.h"
+#include "collector.h"
 #include "custometh.h"
 #include "customwifi.h"
 #include "factory_keys.h"
@@ -27,9 +28,9 @@
 
 namespace Shadow {
 
-// Up to 6 named shadows: info, issues, wifi (reported-only), system, meter,
-// channels (writable).
-#define SHADOW_MAX_COUNT 6
+// Up to 7 named shadows: info, issues, wifi (reported-only), system, meter,
+// channels, collector (writable).
+#define SHADOW_MAX_COUNT 7
 #define SHADOW_NAME_PREFIX "shadow/name/"
 #define SHADOW_INFO_REFRESH_INTERVAL_US (24ULL * 60ULL * 60ULL * 1000000ULL) // 24 h
 // Drift-detect cadence: each writable shadow's reported state is rebuilt and
@@ -72,6 +73,8 @@ static void _reportMeter(JsonDocument& doc);
 static bool _applyMeter(JsonObjectConst delta, JsonObject reported);
 static void _reportChannels(JsonDocument& doc);
 static bool _applyChannels(JsonObjectConst delta, JsonObject reported);
+static void _reportCollector(JsonDocument& doc) { Collector::reportToJson(doc["state"]["reported"].to<JsonObject>()); }
+static bool _applyCollector(JsonObjectConst delta, JsonObject reported) { return Collector::applyDelta(delta, reported); }
 
 // system shadow: transient (VERBOSE/DEBUG) mqtt_log_level auto-revert. The timer
 // callback (esp_timer task) only flips a flag; the MQTT task does the revert +
@@ -131,6 +134,7 @@ void begin() {
     _registerShadow({"system", true, _reportSystem, _applySystem});
     _registerShadow({"meter", true, _reportMeter, _applyMeter});
     _registerShadow({"channels", true, _reportChannels, _applyChannels});
+    _registerShadow({"collector", true, _reportCollector, _applyCollector});
 
     // Refresh the issues shadow on every registry transition/ack (flag only).
     IssueRegistry::setChangeCallback(_onIssuesChanged);

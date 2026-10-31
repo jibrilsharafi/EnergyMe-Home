@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "customserver.h"
+#include "collector.h"
 #include "gateway.h"
 #include "gateway_executor.h"
 #include "secrets.h"
@@ -3861,6 +3862,45 @@ namespace CustomServer
                 _sendSuccessResponse(request, "LAN gateway settings updated");
             });
         server.addHandler(setGatewayHandler);
+
+        // LAN collector switch and status (openspec capability: lan-collector). Same
+        // setter as the collector shadow's `enabled`; jobs are defined by the cloud only.
+        server.on("/api/v1/collector", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            if (globalCommunityMode) {
+                _sendErrorResponse(request, HTTP_CODE_FORBIDDEN, "The LAN collector is not available in community mode");
+                return;
+            }
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            if (Collector::statusToJson(nullptr, doc.to<JsonObject>()) != Collector::StatusResult::OK) {
+                _sendErrorResponse(request, HTTP_CODE_SERVICE_UNAVAILABLE, "Collector status busy, retry");
+                return;
+            }
+            doc["gateway_enabled"] = Gateway::isEnabled();
+            _sendJsonResponse(request, doc);
+        });
+
+        static AsyncCallbackJsonWebHandler *setCollectorHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/collector",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (globalCommunityMode) {
+                    _sendErrorResponse(request, HTTP_CODE_FORBIDDEN, "The LAN collector is not available in community mode");
+                    return;
+                }
+                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_GATEWAY)) return;
+                if (!json.is<JsonObject>() || !json["enabled"].is<bool>()) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid JSON structure. Expected: {\"enabled\": true/false}");
+                    return;
+                }
+                if (!Collector::setEnabled(json["enabled"].as<bool>())) {
+                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Could not persist the LAN collector switch");
+                    return;
+                }
+                _sendSuccessResponse(request, "LAN collector settings updated");
+            });
+        server.addHandler(setCollectorHandler);
 
         // Gateway secrets (openspec capability: gateway-secrets): write-only on the LAN,
         // behind the digest auth. GET returns metadata only, never a value or its length.

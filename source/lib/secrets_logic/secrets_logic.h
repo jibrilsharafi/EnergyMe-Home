@@ -109,4 +109,10 @@ struct ScrubForm {
 size_t scrub(uint8_t *buffer, size_t length, size_t cap, uint8_t *scratch, const ScrubForm *forms, size_t formCount, bool *truncated,
              bool *redacted);
 
+inline constexpr size_t SCRUB_PLACEHOLDER_MAX = 48; // "${" + kind + ":" + name + "}"
+
+// The same scrub with `${<kind>:<name>}` placeholders (the collector uses "cap").
+size_t scrubAs(const char *kind, uint8_t *buffer, size_t length, size_t cap, uint8_t *scratch, const ScrubForm *forms, size_t formCount,
+               bool *truncated, bool *redacted);
+
 } // namespace SecretsLogic

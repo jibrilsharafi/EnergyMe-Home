@@ -504,7 +504,7 @@ A `gateway` command with `op: "collector_status"` and args `{}` or `{job}` SHALL
 - **THEN** it is answered at once without waiting for the step
 
 ### Requirement: Collector audit log
-Each applied job set SHALL be logged at INFO with rev and job count, each refused set at WARNING with its code. Run starts and successes SHALL be logged at DEBUG with job id, seq and byte count; run failures at WARNING with job id and reason code. Logs SHALL never contain expanded requests, captured values, secret values or reply bodies.
+Each applied job set SHALL be logged at INFO with rev and job count, each refused set at WARNING with its code. Run starts and successes SHALL be logged at DEBUG with job id, seq and byte count; run failures at WARNING with job id and reason code when the job's health changes, else at DEBUG, so a job that keeps failing does not log every interval. Logs SHALL never contain expanded requests, captured values, secret values or reply bodies.
 
 #### Scenario: Failure logged without secrets
 - **WHEN** an XWEB run fails with `LOGIN_FAILED`

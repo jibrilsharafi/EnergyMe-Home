@@ -184,6 +184,7 @@
 #define MQTT_TOPIC_CRASH "crash"
 #define MQTT_TOPIC_LOG "log"
 #define MQTT_TOPIC_TUNNEL "tunnel" // tunnel/<sid>/{d,u}: no rule, the device policy wildcard covers it
+#define MQTT_TOPIC_COLLECTOR "collector" // collector/<source_id>, routed via AWS_IOT_CORE_RULE_COLLECTOR_HOME / _HOMEPRO (awsconfig.h)
 #define MQTT_TOPIC_ALARM "alarm" // Routed via its own rule (AWS_IOT_CORE_RULE_ALARM_HOME / _HOMEPRO, awsconfig.h); requires that rule to exist server-side
 // Subscribe topics. The legacy `command` topic is retired (-> IoT Commands +
 // system shadow); only AWS IoT Jobs (OTA) and shadow/command reserved topics remain.
