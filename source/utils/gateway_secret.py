@@ -65,8 +65,7 @@ def validate_value(value: bytes) -> None:
 def validate_mac(mac: str) -> str:
     if not MAC_RE.match(mac):
         raise ToolError("mac must be six lowercase hex pairs separated by ':'")
-    first = int(mac[:2], 16)
-    if mac == "00:00:00:00:00:00" or first & 1:
+    if mac == "00:00:00:00:00:00" or int(mac[:2], 16) & 1:
         raise ToolError("mac must be unicast and non-zero")
     return mac
 
@@ -202,8 +201,9 @@ def cmd_set(args: argparse.Namespace) -> int:
         envelope = build_envelope(cert, args.device, args.name, ip, port, mac, issued_at, value)
         status = device.run("secret_set", envelope)
         print(f"secret_set {args.name} issued_at={issued_at}: {describe(status)}")
-        code = (status.get("statusReason") or {}).get("reasonCode", "")
-        hwm = hwm_from((status.get("statusReason") or {}).get("reasonDescription", ""))
+        reason = status.get("statusReason") or {}
+        code = reason.get("reasonCode", "")
+        hwm = hwm_from(reason.get("reasonDescription", ""))
         if status["status"] == "SUCCEEDED":
             return 0
         if attempt + 1 >= MAX_ENVELOPES or hwm is None:

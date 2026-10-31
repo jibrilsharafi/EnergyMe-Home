@@ -95,6 +95,13 @@ size_t encodeFailed(bool *ok) {
     return 0;
 }
 
+bool recordExpansion(const Resolver &resolver, const Placeholder &placeholder, const uint8_t *bytes, size_t length, bool final, ExpandResult *result) {
+    if (resolver.expanded == nullptr || resolver.expanded(resolver.context, placeholder.name, placeholder.arg, bytes, length, final)) return true;
+    result->reasonCode = "NO_MEMORY";
+    snprintf(result->reasonDetail, sizeof(result->reasonDetail), "Could not record an expanded value");
+    return false;
+}
+
 } // namespace
 
 size_t encodeUrl(const uint8_t *in, size_t length, uint8_t *out, size_t cap, bool *ok) {
@@ -231,12 +238,7 @@ ExpandStatus expandTemplate(const char *tmpl, size_t length, const Resolver *cha
             result->requireMac = true;
         }
 
-        if (resolver->expanded != nullptr &&
-            !resolver->expanded(resolver->context, placeholder.name, placeholder.arg, buffers[0], value.length, false)) {
-            result->reasonCode = "NO_MEMORY";
-            snprintf(result->reasonDetail, sizeof(result->reasonDetail), "Could not record an expanded value");
-            return ExpandStatus::RESOLVER_FAILED;
-        }
+        if (!recordExpansion(*resolver, placeholder, buffers[0], value.length, false, result)) return ExpandStatus::RESOLVER_FAILED;
         size_t current = 0, currentLength = value.length;
         for (size_t e = 0; e < placeholder.encodingCount; e++) {
             bool ok = false;
@@ -249,12 +251,7 @@ ExpandStatus expandTemplate(const char *tmpl, size_t length, const Resolver *cha
             if (!ok) return ExpandStatus::TOO_LONG;
             current = 1 - current;
         }
-        if (resolver->expanded != nullptr &&
-            !resolver->expanded(resolver->context, placeholder.name, placeholder.arg, buffers[current], currentLength, true)) {
-            result->reasonCode = "NO_MEMORY";
-            snprintf(result->reasonDetail, sizeof(result->reasonDetail), "Could not record an expanded value");
-            return ExpandStatus::RESOLVER_FAILED;
-        }
+        if (!recordExpansion(*resolver, placeholder, buffers[current], currentLength, true, result)) return ExpandStatus::RESOLVER_FAILED;
         if (!append(out, cap, &used, buffers[current], currentLength)) return ExpandStatus::TOO_LONG;
         p += placeholder.length;
     }

@@ -34,6 +34,8 @@ namespace Secrets
     static constexpr size_t PEM_MAX = 4096;
     static constexpr uint32_t MUTEX_WAIT_MS = 2000;
     static constexpr const char* DECRYPT_FAILED_DETAIL = "The envelope could not be decrypted";
+    static constexpr const char* NAME_RULE_DETAIL = "name must match ^[a-z][a-z0-9_-]{0,23}$";
+    static constexpr const char* STORE_FULL_DETAIL = "All 16 slots are used";
 
     static SlotMeta _slots[SLOT_COUNT];
     static bool _used[SLOT_COUNT];
@@ -46,8 +48,6 @@ namespace Secrets
         return mutex;
     }
     static bool _lock() { return _mutex() != nullptr && xSemaphoreTake(_mutex(), pdMS_TO_TICKS(MUTEX_WAIT_MS)) == pdTRUE; }
-    // Locks only a loaded store; `outcome` gets the reason otherwise.
-    static bool _lockLoaded(struct Outcome& outcome);
     static void _unlock() { xSemaphoreGive(_mutex()); }
 
     static void _slotKey(size_t index, char* key, size_t size) { snprintf(key, size, "s%02u", (unsigned)index); }
@@ -64,6 +64,7 @@ namespace Secrets
         }
     }
 
+    // Locks only a loaded store; `outcome` gets the reason otherwise.
     static bool _lockLoaded(Outcome& outcome) {
         if (!_lock()) {
             _fail(outcome, "FAILED", "NO_MEMORY", "Secret store busy");
@@ -206,7 +207,7 @@ namespace Secrets
     // Target, name and MAC rules shared by the envelope and REST paths.
     static bool _validateMeta(const char* name, const char* ip, int64_t port, const char* mac, SlotMeta* meta, Outcome& outcome) {
         if (!isValidName(name)) {
-            _fail(outcome, "REJECTED", "BAD_ARGS", "name must match ^[a-z][a-z0-9_-]{0,23}$");
+            _fail(outcome, "REJECTED", "BAD_ARGS", "%s", NAME_RULE_DETAIL);
             return false;
         }
         Gateway::TargetCheck check = Gateway::validateTarget(ip, meta->ip);
@@ -340,7 +341,7 @@ namespace Secrets
                 }
                 if (index < 0) index = _free();
                 if (index < 0) {
-                    _fail(outcome, "REJECTED", "SECRET_STORE_FULL", "All 16 slots are used");
+                    _fail(outcome, "REJECTED", "SECRET_STORE_FULL", "%s", STORE_FULL_DETAIL);
                     return SetVerdict::STALE;
                 }
                 *slot = index;
@@ -413,9 +414,10 @@ namespace Secrets
         } else if (_validateMeta(name, ip, args["port"].as<int64_t>(), mac, &meta, outcome)) {
             snprintf(outcome.name, sizeof(outcome.name), "%s", name);
             meta.setAt = issuedAt;
+            const char* envelopeKid = env["kid"].as<const char*>();
             // The RSA operation runs outside the lock so REST and the shadow report never
             // wait on it; the replay decision is taken again before the write.
-            if (_decideSet(meta, issuedAt, env["kid"].as<const char*>(), outcome) == SetVerdict::APPLY) {
+            if (_decideSet(meta, issuedAt, envelopeKid, outcome) == SetVerdict::APPLY) {
                 char aad[AAD_MAX];
                 const uint8_t* value = nullptr;
                 size_t length = 0;
@@ -429,7 +431,7 @@ namespace Secrets
                 } else if (!unpadPlaintext(plaintext, PLAINTEXT_BYTES, &value, &length) || !isValidValue(value, length)) {
                     _fail(outcome, "REJECTED", "BAD_SECRET_VALUE", "The decrypted value breaks the value rules");
                 } else {
-                    _commitSet(meta, value, length, issuedAt, env["kid"].as<const char*>(), outcome);
+                    _commitSet(meta, value, length, issuedAt, envelopeKid, outcome);
                 }
             }
         }
@@ -472,7 +474,7 @@ namespace Secrets
 
     bool removeLocal(const char* name, Outcome& outcome) {
         if (!isValidName(name)) {
-            _fail(outcome, "REJECTED", "BAD_ARGS", "name must match ^[a-z][a-z0-9_-]{0,23}$");
+            _fail(outcome, "REJECTED", "BAD_ARGS", "%s", NAME_RULE_DETAIL);
             return false;
         }
         snprintf(outcome.name, sizeof(outcome.name), "%s", name);
@@ -504,7 +506,7 @@ namespace Secrets
             if (!ceilingOk) {
                 _fail(outcome, "FAILED", "NVS_WRITE_FAILED", "Could not persist the replay high-water mark");
             } else if (index < 0) {
-                _fail(outcome, "REJECTED", "SECRET_STORE_FULL", "All 16 slots are used");
+                _fail(outcome, "REJECTED", "SECRET_STORE_FULL", "%s", STORE_FULL_DETAIL);
             } else if (!_write(preferences, index, meta, value, length)) {
                 _fail(outcome, "FAILED", "NVS_WRITE_FAILED", "Could not write the secret slot");
             } else {
@@ -702,10 +704,7 @@ namespace Secrets
         free(scratch);
         return out;
     }
-}
 
-namespace Secrets
-{
     // Runs in the executor for every caller: finds this request's secret state in its chain.
     static void _scrubResult(const GatewayExec::Request& request, GatewayExec::Result& result) {
         const RequestState* state = nullptr;
