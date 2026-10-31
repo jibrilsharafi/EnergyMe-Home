@@ -103,7 +103,8 @@ namespace GatewayExec
         uint32_t firstByteMs = 0;
         uint32_t totalMs = 0;
 
-        bool hasCert = false; // tls_probe
+        bool redacted = false; // a sensitive resolver's scrub replaced echoed bytes
+        bool hasCert = false;  // tls_probe
         GatewayNet::CertInfo cert = {};
 
         Result() = default;
@@ -114,6 +115,11 @@ namespace GatewayExec
     };
 
     void run(const Request& request, Result& result);
+
+    // The one registration the executor allows: a sensitive resolver's echo
+    // scrub, run on every OK result of every caller before run() returns.
+    using ResultScrub = void (*)(const Request& request, Result& result);
+    void setResultScrub(ResultScrub scrub);
 
     bool httpsAvailable();
 

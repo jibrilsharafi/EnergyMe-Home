@@ -27,6 +27,7 @@
 #include "led.h"
 #include "modbustcp.h"
 #include "gateway.h"
+#include "secrets.h"
 #include "tunnel.h"
 #include "mqtt.h"
 #include "custommqtt.h"
@@ -289,6 +290,7 @@ void setup()
   logHeapLedger("issue registry");
 
   LOG_DEBUG("Setting up server...");
+  if (!globalCommunityMode) Secrets::begin(); // before the REST server can accept a secret
   CustomServer::begin();
   LOG_DEBUG("Server setup done");
   logHeapLedger("web server");

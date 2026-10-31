@@ -3,6 +3,7 @@
 
 #include "gateway_template.h"
 
+#include <cstdio>
 #include <cstring>
 
 namespace GatewayLogic {
@@ -92,6 +93,13 @@ bool append(uint8_t *out, size_t cap, size_t *used, const void *data, size_t len
 size_t encodeFailed(bool *ok) {
     *ok = false;
     return 0;
+}
+
+bool recordExpansion(const Resolver &resolver, const Placeholder &placeholder, const uint8_t *bytes, size_t length, bool final, ExpandResult *result) {
+    if (resolver.expanded == nullptr || resolver.expanded(resolver.context, placeholder.name, placeholder.arg, bytes, length, final)) return true;
+    result->reasonCode = "NO_MEMORY";
+    snprintf(result->reasonDetail, sizeof(result->reasonDetail), "Could not record an expanded value");
+    return false;
 }
 
 } // namespace
@@ -203,12 +211,14 @@ ExpandStatus expandTemplate(const char *tmpl, size_t length, const Resolver *cha
 
         ResolveStatus status = ResolveStatus::UNKNOWN;
         ResolveOutput value{};
+        const Resolver *resolver = nullptr;
         for (size_t i = 0; i < chainLength && status == ResolveStatus::UNKNOWN; i++) {
             if (chain[i].resolve == nullptr) continue;
             value = ResolveOutput{};
             value.value = buffers[0];
             value.cap = half;
             status = chain[i].resolve(chain[i].context, request, placeholder.name, placeholder.arg, &value);
+            resolver = &chain[i];
         }
         if (status == ResolveStatus::UNKNOWN) return ExpandStatus::BAD_TEMPLATE;
         if (status == ResolveStatus::FAILED) {
@@ -228,6 +238,7 @@ ExpandStatus expandTemplate(const char *tmpl, size_t length, const Resolver *cha
             result->requireMac = true;
         }
 
+        if (!recordExpansion(*resolver, placeholder, buffers[0], value.length, false, result)) return ExpandStatus::RESOLVER_FAILED;
         size_t current = 0, currentLength = value.length;
         for (size_t e = 0; e < placeholder.encodingCount; e++) {
             bool ok = false;
@@ -240,6 +251,7 @@ ExpandStatus expandTemplate(const char *tmpl, size_t length, const Resolver *cha
             if (!ok) return ExpandStatus::TOO_LONG;
             current = 1 - current;
         }
+        if (!recordExpansion(*resolver, placeholder, buffers[current], currentLength, true, result)) return ExpandStatus::RESOLVER_FAILED;
         if (!append(out, cap, &used, buffers[current], currentLength)) return ExpandStatus::TOO_LONG;
         p += placeholder.length;
     }

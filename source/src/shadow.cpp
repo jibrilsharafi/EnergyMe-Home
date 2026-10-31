@@ -15,6 +15,7 @@
 #include "factory_keys.h"
 #include "gateway.h"
 #include "gateway_executor.h"
+#include "secrets.h"
 #include "tunnel.h"
 #include "globals.h"
 #include "hardware_profile.h"
@@ -655,6 +656,8 @@ static void _reportSystem(JsonDocument& doc) {
     rep["log_level_save"] = AdvancedLogger::logLevelToString(AdvancedLogger::getSaveLevel());
     rep["gateway_enabled"] = Gateway::isEnabled();
     GatewayExec::grantsToJson(rep["gateway_write_grants"].to<JsonArray>());
+    // On a lock timeout the key is left out: the cloud keeps the last report instead of an empty store.
+    if (!globalCommunityMode && !Secrets::shadowToJson(rep["secrets"].to<JsonObject>())) rep.remove("secrets");
     rep["tunnel_enabled"] = Tunnel::isEnabled();
     Tunnel::portsToJson(rep["tunnel_ports"].to<JsonArray>());
     Tunnel::activeToJson(rep, "tunnel_active");
@@ -753,6 +756,8 @@ static bool _applySystem(JsonObjectConst delta, JsonObject reported) {
             LOG_WARNING("Rejected gateway_enabled: not a boolean");
         }
     }
+
+    if (!delta["secrets"].isNull()) LOG_WARNING("Ignored secrets: reported-only, set them with secret_set or the local API");
 
     // Replaces the whole list; an invalid list leaves the stored one unchanged.
     v = delta["gateway_write_grants"];

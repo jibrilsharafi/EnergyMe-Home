@@ -26,6 +26,8 @@ constexpr OpEntry OPS[] = {
     {"tcp_request", Op::TCP_REQUEST},
     {"https_request", Op::HTTPS_REQUEST},
     {"tls_probe", Op::TLS_PROBE},
+    {"secret_set", Op::SECRET_SET},
+    {"secret_delete", Op::SECRET_DELETE},
 };
 
 void putU16(uint8_t *p, uint16_t v) {
