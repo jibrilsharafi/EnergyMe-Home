@@ -200,6 +200,14 @@ namespace Gateway
         }
     }
 
+    const char* targetCheckReasonCode(TargetCheck check) {
+        switch (check) {
+            case TargetCheck::NOT_PRIVATE: return "TARGET_NOT_PRIVATE";
+            case TargetCheck::NOT_ALLOWED: return "TARGET_NOT_ALLOWED";
+            default: return nullptr;
+        }
+    }
+
     static bool _readTarget(JsonObjectConst args, JsonDocument& doc, const char** ip, uint8_t octets[4]) {
         *ip = _readString(args, "ip", nullptr);
         if (*ip == nullptr) {
@@ -208,7 +216,7 @@ namespace Gateway
         }
         TargetCheck check = validateTarget(*ip, octets);
         if (check == TargetCheck::OK) return true;
-        _reject(doc, check == TargetCheck::NOT_PRIVATE ? "TARGET_NOT_PRIVATE" : "TARGET_NOT_ALLOWED", targetCheckDescription(check));
+        _reject(doc, targetCheckReasonCode(check), targetCheckDescription(check));
         return false;
     }
 

@@ -18,7 +18,7 @@ namespace GatewayExec
         uint32_t start;
         const uint8_t* wire; // http(s): the whole request; tcp/udp: the payload
         size_t wireLength;
-        uint8_t pin[32];     // https
+        uint8_t pin[GatewayLogic::DIGEST_BYTES]; // https
         // ARP compares to run after connect, before the first byte.
         bool entryMac;
         uint8_t entryMacAddress[6];

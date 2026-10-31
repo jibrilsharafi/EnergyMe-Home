@@ -89,16 +89,21 @@ bool append(uint8_t *out, size_t cap, size_t *used, const void *data, size_t len
     return true;
 }
 
+size_t encodeFailed(bool *ok) {
+    *ok = false;
+    return 0;
+}
+
 } // namespace
 
 size_t encodeUrl(const uint8_t *in, size_t length, uint8_t *out, size_t cap, bool *ok) {
     size_t used = 0;
     for (size_t i = 0; i < length; i++) {
         if (isUnreserved(in[i])) {
-            if (used + 1 > cap) return *ok = false, 0;
+            if (used + 1 > cap) return encodeFailed(ok);
             out[used++] = in[i];
         } else {
-            if (used + 3 > cap) return *ok = false, 0;
+            if (used + 3 > cap) return encodeFailed(ok);
             out[used++] = '%';
             out[used++] = static_cast<uint8_t>(HEX[in[i] >> 4]);
             out[used++] = static_cast<uint8_t>(HEX[in[i] & 0x0F]);
@@ -133,7 +138,7 @@ size_t encodeJson(const uint8_t *in, size_t length, uint8_t *out, size_t cap, bo
                     n = 1;
                 }
         }
-        if (used + n > cap) return *ok = false, 0;
+        if (used + n > cap) return encodeFailed(ok);
         memcpy(out + used, escaped, n);
         used += n;
     }
@@ -143,7 +148,7 @@ size_t encodeJson(const uint8_t *in, size_t length, uint8_t *out, size_t cap, bo
 
 size_t encodeBase64(const uint8_t *in, size_t length, uint8_t *out, size_t cap, bool *ok) {
     size_t needed = (length + 2) / 3 * 4;
-    if (needed > cap) return *ok = false, 0;
+    if (needed > cap) return encodeFailed(ok);
     size_t used = 0;
     for (size_t i = 0; i < length; i += 3) {
         uint32_t v = static_cast<uint32_t>(in[i]) << 16;

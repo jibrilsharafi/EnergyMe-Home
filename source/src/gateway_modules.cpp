@@ -19,6 +19,8 @@ namespace GatewayExec
 {
     static constexpr uint32_t READ_WAIT_MS = 50;
     static constexpr size_t READ_CHUNK_BYTES = 1460;
+    static constexpr uint32_t MAX_REPLY_READ_LOOPS = 1000000;
+    static constexpr uint32_t MAX_FRAME_READ_LOOPS = 100000;
 
     // HTTP / HTTPS
     // ============
@@ -86,7 +88,7 @@ namespace GatewayExec
         HttpBody state;
         size_t headerLength = 0, headerEnd = 0;
         bool closed = false, wantMore = true;
-        for (uint32_t loops = 0; wantMore && loops < 1000000; loops++) {
+        for (uint32_t loops = 0; wantMore && loops < MAX_REPLY_READ_LOOPS; loops++) {
             size_t got = 0;
             GatewayNet::Status status = headerEnd == 0
                 ? connection.read((uint8_t*)result.headers + headerLength, HEADER_BLOCK_MAX - headerLength, &got, prepared.deadline, READ_WAIT_MS)
@@ -153,7 +155,7 @@ namespace GatewayExec
 
     static bool _readExact(GatewayNet::Connection& connection, uint8_t* buffer, size_t length, const Prepared& prepared, Result& result) {
         size_t got = 0;
-        for (uint32_t loops = 0; got < length && loops < 100000; loops++) {
+        for (uint32_t loops = 0; got < length && loops < MAX_FRAME_READ_LOOPS; loops++) {
             size_t n = 0;
             if (connection.read(buffer + got, length - got, &n, prepared.deadline, READ_WAIT_MS) != GatewayNet::Status::OK) break;
             if (n > 0 && result.firstByteMs == 0) result.firstByteMs = elapsedSince(prepared.start);
@@ -282,7 +284,7 @@ namespace GatewayExec
         uint32_t lastByte = millis();
         TcpReadStop stop = TcpReadStop::CONTINUE;
         bool closed = false;
-        for (uint32_t loops = 0; loops < 1000000; loops++) {
+        for (uint32_t loops = 0; loops < MAX_REPLY_READ_LOOPS; loops++) {
             stop = tcpReadStop(closed, result.bodyLength, rq.maxBytes, millis() - lastByte, idleMs, !beforeDeadline(prepared.deadline));
             if (stop != TcpReadStop::CONTINUE) break;
             size_t got = 0;

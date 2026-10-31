@@ -49,6 +49,7 @@ namespace Gateway
     enum class TargetCheck { OK, NOT_PRIVATE, NOT_ALLOWED };
     TargetCheck validateTarget(const char* ip, uint8_t octets[4]);
     const char* targetCheckDescription(TargetCheck check);
+    const char* targetCheckReasonCode(TargetCheck check); // nullptr for OK
 
     // Decodes `args` (a JSON object, or a string holding its base64 encoding) into
     // `out`. False when neither form parses or the decoded JSON exceeds GATEWAY_ARGS_MAX_BYTES.

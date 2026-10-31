@@ -27,7 +27,7 @@ bool isDigit(char c) { return c >= '0' && c <= '9'; }
 
 char lower(char c) { return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c; }
 
-// Decimal without sign or leading zeros, at most `maxDigits`. Advances `*p`.
+// Decimal without sign or leading zeros, at most 5 digits and `maxValue`. Advances `*p`.
 bool parseDecimal(const char **p, uint32_t maxValue, uint32_t *out) {
     const char *s = *p;
     if (!isDigit(*s)) return false;
@@ -107,10 +107,11 @@ uint8_t hexValue(char c) { return isDigit(c) ? static_cast<uint8_t>(c - '0') : s
 bool isRawModule(Module m) { return m == Module::TCP || m == Module::UDP; }
 bool isHttpModule(Module m) { return m == Module::HTTP || m == Module::HTTPS; }
 
-const char *const READ_METHODS[] = {"POST", "PUT", "PATCH", "DELETE"};
+// Methods a read declaration may name (GET is read without one).
+const char *const DECLARABLE_METHODS[] = {"POST", "PUT", "PATCH", "DELETE"};
 
-bool isReadMethod(const char *method, size_t length) {
-    for (const char *m : READ_METHODS) {
+bool isDeclarableMethod(const char *method, size_t length) {
+    for (const char *m : DECLARABLE_METHODS) {
         if (strlen(m) == length && strncmp(m, method, length) == 0) return true;
     }
     return false;
@@ -151,6 +152,19 @@ bool slotMatchesRead(const uint8_t *slot, const char *method, const char *path, 
     size_t methodLength = strlen(method);
     return length == methodLength + 1 + pathLength && memcmp(slot, method, methodLength) == 0 && slot[methodLength] == ' ' &&
            memcmp(slot + methodLength + 1, path, pathLength) == 0;
+}
+
+// Index of the first `read` entry for the request's target with a slot `matches` accepts, -1 if none.
+template <typename Match>
+int findReadDeclaration(const PolicyRequest &request, const GrantEntry *entries, size_t count, Match matches) {
+    for (size_t i = 0; i < count; i++) {
+        const GrantEntry &e = entries[i];
+        if (e.kind != GrantKind::READ || !sameTarget(e, request)) continue;
+        for (size_t a = 0; a < e.allowCount; a++) {
+            if (matches(e.allow[a])) return static_cast<int>(i);
+        }
+    }
+    return -1;
 }
 
 } // namespace
@@ -237,7 +251,6 @@ bool isSafeGrantPath(const char *path) {
             if (a == '5' && b == 'c') return false;
         }
         if (c == '/') {
-            // segment starting after this slash
             size_t start = i + 1, end = start;
             while (end < length && path[end] != '/' && path[end] != ';') end++;
             size_t segment = end - start;
@@ -338,7 +351,7 @@ const char *validateGrant(const GrantInput &input, GrantEntry *out) {
             if (!parseModbusRange(text, &range)) return "modbus_tcp allow must be u<unit>/<co|hr><start>:<count>[=<min>..<max>]";
         } else if (entry.kind == GrantKind::READ) {
             const char *space = strchr(text, ' ');
-            if (space == nullptr || !isReadMethod(text, static_cast<size_t>(space - text)) || strchr(space + 1, ' ') != nullptr ||
+            if (space == nullptr || !isDeclarableMethod(text, static_cast<size_t>(space - text)) || strchr(space + 1, ' ') != nullptr ||
                 !isValidAllowPath(space + 1, length - static_cast<size_t>(space + 1 - text), false)) {
                 return "http read declarations must be \"<POST|PUT|PATCH|DELETE> <path>\" without * or ?";
             }
@@ -447,32 +460,15 @@ Verdict classify(const PolicyRequest &request, const GrantEntry *entries, size_t
         if (request.method == nullptr || request.path == nullptr) return Verdict::BAD_ARGS;
         if (strcmp(request.method, "GET") == 0) return request.hasBody ? Verdict::WRITE : Verdict::READ;
         size_t pathLength = httpPathLength(request.path);
-        for (size_t i = 0; i < count; i++) {
-            const GrantEntry &e = entries[i];
-            if (e.kind != GrantKind::READ || !sameTarget(e, request)) continue;
-            for (size_t a = 0; a < e.allowCount; a++) {
-                if (slotMatchesRead(e.allow[a], request.method, request.path, pathLength)) {
-                    *readEntry = static_cast<int>(i);
-                    return Verdict::READ;
-                }
-            }
-        }
-        return Verdict::WRITE;
+        *readEntry = findReadDeclaration(request, entries, count,
+                                         [&](const uint8_t *slot) { return slotMatchesRead(slot, request.method, request.path, pathLength); });
+        return *readEntry >= 0 ? Verdict::READ : Verdict::WRITE;
     }
 
     if (request.module == Module::TCP && request.payloadLength == 0) return Verdict::READ;
     if (request.payloadDigest == nullptr) return Verdict::WRITE;
-    for (size_t i = 0; i < count; i++) {
-        const GrantEntry &e = entries[i];
-        if (e.kind != GrantKind::READ || !sameTarget(e, request)) continue;
-        for (size_t a = 0; a < e.allowCount; a++) {
-            if (digestEquals(e.allow[a], request.payloadDigest)) {
-                *readEntry = static_cast<int>(i);
-                return Verdict::READ;
-            }
-        }
-    }
-    return Verdict::WRITE;
+    *readEntry = findReadDeclaration(request, entries, count, [&](const uint8_t *slot) { return digestEquals(slot, request.payloadDigest); });
+    return *readEntry >= 0 ? Verdict::READ : Verdict::WRITE;
 }
 
 GrantMatch matchWriteGrant(const PolicyRequest &request, const GrantEntry *entries, size_t count, int *entryIndex) {

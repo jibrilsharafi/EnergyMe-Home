@@ -74,14 +74,20 @@ namespace GatewayExec
         return address;
     }
 
-    // On-link: the interface lwIP routes the target through has it in its subnet.
+    // The interface lwIP routes the target through, when the target is in its
+    // subnet; nullptr otherwise. Caller holds the TCPIP core lock (not recursive).
+    static struct netif* _onLinkNetif(const ip4_addr_t* target) {
+        struct netif* nif = ip4_route(target);
+        if (nif == nullptr) return nullptr;
+        bool onLink = GatewayLogic::isOnLink(lwip_ntohl(ip4_addr_get_u32(target)), lwip_ntohl(ip4_addr_get_u32(netif_ip4_addr(nif))),
+                                             lwip_ntohl(ip4_addr_get_u32(netif_ip4_netmask(nif))));
+        return onLink ? nif : nullptr;
+    }
+
     static bool _isOnLink(const uint8_t octets[4]) {
         ip4_addr_t target = _toIp4(octets);
         LOCK_TCPIP_CORE();
-        struct netif* nif = ip4_route(&target);
-        bool onLink = nif != nullptr && GatewayLogic::isOnLink(lwip_ntohl(ip4_addr_get_u32(&target)),
-                                                               lwip_ntohl(ip4_addr_get_u32(netif_ip4_addr(nif))),
-                                                               lwip_ntohl(ip4_addr_get_u32(netif_ip4_netmask(nif))));
+        bool onLink = _onLinkNetif(&target) != nullptr;
         UNLOCK_TCPIP_CORE();
         return onLink;
     }
@@ -91,9 +97,8 @@ namespace GatewayExec
         ip4_addr_t target = _toIp4(octets);
         bool found = false;
         LOCK_TCPIP_CORE();
-        struct netif* nif = ip4_route(&target);
-        if (nif != nullptr && GatewayLogic::isOnLink(lwip_ntohl(ip4_addr_get_u32(&target)), lwip_ntohl(ip4_addr_get_u32(netif_ip4_addr(nif))),
-                                                     lwip_ntohl(ip4_addr_get_u32(netif_ip4_netmask(nif))))) {
+        struct netif* nif = _onLinkNetif(&target);
+        if (nif != nullptr) {
             struct eth_addr* entryMac = nullptr;
             const ip4_addr_t* entryIp = nullptr;
             if (etharp_find_addr(nif, &target, &entryMac, &entryIp) >= 0 && entryMac != nullptr) {
@@ -220,8 +225,8 @@ namespace GatewayExec
                 return true;
             }
             case Module::MODBUS_TCP: {
-                uint8_t fc = functionFor(rq.address.table, rq.modbusWrite, rq.modbusWrite ? rq.valueCount : rq.count, rq.writeMultiple);
                 size_t count = rq.modbusWrite ? rq.valueCount : rq.count;
+                uint8_t fc = functionFor(rq.address.table, rq.modbusWrite, count, rq.writeMultiple);
                 bool ok = fc != 0 && modbusRangeFits(rq.address.address, (uint32_t)count) &&
                           (rq.modbusWrite ? (rq.values != nullptr && isValidModbusWriteCount(fc, count)) : isValidModbusReadCount(fc, count));
                 for (size_t i = 0; ok && rq.modbusWrite && i < count; i++) ok = isValidModbusWriteValue(fc, rq.values[i]);
@@ -300,8 +305,6 @@ namespace GatewayExec
         return false;
     }
 
-    static constexpr size_t HTTP_REQUEST_HEAD_OVERHEAD = 160; // request line, Host, Connection, Content-Length, blank line
-
     // Builds the HTTP request in `b.wire`: the whole request in one buffer, since
     // naive embedded servers (Sonoff eWeLink LAN) parse each TCP segment as a request.
     static bool _prepareHttp(const Request& rq, const ResolveContext& context, Buffers& b, ExpandResult* expansion, Result& result) {
@@ -365,11 +368,12 @@ namespace GatewayExec
     // Executor
     // ========
 
-    // A failed lock leaves the list empty for this request: every write is refused.
-    static size_t _snapshotGrants() {
+    // Copies the list into `out` (GRANT_MAX_ENTRIES). A failed lock copies
+    // nothing, so a request sees an empty list: every write is refused.
+    static size_t _copyGrants(GrantEntry* out) {
         size_t count = 0;
         if (_lockGrants()) {
-            memcpy(_snapshot, _grants, sizeof(GrantEntry) * _grantCount);
+            memcpy(out, _grants, sizeof(GrantEntry) * _grantCount);
             count = _grantCount;
             _unlockGrants();
         }
@@ -391,8 +395,7 @@ namespace GatewayExec
         uint8_t octets[4];
         Gateway::TargetCheck target = Gateway::validateTarget(rq.ip, octets);
         if (target != Gateway::TargetCheck::OK) {
-            setOutcome(result, Status::REJECTED, target == Gateway::TargetCheck::NOT_PRIVATE ? "TARGET_NOT_PRIVATE" : "TARGET_NOT_ALLOWED", "%s",
-                       Gateway::targetCheckDescription(target));
+            setOutcome(result, Status::REJECTED, Gateway::targetCheckReasonCode(target), "%s", Gateway::targetCheckDescription(target));
             return;
         }
 
@@ -459,7 +462,7 @@ namespace GatewayExec
         policy.payloadLength = buffers.wireLength;
         policy.payloadDigest = hasDigest ? digest : nullptr;
 
-        size_t grantCount = _snapshotGrants();
+        size_t grantCount = _copyGrants(_snapshot);
         int readEntry = -1;
         Verdict verdict = classify(policy, _snapshot, grantCount, &readEntry);
         if (verdict == Verdict::BAD_ARGS) {
@@ -660,12 +663,7 @@ namespace GatewayExec
     void grantsToJson(JsonArray out) {
         GrantEntry* entries = (GrantEntry*)ps_malloc(sizeof(GrantEntry) * GRANT_MAX_ENTRIES);
         if (entries == nullptr) return;
-        size_t count = 0;
-        if (_lockGrants()) {
-            memcpy(entries, _grants, sizeof(GrantEntry) * _grantCount);
-            count = _grantCount;
-            _unlockGrants();
-        }
+        size_t count = _copyGrants(entries);
         for (size_t i = 0; i < count; i++) {
             const GrantEntry& e = entries[i];
             JsonObject entry = out.add<JsonObject>();

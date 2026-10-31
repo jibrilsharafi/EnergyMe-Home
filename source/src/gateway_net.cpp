@@ -16,8 +16,12 @@
 namespace GatewayNet
 {
     static constexpr uint32_t POLL_CAP_MS = 50;
+    static constexpr uint32_t MAX_CONNECT_POLLS = 1000;
+    static constexpr uint32_t MAX_IO_LOOPS = 100000;
 
     static int32_t _remaining(uint32_t deadline) { return (int32_t)(deadline - millis()); }
+
+    static Status _tlsFailure(int rc) { return rc == MBEDTLS_ERR_SSL_ALLOC_FAILED ? Status::NO_MEMORY : Status::TLS_FAILED; }
 
     static int _random(void* ctx, unsigned char* out, size_t length) {
         (void)ctx;
@@ -52,7 +56,7 @@ namespace GatewayNet
             return Status::CONNECT_FAILED;
         }
         uint32_t loops = 0;
-        while (_remaining(deadline) > 0 && loops++ < 1000) {
+        while (_remaining(deadline) > 0 && loops++ < MAX_CONNECT_POLLS) {
             if (!_wait(true, deadline, POLL_CAP_MS)) continue;
             int error = 0;
             socklen_t length = sizeof(error);
@@ -98,15 +102,15 @@ namespace GatewayNet
         }
         if (rc != 0) {
             close();
-            return rc == MBEDTLS_ERR_SSL_ALLOC_FAILED ? Status::NO_MEMORY : Status::TLS_FAILED;
+            return _tlsFailure(rc);
         }
         mbedtls_ssl_set_bio(_ssl, &_fd, _send, _recv, nullptr);
 
         uint32_t loops = 0;
         while ((rc = mbedtls_ssl_handshake(_ssl)) != 0) {
-            if ((rc != MBEDTLS_ERR_SSL_WANT_READ && rc != MBEDTLS_ERR_SSL_WANT_WRITE) || loops++ > 100000) {
-                    close();
-                return rc == MBEDTLS_ERR_SSL_ALLOC_FAILED ? Status::NO_MEMORY : Status::TLS_FAILED;
+            if ((rc != MBEDTLS_ERR_SSL_WANT_READ && rc != MBEDTLS_ERR_SSL_WANT_WRITE) || loops++ > MAX_IO_LOOPS) {
+                close();
+                return _tlsFailure(rc);
             }
             if (_remaining(deadline) <= 0) {
                 close();
@@ -156,7 +160,7 @@ namespace GatewayNet
         size_t sent = 0;
         uint32_t loops = 0;
         while (sent < length) {
-            if (_remaining(deadline) <= 0 || loops++ > 100000) return Status::TIMEOUT;
+            if (_remaining(deadline) <= 0 || loops++ > MAX_IO_LOOPS) return Status::TIMEOUT;
             int rc = _ssl != nullptr ? mbedtls_ssl_write(_ssl, data + sent, length - sent) : _send(&_fd, data + sent, length - sent);
             if (rc > 0) {
                 sent += (size_t)rc;
