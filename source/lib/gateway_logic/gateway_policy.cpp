@@ -239,7 +239,7 @@ bool isSafeGrantPath(const char *path) {
         if (c == '/') {
             // segment starting after this slash
             size_t start = i + 1, end = start;
-            while (end < length && path[end] != '/') end++;
+            while (end < length && path[end] != '/' && path[end] != ';') end++;
             size_t segment = end - start;
             if ((segment == 1 && path[start] == '.') || (segment == 2 && path[start] == '.' && path[start + 1] == '.')) return false;
         }
@@ -413,6 +413,12 @@ bool deserializeGrants(const uint8_t *blob, size_t length, GrantEntry *out, size
         char allowText[GRANT_ALLOW_MAX][GRANT_ALLOW_TEXT_BUFFER];
         const char *allow[GRANT_ALLOW_MAX];
         if (e.allowCount < 1 || e.allowCount > GRANT_ALLOW_MAX || (e.wildcard && e.allowCount != 1)) return false;
+        if (e.wildcard) {
+            // The flag alone must not turn a stored path or digest into a whole-target grant.
+            uint8_t rest = 0;
+            for (size_t b = 1; b < sizeof(e.allow); b++) rest |= (&e.allow[0][0])[b];
+            if (e.allow[0][0] != '*' || rest != 0) return false;
+        }
         for (size_t a = 0; a < e.allowCount; a++) {
             if (!grantAllowText(e, a, allowText[a], sizeof(allowText[a]))) return false;
             allow[a] = allowText[a];

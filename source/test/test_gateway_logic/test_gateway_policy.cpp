@@ -911,7 +911,29 @@ void test_digest_equals(void) {
     TEST_ASSERT_FALSE(digestEquals(a, b));
 }
 
+// Review findings: underscore override headers, matrix-parameter dot segments,
+// a wildcard flag that would widen a stored path entry.
+void test_review_hardening(void) {
+    TEST_ASSERT_TRUE(isReservedHeaderName("X_HTTP_Method_Override"));
+    TEST_ASSERT_TRUE(isReservedHeaderName("x_method_override"));
+    TEST_ASSERT_FALSE(isReservedHeaderName("X_Custom_Header"));
+    TEST_ASSERT_FALSE(isSafeGrantPath("/rpc/Switch.x/..;/Sys.Reboot"));
+    TEST_ASSERT_FALSE(isSafeGrantPath("/a/.;x/b"));
+    TEST_ASSERT_TRUE(isSafeGrantPath("/a/b;v=1"));
+
+    GrantEntry path = entry("192.168.2.40", 80, "http", nullptr, "00:11:22:33:44:55", {"/rpc/Switch.Set"});
+    uint8_t blob[GRANT_BLOB_MAX_BYTES];
+    size_t length = serializeGrants(&path, 1, blob, sizeof(blob));
+    TEST_ASSERT_EQUAL(1 + GRANT_ENTRY_BYTES, length);
+    blob[1 + 8] |= 2; // set the wildcard flag on a path entry
+    GrantEntry out[GRANT_MAX_ENTRIES];
+    size_t count = 9;
+    TEST_ASSERT_FALSE(deserializeGrants(blob, length, out, GRANT_MAX_ENTRIES, &count));
+    TEST_ASSERT_EQUAL(0, count);
+}
+
 void run_gateway_policy_tests(void) {
+    RUN_TEST(test_review_hardening);
     RUN_TEST(test_parse_new_ops);
     RUN_TEST(test_method_override_headers_reserved);
     RUN_TEST(test_parse_module);
