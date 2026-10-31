@@ -127,18 +127,11 @@ namespace GatewayExec
     }
 
     bool checkMacBeforeFirstByte(const Prepared& prepared, Result& result, bool udp) {
-        if (!prepared.entryMac && !prepared.resolverMac) return true;
+        if (!prepared.checkMac) return true;
         uint8_t mac[6];
-        bool found = _resolveMac(prepared.octets, mac, udp, prepared.deadline);
-        if (prepared.entryMac && (!found || memcmp(mac, prepared.entryMacAddress, 6) != 0)) {
-            setOutcome(result, Status::REJECTED, "WRITE_NOT_ALLOWED", "TARGET_MAC_CHANGED");
-            return false;
-        }
-        if (prepared.resolverMac && (!found || memcmp(mac, prepared.resolverMacAddress, 6) != 0)) {
-            setOutcome(result, Status::REJECTED, prepared.resolverMacReason ? prepared.resolverMacReason : "WRITE_NOT_ALLOWED", "TARGET_MAC_CHANGED");
-            return false;
-        }
-        return true;
+        if (_resolveMac(prepared.octets, mac, udp, prepared.deadline) && memcmp(mac, prepared.mac, 6) == 0) return true;
+        setOutcome(result, Status::REJECTED, prepared.macReason, "TARGET_MAC_CHANGED");
+        return false;
     }
 
     bool connectAndSend(GatewayNet::Connection& connection, const Prepared& prepared, Result& result, bool tls, const uint8_t* data,
@@ -432,10 +425,6 @@ namespace GatewayExec
         } else if (rq.module == Module::TCP || rq.module == Module::UDP) {
             if (!_preparePayload(rq, context, buffers, &expansion, result)) return;
         }
-        if (expansion.macConflict) {
-            setOutcome(result, Status::REJECTED, expansion.macReasonCode ? expansion.macReasonCode : "BAD_TEMPLATE", "TARGET_MAC_CHANGED");
-            return;
-        }
 
         const char* expandedPath = (const char*)buffers.path;
         PolicyRequest policy = {};
@@ -476,6 +465,14 @@ namespace GatewayExec
             }
         }
 
+        PolicyRequest undeclared = policy;
+        undeclared.declaredRead = false;
+        MacDecision mac = macDecisionFor(rq.hasMac, onLink, classify(undeclared) == Verdict::WRITE, expansion.sensitive);
+        if (mac.action == MacAction::REJECT) {
+            setOutcome(result, Status::REJECTED, mac.reasonCode, "%s", mac.reasonDetail);
+            return;
+        }
+
         Prepared prepared = {};
         prepared.request = &rq;
         memcpy(prepared.octets, octets, 4);
@@ -484,28 +481,9 @@ namespace GatewayExec
         prepared.wire = buffers.wire;
         prepared.wireLength = buffers.wireLength;
         if (rq.module == Module::HTTPS && !rq.probeOnly) parseHexDigest(rq.certSha256, prepared.pin);
-        if (entryIndex >= 0) {
-            const GrantEntry& entry = _snapshot[entryIndex];
-            switch (macCheckFor(entry.hasMac, onLink)) {
-                case MacCheck::MAC_REQUIRED:
-                    setOutcome(result, Status::REJECTED, "WRITE_NOT_ALLOWED", "MAC_REQUIRED");
-                    return;
-                case MacCheck::TARGET_MAC_CHANGED:
-                    setOutcome(result, Status::REJECTED, "WRITE_NOT_ALLOWED", "TARGET_MAC_CHANGED");
-                    return;
-                case MacCheck::COMPARE:
-                    prepared.entryMac = true;
-                    memcpy(prepared.entryMacAddress, entry.mac, 6);
-                    break;
-                case MacCheck::NONE:
-                    break;
-            }
-        }
-        if (expansion.requireMac) {
-            prepared.resolverMac = true;
-            memcpy(prepared.resolverMacAddress, expansion.mac, 6);
-            prepared.resolverMacReason = expansion.macReasonCode;
-        }
+        prepared.checkMac = mac.action == MacAction::COMPARE;
+        memcpy(prepared.mac, rq.mac, 6);
+        prepared.macReason = mac.reasonCode;
 
         // Audit: writes change a LAN device, so they are logged at INFO; reads (every poll) only at DEBUG.
         if (verdict == Verdict::WRITE) {
@@ -622,7 +600,7 @@ namespace GatewayExec
                 else allowText[allowCount++] = a.as<const char*>();
             }
             if (!shapeOk) {
-                snprintf(error, errorSize, "Entry %u: needs ip, port, module, allow (1-4 strings), optional kind and mac", (unsigned)count);
+                snprintf(error, errorSize, "Entry %u: needs ip, port, module, allow (1-4 strings), optional kind", (unsigned)count);
                 valid = false;
                 break;
             }
@@ -671,10 +649,6 @@ namespace GatewayExec
             entry["port"] = e.port;
             entry["module"] = moduleName(e.module);
             entry["kind"] = "write";
-            if (e.hasMac) {
-                formatMac(e.mac, text, sizeof(text));
-                entry["mac"] = text;
-            }
             JsonArray allow = entry["allow"].to<JsonArray>();
             for (size_t a = 0; a < e.allowCount; a++) {
                 if (grantAllowText(e, a, text, sizeof(text))) allow.add(text);

@@ -61,9 +61,12 @@ size_t httpPathLength(const char *path);
 inline constexpr size_t GRANT_MAX_ENTRIES = 8;
 inline constexpr size_t GRANT_ALLOW_MAX = 4;
 inline constexpr size_t GRANT_ALLOW_SLOT_BYTES = 48;
-inline constexpr size_t GRANT_ENTRY_BYTES = 207;
+inline constexpr size_t GRANT_ENTRY_BYTES = 201;
 inline constexpr uint8_t GRANT_BLOB_VERSION = 1;
 inline constexpr size_t GRANT_BLOB_MAX_BYTES = 1 + GRANT_MAX_ENTRIES * GRANT_ENTRY_BYTES;
+// Compact JSON of the list. The largest plain entry (https, 192.168.255.255,
+// port 65535, "kind":"write", four 48-byte paths) is 283 B, so eight take 2273 B.
+// Paths full of JSON-escaped bytes (" or \) can exceed it; such lists are refused.
 inline constexpr size_t GRANT_JSON_MAX_BYTES = 3072;
 inline constexpr size_t GRANT_ALLOW_TEXT_BUFFER = GRANT_ALLOW_SLOT_BYTES + 1;
 inline constexpr size_t MAC_TEXT_BUFFER = 18;
@@ -72,9 +75,7 @@ struct GrantEntry {
     uint8_t ip[4];
     uint16_t port;
     Module module;
-    bool hasMac;
     bool wildcard; // allow: ["*"]
-    uint8_t mac[6];
     uint8_t allowCount;
     // Path or Modbus range text (NUL-padded, not terminated at 48 bytes).
     uint8_t allow[GRANT_ALLOW_MAX][GRANT_ALLOW_SLOT_BYTES];
@@ -86,7 +87,7 @@ struct GrantInput {
     int64_t port;
     const char *module;
     const char *kind; // null or "write"; "read" is refused
-    const char *mac;  // null -> none
+    const char *mac;  // refused when present: the MAC travels on the request
     const char *const *allow;
     size_t allowCount;
 };
@@ -149,14 +150,22 @@ GrantMatch matchWriteGrant(const PolicyRequest &request, const GrantEntry *entri
 // Host-order addresses.
 bool isOnLink(uint32_t target, uint32_t interfaceAddress, uint32_t netmask);
 
-enum class MacCheck {
-    NONE,              // routed target, entry without mac
-    COMPARE,           // compare the ARP entry after connect, before the first byte
-    MAC_REQUIRED,      // on-link target, entry without mac
-    TARGET_MAC_CHANGED // entry with mac, target off-link now
+enum class MacAction {
+    NONE,    // no MAC on the request and none needed
+    COMPARE, // compare the ARP entry after connect, before the first byte
+    REJECT   // refuse before any socket opens
 };
 
-MacCheck macCheckFor(bool entryHasMac, bool onLink);
+struct MacDecision {
+    MacAction action;
+    const char *reasonCode;   // REJECT, and COMPARE on a mismatch
+    const char *reasonDetail; // MAC_REQUIRED or TARGET_MAC_CHANGED
+};
+
+// `writeLike`: classed write without the caller's declaration. `sensitive`: a
+// secret placeholder was expanded. An on-link target needs the request MAC when
+// either holds; a MAC on an off-link target is refused.
+MacDecision macDecisionFor(bool hasMac, bool onLink, bool writeLike, bool sensitive);
 
 // ---------------------------------------------------------------------------
 // Digests

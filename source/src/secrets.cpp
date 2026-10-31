@@ -636,9 +636,6 @@ namespace Secrets
                 memcpy(out->value, value, length);
                 out->length = length;
                 out->sensitive = true;
-                out->requireMac = decision.requireMac;
-                memcpy(out->mac, _slots[decision.slot].mac, 6);
-                out->macReasonCode = "SECRET_TARGET_MISMATCH";
                 state->placeholders++;
             } else {
                 decision.reasonCode = "SECRET_NOT_FOUND";
@@ -650,9 +647,7 @@ namespace Secrets
         _unlock();
         if (ok) return GatewayLogic::ResolveStatus::OK;
         out->reasonCode = decision.reasonCode;
-        // MAC_REQUIRED / TARGET_MAC_CHANGED stay bare code tokens the cloud matches on.
-        if (strchr(decision.reasonDetail, ' ') == nullptr) snprintf(out->reasonDetail, sizeof(out->reasonDetail), "%s", decision.reasonDetail);
-        else snprintf(out->reasonDetail, sizeof(out->reasonDetail), "%s (%s)", decision.reasonDetail, arg);
+        snprintf(out->reasonDetail, sizeof(out->reasonDetail), "%s (%s)", decision.reasonDetail, arg);
         return GatewayLogic::ResolveStatus::FAILED;
     }
 

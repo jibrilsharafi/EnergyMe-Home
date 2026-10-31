@@ -19,17 +19,15 @@ namespace GatewayExec
         const uint8_t* wire; // http(s): the whole request; tcp/udp: the payload
         size_t wireLength;
         uint8_t pin[GatewayLogic::DIGEST_BYTES]; // https
-        // ARP compares to run after connect, before the first byte.
-        bool entryMac;
-        uint8_t entryMacAddress[6];
-        bool resolverMac;
-        uint8_t resolverMacAddress[6];
-        const char* resolverMacReason;
+        // ARP compare to run after connect, before the first byte.
+        bool checkMac;
+        uint8_t mac[6];
+        const char* macReason; // reasonCode on a mismatch
     };
 
     void setOutcome(Result& result, Status status, const char* code, const char* detailFormat = nullptr, ...);
 
-    // False (and `result` set to REJECTED) when a required ARP compare fails.
+    // False (and `result` set to REJECTED) when the ARP compare fails.
     // `udp` sends one ARP request and polls when the entry is missing.
     bool checkMacBeforeFirstByte(const Prepared& prepared, Result& result, bool udp);
 

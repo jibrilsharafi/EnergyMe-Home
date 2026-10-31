@@ -242,13 +242,11 @@ void test_http_address_drops_query(void) {
 // ============================================================================
 
 void test_grant_valid_entries(void) {
-    GrantEntry e = entry("192.168.2.40", 80, "http", nullptr, "00:11:22:33:44:55", {"/rpc/Switch.*"});
+    GrantEntry e = entry("192.168.2.40", 80, "http", nullptr, nullptr, {"/rpc/Switch.*"});
     TEST_ASSERT_TRUE(e.module == Module::HTTP);
     TEST_ASSERT_EQUAL_UINT8(192, e.ip[0]);
     TEST_ASSERT_EQUAL_UINT8(40, e.ip[3]);
     TEST_ASSERT_EQUAL_UINT16(80, e.port);
-    TEST_ASSERT_TRUE(e.hasMac);
-    TEST_ASSERT_EQUAL_UINT8(0x55, e.mac[5]);
     TEST_ASSERT_FALSE(e.wildcard);
     TEST_ASSERT_EQUAL_UINT8(1, e.allowCount);
     char text[GRANT_ALLOW_TEXT_BUFFER];
@@ -258,7 +256,6 @@ void test_grant_valid_entries(void) {
 
     GrantEntry w = entry("192.168.2.40", 80, "http", "write", nullptr, {"*"});
     TEST_ASSERT_TRUE(w.wildcard);
-    TEST_ASSERT_FALSE(w.hasMac);
     TEST_ASSERT_TRUE(grantAllowText(w, 0, text, sizeof(text)));
     TEST_ASSERT_EQUAL_STRING("*", text);
 
@@ -267,7 +264,7 @@ void test_grant_valid_entries(void) {
     TEST_ASSERT_TRUE(grantAllowText(two, 1, text, sizeof(text)));
     TEST_ASSERT_EQUAL_STRING("/cgi-bin/set*", text);
 
-    entry("192.168.2.50", 502, "modbus_tcp", nullptr, "00:11:22:33:44:66", {"u1/hr100:2=0..400", "u1/co0:4", "u2/hr0:1"});
+    entry("192.168.2.50", 502, "modbus_tcp", nullptr, nullptr, {"u1/hr100:2=0..400", "u1/co0:4", "u2/hr0:1"});
     entry("10.20.0.5", 502, "modbus_tcp", "write", nullptr, {"u1/hr65535:1"});
     entry("172.16.0.1", 443, "https", "write", nullptr, {"/a", "/b", "/c", "/d"});
 
@@ -284,7 +281,7 @@ void test_grant_invalid_entries(void) {
     char hex[65];
     toHex(d, hex);
 
-    const char *mac = "00:11:22:33:44:55";
+    const char *mac = nullptr;
     // Target
     TEST_ASSERT_TRUE(refused("8.8.8.8", 80, "http", nullptr, mac, {"/a"}));
     TEST_ASSERT_TRUE(refused("192.168.2", 80, "http", nullptr, mac, {"/a"}));
@@ -330,11 +327,9 @@ void test_grant_invalid_entries(void) {
     TEST_ASSERT_TRUE(refused("192.168.2.61", 4210, "udp", "read", mac, {"*"}));
     TEST_ASSERT_TRUE(refused("192.168.2.61", 4210, "tcp", "read", mac, {"*"}));
     TEST_ASSERT_TRUE(refused("192.168.2.61", 4210, "udp", nullptr, mac, {"/a"}));
-    // MAC
-    const char *badMacs[] = {"00:11:22:33:44",    "00-11-22-33-44-55", "ff:ff:ff:ff:ff:ff", "01:00:5e:00:00:01",
-                             "00:00:00:00:00:00", "00:11:22:33:44:AA", "0:11:22:33:44:55",  "00:11:22:33:44:55:66",
-                             "",                  "00:11:22:33:44:5g"};
-    for (const char *m : badMacs) {
+    // A grant never carries a MAC: it travels on the request
+    const char *macs[] = {"00:11:22:33:44:55", "", "00-11-22-33-44-55", "ff:ff:ff:ff:ff:ff"};
+    for (const char *m : macs) {
         TEST_ASSERT_TRUE_MESSAGE(refused("192.168.2.40", 80, "http", nullptr, m, {"/a"}), m);
     }
 }
@@ -390,9 +385,7 @@ static void assertEntriesEqual(const GrantEntry &a, const GrantEntry &b) {
     TEST_ASSERT_EQUAL_MEMORY(a.ip, b.ip, 4);
     TEST_ASSERT_EQUAL_UINT16(a.port, b.port);
     TEST_ASSERT_TRUE(a.module == b.module);
-    TEST_ASSERT_EQUAL(a.hasMac, b.hasMac);
     TEST_ASSERT_EQUAL(a.wildcard, b.wildcard);
-    if (a.hasMac) TEST_ASSERT_EQUAL_MEMORY(a.mac, b.mac, 6);
     TEST_ASSERT_EQUAL_UINT8(a.allowCount, b.allowCount);
     for (size_t i = 0; i < a.allowCount; i++) {
         char ta[GRANT_ALLOW_TEXT_BUFFER], tb[GRANT_ALLOW_TEXT_BUFFER];
@@ -407,12 +400,12 @@ static size_t fillEight(GrantEntry *entries) {
     path48[0] = '/';
     memset(path48 + 1, 'z', 47);
     path48[48] = '\0';
-    entries[0] = entry("192.168.2.40", 80, "http", nullptr, "00:11:22:33:44:55", {"/cgi-bin/login.lua", "/cgi-bin/set*"});
-    entries[1] = entry("192.168.2.40", 80, "http", nullptr, "00:11:22:33:44:55", {"/rpc/Switch.*", path48});
+    entries[0] = entry("192.168.2.40", 80, "http", nullptr, nullptr, {"/cgi-bin/login.lua", "/cgi-bin/set*"});
+    entries[1] = entry("192.168.2.40", 80, "http", nullptr, nullptr, {"/rpc/Switch.*", path48});
     entries[2] = entry("192.168.2.41", 80, "https", nullptr, nullptr, {"*"});
-    entries[3] = entry("192.168.2.50", 502, "modbus_tcp", nullptr, "00:11:22:33:44:66", {"u1/hr100:2=0..400", "u1/co0:4"});
-    entries[4] = entry("192.168.2.61", 4210, "udp", nullptr, "00:11:22:33:44:77", {"*"});
-    entries[5] = entry("192.168.2.42", 8080, "http", nullptr, "00:11:22:33:44:88", {"/a", "/b*", "/c", path48});
+    entries[3] = entry("192.168.2.50", 502, "modbus_tcp", nullptr, nullptr, {"u1/hr100:2=0..400", "u1/co0:4"});
+    entries[4] = entry("192.168.2.61", 4210, "udp", nullptr, nullptr, {"*"});
+    entries[5] = entry("192.168.2.42", 8080, "http", nullptr, nullptr, {"/a", "/b*", "/c", path48});
     entries[6] = entry("10.20.0.5", 9000, "tcp", nullptr, nullptr, {"*"});
     entries[7] = entry("172.16.5.5", 65535, "modbus_tcp", nullptr, nullptr, {"u255/hr65535:1"});
     return 8;
@@ -422,11 +415,11 @@ void test_grant_blob_round_trip(void) {
     GrantEntry entries[GRANT_MAX_ENTRIES];
     memset(entries, 0, sizeof(entries));
     size_t n = fillEight(entries);
-    TEST_ASSERT_EQUAL_size_t(1657, GRANT_BLOB_MAX_BYTES);
+    TEST_ASSERT_EQUAL_size_t(1609, GRANT_BLOB_MAX_BYTES);
 
     static uint8_t blob[GRANT_BLOB_MAX_BYTES];
     size_t len = serializeGrants(entries, n, blob, sizeof(blob));
-    TEST_ASSERT_EQUAL_size_t(1657, len);
+    TEST_ASSERT_EQUAL_size_t(1609, len);
     TEST_ASSERT_EQUAL_UINT8(GRANT_BLOB_VERSION, blob[0]);
 
     GrantEntry back[GRANT_MAX_ENTRIES];
@@ -435,11 +428,11 @@ void test_grant_blob_round_trip(void) {
     TEST_ASSERT_EQUAL_size_t(8, count);
     for (size_t i = 0; i < n; i++) assertEntriesEqual(entries[i], back[i]);
 
-    // One entry is 1 + 207 bytes
+    // One entry is 1 + 201 bytes
     TEST_ASSERT_EQUAL_size_t(1 + GRANT_ENTRY_BYTES, serializeGrants(entries, 1, blob, sizeof(blob)));
-    TEST_ASSERT_EQUAL_size_t(208, 1 + GRANT_ENTRY_BYTES);
+    TEST_ASSERT_EQUAL_size_t(202, 1 + GRANT_ENTRY_BYTES);
     // Too small a buffer
-    TEST_ASSERT_EQUAL_size_t(0, serializeGrants(entries, 8, blob, 1656));
+    TEST_ASSERT_EQUAL_size_t(0, serializeGrants(entries, 8, blob, 1608));
 }
 
 void test_grant_blob_corruption_refused(void) {
@@ -448,7 +441,7 @@ void test_grant_blob_corruption_refused(void) {
     size_t n = fillEight(entries);
     static uint8_t blob[GRANT_BLOB_MAX_BYTES];
     size_t len = serializeGrants(entries, n, blob, sizeof(blob));
-    TEST_ASSERT_EQUAL_size_t(1657, len);
+    TEST_ASSERT_EQUAL_size_t(1609, len);
     GrantEntry back[GRANT_MAX_ENTRIES];
     size_t count;
 
@@ -551,8 +544,8 @@ void test_classify_declared_read(void) {
 // Paths match as plain strings before '?': no normalization of dot segments,
 // "//" or percent-encoding.
 void test_match_plain_prefix(void) {
-    GrantEntry prefix = entry("192.168.2.40", 80, "http", nullptr, "00:11:22:33:44:55", {"/rpc/Switch.*"});
-    GrantEntry exact = entry("192.168.2.40", 80, "http", nullptr, "00:11:22:33:44:55", {"/a/../b"});
+    GrantEntry prefix = entry("192.168.2.40", 80, "http", nullptr, nullptr, {"/rpc/Switch.*"});
+    GrantEntry exact = entry("192.168.2.40", 80, "http", nullptr, nullptr, {"/a/../b"});
     int idx;
     TEST_ASSERT_TRUE(matchWriteGrant(httpReq("POST", "/rpc/Switch./../Sys.Reboot"), &prefix, 1, &idx) == GrantMatch::ALLOWED);
     TEST_ASSERT_TRUE(matchWriteGrant(httpReq("POST", "/rpc/Switch.%2e%2e?x=/"), &prefix, 1, &idx) == GrantMatch::ALLOWED);
@@ -594,7 +587,7 @@ void test_classify_raw(void) {
 // ============================================================================
 
 void test_match_modbus_range(void) {
-    GrantEntry g = entry("192.168.2.50", 502, "modbus_tcp", nullptr, "00:11:22:33:44:66", {"u1/hr100:2=0..400"});
+    GrantEntry g = entry("192.168.2.50", 502, "modbus_tcp", nullptr, nullptr, {"u1/hr100:2=0..400"});
     int idx = 7;
     const uint16_t inside[] = {215, 300};
     TEST_ASSERT_TRUE(matchWriteGrant(modbusReq(16, "u1/hr100", inside, 2), &g, 1, &idx) == GrantMatch::ALLOWED);
@@ -624,8 +617,8 @@ void test_match_modbus_range(void) {
 }
 
 void test_match_modbus_unbounded_and_coils(void) {
-    GrantEntry list[2] = {entry("192.168.2.50", 502, "modbus_tcp", nullptr, "00:11:22:33:44:66", {"u1/co0:4"}),
-                          entry("192.168.2.50", 502, "modbus_tcp", nullptr, "00:11:22:33:44:66", {"u1/hr0:10"})};
+    GrantEntry list[2] = {entry("192.168.2.50", 502, "modbus_tcp", nullptr, nullptr, {"u1/co0:4"}),
+                          entry("192.168.2.50", 502, "modbus_tcp", nullptr, nullptr, {"u1/hr0:10"})};
     int idx;
     const uint16_t on[] = {1, 0, 1};
     TEST_ASSERT_TRUE(matchWriteGrant(modbusReq(15, "u1/co1", on, 3), list, 2, &idx) == GrantMatch::ALLOWED);
@@ -639,19 +632,19 @@ void test_match_modbus_unbounded_and_coils(void) {
     const uint16_t two[] = {2};
     TEST_ASSERT_TRUE(matchWriteGrant(modbusReq(5, "u1/co0", two, 1), list, 2, &idx) == GrantMatch::OUT_OF_RANGE);
     // Every written address must fall inside ONE range: two adjacent ranges do not join
-    GrantEntry split = entry("192.168.2.50", 502, "modbus_tcp", nullptr, "00:11:22:33:44:66", {"u1/hr100:2", "u1/hr102:2"});
+    GrantEntry split = entry("192.168.2.50", 502, "modbus_tcp", nullptr, nullptr, {"u1/hr100:2", "u1/hr102:2"});
     const uint16_t pair[] = {1, 2};
     TEST_ASSERT_TRUE(matchWriteGrant(modbusReq(16, "u1/hr101", pair, 2), &split, 1, &idx) == GrantMatch::NOT_ALLOWED);
     TEST_ASSERT_TRUE(matchWriteGrant(modbusReq(16, "u1/hr102", pair, 2), &split, 1, &idx) == GrantMatch::ALLOWED);
     // Coil bounds above 1 are refused, not clamped, so the stored text is what is enforced
     const char *coilAllow[] = {"u1/co0:4=0..2"};
-    GrantInput coilInput = {"192.168.2.50", 502, "modbus_tcp", nullptr, "00:11:22:33:44:66", coilAllow, 1};
+    GrantInput coilInput = {"192.168.2.50", 502, "modbus_tcp", nullptr, nullptr, coilAllow, 1};
     GrantEntry refused;
     TEST_ASSERT_NOT_NULL(validateGrant(coilInput, &refused));
 }
 
 void test_match_http_paths(void) {
-    GrantEntry prefix = entry("192.168.2.40", 80, "http", nullptr, "00:11:22:33:44:55", {"/rpc/Switch.*"});
+    GrantEntry prefix = entry("192.168.2.40", 80, "http", nullptr, nullptr, {"/rpc/Switch.*"});
     int idx;
     TEST_ASSERT_TRUE(matchWriteGrant(httpReq("POST", "/rpc/Switch.Set?id=0&on=true"), &prefix, 1, &idx) ==
                      GrantMatch::ALLOWED);
@@ -666,19 +659,19 @@ void test_match_http_paths(void) {
     TEST_ASSERT_TRUE(matchWriteGrant(httpReq("POST", "/rpc/Switch.Set", Access::NONE, false, 80, Module::HTTPS), &prefix,
                                      1, &idx) == GrantMatch::NOT_ALLOWED);
 
-    GrantEntry exact = entry("192.168.2.40", 80, "http", nullptr, "00:11:22:33:44:55", {"/rpc/Switch.Set"});
+    GrantEntry exact = entry("192.168.2.40", 80, "http", nullptr, nullptr, {"/rpc/Switch.Set"});
     TEST_ASSERT_TRUE(matchWriteGrant(httpReq("POST", "/rpc/Switch.Set"), &exact, 1, &idx) == GrantMatch::ALLOWED);
     TEST_ASSERT_TRUE(matchWriteGrant(httpReq("POST", "/rpc/Switch.Set?x=1"), &exact, 1, &idx) == GrantMatch::ALLOWED);
     TEST_ASSERT_TRUE(matchWriteGrant(httpReq("POST", "/rpc/Switch.SetX"), &exact, 1, &idx) == GrantMatch::NOT_ALLOWED);
     TEST_ASSERT_TRUE(matchWriteGrant(httpReq("POST", "/rpc/Switch.Se"), &exact, 1, &idx) == GrantMatch::NOT_ALLOWED);
 
-    GrantEntry all = entry("192.168.2.40", 80, "http", nullptr, "00:11:22:33:44:55", {"*"});
+    GrantEntry all = entry("192.168.2.40", 80, "http", nullptr, nullptr, {"*"});
     TEST_ASSERT_TRUE(matchWriteGrant(httpReq("DELETE", "/anything/at/all"), &all, 1, &idx) == GrantMatch::ALLOWED);
 
 }
 
 void test_match_raw_wildcard(void) {
-    GrantEntry all = entry("192.168.2.60", 4210, "udp", nullptr, "00:11:22:33:44:99", {"*"});
+    GrantEntry all = entry("192.168.2.60", 4210, "udp", nullptr, nullptr, {"*"});
     int idx;
     TEST_ASSERT_TRUE(matchWriteGrant(rawReq(Module::UDP, 4210, 12), &all, 1, &idx) == GrantMatch::ALLOWED);
     TEST_ASSERT_TRUE(matchWriteGrant(rawReq(Module::UDP, 4211, 12), &all, 1, &idx) == GrantMatch::NOT_ALLOWED);
@@ -699,11 +692,33 @@ void test_on_link(void) {
     TEST_ASSERT_FALSE(isOnLink(hostIp(192, 168, 2, 200), self, hostIp(255, 255, 255, 128)));
 }
 
-void test_mac_check_decisions(void) {
-    TEST_ASSERT_TRUE(macCheckFor(true, true) == MacCheck::COMPARE);
-    TEST_ASSERT_TRUE(macCheckFor(false, true) == MacCheck::MAC_REQUIRED);
-    TEST_ASSERT_TRUE(macCheckFor(false, false) == MacCheck::NONE);
-    TEST_ASSERT_TRUE(macCheckFor(true, false) == MacCheck::TARGET_MAC_CHANGED);
+static void assertMac(MacDecision d, MacAction action, const char *code, const char *detail) {
+    TEST_ASSERT_TRUE(d.action == action);
+    if (code == nullptr) TEST_ASSERT_NULL(d.reasonCode);
+    else TEST_ASSERT_EQUAL_STRING(code, d.reasonCode);
+    if (detail == nullptr) TEST_ASSERT_NULL(d.reasonDetail);
+    else TEST_ASSERT_EQUAL_STRING(detail, d.reasonDetail);
+}
+
+// macDecisionFor(hasMac, onLink, writeLike, sensitive)
+void test_mac_decisions(void) {
+    // A plain read needs no MAC, on-link or routed
+    assertMac(macDecisionFor(false, true, false, false), MacAction::NONE, nullptr, nullptr);
+    assertMac(macDecisionFor(false, false, false, false), MacAction::NONE, nullptr, nullptr);
+    // Writes and declared non-GET/payload reads need it on-link
+    assertMac(macDecisionFor(false, true, true, false), MacAction::REJECT, "WRITE_NOT_ALLOWED", "MAC_REQUIRED");
+    assertMac(macDecisionFor(false, true, true, true), MacAction::REJECT, "WRITE_NOT_ALLOWED", "MAC_REQUIRED");
+    // A secret alone needs it on-link too
+    assertMac(macDecisionFor(false, true, false, true), MacAction::REJECT, "SECRET_TARGET_MISMATCH", "MAC_REQUIRED");
+    // Routed targets stay IP-only
+    assertMac(macDecisionFor(false, false, true, true), MacAction::NONE, nullptr, nullptr);
+    // A MAC is compared whenever present on-link
+    assertMac(macDecisionFor(true, true, true, false), MacAction::COMPARE, "WRITE_NOT_ALLOWED", "TARGET_MAC_CHANGED");
+    assertMac(macDecisionFor(true, true, false, true), MacAction::COMPARE, "SECRET_TARGET_MISMATCH", "TARGET_MAC_CHANGED");
+    assertMac(macDecisionFor(true, true, false, false), MacAction::COMPARE, "WRITE_NOT_ALLOWED", "TARGET_MAC_CHANGED");
+    // and refused off-link
+    assertMac(macDecisionFor(true, false, true, false), MacAction::REJECT, "WRITE_NOT_ALLOWED", "TARGET_MAC_CHANGED");
+    assertMac(macDecisionFor(true, false, false, true), MacAction::REJECT, "SECRET_TARGET_MISMATCH", "TARGET_MAC_CHANGED");
 }
 
 void test_hex_digest(void) {
@@ -750,11 +765,11 @@ void test_digest_equals(void) {
 
 // A wildcard flag set on a stored path entry must not widen it.
 void test_wildcard_flag_never_widens(void) {
-    GrantEntry path = entry("192.168.2.40", 80, "http", nullptr, "00:11:22:33:44:55", {"/rpc/Switch.Set"});
+    GrantEntry path = entry("192.168.2.40", 80, "http", nullptr, nullptr, {"/rpc/Switch.Set"});
     uint8_t blob[GRANT_BLOB_MAX_BYTES];
     size_t length = serializeGrants(&path, 1, blob, sizeof(blob));
     TEST_ASSERT_EQUAL(1 + GRANT_ENTRY_BYTES, length);
-    blob[1 + 7] |= 2; // set the wildcard flag on a path entry
+    blob[1 + 7] = 1; // set the wildcard flag on a path entry
     GrantEntry out[GRANT_MAX_ENTRIES];
     size_t count = 9;
     TEST_ASSERT_FALSE(deserializeGrants(blob, length, out, GRANT_MAX_ENTRIES, &count));
@@ -789,7 +804,7 @@ void run_gateway_policy_tests(void) {
     RUN_TEST(test_match_http_paths);
     RUN_TEST(test_match_raw_wildcard);
     RUN_TEST(test_on_link);
-    RUN_TEST(test_mac_check_decisions);
+    RUN_TEST(test_mac_decisions);
     RUN_TEST(test_hex_digest);
     RUN_TEST(test_digest_equals);
 }

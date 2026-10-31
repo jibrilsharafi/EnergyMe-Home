@@ -20,8 +20,6 @@ struct FixedResolver {
     const char *name;
     const char *value;
     bool sensitive;
-    bool requireMac;
-    uint8_t mac[6];
     int calls;
 };
 
@@ -34,11 +32,6 @@ static ResolveStatus fixedResolve(void *context, const ResolveContext &, const c
     memcpy(out->value, r->value, n);
     out->length = n;
     out->sensitive = r->sensitive;
-    if (r->requireMac) {
-        out->requireMac = true;
-        memcpy(out->mac, r->mac, 6);
-        out->macReasonCode = "SECRET_TARGET_CHANGED";
-    }
     return ResolveStatus::OK;
 }
 
@@ -148,7 +141,7 @@ void test_template_unknown_name(void) {
 }
 
 void test_template_chain_order_and_context(void) {
-    FixedResolver a{"cap", "AAA", false, false, {0}, 0};
+    FixedResolver a{"cap", "AAA", false, 0};
     Resolver chain[] = {{echoResolve, nullptr}, {fixedResolve, &a}, {portResolve, nullptr}};
     TEST_ASSERT_TRUE(expandFresh("${echo:x}-${cap:tok}-${port}", chain, 3) == ExpandStatus::OK);
     TEST_ASSERT_EQUAL_STRING("x-AAA-8081", gOut);
@@ -156,7 +149,7 @@ void test_template_chain_order_and_context(void) {
 }
 
 void test_template_resolver_not_visible_to_other_caller(void) {
-    FixedResolver cap{"cap", "CAPTURED-SESSION", false, false, {0}, 0};
+    FixedResolver cap{"cap", "CAPTURED-SESSION", false, 0};
     Resolver first[] = {{fixedResolve, &cap}};
     TEST_ASSERT_TRUE(expandFresh("sid=${cap:tok}", first, 1) == ExpandStatus::OK);
     TEST_ASSERT_EQUAL_STRING("sid=CAPTURED-SESSION", gOut);
@@ -192,14 +185,14 @@ void test_template_malformed(void) {
 }
 
 void test_template_name_and_arg_limits(void) {
-    FixedResolver n16{"abcdefghijklmnop", "ok", false, false, {0}, 0};
-    FixedResolver n17{"abcdefghijklmnopq", "ok", false, false, {0}, 0};
+    FixedResolver n16{"abcdefghijklmnop", "ok", false, 0};
+    FixedResolver n17{"abcdefghijklmnopq", "ok", false, 0};
     Resolver c16[] = {{fixedResolve, &n16}};
     Resolver c17[] = {{fixedResolve, &n17}};
     TEST_ASSERT_TRUE(expandFresh("${abcdefghijklmnop}", c16, 1) == ExpandStatus::OK);
     TEST_ASSERT_EQUAL_STRING("ok", gOut);
     TEST_ASSERT_TRUE(expandFresh("${abcdefghijklmnopq}", c17, 1) == ExpandStatus::BAD_TEMPLATE);
-    FixedResolver under{"a_b", "u", false, false, {0}, 0};
+    FixedResolver under{"a_b", "u", false, 0};
     Resolver cu[] = {{fixedResolve, &under}};
     TEST_ASSERT_TRUE(expandFresh("${a_b}", cu, 1) == ExpandStatus::OK);
 
@@ -216,7 +209,7 @@ void test_template_name_and_arg_limits(void) {
 // ============================================================================
 
 void test_template_encodings(void) {
-    FixedResolver v{"v", "a b/\"c\"~", false, false, {0}, 0};
+    FixedResolver v{"v", "a b/\"c\"~", false, 0};
     Resolver chain[] = {{fixedResolve, &v}};
     TEST_ASSERT_TRUE(expandFresh("${v|url}", chain, 1) == ExpandStatus::OK);
     TEST_ASSERT_EQUAL_STRING("a%20b%2F%22c%22~", gOut);
@@ -226,7 +219,7 @@ void test_template_encodings(void) {
     TEST_ASSERT_TRUE(expandFresh("${v|json|url}", chain, 1) == ExpandStatus::OK);
     TEST_ASSERT_EQUAL_STRING("a%20b%2F%5C%22c%5C%22~", gOut);
 
-    FixedResolver f{"f", "f", false, false, {0}, 0};
+    FixedResolver f{"f", "f", false, 0};
     Resolver cf[] = {{fixedResolve, &f}};
     TEST_ASSERT_TRUE(expandFresh("${f|b64}", cf, 1) == ExpandStatus::OK);
     TEST_ASSERT_EQUAL_STRING("Zg==", gOut);
@@ -302,7 +295,7 @@ void test_encode_json(void) {
 // ============================================================================
 
 void test_template_sensitive_propagates(void) {
-    FixedResolver secret{"secret", "hunter2", true, false, {0}, 0};
+    FixedResolver secret{"secret", "hunter2", true, 0};
     Resolver chain[] = {{fixedResolve, &secret}, {echoResolve, nullptr}};
     ExpandResult r;
     memset(&r, 0, sizeof(r));
@@ -351,31 +344,6 @@ void test_template_resolver_failed(void) {
     TEST_ASSERT_TRUE(s == ExpandStatus::RESOLVER_FAILED || s == ExpandStatus::BAD_TEMPLATE);
 }
 
-void test_template_mac_requirement(void) {
-    FixedResolver a{"a", "1", true, true, {0x00, 0x11, 0x22, 0x33, 0x44, 0x55}, 0};
-    FixedResolver b{"b", "2", true, true, {0x00, 0x11, 0x22, 0x33, 0x44, 0x55}, 0};
-    FixedResolver c{"c", "3", true, true, {0x00, 0xaa, 0xbb, 0xcc, 0xdd, 0xee}, 0};
-    Resolver chain[] = {{fixedResolve, &a}, {fixedResolve, &b}, {fixedResolve, &c}};
-    ExpandResult r;
-    memset(&r, 0, sizeof(r));
-    TEST_ASSERT_TRUE(expand("plain", chain, 3, &r) == ExpandStatus::OK);
-    TEST_ASSERT_FALSE(r.requireMac);
-
-    TEST_ASSERT_TRUE(expand("${a}${b}", chain, 3, &r) == ExpandStatus::OK);
-    TEST_ASSERT_TRUE(r.requireMac);
-    TEST_ASSERT_FALSE(r.macConflict);
-    TEST_ASSERT_EQUAL_MEMORY(a.mac, r.mac, 6);
-    TEST_ASSERT_EQUAL_STRING("SECRET_TARGET_CHANGED", r.macReasonCode);
-
-    // A different MAC in a later field of the same request conflicts
-    TEST_ASSERT_TRUE(expand("${c}", chain, 3, &r) == ExpandStatus::OK);
-    TEST_ASSERT_TRUE(r.macConflict);
-
-    memset(&r, 0, sizeof(r));
-    TEST_ASSERT_TRUE(expand("${a}-${c}", chain, 3, &r) == ExpandStatus::OK);
-    TEST_ASSERT_TRUE(r.macConflict);
-}
-
 void run_gateway_template_tests(void) {
     RUN_TEST(test_template_plain_text_and_literals);
     RUN_TEST(test_template_has_placeholder);
@@ -391,5 +359,4 @@ void run_gateway_template_tests(void) {
     RUN_TEST(test_template_sensitive_propagates);
     RUN_TEST(test_template_cap_overflow);
     RUN_TEST(test_template_resolver_failed);
-    RUN_TEST(test_template_mac_requirement);
 }

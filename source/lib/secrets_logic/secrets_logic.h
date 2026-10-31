@@ -84,7 +84,6 @@ struct Decision {
     int slot;               // index into the cache when OK
     const char *reasonCode; // nullptr when OK
     const char *reasonDetail;
-    bool requireMac;
 };
 
 // `${secret:<arg>}` for one request: `placeholders` counts the secret

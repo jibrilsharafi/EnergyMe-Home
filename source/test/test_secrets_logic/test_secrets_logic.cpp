@@ -594,12 +594,11 @@ static Cache cacheWithXweb(bool withMac) {
     return c;
 }
 
-void test_decide_ok_mac_bound_on_link(void) {
+void test_decide_ok_on_link(void) {
     Cache c = cacheWithXweb(true);
     Decision d = decide(ctx(Module::HTTP, IP_XWEB, 80, true), "xweb_admin", c.slots, c.used, SLOT_COUNT, 0);
     TEST_ASSERT_NULL(d.reasonCode);
     TEST_ASSERT_EQUAL_INT(3, d.slot);
-    TEST_ASSERT_TRUE(d.requireMac);
     d = decide(ctx(Module::HTTPS, IP_XWEB, 80, true), "xweb_admin", c.slots, c.used, SLOT_COUNT, 7);
     TEST_ASSERT_NULL(d.reasonCode);
 }
@@ -666,19 +665,16 @@ void test_decide_target_mismatch(void) {
     TEST_ASSERT_EQUAL_INT(-1, d.slot);
 }
 
-void test_decide_mac_required(void) {
+// The target MAC travels on the request: the slot MAC no longer decides.
+void test_decide_ignores_slot_mac(void) {
     Cache c = cacheWithXweb(false);
     Decision d = decide(ctx(Module::HTTP, IP_XWEB, 80, true), "xweb_admin", c.slots, c.used, SLOT_COUNT, 0);
-    TEST_ASSERT_EQUAL_STRING("SECRET_TARGET_MISMATCH", d.reasonCode);
-    TEST_ASSERT_EQUAL_STRING("MAC_REQUIRED", d.reasonDetail);
-    TEST_ASSERT_EQUAL_INT(-1, d.slot);
-}
-
-void test_decide_mac_bound_off_link(void) {
-    Cache c = cacheWithXweb(true);
-    Decision d = decide(ctx(Module::HTTP, IP_XWEB, 80, false), "xweb_admin", c.slots, c.used, SLOT_COUNT, 0);
-    TEST_ASSERT_EQUAL_STRING("SECRET_TARGET_MISMATCH", d.reasonCode);
-    TEST_ASSERT_EQUAL_STRING("TARGET_MAC_CHANGED", d.reasonDetail);
+    TEST_ASSERT_NULL(d.reasonCode);
+    TEST_ASSERT_EQUAL_INT(3, d.slot);
+    c = cacheWithXweb(true);
+    d = decide(ctx(Module::HTTP, IP_XWEB, 80, false), "xweb_admin", c.slots, c.used, SLOT_COUNT, 0);
+    TEST_ASSERT_NULL(d.reasonCode);
+    TEST_ASSERT_EQUAL_INT(3, d.slot);
 }
 
 void test_decide_routed_without_mac(void) {
@@ -689,7 +685,6 @@ void test_decide_routed_without_mac(void) {
     Decision d = decide(ctx(Module::HTTP, routed, 80, false), "site_api", c.slots, c.used, SLOT_COUNT, 0);
     TEST_ASSERT_NULL(d.reasonCode);
     TEST_ASSERT_EQUAL_INT(0, d.slot);
-    TEST_ASSERT_FALSE(d.requireMac);
 }
 
 // ============================================================================
@@ -721,11 +716,6 @@ static ResolveStatus testResolve(void *context, const ResolveContext &request, c
     memcpy(out->value, value, length);
     out->length = length;
     out->sensitive = true;
-    if (d.requireMac) {
-        out->requireMac = true;
-        memcpy(out->mac, store->cache.slots[d.slot].mac, 6);
-        out->macReasonCode = "SECRET_TARGET_MISMATCH";
-    }
     store->placeholders++;
     return ResolveStatus::OK;
 }
@@ -760,9 +750,6 @@ void test_expand_form_login_url(void) {
     TEST_ASSERT_TRUE(expand(&s, ctx(Module::HTTP, IP_XWEB, 80, true), "user=admin&pass=${secret:xweb_admin|url}", &r) == ExpandStatus::OK);
     assertExpanded("user=admin&pass=a%26b%20c", r);
     TEST_ASSERT_TRUE(r.sensitive);
-    TEST_ASSERT_TRUE(r.requireMac);
-    TEST_ASSERT_EQUAL_MEMORY(MAC_XWEB, r.mac, 6);
-    TEST_ASSERT_EQUAL_STRING("SECRET_TARGET_MISMATCH", r.macReasonCode);
 }
 
 void test_expand_basic_auth_b64(void) {
@@ -845,11 +832,8 @@ void test_expand_target_rules(void) {
     TEST_ASSERT_TRUE(expand(&s, ctx(Module::HTTP, IP_OTHER, 80, true), "${secret:xweb_admin}", &r) ==
                      ExpandStatus::RESOLVER_FAILED);
     TEST_ASSERT_EQUAL_STRING("SECRET_TARGET_MISMATCH", r.reasonCode);
-    TEST_ASSERT_TRUE(expand(&s, ctx(Module::HTTP, ip60, 80, true), "${secret:meter_basic|b64}", &r) == ExpandStatus::RESOLVER_FAILED);
+    TEST_ASSERT_TRUE(expand(&s, ctx(Module::HTTP, ip60, 8080, true), "${secret:meter_basic|b64}", &r) == ExpandStatus::RESOLVER_FAILED);
     TEST_ASSERT_EQUAL_STRING("SECRET_TARGET_MISMATCH", r.reasonCode);
-    TEST_ASSERT_EQUAL_STRING("MAC_REQUIRED", r.reasonDetail);
-    TEST_ASSERT_TRUE(expand(&s, ctx(Module::HTTP, IP_XWEB, 80, false), "${secret:xweb_admin}", &r) == ExpandStatus::RESOLVER_FAILED);
-    TEST_ASSERT_EQUAL_STRING("TARGET_MAC_CHANGED", r.reasonDetail);
     TEST_ASSERT_TRUE(expand(&s, ctx(Module::HTTP, IP_XWEB, 80, true), "${secret:nope}", &r) == ExpandStatus::RESOLVER_FAILED);
     TEST_ASSERT_EQUAL_STRING("SECRET_NOT_FOUND", r.reasonCode);
     TEST_ASSERT_EQUAL_size_t(0, s.valueReads);
@@ -862,7 +846,6 @@ void test_expand_https_default_port(void) {
     ExpandResult r;
     TEST_ASSERT_TRUE(expand(&s, ctx(Module::HTTPS, ip70, 443, true), "Bearer ${secret:meter_token}", &r) == ExpandStatus::OK);
     assertExpanded("Bearer tok3n", r);
-    TEST_ASSERT_TRUE(r.requireMac);
 }
 
 void test_expand_routed_without_mac(void) {
@@ -872,7 +855,6 @@ void test_expand_routed_without_mac(void) {
     ExpandResult r;
     TEST_ASSERT_TRUE(expand(&s, ctx(Module::HTTP, routed, 80, false), "${secret:site_api}", &r) == ExpandStatus::OK);
     assertExpanded("k3y", r);
-    TEST_ASSERT_FALSE(r.requireMac);
 }
 
 void test_expand_value_not_rescanned(void) {
@@ -1101,14 +1083,13 @@ int main(int argc, char **argv) {
     RUN_TEST(test_replay_ceiling_before_delete);
     RUN_TEST(test_replay_after_factory_reset);
 
-    RUN_TEST(test_decide_ok_mac_bound_on_link);
+    RUN_TEST(test_decide_ok_on_link);
     RUN_TEST(test_decide_bad_arg);
     RUN_TEST(test_decide_ninth_placeholder);
     RUN_TEST(test_decide_module_not_allowed);
     RUN_TEST(test_decide_not_found);
     RUN_TEST(test_decide_target_mismatch);
-    RUN_TEST(test_decide_mac_required);
-    RUN_TEST(test_decide_mac_bound_off_link);
+    RUN_TEST(test_decide_ignores_slot_mac);
     RUN_TEST(test_decide_routed_without_mac);
 
     RUN_TEST(test_expand_form_login_url);

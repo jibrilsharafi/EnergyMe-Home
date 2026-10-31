@@ -255,10 +255,7 @@ const char *validateGrant(const GrantInput &input, GrantEntry *out) {
     entry.port = static_cast<uint16_t>(input.port);
     if (!parseModule(input.module, &entry.module)) return "module must be http, https, modbus_tcp, tcp or udp";
     if (input.kind != nullptr && strcmp(input.kind, "write") != 0) return "kind must be write (entries are write grants only)";
-    if (input.mac != nullptr) {
-        if (!parseMac(input.mac, entry.mac)) return "mac must be six lowercase hex pairs, unicast and non-zero";
-        entry.hasMac = true;
-    }
+    if (input.mac != nullptr) return "mac is not part of a grant; send it with the request";
     if (input.allow == nullptr || input.allowCount < 1 || input.allowCount > GRANT_ALLOW_MAX) return "allow must hold 1-4 strings";
 
     bool star = false;
@@ -304,8 +301,8 @@ bool grantAllowText(const GrantEntry &entry, size_t i, char *out, size_t cap) {
     return n >= 0 && static_cast<size_t>(n) < cap;
 }
 
-// Entry layout (207 B): ip 4, port 2 (big endian), module 1, flags 1
-// (bit 0 mac, bit 1 "*"), mac 6, allow count 1, 4 x 48 B allow slots.
+// Entry layout (201 B): ip 4, port 2 (big endian), module 1, flags 1 (bit 0 "*"),
+// allow count 1, 4 x 48 B allow slots.
 size_t serializeGrants(const GrantEntry *entries, size_t count, uint8_t *out, size_t cap) {
     size_t length = 1 + count * GRANT_ENTRY_BYTES;
     if (count > GRANT_MAX_ENTRIES || out == nullptr || cap < length || (count > 0 && entries == nullptr)) return 0;
@@ -318,10 +315,9 @@ size_t serializeGrants(const GrantEntry *entries, size_t count, uint8_t *out, si
         p[4] = static_cast<uint8_t>(e.port >> 8);
         p[5] = static_cast<uint8_t>(e.port & 0xFF);
         p[6] = static_cast<uint8_t>(e.module);
-        p[7] = static_cast<uint8_t>((e.hasMac ? 1 : 0) | (e.wildcard ? 2 : 0));
-        memcpy(p + 8, e.mac, 6);
-        p[14] = e.allowCount;
-        memcpy(p + 15, e.allow, sizeof(e.allow));
+        p[7] = e.wildcard ? 1 : 0;
+        p[8] = e.allowCount;
+        memcpy(p + 9, e.allow, sizeof(e.allow));
     }
     return length;
 }
@@ -337,14 +333,13 @@ bool deserializeGrants(const uint8_t *blob, size_t length, GrantEntry *out, size
         memcpy(e.ip, p, 4);
         e.port = static_cast<uint16_t>((p[4] << 8) | p[5]);
         e.module = static_cast<Module>(p[6]);
-        e.hasMac = (p[7] & 1) != 0;
-        e.wildcard = (p[7] & 2) != 0;
-        memcpy(e.mac, p + 8, 6);
-        e.allowCount = p[14];
-        memcpy(e.allow, p + 15, sizeof(e.allow));
+        if (p[7] > 1) return false;
+        e.wildcard = p[7] == 1;
+        e.allowCount = p[8];
+        memcpy(e.allow, p + 9, sizeof(e.allow));
 
         // Re-validate through the text form so a corrupted blob never widens a grant.
-        char ipText[16], macText[MAC_TEXT_BUFFER];
+        char ipText[16];
         char allowText[GRANT_ALLOW_MAX][GRANT_ALLOW_TEXT_BUFFER];
         const char *allow[GRANT_ALLOW_MAX];
         if (e.allowCount < 1 || e.allowCount > GRANT_ALLOW_MAX || (e.wildcard && e.allowCount != 1)) return false;
@@ -359,8 +354,7 @@ bool deserializeGrants(const uint8_t *blob, size_t length, GrantEntry *out, size
             allow[a] = allowText[a];
         }
         snprintf(ipText, sizeof(ipText), "%u.%u.%u.%u", e.ip[0], e.ip[1], e.ip[2], e.ip[3]);
-        formatMac(e.mac, macText, sizeof(macText));
-        GrantInput input{ipText, e.port, moduleName(e.module), nullptr, e.hasMac ? macText : nullptr, allow, e.allowCount};
+        GrantInput input{ipText, e.port, moduleName(e.module), nullptr, nullptr, allow, e.allowCount};
         if (validateGrant(input, &out[i]) != nullptr) return false;
     }
     *count = n;
@@ -433,9 +427,11 @@ bool isOnLink(uint32_t target, uint32_t interfaceAddress, uint32_t netmask) {
     return interfaceAddress != 0 && (target & netmask) == (interfaceAddress & netmask);
 }
 
-MacCheck macCheckFor(bool entryHasMac, bool onLink) {
-    if (entryHasMac) return onLink ? MacCheck::COMPARE : MacCheck::TARGET_MAC_CHANGED;
-    return onLink ? MacCheck::MAC_REQUIRED : MacCheck::NONE;
+MacDecision macDecisionFor(bool hasMac, bool onLink, bool writeLike, bool sensitive) {
+    const char *code = sensitive && !writeLike ? "SECRET_TARGET_MISMATCH" : "WRITE_NOT_ALLOWED";
+    if (hasMac) return {onLink ? MacAction::COMPARE : MacAction::REJECT, code, "TARGET_MAC_CHANGED"};
+    if (onLink && (writeLike || sensitive)) return {MacAction::REJECT, code, "MAC_REQUIRED"};
+    return {MacAction::NONE, nullptr, nullptr};
 }
 
 } // namespace GatewayLogic

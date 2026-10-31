@@ -45,6 +45,11 @@ namespace GatewayExec
         // The caller asserts this literal request is a read of its own target
         // (collector job steps): no grant lookup for a non-GET or a tcp/udp payload.
         bool declaredRead = false;
+        // Optional target MAC, compared with the ARP entry after connect and before
+        // the first byte; required on-link for writes, declared non-GET/payload
+        // reads and expanded secrets.
+        bool hasMac = false;
+        uint8_t mac[6] = {};
         uint32_t timeoutMs = 5000;
         size_t maxBytes = 4096;
         const char* callerId = "";

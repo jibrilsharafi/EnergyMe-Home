@@ -180,7 +180,7 @@ uint64_t localSetAt(bool clockSynced, uint64_t now, uint64_t hwm) { return clock
 
 Decision decide(const GatewayLogic::ResolveContext &context, const char *arg, const SlotMeta *slots, const bool *used, size_t count,
                 size_t placeholders) {
-    Decision d{-1, nullptr, nullptr, false};
+    Decision d{-1, nullptr, nullptr};
     if (!isValidName(arg) || placeholders >= PLACEHOLDERS_MAX) {
         d.reasonCode = "BAD_TEMPLATE";
         d.reasonDetail = placeholders >= PLACEHOLDERS_MAX ? "At most 8 secret placeholders per request" : "Invalid secret name";
@@ -206,17 +206,9 @@ Decision decide(const GatewayLogic::ResolveContext &context, const char *arg, co
         d.reasonDetail = "The secret is bound to another target";
         return d;
     }
-    if (context.onLink && !meta.hasMac) {
-        d.reasonDetail = "MAC_REQUIRED";
-        return d;
-    }
-    if (meta.hasMac && !context.onLink) {
-        d.reasonDetail = "TARGET_MAC_CHANGED";
-        return d;
-    }
+    // The target MAC travels on the request; the executor enforces it.
     d.reasonCode = nullptr;
     d.slot = slot;
-    d.requireMac = meta.hasMac;
     return d;
 }
 
