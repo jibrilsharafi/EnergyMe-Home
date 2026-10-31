@@ -869,91 +869,6 @@ bool checkStepTemplates(Job &job, const Step &step, bool login, size_t index) {
     return true;
 }
 
-// ---------------------------------------------------------------------------
-// Binding canonical form
-// ---------------------------------------------------------------------------
-
-struct Writer {
-    char *out;
-    size_t cap;
-    size_t used;
-    bool ok;
-
-    void raw(const void *data, size_t length) {
-        if (!ok || length > cap - used) {
-            ok = false;
-            return;
-        }
-        memcpy(out + used, data, length);
-        used += length;
-    }
-    void text(const char *s) { raw(s, strlen(s)); }
-    void number(int64_t value) {
-        char buffer[24];
-        int n = snprintf(buffer, sizeof(buffer), "%lld", static_cast<long long>(value));
-        raw(buffer, static_cast<size_t>(n));
-    }
-    // Length-prefixed bytes; `~` for an absent value.
-    void bytes(const void *data, size_t length, bool present) {
-        if (!present) {
-            raw("~", 1);
-            return;
-        }
-        number(static_cast<int64_t>(length));
-        raw(":", 1);
-        raw(data, length);
-    }
-    void string(const char *s) { bytes(s, s != nullptr ? strlen(s) : 0, s != nullptr); }
-    void field(const char *tag, int64_t value) {
-        text(tag);
-        number(value);
-        raw(";", 1);
-    }
-};
-
-void writeStep(Writer &w, const Job &job, const Step &step, size_t index) {
-    const StepArgs &a = step.args;
-    w.text("step=");
-    w.string(step.id);
-    w.text(";m=");
-    w.string(a.method);
-    w.text(";p=");
-    w.string(a.path);
-    w.field(";h=", a.headerCount);
-    for (size_t h = 0; h < a.headerCount; h++) {
-        w.string(a.headers[h].name);
-        w.string(a.headers[h].value);
-    }
-    w.text(";b=");
-    w.string(a.body);
-    w.text(";bb=");
-    w.bytes(a.bodyBytes, a.bodyBytesLength, a.bodyBytes != nullptr);
-    w.text(";c=");
-    w.string(a.certSha256);
-    w.field(";u=", a.address.unit);
-    w.field("t=", static_cast<int64_t>(a.address.table));
-    w.field("a=", a.address.address);
-    w.field("n=", a.count);
-    w.text("pl=");
-    w.string(a.payload);
-    w.text(";pb=");
-    w.bytes(a.payloadBytes, a.payloadBytesLength, a.payloadBytes != nullptr);
-    w.field(";i=", a.idleMs);
-    w.field("w=", a.waitMs);
-    for (size_t c = 0; c < job.captureCount; c++) {
-        const Capture &capture = job.captures[c];
-        if (!capture.login || capture.step != index) continue;
-        w.text("cap=");
-        w.string(capture.name);
-        w.text(capture.fromHeader ? "h" : "b");
-        w.string(capture.key);
-        w.string(capture.header);
-        w.string(capture.after);
-        w.string(capture.before);
-        w.raw(";", 1);
-    }
-}
-
 bool run(JsonDocument &doc, const char *text, size_t length, const ValidationContext &context, JobTable *table, ApplyError *error) {
     DeserializationError parsed = deserializeJson(doc, text, length);
     if (parsed || !doc.is<JsonObjectConst>()) return fail(error, BAD_JSON, nullptr, nullptr);
@@ -1009,40 +924,11 @@ bool run(JsonDocument &doc, const char *text, size_t length, const ValidationCon
         if (job.module == Module::HTTPS && !context.httpsAvailable) return fail(error, MODULE_UNAVAILABLE, job.id, "module");
     }
 
-    // The canonical binding is written into the unused pool tail and hashed there.
-    for (size_t j = 0; j < table->jobCount; j++) {
-        Job &job = table->jobs[j];
-        char *scratch = table->pool + table->poolUsed;
-        size_t written = canonicalBinding(job, scratch, table->poolCap - table->poolUsed);
-        if (written == 0) return fail(error, QUOTA_EXCEEDED, job.id, "doc");
-        if (context.sha256 != nullptr) context.sha256(reinterpret_cast<const uint8_t *>(scratch), written, job.bindingHash);
-        memset(scratch, 0, written);
-    }
     if (context.sha256 != nullptr) context.sha256(reinterpret_cast<const uint8_t *>(text), length, table->sha256);
     return true;
 }
 
 } // namespace
-
-size_t canonicalBinding(const Job &job, char *out, size_t cap) {
-    Writer w{out, cap, 0, out != nullptr};
-    w.text("ip=");
-    w.text(job.ip);
-    w.field(";port=", job.port);
-    w.text("mod=");
-    w.text(GatewayLogic::moduleName(job.module));
-    w.field(";session=", job.hasSession ? 1 : 0);
-    if (job.hasSession) {
-        w.field("ttl=", job.ttlS);
-        w.field("status=", job.expiryStatusCount);
-        for (size_t i = 0; i < job.expiryStatusCount; i++) w.field(",", job.expiryStatus[i]);
-        w.text("marker=");
-        w.string(job.expiryMarker);
-        w.field(";login=", job.loginCount);
-        for (size_t i = 0; i < job.loginCount; i++) writeStep(w, job, job.login[i], i);
-    }
-    return w.ok ? w.used : 0;
-}
 
 bool validateJobSet(const char *doc, size_t length, const ValidationContext &context, JobTable *out, ApplyError *error) {
     error->code = nullptr;

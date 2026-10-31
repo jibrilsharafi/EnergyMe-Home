@@ -173,7 +173,6 @@ static void test_xweb_example(void) {
     TEST_ASSERT_TRUE(j.usesCursor);
     TEST_ASSERT_FALSE(j.batch);
     uint8_t zero[32] = {};
-    TEST_ASSERT_TRUE(memcmp(zero, j.bindingHash, 32) != 0);
     TEST_ASSERT_TRUE(memcmp(zero, table.sha256, 32) != 0);
     TEST_ASSERT_TRUE(table.poolUsed < POOL_BYTES);
 }
@@ -605,40 +604,6 @@ static void test_http_args_schema(void) {
 }
 
 // ---------------------------------------------------------------------------
-// Binding hash
-// ---------------------------------------------------------------------------
-
-static void test_binding_hash(void) {
-    reset();
-    expectValid(set(XWEB_JOB));
-    uint8_t base[32];
-    memcpy(base, table.jobs[0].bindingHash, 32);
-    char canonical[2048];
-    TEST_ASSERT_TRUE(canonicalBinding(table.jobs[0], canonical, sizeof(canonical)) > 0);
-    TEST_ASSERT_EQUAL_size_t(0, canonicalBinding(table.jobs[0], canonical, 16)); // does not fit
-
-    // Reordered keys and a changed interval or data step: same binding.
-    std::string reordered = replace(XWEB_JOB, R"("target":{"ip":"192.168.1.50","port":80})", R"("target":{"port":80,"ip":"192.168.1.50"})");
-    reordered = replace(reordered, R"("ttl_s":1800,"expiry":{"status":[401,403],"marker":"login.lua"},)", "");
-    reordered = replace(reordered, R"("session":{)", R"("session":{"expiry":{"marker":"login.lua","status":[401,403]},"ttl_s":1800,)");
-    reordered = replace(reordered, R"("interval_s":300)", R"("interval_s":600)");
-    expectValid(set(reordered));
-    TEST_ASSERT_EQUAL_UINT8_ARRAY(base, table.jobs[0].bindingHash, 32);
-
-    // Target, session or module change: different binding.
-    expectValid(set(replace(XWEB_JOB, "192.168.1.50", "192.168.1.51")));
-    TEST_ASSERT_TRUE(memcmp(base, table.jobs[0].bindingHash, 32) != 0);
-    expectValid(set(replace(XWEB_JOB, R"("ttl_s":1800)", R"("ttl_s":1700)")));
-    TEST_ASSERT_TRUE(memcmp(base, table.jobs[0].bindingHash, 32) != 0);
-    expectValid(set(replace(XWEB_JOB, R"("after":"sses=")", R"("after":"sid=")")));
-    TEST_ASSERT_TRUE(memcmp(base, table.jobs[0].bindingHash, 32) != 0);
-    // Job-level limits the login step inherits are not session values.
-    expectValid(set(replace(replace(XWEB_JOB, R"("max_bytes":131072)", R"("max_bytes":65536)"), R"("step_timeout_ms":8000)",
-                            R"("step_timeout_ms":5000)")));
-    TEST_ASSERT_EQUAL_UINT8_ARRAY(base, table.jobs[0].bindingHash, 32);
-}
-
-// ---------------------------------------------------------------------------
 // Captures
 // ---------------------------------------------------------------------------
 
@@ -872,7 +837,6 @@ int main(int, char **) {
     RUN_TEST(test_template_grammar_matches_engine);
     RUN_TEST(test_module_unavailable_and_order);
     RUN_TEST(test_http_args_schema);
-    RUN_TEST(test_binding_hash);
     RUN_TEST(test_capture_json_key);
     RUN_TEST(test_capture_header_cookie);
     RUN_TEST(test_capture_second_set_cookie_line);

@@ -149,7 +149,6 @@ struct Job {
     Capture captures[CAPTURES_MAX];
     bool usesTime;            // any ${now} or ${cursor}
     bool usesCursor;          // any ${cursor}
-    uint8_t bindingHash[32];  // SHA-256 over the canonical target, module and session
 };
 
 struct JobTable {
@@ -193,10 +192,6 @@ struct ValidationContext {
 // PERSIST_FAILED belong to the shadow layer in the firmware. Iterative, no
 // recursion over steps. Returns false with `error` set on the first failure.
 bool validateJobSet(const char* doc, size_t length, const ValidationContext& context, JobTable* out, ApplyError* error);
-
-// The canonical bytes the binding hash covers (target, module and session),
-// written to `out`; returns the length (0 when it does not fit).
-size_t canonicalBinding(const Job& job, char* out, size_t cap);
 
 // ---------------------------------------------------------------------------
 // Captures

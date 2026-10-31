@@ -1404,19 +1404,12 @@ namespace Collector
                 if (strcmp(old.id, job.id) != 0) continue;
                 JobState& prev = _states[o];
                 next.seq = prev.seq; // dedup ids (boot, job, seq) never repeat within a boot
-                if (old.rev == job.rev && memcmp(old.bindingHash, job.bindingHash, 32) == 0) {
-                    // Same job and binding: backoff, session and captures carry over.
+                if (old.rev == job.rev) {
+                    // Same job rev: slot, backoff, cursor and window carry over. The session never
+                    // does, so a changed target cannot receive a capture held for the old one.
                     next.failures = prev.failures;
                     next.t0S = prev.t0S;
                     next.nextS = prev.nextS;
-                    next.sessionHeld = prev.sessionHeld;
-                    next.loginAtS = prev.loginAtS;
-                    for (uint8_t c = 0; c < CAPTURES_MAX; c++) {
-                        next.captures[c] = prev.captures[c];
-                        next.captureLength[c] = prev.captureLength[c];
-                        prev.captures[c] = nullptr;
-                        prev.captureLength[c] = 0;
-                    }
                     next.stats = prev.stats;
                     next.cursorSet = prev.cursorSet;
                     next.cursorS = prev.cursorS;
