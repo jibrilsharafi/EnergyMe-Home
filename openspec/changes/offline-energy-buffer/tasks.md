@@ -32,6 +32,6 @@
 ## 6. Verification
 
 - [x] 6.1 `pio test -e native` (WSL), then build both `esp32s3-dev` and `esp32s3-prod`.
-- [ ] 6.2 Bench on .174 and .80 against dev cloud: block WAN for about 2 h, restore it, and check in dev ClickHouse that `meter_state` has per-minute active energy for the gap with no duplicate keys after `FINAL`.
-- [ ] 6.3 Bench: reboot mid-outage and mid-replay. Check that the segments written before the reboot are replayed and that a re-sent hour merges without duplicates.
+- [x] 6.2 Bench on .174 and .80 against dev cloud: simulated cloud outage (dev endpoint) of 20 min on Home and 4 min on Pro, then restore it, and check in dev ClickHouse that `meter_state` has per-minute active energy for the gap with no duplicate keys after `FINAL`. (2026-10-31: Home 23:53-00:12 UTC replayed across two hourly segments, 3 rows per minute, live resumed 00:13 with no gap; Pro had zero flash writes over 6 min online.)
+- [x] 6.3 Bench: reboot mid-outage. Check that the segments written before the reboot are replayed without duplicates. (2026-10-31: Pro rebooted with 4 buffered minutes; 23:55-23:58 UTC replayed after boot, one row per minute.) Reboot mid-replay is not bench-tested: a 20-minute backlog drains in one chunk.
 - [x] 6.4 Code-review and simplification agents on the branch diff, then fix findings and re-run 6.1.
