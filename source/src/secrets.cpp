@@ -39,12 +39,15 @@ namespace Secrets
     static bool _used[SLOT_COUNT];
     static uint64_t _hwm = 0;
     static char _kid[65] = "";
+    static bool _loaded = false; // a set before the boot load would overwrite an unseen slot
 
     static SemaphoreHandle_t _mutex() {
         static SemaphoreHandle_t mutex = xSemaphoreCreateMutex();
         return mutex;
     }
     static bool _lock() { return _mutex() != nullptr && xSemaphoreTake(_mutex(), pdMS_TO_TICKS(MUTEX_WAIT_MS)) == pdTRUE; }
+    // Locks only a loaded store; `outcome` gets the reason otherwise.
+    static bool _lockLoaded(struct Outcome& outcome);
     static void _unlock() { xSemaphoreGive(_mutex()); }
 
     static void _slotKey(size_t index, char* key, size_t size) { snprintf(key, size, "s%02u", (unsigned)index); }
@@ -61,6 +64,17 @@ namespace Secrets
         }
     }
 
+    static bool _lockLoaded(Outcome& outcome) {
+        if (!_lock()) {
+            _fail(outcome, "FAILED", "NO_MEMORY", "Secret store busy");
+            return false;
+        }
+        if (_loaded) return true;
+        _unlock();
+        _fail(outcome, "FAILED", "NO_MEMORY", "Secret store not loaded");
+        return false;
+    }
+
     static bool _clockSynced() { return CustomTime::isTimeSynched(); }
     static uint64_t _now() { return CustomTime::getUnixTime(); }
 
@@ -69,14 +83,15 @@ namespace Secrets
 
     static bool _persistHwm(Preferences& preferences, uint64_t hwm) { return preferences.putULong64(SECRETS_HWM_KEY, hwm) == sizeof(uint64_t); }
 
-    // Caller holds the lock and an open read-write namespace.
-    static void _applyCeiling(Preferences& preferences) {
+    // Caller holds the lock and an open read-write namespace. False when the lowered
+    // mark could not be persisted (the RAM value is lowered anyway).
+    static bool _applyCeiling(Preferences& preferences) {
         bool lowered = false;
         uint64_t capped = applyCeiling(_clockSynced(), _now(), _hwm, &lowered);
-        if (!lowered) return;
+        if (!lowered) return true;
         LOG_WARNING("Secrets hwm %llu is ahead of the clock, lowered to %llu", (unsigned long long)_hwm, (unsigned long long)capped);
         _hwm = capped;
-        _persistHwm(preferences, _hwm);
+        return _persistHwm(preferences, _hwm);
     }
 
     static void _computeKid() {
@@ -142,6 +157,7 @@ namespace Secrets
                 }
             }
             preferences.end();
+            _loaded = true;
         }
         _unlock();
         free(blob);
@@ -179,9 +195,10 @@ namespace Secrets
         if (!ok) return false;
         _slots[index] = meta;
         _used[index] = true;
+        // The slot is written; a lost hwm bump is recovered at boot from the slot's set_at.
         if (meta.setAt > _hwm) {
             _hwm = meta.setAt;
-            _persistHwm(preferences, _hwm);
+            if (!_persistHwm(preferences, _hwm)) LOG_WARNING("Could not persist the secrets hwm");
         }
         return true;
     }
@@ -234,13 +251,16 @@ namespace Secrets
 
     // RSA-OAEP-SHA256 unwrap of the AES key with the device key, then AES-256-GCM.
     // Every failure is one outcome so the device is no padding or tag oracle.
-    static bool _decrypt(const Envelope& envelope, const char* aad, uint8_t* plaintext) {
+    enum class Decrypt { OK, FAILED, UNAVAILABLE };
+
+    static Decrypt _decrypt(const Envelope& envelope, const char* aad, uint8_t* plaintext) {
         char* pem = (char*)ps_calloc(1, PEM_MAX);
         mbedtls_pk_context* pk = (mbedtls_pk_context*)ps_malloc(sizeof(mbedtls_pk_context));
         mbedtls_entropy_context* entropy = (mbedtls_entropy_context*)ps_malloc(sizeof(mbedtls_entropy_context));
         mbedtls_ctr_drbg_context* drbg = (mbedtls_ctr_drbg_context*)ps_malloc(sizeof(mbedtls_ctr_drbg_context));
         mbedtls_gcm_context* gcm = (mbedtls_gcm_context*)ps_malloc(sizeof(mbedtls_gcm_context));
         bool ok = pem && pk && entropy && drbg && gcm;
+        bool keyReady = false; // past this point every failure is the one SECRET_DECRYPT_FAILED
         uint8_t key[32];
         if (ok) {
             mbedtls_pk_init(pk);
@@ -256,7 +276,8 @@ namespace Secrets
             size_t keyLength = 0;
             ok = pem[0] != '\0' && mbedtls_ctr_drbg_seed(drbg, mbedtls_entropy_func, entropy, (const unsigned char*)PERS, sizeof(PERS) - 1) == 0 &&
                  mbedtls_pk_parse_key(pk, (const unsigned char*)pem, strlen(pem) + 1, nullptr, 0, mbedtls_ctr_drbg_random, drbg) == 0 &&
-                 mbedtls_pk_get_type(pk) == MBEDTLS_PK_RSA;
+                 mbedtls_pk_get_type(pk) == MBEDTLS_PK_RSA && mbedtls_pk_get_bitlen(pk) == 2048; // `ek` is exactly 256 bytes
+            keyReady = ok;
             if (ok) {
                 mbedtls_rsa_context* rsa = mbedtls_pk_rsa(*pk);
                 // Explicit: without it mbedTLS silently decrypts PKCS#1 v1.5.
@@ -280,7 +301,8 @@ namespace Secrets
         free(drbg);
         free(gcm);
         if (!ok) mbedtls_platform_zeroize(plaintext, PLAINTEXT_BYTES);
-        return ok;
+        if (ok) return Decrypt::OK;
+        return keyReady ? Decrypt::FAILED : Decrypt::UNAVAILABLE;
     }
 
     static bool _issuedAt(JsonVariantConst value, uint64_t* out) {
@@ -289,6 +311,77 @@ namespace Secrets
             return *out > 0;
         }
         return value.is<const char*>() && parseIssuedAt(value.as<const char*>(), out);
+    }
+
+    // Replay, kid and free-slot checks under the lock (spec order). APPLY means
+    // decrypt and then _commitSet; anything else has filled `outcome`.
+    static SetVerdict _decideSetLocked(Preferences& preferences, const SlotMeta& meta, uint64_t issuedAt, const char* kid, Outcome& outcome,
+                                       int* slot) {
+        if (!_applyCeiling(preferences)) {
+            _fail(outcome, "FAILED", "NVS_WRITE_FAILED", "Could not persist the replay high-water mark");
+            return SetVerdict::STALE;
+        }
+        int index = _find(meta.name);
+        bool sameSlot = index >= 0 && _slots[index].setAt == issuedAt && memcmp(_slots[index].ip, meta.ip, 4) == 0 && _slots[index].port == meta.port &&
+                        _slots[index].hasMac == meta.hasMac && (!meta.hasMac || memcmp(_slots[index].mac, meta.mac, 6) == 0);
+        SetVerdict verdict = decideSet(_clockSynced(), _now(), _hwm, issuedAt, sameSlot);
+        switch (verdict) {
+            case SetVerdict::CLOCK_NOT_SYNCED: _fail(outcome, "REJECTED", "CLOCK_NOT_SYNCED", "The device clock is not synchronised"); break;
+            case SetVerdict::STALE: _fail(outcome, "REJECTED", "SECRET_STALE", "hwm=%llu", (unsigned long long)_hwm); break;
+            case SetVerdict::CLOCK_SKEW: _fail(outcome, "REJECTED", "SECRET_CLOCK_SKEW", "hwm=%llu", (unsigned long long)_hwm); break;
+            case SetVerdict::ALREADY_APPLIED:
+                outcome.setAt = issuedAt;
+                outcome.applied = false;
+                break;
+            case SetVerdict::APPLY:
+                if (_kid[0] == '\0' || strcmp(kid, _kid) != 0) {
+                    _fail(outcome, "REJECTED", "SECRET_KEY_MISMATCH", "kid does not match this device certificate");
+                    return SetVerdict::STALE;
+                }
+                if (index < 0) index = _free();
+                if (index < 0) {
+                    _fail(outcome, "REJECTED", "SECRET_STORE_FULL", "All 16 slots are used");
+                    return SetVerdict::STALE;
+                }
+                *slot = index;
+                break;
+        }
+        return verdict;
+    }
+
+    static SetVerdict _decideSet(const SlotMeta& meta, uint64_t issuedAt, const char* kid, Outcome& outcome) {
+        if (!_lockLoaded(outcome)) return SetVerdict::STALE;
+        Preferences preferences;
+        SetVerdict verdict = SetVerdict::STALE;
+        int slot = -1;
+        if (!preferences.begin(PREFERENCES_NAMESPACE_SECRETS, false)) {
+            _fail(outcome, "FAILED", "NVS_WRITE_FAILED", "Could not open the secret store");
+        } else {
+            verdict = _decideSetLocked(preferences, meta, issuedAt, kid, outcome, &slot);
+            preferences.end();
+        }
+        _unlock();
+        return verdict;
+    }
+
+    static void _commitSet(const SlotMeta& meta, const uint8_t* value, size_t length, uint64_t issuedAt, const char* kid, Outcome& outcome) {
+        if (!_lockLoaded(outcome)) return;
+        Preferences preferences;
+        int slot = -1;
+        if (!preferences.begin(PREFERENCES_NAMESPACE_SECRETS, false)) {
+            _fail(outcome, "FAILED", "NVS_WRITE_FAILED", "Could not open the secret store");
+        } else {
+            if (_decideSetLocked(preferences, meta, issuedAt, kid, outcome, &slot) == SetVerdict::APPLY) {
+                if (!_write(preferences, slot, meta, value, length)) {
+                    _fail(outcome, "FAILED", "NVS_WRITE_FAILED", "Could not write the secret slot");
+                } else {
+                    outcome.setAt = issuedAt;
+                    outcome.applied = true;
+                }
+            }
+            preferences.end();
+        }
+        _unlock();
     }
 
     void setFromEnvelope(JsonObjectConst args, Outcome& outcome) {
@@ -308,7 +401,7 @@ namespace Secrets
 
         bool shaped = name != nullptr && ip != nullptr && args["port"].is<int64_t>() && (args["mac"].isNull() || args["mac"].is<const char*>()) &&
                       _issuedAt(args["issued_at"], &issuedAt) && !env.isNull() && env["v"].is<int>() && env["alg"].is<const char*>() &&
-                      env["kid"].is<const char*>() && _decodeExact(env["ek"] | (const char*)nullptr, envelope->ek, ENVELOPE_EK_BYTES) &&
+                      env["kid"].is<const char*>() && strlen(env["kid"].as<const char*>()) == 64 && _decodeExact(env["ek"] | (const char*)nullptr, envelope->ek, ENVELOPE_EK_BYTES) &&
                       _decodeExact(env["iv"] | (const char*)nullptr, envelope->iv, ENVELOPE_IV_BYTES) &&
                       _decodeExact(env["ct"] | (const char*)nullptr, envelope->ct, PLAINTEXT_BYTES) &&
                       _decodeExact(env["tag"] | (const char*)nullptr, envelope->tag, ENVELOPE_TAG_BYTES);
@@ -320,56 +413,24 @@ namespace Secrets
         } else if (_validateMeta(name, ip, args["port"].as<int64_t>(), mac, &meta, outcome)) {
             snprintf(outcome.name, sizeof(outcome.name), "%s", name);
             meta.setAt = issuedAt;
-            if (!_lock()) {
-                _fail(outcome, "FAILED", "NO_MEMORY", "Secret store busy");
-            } else {
-                Preferences preferences;
-                if (!preferences.begin(PREFERENCES_NAMESPACE_SECRETS, false)) {
-                    _fail(outcome, "FAILED", "NVS_WRITE_FAILED", "Could not open the secret store");
+            // The RSA operation runs outside the lock so REST and the shadow report never
+            // wait on it; the replay decision is taken again before the write.
+            if (_decideSet(meta, issuedAt, env["kid"].as<const char*>(), outcome) == SetVerdict::APPLY) {
+                char aad[AAD_MAX];
+                const uint8_t* value = nullptr;
+                size_t length = 0;
+                Decrypt decrypted = buildAad(aad, sizeof(aad), DEVICE_ID, name, meta.ip, meta.port, meta.hasMac ? meta.mac : nullptr, issuedAt) == 0
+                                        ? Decrypt::FAILED
+                                        : _decrypt(*envelope, aad, plaintext);
+                if (decrypted == Decrypt::UNAVAILABLE) {
+                    _fail(outcome, "FAILED", "NO_MEMORY", "Could not prepare the device key");
+                } else if (decrypted == Decrypt::FAILED) {
+                    _fail(outcome, "REJECTED", "SECRET_DECRYPT_FAILED", "%s", DECRYPT_FAILED_DETAIL);
+                } else if (!unpadPlaintext(plaintext, PLAINTEXT_BYTES, &value, &length) || !isValidValue(value, length)) {
+                    _fail(outcome, "REJECTED", "BAD_SECRET_VALUE", "The decrypted value breaks the value rules");
                 } else {
-                    _applyCeiling(preferences);
-                    int index = _find(name);
-                    bool sameSlot = index >= 0 && _slots[index].setAt == issuedAt && memcmp(_slots[index].ip, meta.ip, 4) == 0 &&
-                                    _slots[index].port == meta.port && _slots[index].hasMac == meta.hasMac &&
-                                    (!meta.hasMac || memcmp(_slots[index].mac, meta.mac, 6) == 0);
-                    switch (decideSet(_clockSynced(), _now(), _hwm, issuedAt, sameSlot)) {
-                        case SetVerdict::CLOCK_NOT_SYNCED: _fail(outcome, "REJECTED", "CLOCK_NOT_SYNCED", "The device clock is not synchronised"); break;
-                        case SetVerdict::STALE: _fail(outcome, "REJECTED", "SECRET_STALE", "hwm=%llu", (unsigned long long)_hwm); break;
-                        case SetVerdict::CLOCK_SKEW: _fail(outcome, "REJECTED", "SECRET_CLOCK_SKEW", "hwm=%llu", (unsigned long long)_hwm); break;
-                        case SetVerdict::ALREADY_APPLIED:
-                            outcome.setAt = issuedAt;
-                            outcome.applied = false;
-                            break;
-                        case SetVerdict::APPLY: {
-                            if (_kid[0] == '\0' || strcmp(env["kid"].as<const char*>(), _kid) != 0) {
-                                _fail(outcome, "REJECTED", "SECRET_KEY_MISMATCH", "kid does not match this device certificate");
-                                break;
-                            }
-                            if (index < 0) index = _free();
-                            if (index < 0) {
-                                _fail(outcome, "REJECTED", "SECRET_STORE_FULL", "All 16 slots are used");
-                                break;
-                            }
-                            char aad[AAD_MAX];
-                            const uint8_t* value = nullptr;
-                            size_t length = 0;
-                            if (buildAad(aad, sizeof(aad), DEVICE_ID, name, meta.ip, meta.port, meta.hasMac ? meta.mac : nullptr, issuedAt) == 0 ||
-                                !_decrypt(*envelope, aad, plaintext)) {
-                                _fail(outcome, "REJECTED", "SECRET_DECRYPT_FAILED", "%s", DECRYPT_FAILED_DETAIL);
-                            } else if (!unpadPlaintext(plaintext, PLAINTEXT_BYTES, &value, &length) || !isValidValue(value, length)) {
-                                _fail(outcome, "REJECTED", "BAD_SECRET_VALUE", "The decrypted value breaks the value rules");
-                            } else if (!_write(preferences, index, meta, value, length)) {
-                                _fail(outcome, "FAILED", "NVS_WRITE_FAILED", "Could not write the secret slot");
-                            } else {
-                                outcome.setAt = issuedAt;
-                                outcome.applied = true;
-                            }
-                            break;
-                        }
-                    }
-                    preferences.end();
+                    _commitSet(meta, value, length, issuedAt, env["kid"].as<const char*>(), outcome);
                 }
-                _unlock();
             }
         }
         mbedtls_platform_zeroize(plaintext, PLAINTEXT_BYTES);
@@ -378,20 +439,23 @@ namespace Secrets
         free(envelope);
     }
 
-    // Caller holds the lock and an open namespace.
-    static bool _erase(Preferences& preferences, const char* name) {
-        int index = _find(name);
+    enum class Erase { DELETED, ABSENT, FAILED };
+
+    // Caller holds the lock and an open namespace. The hwm bump comes first: a delete
+    // whose bump is lost would reopen replay of the deleted value inside the window.
+    static Erase _erase(Preferences& preferences, const char* name) {
         uint64_t hwm = hwmAfterDelete(_clockSynced(), _now(), _hwm);
         if (hwm != _hwm) {
+            if (!_persistHwm(preferences, hwm)) return Erase::FAILED;
             _hwm = hwm;
-            _persistHwm(preferences, _hwm);
         }
-        if (index < 0) return false;
+        int index = _find(name);
+        if (index < 0) return Erase::ABSENT;
         char key[4];
         _slotKey((size_t)index, key, sizeof(key));
-        preferences.remove(key);
+        if (!preferences.remove(key)) return Erase::FAILED;
         _used[index] = false;
-        return true;
+        return Erase::DELETED;
     }
 
     static void _removeLocked(const char* name, Outcome& outcome) {
@@ -400,9 +464,10 @@ namespace Secrets
             _fail(outcome, "FAILED", "NVS_WRITE_FAILED", "Could not open the secret store");
             return;
         }
-        _applyCeiling(preferences);
-        outcome.deleted = _erase(preferences, name);
+        Erase erased = _applyCeiling(preferences) ? _erase(preferences, name) : Erase::FAILED;
         preferences.end();
+        if (erased == Erase::FAILED) _fail(outcome, "FAILED", "NVS_WRITE_FAILED", "Could not update the secret store");
+        outcome.deleted = erased == Erase::DELETED;
     }
 
     bool removeLocal(const char* name, Outcome& outcome) {
@@ -411,10 +476,7 @@ namespace Secrets
             return false;
         }
         snprintf(outcome.name, sizeof(outcome.name), "%s", name);
-        if (!_lock()) {
-            _fail(outcome, "FAILED", "NO_MEMORY", "Secret store busy");
-            return false;
-        }
+        if (!_lockLoaded(outcome)) return false;
         _removeLocked(name, outcome);
         _unlock();
         return strcmp(outcome.status, "SUCCEEDED") == 0;
@@ -430,19 +492,18 @@ namespace Secrets
             return false;
         }
         snprintf(outcome.name, sizeof(outcome.name), "%s", name);
-        if (!_lock()) {
-            _fail(outcome, "FAILED", "NO_MEMORY", "Secret store busy");
-            return false;
-        }
+        if (!_lockLoaded(outcome)) return false;
         Preferences preferences;
         if (!preferences.begin(PREFERENCES_NAMESPACE_SECRETS, false)) {
             _fail(outcome, "FAILED", "NVS_WRITE_FAILED", "Could not open the secret store");
         } else {
-            _applyCeiling(preferences);
+            bool ceilingOk = _applyCeiling(preferences);
             int index = _find(name);
             if (index < 0) index = _free();
             meta.setAt = localSetAt(_clockSynced(), _now(), _hwm);
-            if (index < 0) {
+            if (!ceilingOk) {
+                _fail(outcome, "FAILED", "NVS_WRITE_FAILED", "Could not persist the replay high-water mark");
+            } else if (index < 0) {
                 _fail(outcome, "REJECTED", "SECRET_STORE_FULL", "All 16 slots are used");
             } else if (!_write(preferences, index, meta, value, length)) {
                 _fail(outcome, "FAILED", "NVS_WRITE_FAILED", "Could not write the secret slot");
@@ -461,46 +522,66 @@ namespace Secrets
 
     static void _ipText(const uint8_t ip[4], char* out, size_t size) { snprintf(out, size, "%u.%u.%u.%u", ip[0], ip[1], ip[2], ip[3]); }
 
-    void metadataToJson(JsonObject out) {
-        out["kid"] = _kid;
-        out["max"] = SLOT_COUNT;
-        JsonArray list = out["secrets"].to<JsonArray>();
-        if (!_lock()) return;
-        out["hwm"] = _hwm;
+    // Slot indices of the used slots, sorted by name. Caller holds the lock.
+    static size_t _sortedSlots(uint8_t order[SLOT_COUNT]) {
+        size_t count = 0;
         for (size_t i = 0; i < SLOT_COUNT; i++) {
             if (!_used[i]) continue;
-            JsonObject slot = list.add<JsonObject>();
-            char text[GatewayLogic::MAC_TEXT_BUFFER];
-            slot["name"] = _slots[i].name;
-            _ipText(_slots[i].ip, text, sizeof(text));
-            slot["ip"] = text;
-            slot["port"] = _slots[i].port;
-            if (_slots[i].hasMac) {
-                GatewayLogic::formatMac(_slots[i].mac, text, sizeof(text));
-                slot["mac"] = text;
+            size_t at = count++;
+            while (at > 0 && strcmp(_slots[order[at - 1]].name, _slots[i].name) > 0) {
+                order[at] = order[at - 1];
+                at--;
             }
-            slot["set_at"] = _slots[i].setAt;
+            order[at] = (uint8_t)i;
+        }
+        return count;
+    }
+
+    bool metadataToJson(JsonObject out) {
+        if (!_lock()) return false;
+        out["kid"] = _kid;
+        out["hwm"] = _hwm;
+        out["max"] = SLOT_COUNT;
+        JsonArray list = out["slots"].to<JsonArray>();
+        uint8_t order[SLOT_COUNT];
+        size_t count = _sortedSlots(order);
+        for (size_t k = 0; k < count; k++) {
+            const SlotMeta& slot = _slots[order[k]];
+            JsonObject entry = list.add<JsonObject>();
+            char text[GatewayLogic::MAC_TEXT_BUFFER] = "";
+            entry["name"] = slot.name;
+            _ipText(slot.ip, text, sizeof(text));
+            entry["ip"] = text;
+            entry["port"] = slot.port;
+            text[0] = '\0';
+            if (slot.hasMac) GatewayLogic::formatMac(slot.mac, text, sizeof(text));
+            entry["mac"] = text;
+            entry["set_at"] = slot.setAt;
         }
         _unlock();
+        return true;
     }
 
     // Positional slots keep the whole system shadow under 8 KB (design D8).
-    void shadowToJson(JsonObject out) {
+    bool shadowToJson(JsonObject out) {
+        if (!_lock()) return false;
         out["kid"] = _kid;
-        JsonArray list = out["slots"].to<JsonArray>();
-        if (!_lock()) return;
         out["hwm"] = _hwm;
-        for (size_t i = 0; i < SLOT_COUNT; i++) {
-            if (!_used[i]) continue;
-            JsonArray slot = list.add<JsonArray>();
+        JsonArray list = out["slots"].to<JsonArray>();
+        uint8_t order[SLOT_COUNT];
+        size_t count = _sortedSlots(order);
+        for (size_t k = 0; k < count; k++) {
+            const SlotMeta& slot = _slots[order[k]];
+            JsonArray row = list.add<JsonArray>();
             char target[24];
-            snprintf(target, sizeof(target), "%u.%u.%u.%u:%u", _slots[i].ip[0], _slots[i].ip[1], _slots[i].ip[2], _slots[i].ip[3], _slots[i].port);
-            slot.add(_slots[i].name);
-            slot.add(target);
-            slot.add(_slots[i].setAt);
-            slot.add(_slots[i].hasMac ? 1 : 0);
+            snprintf(target, sizeof(target), "%u.%u.%u.%u:%u", slot.ip[0], slot.ip[1], slot.ip[2], slot.ip[3], slot.port);
+            row.add(slot.name);
+            row.add(target);
+            row.add(slot.setAt);
+            row.add(slot.hasMac ? 1 : 0);
         }
         _unlock();
+        return true;
     }
 
     // Resolver
@@ -525,6 +606,12 @@ namespace Secrets
         if (!_lock()) {
             out->reasonCode = "NO_MEMORY";
             snprintf(out->reasonDetail, sizeof(out->reasonDetail), "Secret store busy");
+            return GatewayLogic::ResolveStatus::FAILED;
+        }
+        if (!_loaded) {
+            _unlock();
+            out->reasonCode = "NO_MEMORY";
+            snprintf(out->reasonDetail, sizeof(out->reasonDetail), "Secret store not loaded");
             return GatewayLogic::ResolveStatus::FAILED;
         }
         Decision decision = decide(request, arg, _slots, _used, SLOT_COUNT, state->placeholders);
@@ -568,27 +655,29 @@ namespace Secrets
     }
 
     // Records the raw value, then the form actually sent, of each expanded token for the scrub.
-    static void _expanded(void* context, const char* name, const char* arg, const uint8_t* bytes, size_t length, bool final) {
+    // False makes the expansion fail before any send: an unrecorded token could not be scrubbed.
+    static bool _expanded(void* context, const char* name, const char* arg, const uint8_t* bytes, size_t length, bool final) {
         RequestState* state = (RequestState*)context;
-        if (strcmp(name, "secret") != 0) return;
+        if (strcmp(name, "secret") != 0) return true;
         if (!final) {
-            if (state->count >= RequestState::TOKENS_MAX) return;
+            if (state->count >= RequestState::TOKENS_MAX) return false;
             RequestState::Token& token = state->tokens[state->count];
             token.raw = (uint8_t*)ps_malloc(length);
-            if (token.raw == nullptr) return;
+            if (token.raw == nullptr) return false;
             memcpy(token.raw, bytes, length);
             token.rawLength = length;
             snprintf(token.name, sizeof(token.name), "%s", arg);
             state->count++;
-            return;
+            return true;
         }
-        if (state->count == 0) return;
+        if (state->count == 0) return false;
         RequestState::Token& token = state->tokens[state->count - 1];
-        if (token.encoded != nullptr || strcmp(token.name, arg) != 0) return;
+        if (token.encoded != nullptr || strcmp(token.name, arg) != 0) return false;
         token.encoded = (uint8_t*)ps_malloc(length);
-        if (token.encoded == nullptr) return;
+        if (token.encoded == nullptr) return false;
         memcpy(token.encoded, bytes, length);
         token.encodedLength = length;
+        return true;
     }
 
     GatewayLogic::Resolver resolver(RequestState* state) { return {_resolve, state, _expanded}; }
@@ -626,8 +715,7 @@ namespace Secrets
         if (state == nullptr || state->count == 0) return;
         bool redacted = false;
         if (result.headers != nullptr && result.headersLength > 0) {
-            bool cut = false;
-            result.headersLength = scrub(*state, (uint8_t*)result.headers, result.headersLength, GatewayExec::HEADER_BLOCK_MAX, &cut, &redacted);
+            result.headersLength = scrub(*state, (uint8_t*)result.headers, result.headersLength, GatewayExec::HEADER_BLOCK_MAX, &result.truncated, &redacted);
             result.headers[result.headersLength] = '\0';
         }
         if (result.body != nullptr && result.bodyLength > 0) {

@@ -44,8 +44,9 @@ namespace Secrets
     bool setLocal(const char* name, const char* ip, int64_t port, const char* mac, const uint8_t* value, size_t length, Outcome& outcome);
     bool removeLocal(const char* name, Outcome& outcome);
 
-    void metadataToJson(JsonObject out);      // REST: kid, hwm, max, slots with name, ip, port, mac, set_at
-    void shadowToJson(JsonObject out);        // system shadow: kid, hwm, positional slots
+    // False when the store lock timed out (nothing written to `out`).
+    bool metadataToJson(JsonObject out); // REST: kid, hwm, max, slots sorted by name with name, ip, port, mac ("" when unbound), set_at
+    bool shadowToJson(JsonObject out);   // system shadow: kid, hwm, positional slots sorted by name
     const char* kid();
 
     // Per-request state of the `secret` resolver: the tokens it expanded, kept

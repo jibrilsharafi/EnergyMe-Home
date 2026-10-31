@@ -290,6 +290,7 @@ void setup()
   logHeapLedger("issue registry");
 
   LOG_DEBUG("Setting up server...");
+  if (!globalCommunityMode) Secrets::begin(); // before the REST server can accept a secret
   CustomServer::begin();
   LOG_DEBUG("Server setup done");
   logHeapLedger("web server");
@@ -304,7 +305,6 @@ void setup()
 
   if (!globalCommunityMode) {
     LOG_DEBUG("Setting up LAN gateway...");
-    Secrets::begin();
     Gateway::begin();
     LOG_DEBUG("LAN gateway setup done");
     logHeapLedger("lan gateway");
