@@ -39,10 +39,6 @@ struct ResolveOutput {
     // FAILED: optional reason in place of BAD_TEMPLATE (static strings).
     const char *reasonCode;
     char reasonDetail[RESOLVER_DETAIL_MAX];
-    // OK: an ARP compare the executor must run after connect, before the first byte.
-    bool requireMac;
-    uint8_t mac[6];
-    const char *macReasonCode; // reasonCode on a mismatch
 };
 
 struct Resolver {
@@ -63,18 +59,12 @@ struct ExpandResult {
     // RESOLVER_FAILED: reason supplied by the resolver (BAD_TEMPLATE when null).
     const char *reasonCode;
     char reasonDetail[RESOLVER_DETAIL_MAX];
-    // Every MAC a resolver required; a second, different MAC sets `macConflict`.
-    bool requireMac;
-    bool macConflict;
-    uint8_t mac[6];
-    const char *macReasonCode;
 };
 
 // Expands `length` bytes of `tmpl` into `out` (at most `cap` bytes, not
 // NUL-terminated). `scratch` (at least 2 x the largest resolved value) holds
 // resolved values and intermediate encodings; the caller zeroizes it and `out`.
-// `result` accumulates across calls (sensitive, MAC requirement): zero it once
-// per request.
+// `result` accumulates `sensitive` across calls: zero it once per request.
 ExpandStatus expandTemplate(const char *tmpl, size_t length, const Resolver *chain, size_t chainLength, const ResolveContext &request,
                             uint8_t *out, size_t cap, uint8_t *scratch, size_t scratchCap, ExpandResult *result);
 

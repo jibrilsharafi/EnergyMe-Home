@@ -20,8 +20,6 @@
 // web server task, the shadow report in the MQTT task; the metadata cache and
 // every NVS access are guarded by one mutex.
 
-#define SECRETS_HWM_KEY "hwm"
-
 namespace Secrets
 {
     struct Outcome {
@@ -41,12 +39,12 @@ namespace Secrets
     void remove(JsonObjectConst args, Outcome& outcome);
 
     // Local REST: plaintext value from the authenticated LAN API.
-    bool setLocal(const char* name, const char* ip, int64_t port, const char* mac, const uint8_t* value, size_t length, Outcome& outcome);
+    bool setLocal(const char* name, const char* ip, int64_t port, const uint8_t* value, size_t length, Outcome& outcome);
     bool removeLocal(const char* name, Outcome& outcome);
 
     // False when the store lock timed out (nothing written to `out`).
-    bool metadataToJson(JsonObject out); // REST: kid, hwm, max, slots sorted by name with name, ip, port, mac ("" when unbound), set_at
-    bool shadowToJson(JsonObject out);   // system shadow: kid, hwm, positional slots sorted by name
+    bool metadataToJson(JsonObject out); // REST: kid, max, slots sorted by name with name, ip, port, set_at
+    bool shadowToJson(JsonObject out);   // system shadow: kid, positional slots sorted by name
     const char* kid();
 
     // Per-request state of the `secret` resolver: the tokens it expanded, kept
@@ -75,6 +73,6 @@ namespace Secrets
     // Resolver for one request's chain (never registered globally).
     GatewayLogic::Resolver resolver(RequestState* state);
 
-    // Echo scrub of every token in `state` over `buffer` (never past `cap`).
-    size_t scrub(const RequestState& state, uint8_t* buffer, size_t length, size_t cap, bool* truncated, bool* redacted);
+    // In-place echo scrub of every token in `state` over `buffer` (never grows it).
+    size_t scrub(const RequestState& state, uint8_t* buffer, size_t length, bool truncated, bool* redacted);
 }

@@ -25,17 +25,14 @@ void tearDown(void) {}
 
 static const uint64_t NOW = 1793450000ULL;
 static const uint8_t IP_XWEB[4] = {192, 168, 1, 50};
-static const uint8_t MAC_XWEB[6] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55};
 static const uint8_t IP_OTHER[4] = {192, 168, 1, 99};
 static const uint8_t IP_ROUTED[4] = {10, 20, 0, 5};
 
-static SlotMeta meta(const char *name, const uint8_t ip[4], uint16_t port, const uint8_t *mac, uint64_t setAt) {
+static SlotMeta meta(const char *name, const uint8_t ip[4], uint16_t port, uint64_t setAt) {
     SlotMeta m{};
     snprintf(m.name, sizeof(m.name), "%s", name);
     memcpy(m.ip, ip, 4);
     m.port = port;
-    m.hasMac = mac != nullptr;
-    if (mac != nullptr) memcpy(m.mac, mac, 6);
     m.setAt = setAt;
     return m;
 }
@@ -125,8 +122,7 @@ void test_value_rule_strict_utf8(void) {
 // ============================================================================
 
 void test_slot_encode_exact_offsets(void) {
-    uint8_t mac[6] = {0x02, 0xaa, 0xbb, 0xcc, 0xdd, 0xee};
-    SlotMeta m = meta("xweb_admin", IP_XWEB, 8080, mac, 0x0102030405060708ULL);
+    SlotMeta m = meta("xweb_admin", IP_XWEB, 8080, 0x0102030405060708ULL);
     uint8_t blob[SLOT_MAX_BYTES + 8];
     memset(blob, 0xEE, sizeof(blob));
     size_t n = encodeSlot(m, u8("s3cret"), 6, blob, sizeof(blob));
@@ -138,7 +134,7 @@ void test_slot_encode_exact_offsets(void) {
     TEST_ASSERT_EQUAL_MEMORY(IP_XWEB, blob + 26, 4);
     TEST_ASSERT_EQUAL_UINT8(0x90, blob[30]); // 8080 = 0x1F90 LE
     TEST_ASSERT_EQUAL_UINT8(0x1F, blob[31]);
-    TEST_ASSERT_EQUAL_MEMORY(mac, blob + 32, 6);
+    for (size_t i = 32; i < 38; i++) TEST_ASSERT_EQUAL_UINT8(0, blob[i]); // reserved
     const uint8_t setAt[8] = {0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01};
     TEST_ASSERT_EQUAL_MEMORY(setAt, blob + 38, 8);
     TEST_ASSERT_EQUAL_UINT8(6, blob[46]);
@@ -147,14 +143,13 @@ void test_slot_encode_exact_offsets(void) {
     TEST_ASSERT_EQUAL_UINT8(0xEE, blob[54]); // nothing past 48 + len
 }
 
-void test_slot_encode_unbound_mac_and_256_value(void) {
-    SlotMeta m = meta("abcdefghijklmnopqrstuvwx", IP_XWEB, 80, nullptr, NOW);
+void test_slot_encode_256_value(void) {
+    SlotMeta m = meta("abcdefghijklmnopqrstuvwx", IP_XWEB, 80, NOW);
     uint8_t value[256];
     memset(value, 'v', sizeof(value));
     uint8_t blob[SLOT_MAX_BYTES];
     TEST_ASSERT_EQUAL_size_t(SLOT_MAX_BYTES, encodeSlot(m, value, 256, blob, sizeof(blob)));
     TEST_ASSERT_EQUAL_UINT8(24, blob[1]);
-    for (size_t i = 32; i < 38; i++) TEST_ASSERT_EQUAL_UINT8(0, blob[i]);
     TEST_ASSERT_EQUAL_UINT8(0x00, blob[46]); // 256 = 0x0100 LE
     TEST_ASSERT_EQUAL_UINT8(0x01, blob[47]);
     TEST_ASSERT_EQUAL_UINT8(80, blob[30]);
@@ -163,17 +158,17 @@ void test_slot_encode_unbound_mac_and_256_value(void) {
 
 void test_slot_encode_refuses_bad_input(void) {
     uint8_t blob[SLOT_MAX_BYTES];
-    SlotMeta m = meta("xweb_admin", IP_XWEB, 80, MAC_XWEB, NOW);
+    SlotMeta m = meta("xweb_admin", IP_XWEB, 80, NOW);
     TEST_ASSERT_EQUAL_size_t(0, encodeSlot(m, u8("s3cret"), 6, blob, 53)); // cap one short
     TEST_ASSERT_EQUAL_size_t(54, encodeSlot(m, u8("s3cret"), 6, blob, 54));
     TEST_ASSERT_EQUAL_size_t(0, encodeSlot(m, u8("s3\ncret"), 7, blob, sizeof(blob)));
     TEST_ASSERT_EQUAL_size_t(0, encodeSlot(m, u8(""), 0, blob, sizeof(blob)));
-    SlotMeta bad = meta("XWEB", IP_XWEB, 80, MAC_XWEB, NOW);
+    SlotMeta bad = meta("XWEB", IP_XWEB, 80, NOW);
     TEST_ASSERT_EQUAL_size_t(0, encodeSlot(bad, u8("s3cret"), 6, blob, sizeof(blob)));
 }
 
 void test_slot_round_trip(void) {
-    SlotMeta in = meta("xweb_admin", IP_XWEB, 80, MAC_XWEB, NOW);
+    SlotMeta in = meta("xweb_admin", IP_XWEB, 80, NOW);
     uint8_t blob[SLOT_MAX_BYTES];
     size_t n = encodeSlot(in, u8("s3cret"), 6, blob, sizeof(blob));
     SlotMeta out{};
@@ -183,23 +178,20 @@ void test_slot_round_trip(void) {
     TEST_ASSERT_EQUAL_STRING("xweb_admin", out.name);
     TEST_ASSERT_EQUAL_MEMORY(IP_XWEB, out.ip, 4);
     TEST_ASSERT_EQUAL_UINT16(80, out.port);
-    TEST_ASSERT_TRUE(out.hasMac);
-    TEST_ASSERT_EQUAL_MEMORY(MAC_XWEB, out.mac, 6);
     TEST_ASSERT_EQUAL_UINT64(NOW, out.setAt);
     TEST_ASSERT_EQUAL_size_t(6, length);
     TEST_ASSERT_TRUE(value == blob + 48);
 
-    SlotMeta noMac = meta("site_api", IP_ROUTED, 65535, nullptr, 1);
-    n = encodeSlot(noMac, u8("token"), 5, blob, sizeof(blob));
+    SlotMeta routed = meta("site_api", IP_ROUTED, 65535, 1);
+    n = encodeSlot(routed, u8("token"), 5, blob, sizeof(blob));
     TEST_ASSERT_TRUE(decodeSlot(blob, n, &out, &value, &length));
-    TEST_ASSERT_FALSE(out.hasMac);
     TEST_ASSERT_EQUAL_UINT16(65535, out.port);
     TEST_ASSERT_EQUAL_STRING("site_api", out.name);
 }
 
 // Fresh valid blob "xweb_admin" / "s3cret" (size 54) for mutation tests.
 static size_t validBlob(uint8_t *blob) {
-    SlotMeta m = meta("xweb_admin", IP_XWEB, 80, MAC_XWEB, NOW);
+    SlotMeta m = meta("xweb_admin", IP_XWEB, 80, NOW);
     return encodeSlot(m, u8("s3cret"), 6, blob, SLOT_MAX_BYTES + 4);
 }
 
@@ -288,26 +280,17 @@ void test_slot_decode_value_length(void) {
     TEST_ASSERT_TRUE(decodes(big, 48 + 256));
 }
 
-void test_slot_decode_mac(void) {
+// Bytes 32-37 held the slot MAC before it moved to the request: a slot from
+// that layout fails closed.
+void test_slot_decode_reserved_bytes(void) {
     uint8_t blob[SLOT_MAX_BYTES + 4];
     size_t n = validBlob(blob);
-    blob[32] = 0x01; // multicast bit
+    const uint8_t oldMac[6] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55};
+    memcpy(blob + 32, oldMac, 6);
     TEST_ASSERT_FALSE(decodes(blob, n));
     n = validBlob(blob);
-    memset(blob + 32, 0xFF, 6); // broadcast
+    blob[37] = 0x01;
     TEST_ASSERT_FALSE(decodes(blob, n));
-    n = validBlob(blob);
-    blob[32] = 0x01;
-    blob[33] = 0x00;
-    blob[34] = 0x5e; // IPv4 multicast MAC 01:00:5e:..
-    TEST_ASSERT_FALSE(decodes(blob, n));
-    n = validBlob(blob);
-    memset(blob + 32, 0, 6); // all zero = unbound
-    SlotMeta out{};
-    const uint8_t *value;
-    size_t length;
-    TEST_ASSERT_TRUE(decodeSlot(blob, n, &out, &value, &length));
-    TEST_ASSERT_FALSE(out.hasMac);
 }
 
 void test_slot_decode_target(void) {
@@ -344,36 +327,27 @@ void test_slot_decode_invalid_value(void) {
 // AAD, issued_at, plaintext padding
 // ============================================================================
 
-void test_build_aad_with_mac(void) {
+void test_build_aad_empty_mac_field(void) {
     char out[AAD_MAX];
-    size_t n = buildAad(out, sizeof(out), "907069875394", "xweb_admin", IP_XWEB, 80, MAC_XWEB, 1793450000ULL);
-    const char *expected = "energyme-secret-v1|907069875394|xweb_admin|192.168.1.50:80|00:11:22:33:44:55|1793450000";
-    TEST_ASSERT_EQUAL_STRING(expected, out);
-    TEST_ASSERT_EQUAL_size_t(strlen(expected), n);
-}
-
-void test_build_aad_without_mac(void) {
-    char out[AAD_MAX];
-    size_t n = buildAad(out, sizeof(out), "907069875394", "xweb_admin", IP_XWEB, 80, nullptr, 1793450000ULL);
+    size_t n = buildAad(out, sizeof(out), "907069875394", "xweb_admin", IP_XWEB, 80, 1793450000ULL);
     const char *expected = "energyme-secret-v1|907069875394|xweb_admin|192.168.1.50:80||1793450000";
     TEST_ASSERT_EQUAL_STRING(expected, out);
     TEST_ASSERT_EQUAL_size_t(strlen(expected), n);
 }
 
-void test_build_aad_lowercase_mac_and_decimal_fields(void) {
+void test_build_aad_decimal_fields(void) {
     char out[AAD_MAX];
-    const uint8_t mac[6] = {0x0a, 0xBC, 0xde, 0xF0, 0x01, 0x02};
     const uint8_t ip[4] = {10, 0, 0, 7};
-    buildAad(out, sizeof(out), "dev", "a", ip, 65535, mac, 1);
-    TEST_ASSERT_EQUAL_STRING("energyme-secret-v1|dev|a|10.0.0.7:65535|0a:bc:de:f0:01:02|1", out);
+    buildAad(out, sizeof(out), "dev", "a", ip, 65535, 1);
+    TEST_ASSERT_EQUAL_STRING("energyme-secret-v1|dev|a|10.0.0.7:65535||1", out);
 }
 
 void test_build_aad_cap(void) {
     const char *expected = "energyme-secret-v1|907069875394|xweb_admin|192.168.1.50:80||1793450000";
     size_t len = strlen(expected);
     char out[AAD_MAX];
-    TEST_ASSERT_EQUAL_size_t(len, buildAad(out, len + 1, "907069875394", "xweb_admin", IP_XWEB, 80, nullptr, 1793450000ULL));
-    TEST_ASSERT_EQUAL_size_t(0, buildAad(out, len, "907069875394", "xweb_admin", IP_XWEB, 80, nullptr, 1793450000ULL));
+    TEST_ASSERT_EQUAL_size_t(len, buildAad(out, len + 1, "907069875394", "xweb_admin", IP_XWEB, 80, 1793450000ULL));
+    TEST_ASSERT_EQUAL_size_t(0, buildAad(out, len, "907069875394", "xweb_admin", IP_XWEB, 80, 1793450000ULL));
 }
 
 void test_parse_issued_at(void) {
@@ -440,133 +414,6 @@ void test_unpad_plaintext(void) {
 }
 
 // ============================================================================
-// Replay and rollback
-// ============================================================================
-
-static const uint64_t HWM_2031 = 1951000000ULL;
-
-void test_ceiling(void) {
-    bool lowered = true;
-    TEST_ASSERT_EQUAL_UINT64(NOW + 300, applyCeiling(true, NOW, HWM_2031, &lowered));
-    TEST_ASSERT_TRUE(lowered);
-    TEST_ASSERT_EQUAL_UINT64(HWM_2031, applyCeiling(false, NOW, HWM_2031, &lowered));
-    TEST_ASSERT_FALSE(lowered);
-    TEST_ASSERT_EQUAL_UINT64(NOW + 300, applyCeiling(true, NOW, NOW + 300, &lowered));
-    TEST_ASSERT_FALSE(lowered);
-    TEST_ASSERT_EQUAL_UINT64(NOW + 300, applyCeiling(true, NOW, NOW + 301, &lowered));
-    TEST_ASSERT_TRUE(lowered);
-    TEST_ASSERT_EQUAL_UINT64(5, applyCeiling(true, NOW, 5, &lowered));
-    TEST_ASSERT_FALSE(lowered);
-}
-
-void test_decide_set_order(void) {
-    // CLOCK_NOT_SYNCED first, whatever else holds.
-    TEST_ASSERT_TRUE(decideSet(false, NOW, 0, NOW, true) == SetVerdict::CLOCK_NOT_SYNCED);
-    TEST_ASSERT_TRUE(decideSet(false, NOW, 0, NOW, false) == SetVerdict::CLOCK_NOT_SYNCED);
-    // Window before the idempotent check.
-    TEST_ASSERT_TRUE(decideSet(true, NOW, 0, NOW - 901, true) == SetVerdict::STALE);
-    TEST_ASSERT_TRUE(decideSet(true, NOW, 0, NOW + 301, true) == SetVerdict::CLOCK_SKEW);
-    // Window boundaries: exactly now - 900 and now + 300 are inside.
-    TEST_ASSERT_TRUE(decideSet(true, NOW, 0, NOW - 900, false) == SetVerdict::APPLY);
-    TEST_ASSERT_TRUE(decideSet(true, NOW, 0, NOW + 300, false) == SetVerdict::APPLY);
-    // Idempotent repeat before the hwm test.
-    TEST_ASSERT_TRUE(decideSet(true, NOW, NOW, NOW, true) == SetVerdict::ALREADY_APPLIED);
-    TEST_ASSERT_TRUE(decideSet(true, NOW, NOW + 100, NOW - 10, true) == SetVerdict::ALREADY_APPLIED);
-    // issued_at <= hwm.
-    TEST_ASSERT_TRUE(decideSet(true, NOW, NOW, NOW, false) == SetVerdict::STALE);
-    TEST_ASSERT_TRUE(decideSet(true, NOW, NOW - 1, NOW, false) == SetVerdict::APPLY);
-}
-
-void test_hwm_after_delete(void) {
-    TEST_ASSERT_EQUAL_UINT64(NOW, hwmAfterDelete(true, NOW, NOW - 50));
-    TEST_ASSERT_EQUAL_UINT64(NOW + 50, hwmAfterDelete(true, NOW, NOW + 50));
-    TEST_ASSERT_EQUAL_UINT64(NOW - 50, hwmAfterDelete(false, NOW, NOW - 50));
-    TEST_ASSERT_EQUAL_UINT64(0, hwmAfterDelete(false, NOW, 0));
-}
-
-void test_local_set_at(void) {
-    TEST_ASSERT_EQUAL_UINT64(NOW, localSetAt(true, NOW, NOW - 50));
-    TEST_ASSERT_EQUAL_UINT64(NOW + 51, localSetAt(true, NOW, NOW + 50));
-    TEST_ASSERT_EQUAL_UINT64(NOW + 1, localSetAt(true, NOW, NOW));
-    TEST_ASSERT_EQUAL_UINT64(NOW, localSetAt(true, NOW, NOW - 1));
-    TEST_ASSERT_EQUAL_UINT64(1, localSetAt(false, NOW, 0));
-    TEST_ASSERT_EQUAL_UINT64(NOW - 49, localSetAt(false, NOW, NOW - 50));
-}
-
-void test_replay_same_envelope_twice(void) {
-    uint64_t hwm = 0;
-    uint64_t issued = NOW - 10;
-    TEST_ASSERT_TRUE(decideSet(true, NOW, hwm, issued, false) == SetVerdict::APPLY);
-    hwm = issued;
-    TEST_ASSERT_TRUE(decideSet(true, NOW + 5, hwm, issued, true) == SetVerdict::ALREADY_APPLIED);
-}
-
-void test_replay_older_after_newer(void) {
-    uint64_t a = NOW - 200, b = NOW - 100, hwm = 0;
-    TEST_ASSERT_TRUE(decideSet(true, NOW, hwm, a, false) == SetVerdict::APPLY);
-    hwm = a;
-    TEST_ASSERT_TRUE(decideSet(true, NOW, hwm, b, false) == SetVerdict::APPLY);
-    hwm = b;
-    // The slot now holds b's set_at, so a is not an idempotent repeat.
-    TEST_ASSERT_TRUE(decideSet(true, NOW, hwm, a, false) == SetVerdict::STALE);
-}
-
-void test_replay_after_delete(void) {
-    uint64_t issued = NOW - 10;
-    uint64_t hwm = issued;
-    bool lowered;
-    hwm = applyCeiling(true, NOW, hwm, &lowered);
-    hwm = hwmAfterDelete(true, NOW, hwm);
-    TEST_ASSERT_EQUAL_UINT64(NOW, hwm);
-    TEST_ASSERT_TRUE(decideSet(true, NOW + 1, hwm, issued, false) == SetVerdict::STALE);
-    // Envelope issued slightly in the future, deleted before real time reached it.
-    uint64_t future = NOW + 200;
-    hwm = hwmAfterDelete(true, NOW, future);
-    TEST_ASSERT_TRUE(decideSet(true, NOW + 250, hwm, future, false) == SetVerdict::STALE);
-}
-
-void test_replay_two_names_same_second(void) {
-    uint64_t hwm = 0;
-    TEST_ASSERT_TRUE(decideSet(true, 5000 + 10, hwm, 5000, false) == SetVerdict::APPLY);
-    hwm = 5000;
-    TEST_ASSERT_TRUE(decideSet(true, 5000 + 10, hwm, 5000, false) == SetVerdict::STALE);
-    TEST_ASSERT_TRUE(decideSet(true, 5000 + 10, hwm, 5001, false) == SetVerdict::APPLY);
-}
-
-void test_replay_future_issued_at(void) {
-    TEST_ASSERT_TRUE(decideSet(true, NOW, NOW - 100, NOW + 600, false) == SetVerdict::CLOCK_SKEW);
-}
-
-void test_replay_hwm_2031_after_clock_correction(void) {
-    uint64_t hwm = HWM_2031;
-    bool lowered = false;
-    hwm = applyCeiling(true, NOW, hwm, &lowered);
-    TEST_ASSERT_TRUE(lowered);
-    TEST_ASSERT_EQUAL_UINT64(NOW + 300, hwm);
-    // Tool sends issued_at = reported (2031) hwm + 1.
-    TEST_ASSERT_TRUE(decideSet(true, NOW, hwm, HWM_2031 + 1, false) == SetVerdict::CLOCK_SKEW);
-    // Tool waits until its clock reaches hwm + 1, sends a fresh envelope.
-    uint64_t later = NOW + 301;
-    hwm = applyCeiling(true, later, hwm, &lowered);
-    TEST_ASSERT_FALSE(lowered);
-    TEST_ASSERT_TRUE(decideSet(true, later, hwm, NOW + 301, false) == SetVerdict::APPLY);
-}
-
-void test_replay_ceiling_before_delete(void) {
-    bool lowered = false;
-    uint64_t hwm = applyCeiling(true, NOW, HWM_2031, &lowered);
-    TEST_ASSERT_TRUE(lowered);
-    hwm = hwmAfterDelete(true, NOW, hwm);
-    TEST_ASSERT_EQUAL_UINT64(NOW + 300, hwm);
-}
-
-void test_replay_after_factory_reset(void) {
-    TEST_ASSERT_TRUE(decideSet(true, NOW, 0, NOW - 899, false) == SetVerdict::APPLY);
-    TEST_ASSERT_TRUE(decideSet(true, NOW, 0, NOW - 901, false) == SetVerdict::STALE);
-    TEST_ASSERT_TRUE(decideSet(true, NOW, 0, 1000, false) == SetVerdict::STALE);
-}
-
-// ============================================================================
 // Resolver decision
 // ============================================================================
 
@@ -584,28 +431,27 @@ struct Cache {
     bool used[SLOT_COUNT];
 };
 
-static Cache cacheWithXweb(bool withMac) {
+static Cache cacheWithXweb() {
     Cache c{};
-    c.slots[3] = meta("xweb_admin", IP_XWEB, 80, withMac ? MAC_XWEB : nullptr, NOW);
+    c.slots[3] = meta("xweb_admin", IP_XWEB, 80, NOW);
     c.used[3] = true;
     // A stale entry with the same name in an unused slot must be ignored.
-    c.slots[0] = meta("ghost", IP_OTHER, 80, nullptr, NOW);
+    c.slots[0] = meta("ghost", IP_OTHER, 80, NOW);
     c.used[0] = false;
     return c;
 }
 
-void test_decide_ok_mac_bound_on_link(void) {
-    Cache c = cacheWithXweb(true);
+void test_decide_ok_on_link(void) {
+    Cache c = cacheWithXweb();
     Decision d = decide(ctx(Module::HTTP, IP_XWEB, 80, true), "xweb_admin", c.slots, c.used, SLOT_COUNT, 0);
     TEST_ASSERT_NULL(d.reasonCode);
     TEST_ASSERT_EQUAL_INT(3, d.slot);
-    TEST_ASSERT_TRUE(d.requireMac);
     d = decide(ctx(Module::HTTPS, IP_XWEB, 80, true), "xweb_admin", c.slots, c.used, SLOT_COUNT, 7);
     TEST_ASSERT_NULL(d.reasonCode);
 }
 
 void test_decide_bad_arg(void) {
-    Cache c = cacheWithXweb(true);
+    Cache c = cacheWithXweb();
     const char *bad[] = {"", "XWEB", "xweb.admin", "1abc", "abcdefghijklmnopqrstuvwxy"};
     for (const char *arg : bad) {
         // Name rule first, even for a tcp module.
@@ -618,7 +464,7 @@ void test_decide_bad_arg(void) {
 }
 
 void test_decide_ninth_placeholder(void) {
-    Cache c = cacheWithXweb(true);
+    Cache c = cacheWithXweb();
     Decision d = decide(ctx(Module::TCP, IP_XWEB, 80, true), "unknown", c.slots, c.used, SLOT_COUNT, 8);
     TEST_ASSERT_EQUAL_STRING("BAD_TEMPLATE", d.reasonCode);
     d = decide(ctx(Module::HTTP, IP_XWEB, 80, true), "xweb_admin", c.slots, c.used, SLOT_COUNT, 8);
@@ -626,7 +472,7 @@ void test_decide_ninth_placeholder(void) {
 }
 
 void test_decide_module_not_allowed(void) {
-    Cache c = cacheWithXweb(true);
+    Cache c = cacheWithXweb();
     Module others[] = {Module::TCP, Module::UDP, Module::MODBUS_TCP};
     for (Module m : others) {
         Decision d = decide(ctx(m, IP_XWEB, 80, true), "xweb_admin", c.slots, c.used, SLOT_COUNT, 0);
@@ -638,7 +484,7 @@ void test_decide_module_not_allowed(void) {
 }
 
 void test_decide_not_found(void) {
-    Cache c = cacheWithXweb(true);
+    Cache c = cacheWithXweb();
     Decision d = decide(ctx(Module::HTTP, IP_XWEB, 8080, false), "unknown", c.slots, c.used, SLOT_COUNT, 0);
     TEST_ASSERT_EQUAL_STRING("SECRET_NOT_FOUND", d.reasonCode);
     d = decide(ctx(Module::HTTP, IP_OTHER, 80, false), "ghost", c.slots, c.used, SLOT_COUNT, 0);
@@ -652,8 +498,8 @@ static bool isMacDetail(const char *detail) {
 }
 
 void test_decide_target_mismatch(void) {
-    Cache c = cacheWithXweb(false);
-    // Other port, on-link and without MAC: the IP/port rule comes first.
+    Cache c = cacheWithXweb();
+    // Other port or IP: SECRET_TARGET_MISMATCH, not a MAC detail.
     Decision d = decide(ctx(Module::HTTP, IP_XWEB, 8080, true), "xweb_admin", c.slots, c.used, SLOT_COUNT, 0);
     TEST_ASSERT_EQUAL_STRING("SECRET_TARGET_MISMATCH", d.reasonCode);
     TEST_ASSERT_FALSE(isMacDetail(d.reasonDetail));
@@ -666,30 +512,14 @@ void test_decide_target_mismatch(void) {
     TEST_ASSERT_EQUAL_INT(-1, d.slot);
 }
 
-void test_decide_mac_required(void) {
-    Cache c = cacheWithXweb(false);
-    Decision d = decide(ctx(Module::HTTP, IP_XWEB, 80, true), "xweb_admin", c.slots, c.used, SLOT_COUNT, 0);
-    TEST_ASSERT_EQUAL_STRING("SECRET_TARGET_MISMATCH", d.reasonCode);
-    TEST_ASSERT_EQUAL_STRING("MAC_REQUIRED", d.reasonDetail);
-    TEST_ASSERT_EQUAL_INT(-1, d.slot);
-}
-
-void test_decide_mac_bound_off_link(void) {
-    Cache c = cacheWithXweb(true);
-    Decision d = decide(ctx(Module::HTTP, IP_XWEB, 80, false), "xweb_admin", c.slots, c.used, SLOT_COUNT, 0);
-    TEST_ASSERT_EQUAL_STRING("SECRET_TARGET_MISMATCH", d.reasonCode);
-    TEST_ASSERT_EQUAL_STRING("TARGET_MAC_CHANGED", d.reasonDetail);
-}
-
 void test_decide_routed_without_mac(void) {
     Cache c{};
     const uint8_t routed[4] = {10, 20, 0, 5};
-    c.slots[0] = meta("site_api", routed, 80, nullptr, NOW);
+    c.slots[0] = meta("site_api", routed, 80, NOW);
     c.used[0] = true;
     Decision d = decide(ctx(Module::HTTP, routed, 80, false), "site_api", c.slots, c.used, SLOT_COUNT, 0);
     TEST_ASSERT_NULL(d.reasonCode);
     TEST_ASSERT_EQUAL_INT(0, d.slot);
-    TEST_ASSERT_FALSE(d.requireMac);
 }
 
 // ============================================================================
@@ -721,18 +551,12 @@ static ResolveStatus testResolve(void *context, const ResolveContext &request, c
     memcpy(out->value, value, length);
     out->length = length;
     out->sensitive = true;
-    if (d.requireMac) {
-        out->requireMac = true;
-        memcpy(out->mac, store->cache.slots[d.slot].mac, 6);
-        out->macReasonCode = "SECRET_TARGET_MISMATCH";
-    }
     store->placeholders++;
     return ResolveStatus::OK;
 }
 
-static void addSecret(TestStore *s, size_t slot, const char *name, const uint8_t ip[4], uint16_t port, const uint8_t *mac,
-                      const char *value) {
-    s->cache.slots[slot] = meta(name, ip, port, mac, NOW);
+static void addSecret(TestStore *s, size_t slot, const char *name, const uint8_t ip[4], uint16_t port, const char *value) {
+    s->cache.slots[slot] = meta(name, ip, port, NOW);
     s->cache.used[slot] = true;
     s->values[slot] = value;
 }
@@ -755,20 +579,17 @@ static void assertExpanded(const char *expected, const ExpandResult &result) {
 
 void test_expand_form_login_url(void) {
     TestStore s{};
-    addSecret(&s, 0, "xweb_admin", IP_XWEB, 80, MAC_XWEB, "a&b c");
+    addSecret(&s, 0, "xweb_admin", IP_XWEB, 80, "a&b c");
     ExpandResult r;
     TEST_ASSERT_TRUE(expand(&s, ctx(Module::HTTP, IP_XWEB, 80, true), "user=admin&pass=${secret:xweb_admin|url}", &r) == ExpandStatus::OK);
     assertExpanded("user=admin&pass=a%26b%20c", r);
     TEST_ASSERT_TRUE(r.sensitive);
-    TEST_ASSERT_TRUE(r.requireMac);
-    TEST_ASSERT_EQUAL_MEMORY(MAC_XWEB, r.mac, 6);
-    TEST_ASSERT_EQUAL_STRING("SECRET_TARGET_MISMATCH", r.macReasonCode);
 }
 
 void test_expand_basic_auth_b64(void) {
     TestStore s{};
     const uint8_t ip[4] = {192, 168, 1, 60};
-    addSecret(&s, 5, "meter_basic", ip, 80, MAC_XWEB, "admin:pw");
+    addSecret(&s, 5, "meter_basic", ip, 80, "admin:pw");
     ExpandResult r;
     TEST_ASSERT_TRUE(expand(&s, ctx(Module::HTTP, ip, 80, true), "Basic ${secret:meter_basic|b64}", &r) == ExpandStatus::OK);
     assertExpanded("Basic YWRtaW46cHc=", r);
@@ -776,7 +597,7 @@ void test_expand_basic_auth_b64(void) {
 
 void test_expand_chained_url_b64(void) {
     TestStore s{};
-    addSecret(&s, 0, "xweb_admin", IP_XWEB, 80, MAC_XWEB, "a b");
+    addSecret(&s, 0, "xweb_admin", IP_XWEB, 80, "a b");
     ExpandResult r;
     TEST_ASSERT_TRUE(expand(&s, ctx(Module::HTTP, IP_XWEB, 80, true), "${secret:xweb_admin|url|b64}", &r) == ExpandStatus::OK);
     assertExpanded("YSUyMGI=", r);
@@ -784,7 +605,7 @@ void test_expand_chained_url_b64(void) {
 
 void test_expand_escaped_placeholder_no_lookup(void) {
     TestStore s{};
-    addSecret(&s, 0, "xweb_admin", IP_XWEB, 80, MAC_XWEB, "s3cret");
+    addSecret(&s, 0, "xweb_admin", IP_XWEB, 80, "s3cret");
     ExpandResult r;
     TEST_ASSERT_TRUE(expand(&s, ctx(Module::HTTP, IP_XWEB, 80, true), "x=$${secret:xweb_admin}", &r) == ExpandStatus::OK);
     assertExpanded("x=${secret:xweb_admin}", r);
@@ -794,7 +615,7 @@ void test_expand_escaped_placeholder_no_lookup(void) {
 
 void test_expand_malformed_placeholders(void) {
     TestStore s{};
-    addSecret(&s, 0, "xweb_admin", IP_XWEB, 80, MAC_XWEB, "s3cret");
+    addSecret(&s, 0, "xweb_admin", IP_XWEB, 80, "s3cret");
     ExpandResult r;
     ResolveContext c = ctx(Module::HTTP, IP_XWEB, 80, true);
     TEST_ASSERT_TRUE(expand(&s, c, "/p?${secret:xweb_admin|hex}", &r) == ExpandStatus::BAD_TEMPLATE);
@@ -811,7 +632,7 @@ void test_expand_malformed_placeholders(void) {
 
 void test_expand_placeholder_cap(void) {
     TestStore s{};
-    addSecret(&s, 0, "xweb_admin", IP_XWEB, 80, MAC_XWEB, "v");
+    addSecret(&s, 0, "xweb_admin", IP_XWEB, 80, "v");
     ExpandResult r;
     ResolveContext c = ctx(Module::HTTP, IP_XWEB, 80, true);
     const char *eight = "${secret:xweb_admin}${secret:xweb_admin}${secret:xweb_admin}${secret:xweb_admin}"
@@ -827,7 +648,7 @@ void test_expand_placeholder_cap(void) {
 
 void test_expand_tcp_module_refused_without_read(void) {
     TestStore s{};
-    addSecret(&s, 0, "xweb_admin", IP_XWEB, 80, MAC_XWEB, "s3cret");
+    addSecret(&s, 0, "xweb_admin", IP_XWEB, 80, "s3cret");
     ExpandResult r;
     TEST_ASSERT_TRUE(expand(&s, ctx(Module::TCP, IP_XWEB, 80, true), "${secret:xweb_admin}", &r) == ExpandStatus::RESOLVER_FAILED);
     TEST_ASSERT_EQUAL_STRING("SECRET_MODULE_NOT_ALLOWED", r.reasonCode);
@@ -836,20 +657,17 @@ void test_expand_tcp_module_refused_without_read(void) {
 
 void test_expand_target_rules(void) {
     TestStore s{};
-    addSecret(&s, 0, "xweb_admin", IP_XWEB, 80, MAC_XWEB, "s3cret");
+    addSecret(&s, 0, "xweb_admin", IP_XWEB, 80, "s3cret");
     const uint8_t ip60[4] = {192, 168, 1, 60};
-    addSecret(&s, 1, "meter_basic", ip60, 80, nullptr, "admin:pw");
+    addSecret(&s, 1, "meter_basic", ip60, 80, "admin:pw");
     ExpandResult r;
     TEST_ASSERT_TRUE(expand(&s, ctx(Module::HTTP, IP_XWEB, 8080, true), "${secret:xweb_admin}", &r) == ExpandStatus::RESOLVER_FAILED);
     TEST_ASSERT_EQUAL_STRING("SECRET_TARGET_MISMATCH", r.reasonCode);
     TEST_ASSERT_TRUE(expand(&s, ctx(Module::HTTP, IP_OTHER, 80, true), "${secret:xweb_admin}", &r) ==
                      ExpandStatus::RESOLVER_FAILED);
     TEST_ASSERT_EQUAL_STRING("SECRET_TARGET_MISMATCH", r.reasonCode);
-    TEST_ASSERT_TRUE(expand(&s, ctx(Module::HTTP, ip60, 80, true), "${secret:meter_basic|b64}", &r) == ExpandStatus::RESOLVER_FAILED);
+    TEST_ASSERT_TRUE(expand(&s, ctx(Module::HTTP, ip60, 8080, true), "${secret:meter_basic|b64}", &r) == ExpandStatus::RESOLVER_FAILED);
     TEST_ASSERT_EQUAL_STRING("SECRET_TARGET_MISMATCH", r.reasonCode);
-    TEST_ASSERT_EQUAL_STRING("MAC_REQUIRED", r.reasonDetail);
-    TEST_ASSERT_TRUE(expand(&s, ctx(Module::HTTP, IP_XWEB, 80, false), "${secret:xweb_admin}", &r) == ExpandStatus::RESOLVER_FAILED);
-    TEST_ASSERT_EQUAL_STRING("TARGET_MAC_CHANGED", r.reasonDetail);
     TEST_ASSERT_TRUE(expand(&s, ctx(Module::HTTP, IP_XWEB, 80, true), "${secret:nope}", &r) == ExpandStatus::RESOLVER_FAILED);
     TEST_ASSERT_EQUAL_STRING("SECRET_NOT_FOUND", r.reasonCode);
     TEST_ASSERT_EQUAL_size_t(0, s.valueReads);
@@ -858,26 +676,24 @@ void test_expand_target_rules(void) {
 void test_expand_https_default_port(void) {
     TestStore s{};
     const uint8_t ip70[4] = {192, 168, 1, 70};
-    addSecret(&s, 0, "meter_token", ip70, 443, MAC_XWEB, "tok3n");
+    addSecret(&s, 0, "meter_token", ip70, 443, "tok3n");
     ExpandResult r;
     TEST_ASSERT_TRUE(expand(&s, ctx(Module::HTTPS, ip70, 443, true), "Bearer ${secret:meter_token}", &r) == ExpandStatus::OK);
     assertExpanded("Bearer tok3n", r);
-    TEST_ASSERT_TRUE(r.requireMac);
 }
 
 void test_expand_routed_without_mac(void) {
     TestStore s{};
     const uint8_t routed[4] = {10, 20, 0, 5};
-    addSecret(&s, 0, "site_api", routed, 80, nullptr, "k3y");
+    addSecret(&s, 0, "site_api", routed, 80, "k3y");
     ExpandResult r;
     TEST_ASSERT_TRUE(expand(&s, ctx(Module::HTTP, routed, 80, false), "${secret:site_api}", &r) == ExpandStatus::OK);
     assertExpanded("k3y", r);
-    TEST_ASSERT_FALSE(r.requireMac);
 }
 
 void test_expand_value_not_rescanned(void) {
     TestStore s{};
-    addSecret(&s, 0, "xweb_admin", IP_XWEB, 80, MAC_XWEB, "${secret:other}");
+    addSecret(&s, 0, "xweb_admin", IP_XWEB, 80, "${secret:other}");
     ExpandResult r;
     TEST_ASSERT_TRUE(expand(&s, ctx(Module::HTTP, IP_XWEB, 80, true), "[${secret:xweb_admin}]", &r) == ExpandStatus::OK);
     assertExpanded("[${secret:other}]", r);
@@ -889,7 +705,7 @@ void test_expand_exceeds_send_limit(void) {
     static char value[257];
     memset(value, '&', 256);
     value[256] = '\0';
-    addSecret(&s, 0, "xweb_admin", IP_XWEB, 80, MAC_XWEB, value);
+    addSecret(&s, 0, "xweb_admin", IP_XWEB, 80, value);
     static char tmpl[5601];
     const char *placeholder = "${secret:xweb_admin|url}";
     size_t pl = strlen(placeholder);
@@ -907,89 +723,125 @@ void test_expand_exceeds_send_limit(void) {
 static const uint8_t GUARD = 0xA5;
 static const size_t GUARD_BYTES = 32;
 
-struct ScrubBuffers {
-    uint8_t buffer[4096 + GUARD_BYTES];
-    uint8_t scratch[4096 + GUARD_BYTES];
-};
-static ScrubBuffers g_sb;
+static uint8_t g_sb[4096 + GUARD_BYTES];
 
-static void armGuards(size_t cap) {
-    memset(g_sb.buffer, 0, sizeof(g_sb.buffer));
-    memset(g_sb.scratch, 0, sizeof(g_sb.scratch));
-    memset(g_sb.buffer + cap, GUARD, GUARD_BYTES);
-    memset(g_sb.scratch + cap, GUARD, GUARD_BYTES);
+static void armGuards(size_t length) {
+    memset(g_sb, 0, sizeof(g_sb));
+    memset(g_sb + length, GUARD, GUARD_BYTES);
 }
 
-static void assertGuards(size_t cap) {
-    for (size_t i = 0; i < GUARD_BYTES; i++) {
-        TEST_ASSERT_EQUAL_HEX8(GUARD, g_sb.buffer[cap + i]);
-        TEST_ASSERT_EQUAL_HEX8(GUARD, g_sb.scratch[cap + i]);
-    }
+static void assertGuards(size_t length) {
+    for (size_t i = 0; i < GUARD_BYTES; i++) TEST_ASSERT_EQUAL_HEX8(GUARD, g_sb[length + i]);
 }
 
-static size_t runScrub(const char *input, size_t cap, const ScrubForm *forms, size_t count, bool *truncated, bool *redacted) {
-    armGuards(cap);
+static size_t runScrub(const char *input, const ScrubForm *forms, size_t count, bool truncated, bool *redacted) {
     size_t n = strlen(input);
-    memcpy(g_sb.buffer, input, n);
-    return scrub(g_sb.buffer, n, cap, g_sb.scratch, forms, count, truncated, redacted);
+    armGuards(n);
+    memcpy(g_sb, input, n);
+    size_t out = scrub(g_sb, n, forms, count, truncated, redacted);
+    TEST_ASSERT_TRUE(out <= n);
+    assertGuards(n);
+    return out;
 }
 
 static void assertBuffer(const char *expected, size_t length) {
     TEST_ASSERT_EQUAL_size_t(strlen(expected), length);
-    TEST_ASSERT_EQUAL_MEMORY(expected, g_sb.buffer, length);
+    TEST_ASSERT_EQUAL_MEMORY(expected, g_sb, length);
 }
 
 void test_scrub_raw_and_encoded_forms(void) {
     ScrubForm forms[] = {{u8("a&b c"), 5, "xweb_admin"}, {u8("a%26b%20c"), 9, "xweb_admin"}};
-    bool truncated = false, redacted = false;
-    size_t n = runScrub("Bad password a%26b%20c (a&b c)", 1024, forms, 2, &truncated, &redacted);
-    assertBuffer("Bad password ${secret:xweb_admin} (${secret:xweb_admin})", n);
+    bool redacted = false;
+    size_t n = runScrub("Bad password a%26b%20c (a&b c)", forms, 2, false, &redacted);
+    assertBuffer("Bad password **** (****)", n);
     TEST_ASSERT_TRUE(redacted);
-    TEST_ASSERT_FALSE(truncated);
 }
 
 void test_scrub_nothing_to_replace(void) {
     ScrubForm forms[] = {{u8("s3cret"), 6, "xweb_admin"}};
-    bool truncated = false, redacted = false;
-    size_t n = runScrub("all good", 1024, forms, 1, &truncated, &redacted);
+    bool redacted = false;
+    size_t n = runScrub("all good", forms, 1, false, &redacted);
     assertBuffer("all good", n);
     TEST_ASSERT_FALSE(redacted);
-    TEST_ASSERT_FALSE(truncated);
 }
 
 void test_scrub_four_byte_floor(void) {
     ScrubForm forms[] = {{u8("a b"), 3, "xweb_admin"}, {u8("YSUyMGI="), 8, "xweb_admin"}};
-    bool truncated = false, redacted = false;
-    size_t n = runScrub("a b and YSUyMGI=", 1024, forms, 2, &truncated, &redacted);
-    assertBuffer("a b and ${secret:xweb_admin}", n);
+    bool redacted = false;
+    size_t n = runScrub("a b and YSUyMGI=", forms, 2, false, &redacted);
+    assertBuffer("a b and ****", n);
     TEST_ASSERT_TRUE(redacted);
 
     ScrubForm shortOnly[] = {{u8("pin"), 3, "pin"}};
-    truncated = redacted = false;
-    n = runScrub("pin pin", 1024, shortOnly, 1, &truncated, &redacted);
+    redacted = false;
+    n = runScrub("pin pin", shortOnly, 1, false, &redacted);
     assertBuffer("pin pin", n);
     TEST_ASSERT_FALSE(redacted);
 
     ScrubForm four[] = {{u8("1234"), 4, "pin"}};
-    truncated = redacted = false;
-    n = runScrub("x1234y", 1024, four, 1, &truncated, &redacted);
-    assertBuffer("x${secret:pin}y", n);
+    redacted = false;
+    n = runScrub("x1234y", four, 1, false, &redacted);
+    assertBuffer("x****y", n);
     TEST_ASSERT_TRUE(redacted);
 }
 
 void test_scrub_longest_match_first(void) {
     ScrubForm forms[] = {{u8("abcd"), 4, "short"}, {u8("abcdefgh"), 8, "long"}};
-    bool truncated = false, redacted = false;
-    size_t n = runScrub("[abcdefgh][abcdxx]", 1024, forms, 2, &truncated, &redacted);
-    assertBuffer("[${secret:long}][${secret:short}xx]", n);
+    bool redacted = false;
+    size_t n = runScrub("[abcdefgh][abcdxx]", forms, 2, false, &redacted);
+    assertBuffer("[****][****xx]", n);
+}
+
+void test_scrub_marker_hides_the_length(void) {
+    ScrubForm forms[] = {{u8("1234"), 4, "pin"}, {u8("Pa55word!xyz"), 12, "xweb_admin"}};
+    bool redacted = false;
+    size_t n = runScrub("12341234|Pa55word!xyz|", forms, 2, false, &redacted);
+    assertBuffer("********|****|", n);
+    TEST_ASSERT_TRUE(redacted);
+}
+
+void test_scrub_in_place_never_grows(void) {
+    // A full 4096-byte body of back-to-back 4-byte echoes keeps its length.
+    ScrubForm forms[] = {{u8("1234"), 4, "pin"}};
+    armGuards(4096);
+    for (size_t i = 0; i < 4096; i += 4) memcpy(g_sb + i, "1234", 4);
+    bool redacted = false;
+    size_t n = scrub(g_sb, 4096, forms, 1, false, &redacted);
+    TEST_ASSERT_EQUAL_size_t(4096, n);
+    for (size_t i = 0; i < n; i++) TEST_ASSERT_EQUAL_UINT8('*', g_sb[i]);
+    TEST_ASSERT_TRUE(redacted);
+    assertGuards(4096);
+
+    // Longer forms shrink the output; the write index never overtakes the reads.
+    ScrubForm nine[] = {{u8("a%26b%20c"), 9, "xweb_admin"}};
+    armGuards(4095);
+    for (size_t i = 0; i < 4095; i += 9) memcpy(g_sb + i, "a%26b%20c", 9);
+    redacted = false;
+    n = scrub(g_sb, 4095, nine, 1, false, &redacted);
+    TEST_ASSERT_EQUAL_size_t(4095 / 9 * 4, n);
+    for (size_t i = 0; i < n; i++) TEST_ASSERT_EQUAL_UINT8('*', g_sb[i]);
+    assertGuards(4095);
 }
 
 void test_scrub_trailing_prefix_kept_when_not_truncated(void) {
     ScrubForm forms[] = {{u8("Pa55word!xyz"), 12, "xweb_admin"}};
-    bool truncated = false, redacted = false;
-    size_t n = runScrub("end Pa55wo", 1024, forms, 1, &truncated, &redacted);
+    bool redacted = false;
+    size_t n = runScrub("end Pa55wo", forms, 1, false, &redacted);
     assertBuffer("end Pa55wo", n);
-    TEST_ASSERT_FALSE(truncated);
+    TEST_ASSERT_FALSE(redacted);
+}
+
+void test_scrub_cut_prefix_dropped_when_truncated(void) {
+    ScrubForm forms[] = {{u8("Pa55word!xyz"), 12, "xweb_admin"}, {u8("1234"), 4, "pin"}};
+    bool redacted = false;
+    size_t n = runScrub("1234 end Pa55wo", forms, 2, true, &redacted);
+    assertBuffer("**** end ", n);
+    TEST_ASSERT_TRUE(redacted);
+
+    // Prefixes under 4 bytes stay: too many false hits.
+    redacted = false;
+    n = runScrub("end Pa5", forms, 2, true, &redacted);
+    assertBuffer("end Pa5", n);
     TEST_ASSERT_FALSE(redacted);
 }
 
@@ -998,64 +850,15 @@ void test_scrub_echo_split_by_response_cap(void) {
     const char *pw = "Pa55word!xyz";
     ScrubForm forms[] = {{u8(pw), 12, "xweb_admin"}};
     armGuards(4096);
-    memset(g_sb.buffer, 'x', 4090);
-    memcpy(g_sb.buffer + 4090, pw, 6);
-    bool truncated = true, redacted = false;
-    size_t n = scrub(g_sb.buffer, 4096, 4096, g_sb.scratch, forms, 1, &truncated, &redacted);
-    TEST_ASSERT_TRUE(n <= 4090);
+    memset(g_sb, 'x', 4090);
+    memcpy(g_sb + 4090, pw, 6);
+    bool redacted = false;
+    size_t n = scrub(g_sb, 4096, forms, 1, true, &redacted);
     TEST_ASSERT_EQUAL_size_t(4090, n); // only the partial echo goes, the 'x' bytes stay
-    for (size_t i = 0; i < n; i++) TEST_ASSERT_EQUAL_UINT8('x', g_sb.buffer[i]);
-    TEST_ASSERT_TRUE(truncated);
+    for (size_t i = 0; i < n; i++) TEST_ASSERT_EQUAL_UINT8('x', g_sb[i]);
     TEST_ASSERT_TRUE(redacted);
     assertGuards(4096);
 }
-
-void test_scrub_placeholder_straddling_cap_dropped_whole(void) {
-    ScrubForm forms[] = {{u8("1234"), 4, "pin"}}; // placeholder 13 bytes
-    bool truncated = false, redacted = false;
-    size_t n = runScrub("aaaaaaaaaa1234bbbb", 20, forms, 1, &truncated, &redacted);
-    assertBuffer("aaaaaaaaaa", n);
-    TEST_ASSERT_TRUE(truncated);
-    TEST_ASSERT_TRUE(redacted);
-    assertGuards(20);
-}
-
-void test_scrub_growth_cuts_plain_tail(void) {
-    // One early echo grows the body; the plain tail is cut at the cap.
-    ScrubForm forms[] = {{u8("1234"), 4, "pin"}};
-    armGuards(4096);
-    memcpy(g_sb.buffer, "1234", 4);
-    memset(g_sb.buffer + 4, 'x', 4092);
-    bool truncated = false, redacted = false;
-    size_t n = scrub(g_sb.buffer, 4096, 4096, g_sb.scratch, forms, 1, &truncated, &redacted);
-    TEST_ASSERT_EQUAL_size_t(4096, n);
-    TEST_ASSERT_EQUAL_MEMORY("${secret:pin}", g_sb.buffer, 13);
-    for (size_t i = 13; i < n; i++) TEST_ASSERT_EQUAL_UINT8('x', g_sb.buffer[i]);
-    TEST_ASSERT_TRUE(truncated);
-    TEST_ASSERT_TRUE(redacted);
-    assertGuards(4096);
-}
-
-static void repeatedEchoes(size_t cap) {
-    ScrubForm forms[] = {{u8("1234"), 4, "pin"}};
-    armGuards(cap);
-    for (size_t i = 0; i < cap; i += 4) memcpy(g_sb.buffer + i, "1234", 4);
-    bool truncated = false, redacted = false;
-    size_t n = scrub(g_sb.buffer, cap, cap, g_sb.scratch, forms, 1, &truncated, &redacted);
-    const char *ph = "${secret:pin}";
-    size_t pl = strlen(ph);
-    TEST_ASSERT_TRUE(n <= cap);
-    TEST_ASSERT_TRUE(n >= pl);
-    TEST_ASSERT_EQUAL_size_t(0, n % pl); // only whole placeholders, no partial value
-    TEST_ASSERT_EQUAL_size_t(cap / pl * pl, n);
-    for (size_t i = 0; i < n; i += pl) TEST_ASSERT_EQUAL_MEMORY(ph, g_sb.buffer + i, pl);
-    TEST_ASSERT_TRUE(truncated);
-    TEST_ASSERT_TRUE(redacted);
-    assertGuards(cap);
-}
-
-void test_scrub_growth_4096_body(void) { repeatedEchoes(4096); }
-void test_scrub_growth_2048_header_block(void) { repeatedEchoes(2048); }
 
 int main(int argc, char **argv) {
     (void)argc;
@@ -1068,7 +871,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_value_rule_strict_utf8);
 
     RUN_TEST(test_slot_encode_exact_offsets);
-    RUN_TEST(test_slot_encode_unbound_mac_and_256_value);
+    RUN_TEST(test_slot_encode_256_value);
     RUN_TEST(test_slot_encode_refuses_bad_input);
     RUN_TEST(test_slot_round_trip);
     RUN_TEST(test_slot_decode_version_and_size);
@@ -1077,38 +880,22 @@ int main(int argc, char **argv) {
     RUN_TEST(test_slot_decode_invalid_name_bytes);
     RUN_TEST(test_slot_decode_name_len_covers_padding);
     RUN_TEST(test_slot_decode_value_length);
-    RUN_TEST(test_slot_decode_mac);
+    RUN_TEST(test_slot_decode_reserved_bytes);
     RUN_TEST(test_slot_decode_target);
     RUN_TEST(test_slot_decode_invalid_value);
 
-    RUN_TEST(test_build_aad_with_mac);
-    RUN_TEST(test_build_aad_without_mac);
-    RUN_TEST(test_build_aad_lowercase_mac_and_decimal_fields);
+    RUN_TEST(test_build_aad_empty_mac_field);
+    RUN_TEST(test_build_aad_decimal_fields);
     RUN_TEST(test_build_aad_cap);
     RUN_TEST(test_parse_issued_at);
     RUN_TEST(test_unpad_plaintext);
 
-    RUN_TEST(test_ceiling);
-    RUN_TEST(test_decide_set_order);
-    RUN_TEST(test_hwm_after_delete);
-    RUN_TEST(test_local_set_at);
-    RUN_TEST(test_replay_same_envelope_twice);
-    RUN_TEST(test_replay_older_after_newer);
-    RUN_TEST(test_replay_after_delete);
-    RUN_TEST(test_replay_two_names_same_second);
-    RUN_TEST(test_replay_future_issued_at);
-    RUN_TEST(test_replay_hwm_2031_after_clock_correction);
-    RUN_TEST(test_replay_ceiling_before_delete);
-    RUN_TEST(test_replay_after_factory_reset);
-
-    RUN_TEST(test_decide_ok_mac_bound_on_link);
+    RUN_TEST(test_decide_ok_on_link);
     RUN_TEST(test_decide_bad_arg);
     RUN_TEST(test_decide_ninth_placeholder);
     RUN_TEST(test_decide_module_not_allowed);
     RUN_TEST(test_decide_not_found);
     RUN_TEST(test_decide_target_mismatch);
-    RUN_TEST(test_decide_mac_required);
-    RUN_TEST(test_decide_mac_bound_off_link);
     RUN_TEST(test_decide_routed_without_mac);
 
     RUN_TEST(test_expand_form_login_url);
@@ -1128,12 +915,11 @@ int main(int argc, char **argv) {
     RUN_TEST(test_scrub_nothing_to_replace);
     RUN_TEST(test_scrub_four_byte_floor);
     RUN_TEST(test_scrub_longest_match_first);
+    RUN_TEST(test_scrub_marker_hides_the_length);
+    RUN_TEST(test_scrub_in_place_never_grows);
     RUN_TEST(test_scrub_trailing_prefix_kept_when_not_truncated);
+    RUN_TEST(test_scrub_cut_prefix_dropped_when_truncated);
     RUN_TEST(test_scrub_echo_split_by_response_cap);
-    RUN_TEST(test_scrub_placeholder_straddling_cap_dropped_whole);
-    RUN_TEST(test_scrub_growth_cuts_plain_tail);
-    RUN_TEST(test_scrub_growth_4096_body);
-    RUN_TEST(test_scrub_growth_2048_header_block);
 
     return UNITY_END();
 }

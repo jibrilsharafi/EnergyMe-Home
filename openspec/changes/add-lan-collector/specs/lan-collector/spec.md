@@ -89,7 +89,7 @@ An applied job set SHALL be written to LittleFS as `/collector/jobset.json` (hol
 - **THEN** `/collector/jobset.json` is gone and `collector_enabled` is false after reboot
 
 ### Requirement: Job schema and quotas
-The job document SHALL be `{v: 1, budget_bytes_h?, jobs: [...]}` with `budget_bytes_h` 65536 to 8388608 (default 2097152). Each job SHALL hold: `id` (`[a-z0-9_.-]{1,32}`, unique), `rev` (integer >= 1), `enabled` (boolean), `source_id` (`src_` plus 4 to 8 lowercase hex, ADR-034), `target` `{ip, port}`, `module` (`http`, `https`, `modbus_tcp`, `tcp`, `udp`; raw payloads only with a read declaration, see "Jobs are read-only"), `interval_s` (60 to 86400), `jitter_s` (0 to min(interval_s/2, 300), default 0), `step_timeout_ms` (100 to 10000, default 5000), `deadline_s` (5 to min(300, interval_s/2), default min(60, interval_s/2)), `max_bytes` (1 to 131072, default 16384), `vars` (optional), `session` (optional), `steps` (1 to 8) and `publish` (`per_step` or `batch`, default `per_step`). A step SHALL hold `id` (same grammar, unique across login and data steps of the job), `args` (the module's request fields from `add-gateway-modules` without `module`, `target`, `access`, `writes`, `timeout_ms` and `max_bytes`), and optional `timeout_ms`, `max_bytes` and `captures`. Limits per job: 4 login steps, 8 captures (each at most 2048 bytes, together at most 4096 bytes held at once, see "Captures"), 8 vars (names `[A-Za-z0-9_.-]{1,32}`, values integers or strings of at most 2048 bytes), and the sum of the data steps' effective `max_bytes` at most 131072, so one run always fits the out-queue. Jobs that share a `source_id` SHALL share `target` and `module`. At most 8 jobs SHALL be configured. Unknown keys at any level SHALL be refused with `BAD_JOB`; quota violations with `QUOTA_EXCEEDED`. A job with `enabled: false` SHALL be stored and reported with state `off` but not run.
+The job document SHALL be `{v: 1, budget_bytes_h?, jobs: [...]}` with `budget_bytes_h` 65536 to 8388608 (default 2097152). Each job SHALL hold: `id` (`[a-z0-9_.-]{1,32}`, unique), `rev` (integer >= 1), `enabled` (boolean), `source_id` (`src_` plus 4 to 8 lowercase hex, ADR-034), `target` `{ip, port, mac?}` (`mac` lowercase `aa:bb:cc:dd:ee:ff`, sent with every step, see "Jobs are read-only"), `module` (`http`, `https`, `modbus_tcp`, `tcp`, `udp`), `interval_s` (60 to 86400), `jitter_s` (0 to min(interval_s/2, 300), default 0), `step_timeout_ms` (100 to 10000, default 5000), `deadline_s` (5 to min(300, interval_s/2), default min(60, interval_s/2)), `max_bytes` (1 to 131072, default 16384), `vars` (optional), `session` (optional), `steps` (1 to 8) and `publish` (`per_step` or `batch`, default `per_step`). A step SHALL hold `id` (same grammar, unique across login and data steps of the job), `args` (the module's request fields from `add-gateway-modules` without `module`, `target`, `access`, `writes`, `timeout_ms` and `max_bytes`), and optional `timeout_ms`, `max_bytes` and `captures`. Limits per job: 4 login steps, 8 captures (each at most 2048 bytes, together at most 4096 bytes held at once, see "Captures"), 8 vars (names `[A-Za-z0-9_.-]{1,32}`, values integers or strings of at most 2048 bytes), and the sum of the data steps' effective `max_bytes` at most 131072, so one run always fits the out-queue. Jobs that share a `source_id` SHALL share `target` and `module`. At most 8 jobs SHALL be configured. Unknown keys at any level SHALL be refused with `BAD_JOB`; quota violations with `QUOTA_EXCEEDED`. A job with `enabled: false` SHALL be stored and reported with state `off` but not run.
 
 #### Scenario: Ninth job
 - **WHEN** a set holds 9 jobs
@@ -112,11 +112,9 @@ The job document SHALL be `{v: 1, budget_bytes_h?, jobs: [...]}` with `budget_by
 - **THEN** the set is refused with `BAD_JOB`, field `deadline_s`
 
 ### Requirement: Jobs are read-only
-Collector steps SHALL be classed by the classifier of `add-gateway-modules` against the stored read declarations (`kind: "read"` entries of `gateway_write_grants`), never against a per-step flag: a job step carries no `access` field (`BAD_JOB`). At apply time every login and data step SHALL be classed as written, and a step classed write SHALL refuse the whole set with `WRITE_NOT_ALLOWED`, field `steps[i]` (or `session.login[i]`). So a `modbus_tcp` write is refused; an `http`/`https` GET without a body is read, and a GET step with a non-empty `body` or `body_b64` is write, so it is refused at apply time with `WRITE_NOT_ALLOWED` and, after a later change, at run time with `WRITES_DENIED`; a POST, PUT, PATCH or DELETE is read only when a read declaration with the same `ip`, `port` and `module` lists its canonical address `<METHOD> <path>` (method and path before `?`) exactly, another method to a declared path is write, and the body takes no part in the match; a `tcp` step with an empty payload is read; a `tcp` step with a payload and every `udp` step are read only when the SHA-256 of the exact payload bytes is in a read declaration for the same `ip`, `port` and `module`. Because declarations are exact paths and exact hashes, a non-GET HTTP step whose path contains a placeholder, and a `tcp`/`udp` step whose payload contains a placeholder, SHALL be classed write at apply time. The read declarations a job set needs SHALL therefore be stored (through the `system` shadow or local REST) before the set is applied; a set applied first is refused and the cloud re-sends it after the declarations are acked.
+Every login and data step SHALL run as a caller-declared read of the job's own target: the collector SHALL set `declared_read` and `writes: "deny"` (the caller fields of `add-gateway-modules` "Read-only callers") on every step, so a literal POST, PUT, PATCH or DELETE or a `tcp`/`udp` payload is classed read without a grant list entry, and anything the executor still classes write is `REJECTED` `WRITE_NOT_ALLOWED` with reason_detail `WRITES_DENIED` before any socket opens whatever write grants exist. A job step carries no `access` field (`BAD_JOB`) and the job schema has no `writes` or `declared_read` key, so the cloud cannot change either. Write grants SHALL never apply to collector jobs: they authorize one-shot commands only. At apply time (and at boot load) a step that cannot be a literal read SHALL refuse the whole set with `WRITE_NOT_ALLOWED`, field `steps[i]` (or `session.login[i]`): a `modbus_tcp` step with `values`, an `http`/`https` GET with a non-empty `body` or `body_b64`, a POST, PUT, PATCH or DELETE whose path contains a placeholder, and a `tcp` step whose text payload contains a placeholder. Placeholders in a non-GET body stay allowed (the XWEB login body carries `${secret:...}`). The job `target` `mac`, when present, SHALL be sent with every step; the executor requires it for an on-link non-GET or payload step and for a step that expands a secret (`MAC_REQUIRED`), compares it with the ARP entry before the first byte (`TARGET_MAC_CHANGED`) and refuses it for an off-link target. A run-time `WRITE_NOT_ALLOWED` or `SECRET_TARGET_MISMATCH` (reason_detail `WRITES_DENIED`, `MAC_REQUIRED` or `TARGET_MAC_CHANGED`) SHALL stop the run like a target rule failure.
 
-Declarations can change after apply, so every step SHALL be classed again by the executor at run time, after expansion: the collector SHALL set `writes: "deny"` (the read-only caller field of `add-gateway-modules`) on every login and data step, so a request classed write is `REJECTED` `WRITE_NOT_ALLOWED` with reason_detail `WRITES_DENIED` before any socket opens whatever write grants exist. The job schema has no `writes` key, so the cloud cannot clear it. Write grants SHALL never apply to collector jobs: they authorize one-shot commands only. A run-time `WRITE_NOT_ALLOWED` (reason_detail `WRITES_DENIED`, `MAC_REQUIRED` for an on-link declaration without `mac`, or `TARGET_MAC_CHANGED` for another device at the target IP) SHALL stop the run like a target rule failure. Boot load of the stored set SHALL NOT re-apply the apply-time classing (a revoked declaration then fails only the runs that need it, not the whole stored set).
-
-An `http`/`https` GET step without a body SHALL be classed read by method, and the device SHALL NOT try to tell a state-changing GET (for example Shelly `GET /rpc/Switch.Set?on=false`) from a read: a job step cannot raise its class (`access` is `BAD_JOB`) and `writes: "deny"` never fires on a request classed read. "Jobs are read-only" therefore holds only as far as the device classifier can tell. This residual is accepted on the device; the control is the cloud jobs tool (infra `energyme-home-iot-pipeline-lan-points`), which writes a job set only when every GET step matches the source driver's `READ_REQUESTS`.
+An `http`/`https` GET step without a body SHALL be classed read by method, and the device SHALL NOT try to tell a state-changing GET (for example Shelly `GET /rpc/Switch.Set?on=false`) from a read: a job step cannot raise its class (`access` is `BAD_JOB`) and `writes: "deny"` never fires on a request classed read. Likewise a declared-read POST is read whatever its body. "Jobs are read-only" therefore holds only as far as the job document is a read list; the control is the cloud jobs tool (infra `energyme-home-iot-pipeline-lan-points`), which writes a job set only when every step matches the source driver's `READ_REQUESTS`.
 
 #### Scenario: Modbus write in a job
 - **WHEN** a `modbus_tcp` step carries `values`
@@ -126,49 +124,37 @@ An `http`/`https` GET step without a body SHALL be classed read by method, and t
 - **WHEN** a set holds a step `GET /rpc` to a Shelly target with the body `{"method":"Switch.Set","params":{"id":0,"on":false}}`
 - **THEN** the set is refused with `WRITE_NOT_ALLOWED`, field `steps[i]`
 
-#### Scenario: XWEB POSTs with a stored read declaration
-- **WHEN** the read declaration `{ip:"192.168.1.50", port:80, module:"http", kind:"read", mac:"<xweb mac>", allow:["POST /cgi-bin/login.lua","POST /cgi-bin/datachart.cgi"]}` is stored and a set holds the XWEB job of design worked example 1
+#### Scenario: XWEB POSTs
+- **WHEN** a set holds the XWEB job of design worked example 1 with `target` `{ip:"192.168.1.50", port:80, mac:"<xweb mac>"}` and no grant list entry covers the XWEB
 - **THEN** the set is accepted, and each run sends the login and data POSTs after the executor matches the XWEB MAC
-
-#### Scenario: XWEB job applied before its read declaration
-- **WHEN** the XWEB job set arrives while no read declaration covers `192.168.1.50:80`
-- **THEN** the set is refused with `WRITE_NOT_ALLOWED`, field `session.login[0]`, and the previous set keeps running
 
 #### Scenario: Step claims read
 - **WHEN** an `http` POST step carries `access: "read"`
 - **THEN** the set is refused with `BAD_JOB`, field `access`
 
-#### Scenario: Other method to a declared path
-- **WHEN** the XWEB read declaration is stored and a job step sends `DELETE /cgi-bin/datachart.cgi`
-- **THEN** the set is refused with `WRITE_NOT_ALLOWED`, since only `POST /cgi-bin/datachart.cgi` is declared
+#### Scenario: Templated non-GET path
+- **WHEN** a job step sends `POST /cgi-bin/datachart.cgi?t=${now}`
+- **THEN** the set is refused with `WRITE_NOT_ALLOWED`, since the path is not literal
 
 #### Scenario: State-changing GET accepted by the device
-- **WHEN** a set holds an `http` step `GET /rpc/Switch.Set?on=false` to a Shelly target and no read declaration covers it
+- **WHEN** a set holds an `http` step `GET /rpc/Switch.Set?on=false` to a Shelly target
 - **THEN** the device classes it read, accepts the set and sends it every run; nothing on the device detects it, and the only control is the cloud jobs tool refusing GET steps outside the driver's `READ_REQUESTS` before the set is written
 
-#### Scenario: Declaration revoked after apply
-- **WHEN** the XWEB set is applied and the cloud then replaces `gateway_write_grants` with a list without the XWEB read declaration, while a write grant `["*"]` covers the XWEB target
-- **THEN** each run fails at the login step, whose header-only part carries `st: "REJECTED"`, `rc: "WRITE_NOT_ALLOWED"` and `rdt: "WRITES_DENIED"`, the write grant is never consulted, no byte reaches the XWEB, the job backs off and its health shows `code: "WRITE_NOT_ALLOWED"` with `detail: "WRITES_DENIED"`
+#### Scenario: On-link XWEB job without a MAC
+- **WHEN** the XWEB job `target` has no `mac` and the XWEB is on-link
+- **THEN** the set is applied and each run fails at the login step before any socket opens, its part carrying `st: "REJECTED"`, `rc: "WRITE_NOT_ALLOWED"` and `rdt: "MAC_REQUIRED"`
 
-#### Scenario: Declaration on a swapped device
+#### Scenario: Swapped device
 - **WHEN** another device takes the XWEB IP after DHCP renumbering
-- **THEN** each run fails at the login step before any byte is sent, its part carries `st: "REJECTED"`, `rc: "WRITE_NOT_ALLOWED"` and `rdt: "TARGET_MAC_CHANGED"`, and the job's health shows `detail: "TARGET_MAC_CHANGED"`, so the cloud tells it from a revoked declaration
+- **THEN** each run fails at the login step before any byte is sent, its part carries `st: "REJECTED"`, `rc: "WRITE_NOT_ALLOWED"` and `rdt: "TARGET_MAC_CHANGED"`, and the job's health shows `detail: "TARGET_MAC_CHANGED"`
 
-#### Scenario: UDP job with a grant but no declaration
-- **WHEN** a set contains a `udp` step and only a write grant covers its target
-- **THEN** the set is refused with `WRITE_NOT_ALLOWED`, field `steps[0]`, the previous set keeps running and no datagram is ever sent
-
-#### Scenario: Fixed UDP query declared read
-- **WHEN** a `udp` step carries a fixed 17-byte query frame whose SHA-256 is in a MAC-bound read declaration for its target
-- **THEN** the set is accepted and each run publishes the reply datagram
-
-#### Scenario: TCP step with an undeclared payload
-- **WHEN** a `tcp` step carries `payload: "STATUS\r\n"` and no read declaration holds its hash
-- **THEN** the set is refused with `WRITE_NOT_ALLOWED`
+#### Scenario: Literal UDP and TCP queries
+- **WHEN** a `udp` step carries a fixed 17-byte query frame, or a `tcp` step carries `payload: "STATUS\r\n"`, and the job target has its `mac`
+- **THEN** the set is accepted and each run publishes the reply, with no grant list entry
 
 #### Scenario: Templated TCP payload
 - **WHEN** a `tcp` step payload contains `${now}`
-- **THEN** the set is refused with `WRITE_NOT_ALLOWED`, since no exact hash can match it
+- **THEN** the set is refused with `WRITE_NOT_ALLOWED`, since the payload is not literal
 
 #### Scenario: TCP banner read
 - **WHEN** a `tcp` step carries no payload
@@ -190,8 +176,8 @@ The collector SHALL provide these resolvers to the expansion stage of `add-gatew
 - **THEN** the set is applied, each run fails with the secret store's reason code and backs off, and runs succeed once the secret is set
 
 #### Scenario: On-link secret without a MAC
-- **WHEN** a job's login step uses `${secret:xweb_pw}` and the slot is bound to the on-link XWEB `192.168.1.50:80` without a MAC
-- **THEN** the set is applied, each run fails at the login step before any socket opens with a part carrying `st: "REJECTED"`, `rc: "SECRET_TARGET_MISMATCH"` and `rdt: "MAC_REQUIRED"`, and runs succeed once the secret is set again with the XWEB MAC
+- **WHEN** a GET step of a job uses `${secret:meter_token}` in a header, its target is on-link and the job `target` has no `mac`
+- **THEN** the set is applied, each run fails at that step before any socket opens with a part carrying `st: "REJECTED"`, `rc: "SECRET_TARGET_MISMATCH"` and `rdt: "MAC_REQUIRED"`, and runs succeed once the job target carries the MAC
 
 #### Scenario: Capture placeholder in a one-shot command
 - **WHEN** a cloud `http_request` command to 192.168.1.99 carries body `${cap:sses}` while the XWEB job holds a live `sses`
@@ -202,7 +188,7 @@ The collector SHALL provide these resolvers to the expansion stage of `add-gatew
 - **THEN** the command is `REJECTED` with `BAD_TEMPLATE`
 
 ### Requirement: Captures
-A capture SHALL be `{name, from: "body"|"header", key?, header?, after?, before?}` with `name` in the var grammar. `from: "body"` with `key` SHALL take the value of that top-level key of a JSON object body (string as is, number as its decimal text); `from: "body"` without `key` SHALL take the text between the first occurrence of `after` and the next occurrence of `before` (each 1 to 32 bytes); `from: "header"` with `after` SHALL scan every response header line named `header` (case-insensitive) in reply order and use the first whose value contains `after`, narrowed by `after`/`before`; `from: "header"` without `after` SHALL use the first such line, optionally cut at `before`. No regex, path expressions or scripting. A value SHALL be 1 to 2048 bytes, and the captures held by one job SHALL total at most 4096 bytes; anything else SHALL fail the run with `CAPTURE_MISSING`. Use is bounded by the post-expansion module limit (5760 bytes for an HTTP request), checked as `BAD_ARGS`. Captured values SHALL be held in RAM only, per job, zeroized when replaced or discarded, and discarded on session expiry, job change, switch-off and reboot. They SHALL never be logged, persisted, published or returned by `collector_status`.
+A capture SHALL be `{name, from: "body"|"header", key?, header?, after?, before?}` with `name` in the var grammar. `from: "body"` with `key` SHALL take the value of that top-level key of a JSON object body (string as is, number as its decimal text); `from: "body"` without `key` SHALL take the text between the first occurrence of `after` and the next occurrence of `before` (each 1 to 32 bytes); `from: "header"` with `after` SHALL scan every response header line named `header` (case-insensitive) in reply order and use the first whose value contains `after`, narrowed by `after`/`before`; `from: "header"` without `after` SHALL use the first such line, optionally cut at `before`. No regex, path expressions or scripting. A value SHALL be 1 to 2048 bytes, and the captures held by one job SHALL total at most 4096 bytes; anything else SHALL fail the run with `CAPTURE_MISSING`. Use is bounded by the post-expansion module limit (5760 bytes for an HTTP request), checked as `BAD_ARGS`. Captured values SHALL be held in RAM only, per job, zeroized when replaced or discarded, and discarded on session expiry, every job set adoption, switch-off and reboot. They SHALL never be logged, persisted or returned by `collector_status`, and SHALL never be published from a login reply or a request; a data reply that itself contains one is published as returned (see "Raw publish topic and part format").
 
 #### Scenario: Session id from a JSON body
 - **WHEN** a login reply body is `{"sses":"4f2a9c","user":"op"}` and the capture is `{name:"sses", from:"body", key:"sses"}`
@@ -279,7 +265,7 @@ Runs SHALL be scheduled per job at fixed slots `t0 + k*interval_s` plus a fresh 
 - **THEN** it runs once at its next slot, not ten times
 
 ### Requirement: Per-job backoff
-After `n` consecutive failed runs the next run SHALL be scheduled `min(interval_s * 2^n, max(interval_s, 3600))` seconds after the failed run, plus jitter. A successful run SHALL reset `n` and return to slot scheduling. Backoff state SHALL be per job and kept across job set applies only when the job's `id`, `rev` and binding (`target`, `module` and `session`, see "Job table handover between tasks") are all unchanged.
+After `n` consecutive failed runs the next run SHALL be scheduled `min(interval_s * 2^n, max(interval_s, 3600))` seconds after the failed run, plus jitter. A successful run SHALL reset `n` and return to slot scheduling. Backoff state SHALL be per job and kept across job set applies only when the job's `id` and `rev` are both unchanged.
 
 #### Scenario: Backoff growth and cap
 - **WHEN** a job with `interval_s: 300` fails four times in a row
@@ -365,11 +351,11 @@ The collector SHALL run in the gateway task. Between two steps, and before start
 - **THEN** the command runs right after the login step, then the data step runs with the captured session, and the run succeeds
 
 ### Requirement: Job table handover between tasks
-The gateway task SHALL own the active job table and all run state (captures, window, cursor, session, retry flag, deadline, backoff); no other task SHALL read or free them. After validating and persisting a set, the MQTT task SHALL post the new PSRAM table to a one-slot mailbox and return without waiting; a newer set posted before adoption SHALL replace the pending one, and the replaced pending table SHALL be freed by the poster. The gateway task SHALL adopt a pending table only between steps (never while a step or an expansion is in progress): it abandons the active run without publishing more of it and without advancing its cursor, carries backoff, cursor, window length and session captures over to every job whose `id`, `rev` and binding are all unchanged, zeroizes the captures of every other job, so its next run logs in again before any data step, and frees the old table itself. The binding SHALL be compared by the device itself, never inferred from `rev`: at apply the MQTT task SHALL store per job a SHA-256 over the canonical serialization of its `target`, `module` and `session` values, and adoption SHALL compare the old and new hashes, so a set that changes a job's target, module or login without a `rev` bump never sends a captured session value to the new target. Health, counters and the data for `collector_status` and the shadow's reported state SHALL come from a fixed-size snapshot struct that the gateway task updates and the MQTT task copies, each under a mutex held only for the copy (no I/O, no allocation, no JSON while it is held), so the MQTT task never waits on a step.
+The gateway task SHALL own the active job table and all run state (captures, window, cursor, session, retry flag, deadline, backoff); no other task SHALL read or free them. After validating and persisting a set, the MQTT task SHALL post the new PSRAM table to a one-slot mailbox and return without waiting; a newer set posted before adoption SHALL replace the pending one, and the replaced pending table SHALL be freed by the poster. The gateway task SHALL adopt a pending table only between steps (never while a step or an expansion is in progress): it abandons the active run without publishing more of it and without advancing its cursor, carries `seq` over by job `id`, carries slot, backoff, cursor and window length over only to jobs whose `id` and `rev` are both unchanged, zeroizes the captures and drops the held session of every job, so each session job's next run logs in again before any data step, and frees the old table itself. A captured session value is therefore never sent to a target from an earlier set, whether or not the set bumped `rev`. Health, counters and the data for `collector_status` and the shadow's reported state SHALL come from a fixed-size snapshot struct that the gateway task updates and the MQTT task copies, each under a mutex held only for the copy (no I/O, no allocation, no JSON while it is held), so the MQTT task never waits on a step.
 
 #### Scenario: Apply between steps
-- **WHEN** a new set arrives while an XWEB run has finished its login step and not started its data step, and the XWEB job's `id`, `rev`, `target`, `module` and `session` are unchanged
-- **THEN** the gateway task adopts the table before the next step, abandons that run without advancing the cursor, keeps the session, and the job runs at its next slot without logging in again
+- **WHEN** a new set arrives while an XWEB run has finished its login step and not started its data step, and the XWEB job's `id` and `rev` are unchanged
+- **THEN** the gateway task adopts the table before the next step, abandons that run without advancing the cursor, zeroizes the captures, keeps the job's slot, backoff, cursor and window length, and the job's next run logs in again before its data step
 
 #### Scenario: Apply during a step
 - **WHEN** a new set is posted while a 10 s step is in progress
@@ -379,18 +365,14 @@ The gateway task SHALL own the active job table and all run state (captures, win
 - **WHEN** an adopted set changes a job's `rev`
 - **THEN** that job's captures are zeroized, its backoff and cursor reset, and its session is re-established at its next run
 
-#### Scenario: Target changed without a rev bump
-- **WHEN** an adopted set keeps the XWEB job's `id` and `rev` but changes `target.ip` from 192.168.1.50 to 192.168.1.51 while a session `sses` is held
-- **THEN** the job's captures are zeroized and its backoff, cursor and window length reset, and its next run sends the login steps to 192.168.1.51 before any data step, so the old `sses` is never sent to the new host
-
 #### Scenario: Status during a long step
 - **WHEN** the drift check, `collector_status` and a shadow apply happen during a 10 s step
 - **THEN** each reads the snapshot or posts to the mailbox within microseconds and MQTT keepalive is not delayed
 
 ### Requirement: Raw publish topic and part format
-Collector results SHALL be published QoS0, not retained, on `$aws/rules/<rule>/energyme/<product>/v1/<device_id>/collector/<source_id>` with `<rule>` the product's `AWS_IOT_CORE_RULE_COLLECTOR_HOME` or `AWS_IOT_CORE_RULE_COLLECTOR_HOMEPRO`, only from the MQTT task. A message SHALL be one or more parts; a part SHALL be a single-line UTF-8 JSON header (at most 768 bytes, no raw newline) followed by `\n` and exactly `len` raw bytes. Header fields: `v` (1), `job`, `rev` (job rev), `set` (job set rev), `src`, `boot`, `seq`, `step`, `ph` (`login` or `step`), `mod`, `i` and `n` (chunk index and count), `off` (byte offset of the chunk), `len`, `total` (full body bytes), `sha` (SHA-256 hex of the full body, omitted when empty or not published), `tr` (truncated by `max_bytes`), `st` (`OK`, `FAILED`, `REJECTED`), `rc` (reason code, omitted on `OK`), `rdt` (the executor's reason_detail when it is a code token `[A-Z_]{1,24}`, only on parts that are not `OK`, omitted otherwise), `ps` (protocol status), `ts` (Unix ms at reply, or `null`), `up`, `dur` (ms), `win` (`[from, to]` in source-clock seconds, only for jobs with time placeholders), `dq` (parts dropped by the out-queue since boot), `rd` (`true` when the executor reported `redacted` for the step or the collector capture scrub replaced anything, omitted otherwise), and per module `ct` (HTTP Content-Type, at most 64 bytes) and `date` (the raw `Date` response header value, http/https data parts only, never login parts, at most 40 printable ASCII bytes, omitted when absent or longer or not printable ASCII) or `addr` and `cnt` (Modbus canonical address and count). The header with every field at its maximum SHALL fit 768 bytes (an `OK` https data part with every field at its maximum is about 610 bytes); the cloud decoder accepts headers up to 1024 bytes. Raw bytes SHALL be the HTTP body (never the header block, so cookies never leave the device; `date` carries no session material), the Modbus registers as big-endian 16-bit words or coils/inputs packed as in the Modbus PDU, or the TCP reply bytes. Request bytes SHALL never be published.
+Collector results SHALL be published QoS0, not retained, on `$aws/rules/<rule>/energyme/<product>/v1/<device_id>/collector/<source_id>` with `<rule>` the product's `AWS_IOT_CORE_RULE_COLLECTOR_HOME` or `AWS_IOT_CORE_RULE_COLLECTOR_HOMEPRO`, only from the MQTT task. A message SHALL be one or more parts; a part SHALL be a single-line UTF-8 JSON header (at most 768 bytes, no raw newline) followed by `\n` and exactly `len` raw bytes. Header fields: `v` (1), `job`, `rev` (job rev), `set` (job set rev), `src`, `boot`, `seq`, `step`, `ph` (`login` or `step`), `mod`, `i` and `n` (chunk index and count), `off` (byte offset of the chunk), `len`, `total` (full body bytes), `sha` (SHA-256 hex of the full body, omitted when empty or not published), `tr` (truncated by `max_bytes`), `st` (`OK`, `FAILED`, `REJECTED`), `rc` (reason code, omitted on `OK`), `rdt` (the executor's reason_detail when it is a code token `[A-Z_]{1,24}`, only on parts that are not `OK`, omitted otherwise), `ps` (protocol status), `ts` (Unix ms at reply, or `null`), `up`, `dur` (ms), `win` (`[from, to]` in source-clock seconds, only for jobs with time placeholders), `dq` (parts dropped by the out-queue since boot), `rd` (`true` when the executor reported `redacted` for the step, omitted otherwise), and per module `ct` (HTTP Content-Type, at most 64 bytes) and `date` (the raw `Date` response header value, http/https data parts only, never login parts, at most 40 printable ASCII bytes, omitted when absent or longer or not printable ASCII) or `addr` and `cnt` (Modbus canonical address and count). The header with every field at its maximum SHALL fit 768 bytes (an `OK` https data part with every field at its maximum is about 610 bytes); the cloud decoder accepts headers up to 1024 bytes. Raw bytes SHALL be the HTTP body (never the header block, so cookies never leave the device; `date` carries no session material), the Modbus registers as big-endian 16-bit words or coils/inputs packed as in the Modbus PDU, or the TCP reply bytes. Request bytes SHALL never be published.
 
-Secrets and captures SHALL each be scrubbed by one layer. Secrets: the executor scrubs every result whose request expanded a `${secret:x}`, for every caller (`add-gateway-secrets` "Expanded secrets never leave the request"), and reports `redacted`; the collector SHALL NOT scrub secrets again. Captures: for any data step whose request expanded a `${cap:x}` or whose own reply yielded a capture, the collector SHALL run the same pure scrub of `add-gateway-secrets` over the body the executor returned, in its PSRAM buffer, after capture extraction and before chunking and queueing. The scrubbed set SHALL be every captured value the step expanded, in raw form and in the encoded form used, plus every value the step captured from its own reply (body or header), in raw form and in each encoded form in which any step of the job uses that capture (known from the job's templates at apply time). Each occurrence of a value in the set of at least 4 bytes is replaced with `${cap:<name>}`, and when the body was cut by `max_bytes` a trailing prefix of either form of at least 4 bytes at the cut is removed. The scrubbed body SHALL stay within `max_bytes`: when replacements would make it longer, it is cut at `max_bytes` with `tr: true` and no partial value or partial placeholder at the cut. `len`, `total` and `sha` SHALL be computed over the final bytes, after both scrubs, and `rd: true` SHALL be set when the executor reported `redacted` or the capture scrub replaced anything. Login parts publish no body and need no scrub.
+Secrets SHALL be scrubbed by one layer: the executor scrubs every result whose request expanded a `${secret:x}`, for every caller (`add-gateway-secrets` "Expanded secrets never leave the request"), and reports `redacted`; the collector SHALL NOT scrub again. The collector SHALL publish a data step's body exactly as the executor returned it, with `len`, `total` and `sha` over those bytes, and SHALL set `rd: true` only when the executor reported `redacted`. Captured values are not scrubbed from data bodies. Login parts publish no body.
 
 #### Scenario: Binary body
 - **WHEN** an HTTP step returns a 900-byte body containing NUL bytes
@@ -406,19 +388,7 @@ Secrets and captures SHALL each be scrubbed by one layer. Secrets: the executor 
 
 #### Scenario: Error page echoes the credential
 - **WHEN** a step sent `Authorization: Basic ${secret:meter_basic|b64}` and the 401 page echoes the request headers
-- **THEN** the executor's scrub has replaced the encoded credential with `${secret:meter_basic}` and reported `redacted`, the collector finds nothing more to replace, `total` and `sha` match the scrubbed bytes, the header has `rd: true`, and neither the raw nor the base64 value reaches S3
-
-#### Scenario: Reply echoes the session id
-- **WHEN** a data step sent `SSES=${cap:sses|url}` and the reply body contains the session id
-- **THEN** every occurrence is replaced with `${cap:sses}` before queueing and the header has `rd: true`
-
-#### Scenario: Data step captures from its own body
-- **WHEN** a data step that expanded no `${cap:x}` captures `tok` with `from: "body"`, `key: "next"` from its JSON reply, and later steps use `${cap:tok|url}`
-- **THEN** `tok` is extracted first, then every raw and URL-encoded occurrence of its value in that step's body is replaced with `${cap:tok}` before queueing, the body stays within `max_bytes`, the header has `rd: true`, and the token value never reaches S3
-
-#### Scenario: Capture scrub grows a body at its cap
-- **WHEN** a step with `max_bytes: 4096` expanded a 4-byte capture and the 4096-byte reply is filled with copies of it
-- **THEN** the published body is at most 4096 bytes, ends on a whole `${cap:<name>}` placeholder or on non-sensitive bytes, has `tr: true` and `rd: true`, and holds no partial value or placeholder at the cut
+- **THEN** the executor's scrub has replaced the encoded credential in place with `****` and reported `redacted`, the collector publishes the body unchanged, `total` and `sha` match the scrubbed bytes, the header has `rd: true`, and neither the raw nor the base64 value reaches S3
 
 #### Scenario: Date header carried
 - **WHEN** an XWEB data reply carries `Date: Thu, 31 Oct 2026 12:00:00 GMT`

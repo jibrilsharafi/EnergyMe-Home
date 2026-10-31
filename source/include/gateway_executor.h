@@ -42,6 +42,14 @@ namespace GatewayExec
         uint16_t port = 0;
         Access access = Access::NONE;
         Writes writes = Writes::ALLOW;
+        // The caller asserts this literal request is a read of its own target
+        // (collector job steps): no grant lookup for a non-GET or a tcp/udp payload.
+        bool declaredRead = false;
+        // Optional target MAC, compared with the ARP entry after connect and before
+        // the first byte; required on-link for writes, declared non-GET/payload
+        // reads and expanded secrets.
+        bool hasMac = false;
+        uint8_t mac[6] = {};
         uint32_t timeoutMs = 5000;
         size_t maxBytes = 4096;
         const char* callerId = "";
@@ -88,7 +96,6 @@ namespace GatewayExec
         size_t headersLength = 0;
         uint8_t* body = nullptr; // PSRAM
         size_t bodyLength = 0;
-        size_t bodyCapacity = 0; // bytes allocated at `body`; a scrub never writes past it
         uint16_t* registers = nullptr; // PSRAM, Modbus read
         size_t registerCount = 0;
         size_t written = 0;
@@ -124,11 +131,9 @@ namespace GatewayExec
 
     bool httpsAvailable();
 
-    // Write grants and read declarations (one list, replaced as a whole).
+    // Write grants (one list, replaced as a whole).
     void begin(); // loads the list from NVS
     // Validates and persists; `error` gets the reason when it returns false.
     bool setGrants(JsonArrayConst list, char* error, size_t errorSize);
     void grantsToJson(JsonArray out);
-    // Copies the list into `out` (GRANT_MAX_ENTRIES entries); empty on a lock failure.
-    size_t copyGrants(GatewayLogic::GrantEntry* out);
 }

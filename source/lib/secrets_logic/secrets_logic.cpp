@@ -20,9 +20,9 @@ uint64_t getLe(const uint8_t *p, size_t bytes) {
     return value;
 }
 
-bool isZeroMac(const uint8_t mac[6]) {
-    for (size_t i = 0; i < 6; i++) {
-        if (mac[i] != 0) return false;
+bool isZero(const uint8_t *p, size_t bytes) {
+    for (size_t i = 0; i < bytes; i++) {
+        if (p[i] != 0) return false;
     }
     return true;
 }
@@ -92,7 +92,6 @@ size_t encodeSlot(const SlotMeta &meta, const uint8_t *value, size_t length, uin
     memcpy(out + 2, meta.name, nameLength);
     memcpy(out + 26, meta.ip, 4);
     putLe(out + 30, meta.port, 2);
-    if (meta.hasMac) memcpy(out + 32, meta.mac, 6);
     putLe(out + 38, meta.setAt, 8);
     putLe(out + 46, length, 2);
     memcpy(out + SLOT_HEADER_BYTES, value, length);
@@ -115,11 +114,8 @@ bool decodeSlot(const uint8_t *blob, size_t size, SlotMeta *meta, const uint8_t 
     decoded.name[nameLength] = '\0';
     memcpy(decoded.ip, blob + 26, 4);
     decoded.port = static_cast<uint16_t>(getLe(blob + 30, 2));
-    memcpy(decoded.mac, blob + 32, 6);
-    decoded.hasMac = !isZeroMac(decoded.mac);
     decoded.setAt = getLe(blob + 38, 8);
-    if (!isValidName(decoded.name) || decoded.port == 0 || !GatewayLogic::isPrivateIpv4(decoded.ip)) return false;
-    if (decoded.hasMac && (decoded.mac[0] & 0x01) != 0) return false; // multicast and broadcast
+    if (!isValidName(decoded.name) || decoded.port == 0 || !GatewayLogic::isPrivateIpv4(decoded.ip) || !isZero(blob + 32, 6)) return false;
     if (!isValidValue(blob + SLOT_HEADER_BYTES, valueLength)) return false;
     *meta = decoded;
     if (value != nullptr) *value = blob + SLOT_HEADER_BYTES;
@@ -127,11 +123,8 @@ bool decodeSlot(const uint8_t *blob, size_t size, SlotMeta *meta, const uint8_t 
     return true;
 }
 
-size_t buildAad(char *out, size_t cap, const char *deviceId, const char *name, const uint8_t ip[4], uint16_t port, const uint8_t *mac,
-                uint64_t issuedAt) {
-    char macText[GatewayLogic::MAC_TEXT_BUFFER] = "";
-    if (mac != nullptr) GatewayLogic::formatMac(mac, macText, sizeof(macText));
-    int n = snprintf(out, cap, "energyme-secret-v1|%s|%s|%u.%u.%u.%u:%u|%s|%llu", deviceId, name, ip[0], ip[1], ip[2], ip[3], port, macText,
+size_t buildAad(char *out, size_t cap, const char *deviceId, const char *name, const uint8_t ip[4], uint16_t port, uint64_t issuedAt) {
+    int n = snprintf(out, cap, "energyme-secret-v1|%s|%s|%u.%u.%u.%u:%u||%llu", deviceId, name, ip[0], ip[1], ip[2], ip[3], port,
                      static_cast<unsigned long long>(issuedAt));
     return n > 0 && static_cast<size_t>(n) < cap ? static_cast<size_t>(n) : 0;
 }
@@ -160,27 +153,9 @@ bool unpadPlaintext(const uint8_t *plaintext, size_t size, const uint8_t **value
     return true;
 }
 
-uint64_t applyCeiling(bool clockSynced, uint64_t now, uint64_t hwm, bool *lowered) {
-    *lowered = clockSynced && hwm > now + WINDOW_FUTURE_S;
-    return *lowered ? now + WINDOW_FUTURE_S : hwm;
-}
-
-SetVerdict decideSet(bool clockSynced, uint64_t now, uint64_t hwm, uint64_t issuedAt, bool sameSlot) {
-    if (!clockSynced) return SetVerdict::CLOCK_NOT_SYNCED;
-    if (issuedAt < now && now - issuedAt > WINDOW_PAST_S) return SetVerdict::STALE; // no overflow near UINT64_MAX
-    if (issuedAt > now + WINDOW_FUTURE_S) return SetVerdict::CLOCK_SKEW;
-    if (sameSlot) return SetVerdict::ALREADY_APPLIED;
-    if (issuedAt <= hwm) return SetVerdict::STALE;
-    return SetVerdict::APPLY;
-}
-
-uint64_t hwmAfterDelete(bool clockSynced, uint64_t now, uint64_t hwm) { return clockSynced && now > hwm ? now : hwm; }
-
-uint64_t localSetAt(bool clockSynced, uint64_t now, uint64_t hwm) { return clockSynced && now > hwm + 1 ? now : hwm + 1; }
-
 Decision decide(const GatewayLogic::ResolveContext &context, const char *arg, const SlotMeta *slots, const bool *used, size_t count,
                 size_t placeholders) {
-    Decision d{-1, nullptr, nullptr, false};
+    Decision d{-1, nullptr, nullptr};
     if (!isValidName(arg) || placeholders >= PLACEHOLDERS_MAX) {
         d.reasonCode = "BAD_TEMPLATE";
         d.reasonDetail = placeholders >= PLACEHOLDERS_MAX ? "At most 8 secret placeholders per request" : "Invalid secret name";
@@ -206,31 +181,16 @@ Decision decide(const GatewayLogic::ResolveContext &context, const char *arg, co
         d.reasonDetail = "The secret is bound to another target";
         return d;
     }
-    if (context.onLink && !meta.hasMac) {
-        d.reasonDetail = "MAC_REQUIRED";
-        return d;
-    }
-    if (meta.hasMac && !context.onLink) {
-        d.reasonDetail = "TARGET_MAC_CHANGED";
-        return d;
-    }
+    // The target MAC travels on the request; the executor enforces it.
     d.reasonCode = nullptr;
     d.slot = slot;
-    d.requireMac = meta.hasMac;
     return d;
 }
 
-size_t scrub(uint8_t *buffer, size_t length, size_t cap, uint8_t *scratch, const ScrubForm *forms, size_t formCount, bool *truncated,
-             bool *redacted) {
-    return scrubAs("secret", buffer, length, cap, scratch, forms, formCount, truncated, redacted);
-}
-
-size_t scrubAs(const char *kind, uint8_t *buffer, size_t length, size_t cap, uint8_t *scratch, const ScrubForm *forms, size_t formCount,
-               bool *truncated, bool *redacted) {
-    size_t out = 0;
+size_t scrub(uint8_t *buffer, size_t length, const ScrubForm *forms, size_t formCount, bool truncated, bool *redacted) {
+    static_assert(sizeof(SCRUB_MARKER) - 1 == SCRUB_MIN_BYTES, "a marker longer than the shortest form would grow the output");
+    size_t out = 0; // never passes i: the matcher only reads bytes not yet overwritten
     size_t i = 0;
-    size_t protectedEnd = 0; // end of the last placeholder written: never cut into it
-    bool cut = false;
     while (i < length) {
         const ScrubForm *match = nullptr;
         for (size_t f = 0; f < formCount; f++) {
@@ -239,36 +199,23 @@ size_t scrubAs(const char *kind, uint8_t *buffer, size_t length, size_t cap, uin
             if ((match == nullptr || form.length > match->length) && memcmp(buffer + i, form.bytes, form.length) == 0) match = &form;
         }
         if (match == nullptr) {
-            if (out >= cap) {
-                cut = true;
-                break;
-            }
-            scratch[out++] = buffer[i++];
+            buffer[out++] = buffer[i++];
             continue;
         }
-        char placeholder[SCRUB_PLACEHOLDER_MAX + 1];
-        int n = snprintf(placeholder, sizeof(placeholder), "${%s:%s}", kind, match->name);
-        size_t placeholderLength = n > 0 ? static_cast<size_t>(n) : 0;
-        *redacted = true;
-        if (placeholderLength == 0 || placeholderLength >= sizeof(placeholder) || out + placeholderLength > cap) {
-            cut = true; // the placeholder would straddle the cap: dropped whole
-            break;
-        }
-        memcpy(scratch + out, placeholder, placeholderLength);
-        out += placeholderLength;
-        protectedEnd = out;
+        memcpy(buffer + out, SCRUB_MARKER, SCRUB_MIN_BYTES);
+        out += SCRUB_MIN_BYTES;
         i += match->length;
+        *redacted = true;
     }
-    if (cut) *truncated = true;
 
-    // A cut reply may end inside a value: drop the longest trailing prefix of any form.
-    if (*truncated) {
+    // A reply cut on receive may end inside a value: drop the longest trailing prefix of any form.
+    if (truncated) {
         size_t drop = 0;
         for (size_t f = 0; f < formCount; f++) {
             const ScrubForm &form = forms[f];
             if (form.length < SCRUB_MIN_BYTES) continue;
             for (size_t p = form.length - 1; p > drop && p >= SCRUB_MIN_BYTES; p--) {
-                if (p <= out - protectedEnd && memcmp(scratch + out - p, form.bytes, p) == 0) {
+                if (p <= out && memcmp(buffer + out - p, form.bytes, p) == 0) {
                     drop = p;
                     break;
                 }
@@ -279,7 +226,6 @@ size_t scrubAs(const char *kind, uint8_t *buffer, size_t length, size_t cap, uin
             *redacted = true;
         }
     }
-    memcpy(buffer, scratch, out);
     return out;
 }
 

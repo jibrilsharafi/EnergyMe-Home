@@ -265,6 +265,18 @@ namespace Gateway
         return true;
     }
 
+    // Optional `mac` of the target, lowercase aa:bb:cc:dd:ee:ff.
+    static bool _readMac(JsonObjectConst args, JsonDocument& doc, GatewayExec::Request& rq) {
+        if (args["mac"].isNull()) return true;
+        const char* text = _readString(args, "mac", nullptr);
+        if (text != nullptr && GatewayLogic::parseMac(text, rq.mac)) {
+            rq.hasMac = true;
+            return true;
+        }
+        _reject(doc, "BAD_ARGS", "mac must be six lowercase hex pairs, unicast and non-zero");
+        return false;
+    }
+
     static bool _readFlag(JsonObjectConst args, const char* key, JsonDocument& doc, bool* out) {
         JsonVariantConst value = args[key];
         if (value.isNull()) {
@@ -341,6 +353,7 @@ namespace Gateway
             _reject(doc, "BAD_ARGS", "path must start with / and contain no spaces or control characters");
             return;
         }
+        if (!_readMac(args, doc, rq)) return;
 
         JsonVariantConst headerArg = args["headers"];
         if (!headerArg.isNull() && !headerArg.is<JsonObjectConst>()) {
@@ -445,6 +458,7 @@ namespace Gateway
         rq.timeoutMs = timeoutMs;
         rq.callerId = executionId;
         rq.probeOnly = true;
+        if (!_readMac(args, doc, rq)) return;
         GatewayExec::Result result;
         GatewayExec::run(rq, result);
         if (!_mapStatus(result, doc)) return;
@@ -452,7 +466,7 @@ namespace Gateway
             _fail(doc, "TLS_FAILED", "No peer certificate");
             return;
         }
-        char sha[GatewayLogic::GRANT_ALLOW_TEXT_BUFFER];
+        char sha[GatewayLogic::DIGEST_BYTES * 2 + 1];
         GatewayLogic::formatHexDigest(result.cert.sha256, sha, sizeof(sha));
         JsonObject out = _succeed(doc);
         _setString(out, "cert_sha256", sha);
@@ -580,6 +594,7 @@ namespace Gateway
         rq.port = port;
         rq.waitMs = GatewayLogic::clampUdpWaitMs(wait);
         rq.callerId = executionId;
+        if (!_readMac(args, doc, rq)) return;
 
         uint8_t* payload = nullptr;
         size_t payloadLength = 0;
@@ -625,6 +640,7 @@ namespace Gateway
         rq.maxBytes = COMMAND_MAX_BYTES;
         rq.idleMs = GatewayLogic::clampIdleMs(idle);
         rq.callerId = executionId;
+        if (!_readMac(args, doc, rq)) return;
 
         const char* payloadB64 = _readString(args, "payload_b64", nullptr);
         const char* payloadText = _readString(args, "payload", nullptr);
@@ -734,7 +750,7 @@ namespace Gateway
         rq.values = values;
         rq.valueCount = write ? count : 0;
         rq.writeMultiple = fc == 15 || fc == 16;
-        if (!_readAccess(args, doc, &rq.access) || (write && !_readFlag(args, "verify", doc, &rq.verify))) {
+        if (!_readAccess(args, doc, &rq.access) || !_readMac(args, doc, rq) || (write && !_readFlag(args, "verify", doc, &rq.verify))) {
             free(values);
             return;
         }

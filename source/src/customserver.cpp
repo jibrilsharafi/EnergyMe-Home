@@ -3960,13 +3960,13 @@ namespace CustomServer
                 if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_SECRETS)) return;
                 JsonString value = json["value"].as<JsonString>(); // size() keeps an embedded NUL for the value rule to refuse
                 if (!json["name"].is<const char *>() || !json["ip"].is<const char *>() || !json["port"].is<int64_t>() || !json["value"].is<const char *>() ||
-                    (!json["mac"].isNull() && !json["mac"].is<const char *>())) {
-                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Expected {\"name\", \"ip\", \"port\", \"value\", \"mac\" (optional)}");
+                    !json["mac"].isNull()) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Expected {\"name\", \"ip\", \"port\", \"value\"}, no mac");
                     return;
                 }
                 Secrets::Outcome outcome;
                 if (!Secrets::setLocal(json["name"].as<const char *>(), json["ip"].as<const char *>(), json["port"].as<int64_t>(),
-                                       json["mac"] | "", (const uint8_t *)value.c_str(), value.size(), outcome)) {
+                                       (const uint8_t *)value.c_str(), value.size(), outcome)) {
                     int code = strcmp(outcome.status, "REJECTED") != 0 ? HTTP_CODE_INTERNAL_SERVER_ERROR
                                : (outcome.reasonCode != nullptr && strcmp(outcome.reasonCode, "SECRET_STORE_FULL") == 0) ? HTTP_CODE_CONFLICT
                                                                                                                          : HTTP_CODE_BAD_REQUEST;

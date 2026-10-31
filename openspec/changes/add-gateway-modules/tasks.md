@@ -83,3 +83,7 @@
 - [x] 6.2 Simplification agent; re-run unit tests and the golden replay after fixes
   - Simplify agent: helpers deduplicated, comma returns and stale comments removed, no reply string changed; it also surfaced an empty error on a grant lock failure (fixed). Unit tests 96/96, golden replay 43/43 after the fixes.
 - [ ] 6.3 PR to `development` with `Closes #` of the tracking issue
+
+## 7. Complexity audit 2026-10-31
+
+- [x] 7.1 Request-only target MAC (one-shot `mac` arg, one ARP compare, required on-link for writes, declared non-GET/payload reads and secrets; grant `mac` refused), plain path matching (no dot-segment or override-header rules), tcp/udp classed by payload presence with `["*"]`-only raw grants, read declarations replaced by the collector's `declared_read`; 201 B grant entry

@@ -13,7 +13,6 @@
 #include "lwip/netif.h"
 #include "lwip/tcpip.h"
 #include "mbedtls/platform_util.h"
-#include "mbedtls/sha256.h"
 
 #include "constants.h"
 #include "gateway.h"
@@ -128,18 +127,11 @@ namespace GatewayExec
     }
 
     bool checkMacBeforeFirstByte(const Prepared& prepared, Result& result, bool udp) {
-        if (!prepared.entryMac && !prepared.resolverMac) return true;
+        if (!prepared.checkMac) return true;
         uint8_t mac[6];
-        bool found = _resolveMac(prepared.octets, mac, udp, prepared.deadline);
-        if (prepared.entryMac && (!found || memcmp(mac, prepared.entryMacAddress, 6) != 0)) {
-            setOutcome(result, Status::REJECTED, "WRITE_NOT_ALLOWED", "TARGET_MAC_CHANGED");
-            return false;
-        }
-        if (prepared.resolverMac && (!found || memcmp(mac, prepared.resolverMacAddress, 6) != 0)) {
-            setOutcome(result, Status::REJECTED, prepared.resolverMacReason ? prepared.resolverMacReason : "WRITE_NOT_ALLOWED", "TARGET_MAC_CHANGED");
-            return false;
-        }
-        return true;
+        if (_resolveMac(prepared.octets, mac, udp, prepared.deadline) && memcmp(mac, prepared.mac, 6) == 0) return true;
+        setOutcome(result, Status::REJECTED, prepared.macReason, "TARGET_MAC_CHANGED");
+        return false;
     }
 
     bool connectAndSend(GatewayNet::Connection& connection, const Prepared& prepared, Result& result, bool tls, const uint8_t* data,
@@ -211,7 +203,7 @@ namespace GatewayExec
                         return false;
                     }
                     if (isReservedHeaderName(rq.headers[i].name)) {
-                        setOutcome(result, Status::REJECTED, "BAD_ARGS", "Framing and method-override headers are set by the device");
+                        setOutcome(result, Status::REJECTED, "BAD_ARGS", "Framing headers are set by the device");
                         return false;
                     }
                 }
@@ -313,8 +305,8 @@ namespace GatewayExec
         size_t length = 0;
         if (!_expand(rq, context, rq.path, b.path, Buffers::PATH - 1, b.scratch, expansion, &length, result)) return false;
         b.path[length] = '\0';
-        // Grant and declaration matching and the path rules run on the expanded path, so a
-        // sensitive value there would turn refusals into an oracle on it.
+        // Grant matching runs on the expanded path, so a sensitive value there would
+        // turn refusals into an oracle on it.
         if (expansion->sensitive) {
             setOutcome(result, Status::REJECTED, "BAD_TEMPLATE", "Sensitive placeholders are not allowed in the path");
             return false;
@@ -433,24 +425,8 @@ namespace GatewayExec
         } else if (rq.module == Module::TCP || rq.module == Module::UDP) {
             if (!_preparePayload(rq, context, buffers, &expansion, result)) return;
         }
-        if (expansion.macConflict) {
-            setOutcome(result, Status::REJECTED, expansion.macReasonCode ? expansion.macReasonCode : "BAD_TEMPLATE", "TARGET_MAC_CHANGED");
-            return;
-        }
 
-        // Also for a GET with a body, which is classed write below: a server may
-        // normalize dot segments or encoded separators past a prefix grant.
         const char* expandedPath = (const char*)buffers.path;
-        if (http && (strcmp(rq.method, "GET") != 0 || rq.access == Access::WRITE || buffers.bodyLength > 0) && !isSafeGrantPath(expandedPath)) {
-            setOutcome(result, Status::REJECTED, "BAD_ARGS", "path holds a dot segment, //, a backslash or an encoded separator");
-            return;
-        }
-
-        uint8_t digest[DIGEST_BYTES];
-        bool hasDigest = false;
-        if ((rq.module == Module::TCP || rq.module == Module::UDP) && buffers.wireLength > 0) {
-            hasDigest = mbedtls_sha256(buffers.wire, buffers.wireLength, digest, 0) == 0;
-        }
         PolicyRequest policy = {};
         policy.module = rq.module;
         memcpy(policy.ip, octets, 4);
@@ -459,6 +435,7 @@ namespace GatewayExec
         policy.method = rq.method;
         policy.path = expandedPath;
         policy.hasBody = http && buffers.bodyLength > 0;
+        policy.declaredRead = rq.declaredRead;
         policy.function = rq.module == Module::MODBUS_TCP
                               ? functionFor(rq.address.table, rq.modbusWrite, rq.modbusWrite ? rq.valueCount : rq.count, rq.writeMultiple)
                               : 0;
@@ -466,11 +443,8 @@ namespace GatewayExec
         policy.values = rq.values;
         policy.valueCount = rq.valueCount;
         policy.payloadLength = buffers.wireLength;
-        policy.payloadDigest = hasDigest ? digest : nullptr;
 
-        size_t grantCount = _copyGrants(_snapshot);
-        int readEntry = -1;
-        Verdict verdict = classify(policy, _snapshot, grantCount, &readEntry);
+        Verdict verdict = classify(policy);
         if (verdict == Verdict::BAD_ARGS) {
             setOutcome(result, Status::REJECTED, "BAD_ARGS", "access contradicts the Modbus function");
             return;
@@ -479,8 +453,9 @@ namespace GatewayExec
             setOutcome(result, Status::REJECTED, "WRITE_NOT_ALLOWED", "WRITES_DENIED");
             return;
         }
-        int entryIndex = readEntry;
+        int entryIndex = -1;
         if (verdict == Verdict::WRITE) {
+            size_t grantCount = _copyGrants(_snapshot);
             GrantMatch match = matchWriteGrant(policy, _snapshot, grantCount, &entryIndex);
             if (match != GrantMatch::ALLOWED) {
                 setOutcome(result, Status::REJECTED, match == GrantMatch::OUT_OF_RANGE ? "WRITE_OUT_OF_RANGE" : "WRITE_NOT_ALLOWED",
@@ -488,6 +463,14 @@ namespace GatewayExec
                            rq.port, result.address);
                 return;
             }
+        }
+
+        PolicyRequest undeclared = policy;
+        undeclared.declaredRead = false;
+        MacDecision mac = macDecisionFor(rq.hasMac, onLink, classify(undeclared) == Verdict::WRITE, expansion.sensitive);
+        if (mac.action == MacAction::REJECT) {
+            setOutcome(result, Status::REJECTED, mac.reasonCode, "%s", mac.reasonDetail);
+            return;
         }
 
         Prepared prepared = {};
@@ -498,34 +481,13 @@ namespace GatewayExec
         prepared.wire = buffers.wire;
         prepared.wireLength = buffers.wireLength;
         if (rq.module == Module::HTTPS && !rq.probeOnly) parseHexDigest(rq.certSha256, prepared.pin);
-        if (entryIndex >= 0) {
-            const GrantEntry& entry = _snapshot[entryIndex];
-            switch (macCheckFor(entry.hasMac, onLink)) {
-                case MacCheck::MAC_REQUIRED:
-                    setOutcome(result, Status::REJECTED, "WRITE_NOT_ALLOWED", "MAC_REQUIRED");
-                    return;
-                case MacCheck::TARGET_MAC_CHANGED:
-                    setOutcome(result, Status::REJECTED, "WRITE_NOT_ALLOWED", "TARGET_MAC_CHANGED");
-                    return;
-                case MacCheck::COMPARE:
-                    prepared.entryMac = true;
-                    memcpy(prepared.entryMacAddress, entry.mac, 6);
-                    break;
-                case MacCheck::NONE:
-                    break;
-            }
-        }
-        if (expansion.requireMac) {
-            prepared.resolverMac = true;
-            memcpy(prepared.resolverMacAddress, expansion.mac, 6);
-            prepared.resolverMacReason = expansion.macReasonCode;
-        }
+        prepared.checkMac = mac.action == MacAction::COMPARE;
+        memcpy(prepared.mac, rq.mac, 6);
+        prepared.macReason = mac.reasonCode;
 
         // Audit: writes change a LAN device, so they are logged at INFO; reads (every poll) only at DEBUG.
         if (verdict == Verdict::WRITE) {
             LOG_INFO("Gateway %s: %s write by entry %d %s:%u %s", rq.callerId, moduleName(rq.module), entryIndex, rq.ip, rq.port, result.address);
-        } else if (entryIndex >= 0) {
-            LOG_DEBUG("Gateway %s: %s read by entry %d %s:%u %s", rq.callerId, moduleName(rq.module), entryIndex, rq.ip, rq.port, result.address);
         } else {
             LOG_DEBUG("Gateway %s: %s read %s:%u %s", rq.callerId, moduleName(rq.module), rq.ip, rq.port, result.address);
         }
@@ -638,7 +600,7 @@ namespace GatewayExec
                 else allowText[allowCount++] = a.as<const char*>();
             }
             if (!shapeOk) {
-                snprintf(error, errorSize, "Entry %u: needs ip, port, module, allow (1-4 strings), optional kind and mac", (unsigned)count);
+                snprintf(error, errorSize, "Entry %u: needs ip, port, module, allow (1-4 strings), optional kind", (unsigned)count);
                 valid = false;
                 break;
             }
@@ -674,8 +636,6 @@ namespace GatewayExec
         return persisted;
     }
 
-    size_t copyGrants(GrantEntry* out) { return _copyGrants(out); }
-
     void grantsToJson(JsonArray out) {
         GrantEntry* entries = (GrantEntry*)ps_malloc(sizeof(GrantEntry) * GRANT_MAX_ENTRIES);
         if (entries == nullptr) return;
@@ -688,11 +648,7 @@ namespace GatewayExec
             entry["ip"] = text;
             entry["port"] = e.port;
             entry["module"] = moduleName(e.module);
-            entry["kind"] = e.kind == GrantKind::READ ? "read" : "write";
-            if (e.hasMac) {
-                formatMac(e.mac, text, sizeof(text));
-                entry["mac"] = text;
-            }
+            entry["kind"] = "write";
             JsonArray allow = entry["allow"].to<JsonArray>();
             for (size_t a = 0; a < e.allowCount; a++) {
                 if (grantAllowText(e, a, text, sizeof(text))) allow.add(text);

@@ -292,8 +292,10 @@ def serve(args: argparse.Namespace) -> int:
 # ---------------------------------------------------------------------------
 
 
-def golden_cases(pc: str) -> list[tuple[str, str, dict]]:
-    """(name, op, args). Writes use addresses the reads never touch, so runs stay repeatable."""
+def golden_cases(pc: str, mac: str | None = None) -> list[tuple[str, str, dict]]:
+    """(name, op, args). Writes use addresses the reads never touch, so runs stay repeatable.
+    Writes to the on-link PC carry its `mac` (required by the firmware for on-link writes)."""
+    w = {"mac": mac} if mac else {}
     b64 = lambda data: base64.b64encode(data).decode()  # noqa: E731
     http = lambda path, **extra: {"ip": pc, "port": HTTP_PORT, "path": path, "timeout_ms": 3000, **extra}  # noqa: E731
     mb = lambda **extra: {"ip": pc, "port": MODBUS_PORT, "unit": 1, "timeout_ms": 2000, **extra}  # noqa: E731
@@ -311,9 +313,9 @@ def golden_cases(pc: str) -> list[tuple[str, str, dict]]:
         ("http_status_500", "http_request", http("/status500")),
         ("http_query", "http_request", http("/echo?a=1&b=two")),
         ("http_custom_header", "http_request", http("/headers", headers={"X-Test": "golden"})),
-        ("http_post_text", "http_request", http("/echo", method="POST", body="name=value&x=1")),
-        ("http_post_b64", "http_request", http("/echo", method="POST", body_b64=b64(b"\x00\x01binary"))),
-        ("http_put_empty", "http_request", http("/echo", method="PUT")),
+        ("http_post_text", "http_request", http("/echo", method="POST", body="name=value&x=1", **w)),
+        ("http_post_b64", "http_request", http("/echo", method="POST", body_b64=b64(b"\x00\x01binary"), **w)),
+        ("http_put_empty", "http_request", http("/echo", method="PUT", **w)),
         ("http_hang", "http_request", {"ip": pc, "port": SILENT_PORT, "path": "/", "timeout_ms": 1000}),
         ("http_closed_port", "http_request", {"ip": pc, "port": CLOSED_PORT, "path": "/", "timeout_ms": 2000}),
         ("http_unused_ip", "http_request", {"ip": UNUSED_IP, "port": 80, "path": "/", "timeout_ms": 1000}),
@@ -329,28 +331,28 @@ def golden_cases(pc: str) -> list[tuple[str, str, dict]]:
         ("modbus_bad_count", "modbus_read", mb(function=3, address=0, count=0)),
         ("modbus_closed_port", "modbus_read", {**mb(function=3, address=0, count=1), "port": CLOSED_PORT}),
         ("modbus_silent", "modbus_read", {**mb(function=3, address=0, count=1), "port": SILENT_PORT, "timeout_ms": 1000}),
-        ("modbus_write_fc6", "modbus_write", mb(function=6, address=200, values=[215])),
-        ("modbus_write_fc16", "modbus_write", mb(function=16, address=201, values=[1, 2, 3])),
-        ("modbus_write_fc5", "modbus_write", mb(function=5, address=200, values=[1])),
-        ("modbus_write_fc15", "modbus_write", mb(function=15, address=201, values=[1, 0, 1])),
-        ("modbus_write_bad_value", "modbus_write", mb(function=5, address=200, values=[2])),
-        ("udp_text", "udp_send", {"ip": pc, "port": UDP_PORT, "payload_b64": b64(b"ping golden"), "wait_ms": 1000}),
-        ("udp_binary", "udp_send", {"ip": pc, "port": UDP_PORT, "payload_b64": b64(b"\x00\xff\x10"), "wait_ms": 1000}),
-        ("udp_no_wait", "udp_send", {"ip": pc, "port": UDP_PORT, "payload_b64": b64(b"fire")}),
-        ("udp_no_reply", "udp_send", {"ip": pc, "port": CLOSED_UDP_PORT, "payload_b64": b64(b"x"), "wait_ms": 500}),
-        ("udp_bad_b64", "udp_send", {"ip": pc, "port": UDP_PORT, "payload_b64": "***"}),
+        ("modbus_write_fc6", "modbus_write", mb(function=6, address=200, values=[215], **w)),
+        ("modbus_write_fc16", "modbus_write", mb(function=16, address=201, values=[1, 2, 3], **w)),
+        ("modbus_write_fc5", "modbus_write", mb(function=5, address=200, values=[1], **w)),
+        ("modbus_write_fc15", "modbus_write", mb(function=15, address=201, values=[1, 0, 1], **w)),
+        ("modbus_write_bad_value", "modbus_write", mb(function=5, address=200, values=[2], **w)),
+        ("udp_text", "udp_send", {"ip": pc, "port": UDP_PORT, "payload_b64": b64(b"ping golden"), "wait_ms": 1000, **w}),
+        ("udp_binary", "udp_send", {"ip": pc, "port": UDP_PORT, "payload_b64": b64(b"\x00\xff\x10"), "wait_ms": 1000, **w}),
+        ("udp_no_wait", "udp_send", {"ip": pc, "port": UDP_PORT, "payload_b64": b64(b"fire"), **w}),
+        ("udp_no_reply", "udp_send", {"ip": pc, "port": CLOSED_UDP_PORT, "payload_b64": b64(b"x"), "wait_ms": 500, **w}),
+        ("udp_bad_b64", "udp_send", {"ip": pc, "port": UDP_PORT, "payload_b64": "***", **w}),
         ("ping_pc", "ping", {"ip": pc, "count": 2}),
         ("unknown_op", "telnet", {"ip": pc}),
     ]
 
 
-def golden_grants(pc: str, mac: str) -> list[dict]:
-    """Grants and read declarations that let the golden writes and POSTs run on firmware with write grants."""
+def golden_grants(pc: str) -> list[dict]:
+    """Write grants that let the golden writes and POSTs run (the MAC travels on each request)."""
     return [
-        {"ip": pc, "port": MODBUS_PORT, "module": "modbus_tcp", "mac": mac, "allow": ["u1/hr200:4", "u1/co200:4"]},
-        {"ip": pc, "port": HTTP_PORT, "module": "http", "kind": "read", "mac": mac, "allow": ["POST /echo", "PUT /echo"]},
-        {"ip": pc, "port": UDP_PORT, "module": "udp", "mac": mac, "allow": ["*"]},
-        {"ip": pc, "port": CLOSED_UDP_PORT, "module": "udp", "mac": mac, "allow": ["*"]},
+        {"ip": pc, "port": MODBUS_PORT, "module": "modbus_tcp", "allow": ["u1/hr200:4", "u1/co200:4"]},
+        {"ip": pc, "port": HTTP_PORT, "module": "http", "allow": ["/echo"]},
+        {"ip": pc, "port": UDP_PORT, "module": "udp", "allow": ["*"]},
+        {"ip": pc, "port": CLOSED_UDP_PORT, "module": "udp", "allow": ["*"]},
     ]
 
 
@@ -362,7 +364,7 @@ def grants(args: argparse.Namespace) -> int:
     if args.host in BLOCKED_DEVICES:
         print("refusing the PROD bench address", file=sys.stderr)
         return 2
-    body = {"write_grants": [] if args.clear else golden_grants(args.pc, args.mac)}
+    body = {"write_grants": [] if args.clear else golden_grants(args.pc)}
     response = requests.put(f"http://{args.host}/api/v1/gateway", json=body, auth=HTTPDigestAuth(args.user, args.password), timeout=10)
     print(response.status_code, response.text)
     return 0 if response.ok else 1
@@ -395,7 +397,7 @@ def capture(args: argparse.Namespace) -> int:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     only = set(args.only.split(",")) if args.only else None
-    for name, op, op_args in golden_cases(args.pc):
+    for name, op, op_args in golden_cases(args.pc, args.mac):
         if only and name not in only:
             continue
         execution_id = cloud.dispatch(op, op_args, 60)
@@ -455,11 +457,11 @@ def main() -> int:
     cap.add_argument("--env", default="dev")
     cap.add_argument("--region", default="eu-west-1")
     cap.add_argument("--only", help="comma-separated case names")
+    cap.add_argument("--mac", help="MAC of the PC running 'serve' (lowercase aa:bb:..), sent with the on-link writes")
     cap.set_defaults(func=capture)
     grt = sub.add_parser("grants")
     grt.add_argument("--host", required=True, help="device IPv4 (local REST API)")
     grt.add_argument("--pc", required=True)
-    grt.add_argument("--mac", help="MAC of the PC running 'serve', lowercase aa:bb:..")
     grt.add_argument("--clear", action="store_true")
     grt.add_argument("--user", default="admin")
     grt.add_argument("--password", default="energyme00")

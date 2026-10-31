@@ -2,8 +2,7 @@
 // Copyright (C) 2026 Jibril Sharafi
 
 // Unit tests for collector_logic: job set validation (schema, quotas,
-// read-only classing, targets, templates, modules), binding hash, captures,
-// encoding chains, expiry and the capture echo scrub.
+// read-only classing, targets, templates, modules), captures and expiry.
 
 #include <unity.h>
 
@@ -37,35 +36,20 @@ void stubSha(const uint8_t *data, size_t length, uint8_t out[32]) {
 int targetVerdict = 0;
 int targetCheck(const uint8_t[4]) { return targetVerdict; }
 
-GatewayLogic::GrantEntry grants[GatewayLogic::GRANT_MAX_ENTRIES];
-size_t grantCount = 0;
-
-void addGrant(const char *ip, int port, const char *module, const char *kind, std::initializer_list<const char *> allow) {
-    const char *list[GatewayLogic::GRANT_ALLOW_MAX];
-    size_t n = 0;
-    for (const char *a : allow) list[n++] = a;
-    GatewayLogic::GrantInput input{ip, port, module, kind, "02:11:22:33:44:55", list, n};
-    const char *why = GatewayLogic::validateGrant(input, &grants[grantCount]);
-    TEST_ASSERT_NULL_MESSAGE(why, why);
-    grantCount++;
-}
-
-void addXwebDeclaration() { addGrant("192.168.1.50", 80, "http", "read", {"POST /cgi-bin/login.lua", "POST /cgi-bin/datachart.cgi"}); }
-
 char poolStorage[POOL_BYTES];
 JobTable table; // static: the table is large
 ApplyError error;
 bool httpsAvailable = true;
 
-bool validate(const std::string &doc, bool classify = true) {
-    ValidationContext context{grants, grantCount, stubSha, targetCheck, httpsAvailable, classify, nullptr};
+bool validate(const std::string &doc) {
+    ValidationContext context{stubSha, targetCheck, httpsAvailable, nullptr};
     table.pool = poolStorage;
     table.poolCap = sizeof(poolStorage);
     return validateJobSet(doc.c_str(), doc.size(), context, &table, &error);
 }
 
-void expectError(const std::string &doc, const char *code, const char *job, const char *field, bool classify = true) {
-    bool ok = validate(doc, classify);
+void expectError(const std::string &doc, const char *code, const char *job, const char *field) {
+    bool ok = validate(doc);
     char message[200];
     snprintf(message, sizeof(message), "got %s job=%s field=%s", error.code ? error.code : "(ok)", error.job, error.field);
     TEST_ASSERT_FALSE_MESSAGE(ok, message);
@@ -74,8 +58,8 @@ void expectError(const std::string &doc, const char *code, const char *job, cons
     TEST_ASSERT_EQUAL_STRING_MESSAGE(field, error.field, message);
 }
 
-void expectValid(const std::string &doc, bool classify = true) {
-    bool ok = validate(doc, classify);
+void expectValid(const std::string &doc) {
+    bool ok = validate(doc);
     char message[200];
     snprintf(message, sizeof(message), "got %s job=%s field=%s", error.code ? error.code : "(ok)", error.job, error.field);
     TEST_ASSERT_TRUE_MESSAGE(ok, message);
@@ -129,7 +113,6 @@ std::string httpStep(const char *method, const char *path, const std::string &mo
 }
 
 void reset() {
-    grantCount = 0;
     targetVerdict = 0;
     httpsAvailable = true;
     memset(&error, 0, sizeof(error));
@@ -141,9 +124,8 @@ void reset() {
 // Worked examples
 // ---------------------------------------------------------------------------
 
-static void test_xweb_example_with_declaration(void) {
+static void test_xweb_example(void) {
     reset();
-    addXwebDeclaration();
     expectValid(set(XWEB_JOB));
     TEST_ASSERT_EQUAL_UINT8(1, table.jobCount);
     TEST_ASSERT_EQUAL_UINT32(2097152, table.budgetBytesH);
@@ -183,14 +165,10 @@ static void test_xweb_example_with_declaration(void) {
     TEST_ASSERT_FALSE(c.fromHeader);
     TEST_ASSERT_EQUAL_STRING("sses=", c.after);
     TEST_ASSERT_EQUAL_STRING("&", c.before);
-    TEST_ASSERT_EQUAL_UINT8(1, c.chainCount);
-    TEST_ASSERT_EQUAL_UINT8(1, c.chains[0].count);
-    TEST_ASSERT_TRUE(c.chains[0].encodings[0] == Encoding::URL);
     TEST_ASSERT_TRUE(j.usesTime);
     TEST_ASSERT_TRUE(j.usesCursor);
     TEST_ASSERT_FALSE(j.batch);
     uint8_t zero[32] = {};
-    TEST_ASSERT_TRUE(memcmp(zero, j.bindingHash, 32) != 0);
     TEST_ASSERT_TRUE(memcmp(zero, table.sha256, 32) != 0);
     TEST_ASSERT_TRUE(table.poolUsed < POOL_BYTES);
 }
@@ -214,7 +192,6 @@ static void test_modbus_example(void) {
 
 static void test_both_examples_in_one_set(void) {
     reset();
-    addXwebDeclaration();
     std::string doc = set(std::string(XWEB_JOB) + "," + MODBUS_JOB);
     TEST_ASSERT_TRUE(doc.size() <= DOC_MAX);
     expectValid(doc);
@@ -406,11 +383,10 @@ static void test_capture_schema(void) {
 // Read-only classing
 // ---------------------------------------------------------------------------
 
-static void test_xweb_before_declaration(void) {
+// The XWEB POSTs are read by declaration: no grant list entry is needed.
+static void test_xweb_needs_no_grant(void) {
     reset();
-    expectError(set(XWEB_JOB), "WRITE_NOT_ALLOWED", "xweb_hist", "session.login[0]");
-    // Boot load skips the apply-time classing.
-    expectValid(set(XWEB_JOB), false);
+    expectValid(set(XWEB_JOB));
 }
 
 static void test_modbus_write_refused(void) {
@@ -434,7 +410,6 @@ static void test_get_with_body_refused(void) {
 
 static void test_access_is_bad_job(void) {
     reset();
-    addXwebDeclaration();
     expectError(set(job("a", "http", "192.168.1.50", 80, R"([{"id":"s1","access":"read","args":{"method":"POST","path":"/cgi-bin/login.lua"}}])")),
                 "BAD_JOB", "a", "access");
     expectError(set(job("a", "http", "192.168.1.50", 80, httpStep("POST", "/cgi-bin/login.lua", R"(,"access":"read")"))), "BAD_JOB", "a",
@@ -444,15 +419,12 @@ static void test_access_is_bad_job(void) {
     expectError(set(job("a", "http", "192.168.1.50", 80, httpStep("GET", "/", R"(,"target":{})"))), "BAD_JOB", "a", "target");
 }
 
-static void test_other_method_to_declared_path(void) {
+static void test_non_get_steps_are_literal(void) {
     reset();
-    addXwebDeclaration();
     expectValid(set(job("x", "http", "192.168.1.50", 80, httpStep("POST", "/cgi-bin/datachart.cgi?a=1"))));
-    expectError(set(job("x", "http", "192.168.1.50", 80, httpStep("DELETE", "/cgi-bin/datachart.cgi"))), "WRITE_NOT_ALLOWED", "x", "steps[0]");
-    expectError(set(job("x", "http", "192.168.1.50", 80, httpStep("PUT", "/cgi-bin/login.lua"))), "WRITE_NOT_ALLOWED", "x", "steps[0]");
-    // Declarations are bound to the target.
-    expectError(set(job("x", "http", "192.168.1.51", 80, httpStep("POST", "/cgi-bin/datachart.cgi"))), "WRITE_NOT_ALLOWED", "x", "steps[0]");
-    // A templated non-GET path can never match an exact declaration.
+    expectValid(set(job("x", "http", "192.168.1.50", 80, httpStep("DELETE", "/cgi-bin/datachart.cgi"))));
+    expectValid(set(job("x", "http", "192.168.1.50", 80, httpStep("PUT", "/cgi-bin/login.lua", R"(,"body":"a=${now}")"))));
+    // A templated non-GET path is not a literal read.
     expectError(set(job("x", "http", "192.168.1.50", 80, httpStep("POST", "/cgi-bin/datachart.cgi?t=${now}"))), "WRITE_NOT_ALLOWED", "x",
                 "steps[0]");
 }
@@ -466,27 +438,11 @@ static void test_state_changing_get_accepted(void) {
 
 static void test_udp_and_tcp_classing(void) {
     reset();
-    addGrant("192.168.1.80", 47808, "udp", "write", {"*"});
+    // Literal payloads are read by declaration; a templated payload is refused.
     const char *frame = "AQIDBAUGBwgJCgsMDQ4PEBE="; // 17 bytes
     std::string udp = std::string(R"([{"id":"q","args":{"payload_b64":")") + frame + R"(","wait_ms":500}}])";
-    expectError(set(job("u", "udp", "192.168.1.80", 47808, udp)), "WRITE_NOT_ALLOWED", "u", "steps[0]");
-
-    // A MAC-bound read declaration holding the frame's digest classes it read.
-    uint8_t bytes[17];
-    for (int i = 0; i < 17; i++) bytes[i] = static_cast<uint8_t>(i + 1);
-    uint8_t digest[32];
-    stubSha(bytes, sizeof(bytes), digest);
-    char hex[65];
-    GatewayLogic::formatHexDigest(digest, hex, sizeof(hex));
-    addGrant("192.168.1.80", 47808, "udp", "read", {hex});
     expectValid(set(job("u", "udp", "192.168.1.80", 47808, udp)));
-
-    // tcp: an undeclared payload is write, an empty payload is read, a templated payload is write.
     std::string status = R"([{"id":"t","args":{"payload":"STATUS\r\n"}}])";
-    expectError(set(job("t", "tcp", "192.168.1.81", 4000, status)), "WRITE_NOT_ALLOWED", "t", "steps[0]");
-    stubSha(reinterpret_cast<const uint8_t *>("STATUS\r\n"), 8, digest);
-    GatewayLogic::formatHexDigest(digest, hex, sizeof(hex));
-    addGrant("192.168.1.81", 4000, "tcp", "read", {hex});
     expectValid(set(job("t", "tcp", "192.168.1.81", 4000, status)));
     expectError(set(job("t", "tcp", "192.168.1.81", 4000, R"([{"id":"t","args":{"payload":"T=${now}"}}])")), "WRITE_NOT_ALLOWED", "t",
                 "steps[0]");
@@ -499,6 +455,23 @@ static void test_udp_and_tcp_classing(void) {
 // Targets, templates, modules and stage order
 // ---------------------------------------------------------------------------
 
+static void test_target_mac(void) {
+    reset();
+    const char *target = R"("target":{"ip":"192.168.1.60","port":502})";
+    expectValid(set(MODBUS_JOB));
+    TEST_ASSERT_FALSE(table.jobs[0].hasMac);
+    expectValid(set(replace(MODBUS_JOB, target, R"("target":{"ip":"192.168.1.60","port":502,"mac":"02:11:22:33:44:55"})")));
+    TEST_ASSERT_TRUE(table.jobs[0].hasMac);
+    TEST_ASSERT_EQUAL_HEX8(0x02, table.jobs[0].mac[0]);
+    TEST_ASSERT_EQUAL_HEX8(0x55, table.jobs[0].mac[5]);
+    const char *bad[] = {"02:11:22:33:44:5G", "02-11-22-33-44-55", "ff:ff:ff:ff:ff:ff", "00:00:00:00:00:00", ""};
+    for (const char *mac : bad) {
+        std::string doc = replace(MODBUS_JOB, target, std::string(R"("target":{"ip":"192.168.1.60","port":502,"mac":")") + mac + "\"}");
+        expectError(set(doc), "BAD_JOB", "mb_meters", "target");
+    }
+    expectError(set(replace(MODBUS_JOB, target, R"("target":{"ip":"192.168.1.60","port":502,"mac":1})")), "BAD_JOB", "mb_meters", "target");
+}
+
 static void test_target_rules(void) {
     reset();
     targetVerdict = 1;
@@ -506,12 +479,12 @@ static void test_target_rules(void) {
     targetVerdict = 2;
     expectError(set(MODBUS_JOB), "TARGET_NOT_ALLOWED", "mb_meters", "target");
     // Classing comes first.
-    expectError(set(XWEB_JOB), "WRITE_NOT_ALLOWED", "xweb_hist", "session.login[0]");
+    expectError(set(job("w", "modbus_tcp", "192.168.1.60", 502, R"([{"id":"u1","args":{"address":"u1/hr0","values":[1]}}])")),
+                "WRITE_NOT_ALLOWED", "w", "steps[0]");
 }
 
 static void test_template_check(void) {
     reset();
-    addXwebDeclaration();
     // Capture used before it is set: step 1 uses sses, step 2 captures it.
     std::string steps = R"([{"id":"a","args":{"method":"GET","path":"/a?s=${cap:sses}"}},)"
                         R"({"id":"b","args":{"method":"GET","path":"/b"},"captures":[{"name":"sses","from":"body","key":"sses"}]}])";
@@ -522,7 +495,6 @@ static void test_template_check(void) {
     steps = R"([{"id":"a","args":{"method":"GET","path":"/a"},"captures":[{"name":"tok","from":"body","key":"next"}]},)"
             R"({"id":"b","args":{"method":"GET","path":"/b?t=${cap:tok|url}&r=${cap:tok}","headers":{"X-T":"${cap:tok|b64|url}"}}}])";
     expectValid(set(job("t", "http", "192.168.1.50", 80, steps)));
-    TEST_ASSERT_EQUAL_UINT8(3, table.jobs[0].captures[0].chainCount);
     TEST_ASSERT_FALSE(table.jobs[0].usesTime);
 
     const char *bad[] = {"/x?${foo}",      "/x?${var:missing}", "/x?${now:s}",     "/x?${secret}",
@@ -620,47 +592,10 @@ static void test_http_args_schema(void) {
     expectValid(set(job("h", "http", "192.168.1.50", 80, R"([{"id":"s1","args":{}}])")));
     TEST_ASSERT_EQUAL_STRING("GET", table.jobs[0].steps[0].args.method);
     TEST_ASSERT_EQUAL_STRING("/", table.jobs[0].steps[0].args.path);
-    addXwebDeclaration();
     expectValid(set(job("h", "http", "192.168.1.50", 80, httpStep("POST", "/cgi-bin/login.lua", R"(,"body_b64":"AAEC/w==")"))));
     const StepArgs &args = table.jobs[0].steps[0].args;
     TEST_ASSERT_EQUAL_UINT16(4, args.bodyBytesLength);
     TEST_ASSERT_EQUAL_HEX8(0xFF, args.bodyBytes[3]);
-}
-
-// ---------------------------------------------------------------------------
-// Binding hash
-// ---------------------------------------------------------------------------
-
-static void test_binding_hash(void) {
-    reset();
-    addXwebDeclaration();
-    addGrant("192.168.1.51", 80, "http", "read", {"POST /cgi-bin/login.lua", "POST /cgi-bin/datachart.cgi"});
-    expectValid(set(XWEB_JOB));
-    uint8_t base[32];
-    memcpy(base, table.jobs[0].bindingHash, 32);
-    char canonical[2048];
-    TEST_ASSERT_TRUE(canonicalBinding(table.jobs[0], canonical, sizeof(canonical)) > 0);
-    TEST_ASSERT_EQUAL_size_t(0, canonicalBinding(table.jobs[0], canonical, 16)); // does not fit
-
-    // Reordered keys and a changed interval or data step: same binding.
-    std::string reordered = replace(XWEB_JOB, R"("target":{"ip":"192.168.1.50","port":80})", R"("target":{"port":80,"ip":"192.168.1.50"})");
-    reordered = replace(reordered, R"("ttl_s":1800,"expiry":{"status":[401,403],"marker":"login.lua"},)", "");
-    reordered = replace(reordered, R"("session":{)", R"("session":{"expiry":{"marker":"login.lua","status":[401,403]},"ttl_s":1800,)");
-    reordered = replace(reordered, R"("interval_s":300)", R"("interval_s":600)");
-    expectValid(set(reordered));
-    TEST_ASSERT_EQUAL_UINT8_ARRAY(base, table.jobs[0].bindingHash, 32);
-
-    // Target, session or module change: different binding.
-    expectValid(set(replace(XWEB_JOB, "192.168.1.50", "192.168.1.51")));
-    TEST_ASSERT_TRUE(memcmp(base, table.jobs[0].bindingHash, 32) != 0);
-    expectValid(set(replace(XWEB_JOB, R"("ttl_s":1800)", R"("ttl_s":1700)")));
-    TEST_ASSERT_TRUE(memcmp(base, table.jobs[0].bindingHash, 32) != 0);
-    expectValid(set(replace(XWEB_JOB, R"("after":"sses=")", R"("after":"sid=")")));
-    TEST_ASSERT_TRUE(memcmp(base, table.jobs[0].bindingHash, 32) != 0);
-    // Job-level limits the login step inherits are not session values.
-    expectValid(set(replace(replace(XWEB_JOB, R"("max_bytes":131072)", R"("max_bytes":65536)"), R"("step_timeout_ms":8000)",
-                            R"("step_timeout_ms":5000)")));
-    TEST_ASSERT_EQUAL_UINT8_ARRAY(base, table.jobs[0].bindingHash, 32);
 }
 
 // ---------------------------------------------------------------------------
@@ -794,7 +729,6 @@ static void test_capture_delimiters(void) {
 
 static void test_expiry_rule(void) {
     reset();
-    addXwebDeclaration();
     expectValid(set(XWEB_JOB));
     const Job &j = table.jobs[0];
     const char *page = "<html><form action=\"/cgi-bin/login.lua\"></html>";
@@ -807,70 +741,11 @@ static void test_expiry_rule(void) {
     TEST_ASSERT_FALSE(isExpired(table.jobs[0], 401, nullptr, 0)); // no session
 }
 
-static void test_apply_chain(void) {
-    const uint8_t raw[] = "a b&c";
-    uint8_t out[64], scratch[64];
-    EncodingChain none{0, {}};
-    TEST_ASSERT_EQUAL_size_t(5, applyChain(none, raw, 5, out, sizeof(out), scratch, sizeof(scratch)));
-    EncodingChain url{1, {Encoding::URL}};
-    size_t n = applyChain(url, raw, 5, out, sizeof(out), scratch, sizeof(scratch));
-    TEST_ASSERT_EQUAL_STRING_LEN("a%20b%26c", out, n);
-    EncodingChain b64url{2, {Encoding::B64, Encoding::URL}};
-    const uint8_t q[] = {0xFB, 0xFF};
-    n = applyChain(b64url, q, 2, out, sizeof(out), scratch, sizeof(scratch));
-    TEST_ASSERT_EQUAL_STRING_LEN("%2B%2F8%3D", out, n);
-    EncodingChain three{3, {Encoding::JSON, Encoding::URL, Encoding::B64}};
-    n = applyChain(three, reinterpret_cast<const uint8_t *>("\""), 1, out, sizeof(out), scratch, sizeof(scratch));
-    TEST_ASSERT_EQUAL_STRING_LEN("JTVDJTIy", out, n); // \" -> %5C%22 -> base64
-    TEST_ASSERT_EQUAL_size_t(0, applyChain(url, raw, 5, out, 4, scratch, sizeof(scratch)));
-}
-
-static void test_scrub_captures(void) {
-    // Data step sent SSES=${cap:sses|url}; the reply echoes the raw and URL forms.
-    const char *raw = "ab cd/ef";
-    uint8_t encoded[32];
-    bool ok = false;
-    size_t encodedLength = GatewayLogic::encodeUrl(reinterpret_cast<const uint8_t *>(raw), strlen(raw), encoded, sizeof(encoded), &ok);
-    SecretsLogic::ScrubForm forms[] = {{reinterpret_cast<const uint8_t *>(raw), strlen(raw), "sses"}, {encoded, encodedLength, "sses"}};
-    char body[128];
-    int n = snprintf(body, sizeof(body), "x=ab cd/ef;y=%.*s;z", static_cast<int>(encodedLength), encoded);
-    uint8_t buffer[256], scratch[256];
-    memcpy(buffer, body, static_cast<size_t>(n));
-    bool truncated = false, redacted = false;
-    size_t length = scrubCaptures(buffer, static_cast<size_t>(n), sizeof(buffer), scratch, forms, 2, &truncated, &redacted);
-    TEST_ASSERT_EQUAL_STRING_LEN("x=${cap:sses};y=${cap:sses};z", buffer, length);
-    TEST_ASSERT_TRUE(redacted);
-    TEST_ASSERT_FALSE(truncated);
-
-    // Nothing to replace: rd stays false.
-    redacted = false;
-    memcpy(buffer, "nothing here", 12);
-    TEST_ASSERT_EQUAL_size_t(12, scrubCaptures(buffer, 12, sizeof(buffer), scratch, forms, 2, &truncated, &redacted));
-    TEST_ASSERT_FALSE(redacted);
-}
-
-static void test_scrub_grows_body_at_cap(void) {
-    // max_bytes 4096 filled with copies of a 4-byte capture.
-    static uint8_t buffer[4096], scratch[4096];
-    for (size_t i = 0; i < sizeof(buffer); i += 4) memcpy(buffer + i, "k9Zq", 4);
-    SecretsLogic::ScrubForm form{reinterpret_cast<const uint8_t *>("k9Zq"), 4, "tok"};
-    bool truncated = false, redacted = false;
-    size_t length = scrubCaptures(buffer, sizeof(buffer), sizeof(buffer), scratch, &form, 1, &truncated, &redacted);
-    TEST_ASSERT_TRUE(length <= 4096);
-    TEST_ASSERT_TRUE(truncated);
-    TEST_ASSERT_TRUE(redacted);
-    const char *placeholder = "${cap:tok}";
-    size_t p = strlen(placeholder);
-    TEST_ASSERT_EQUAL_size_t(0, length % p); // ends on a whole placeholder
-    TEST_ASSERT_EQUAL_MEMORY(placeholder, buffer + length - p, p);
-    for (size_t i = 0; i + 4 <= length; i++) TEST_ASSERT_FALSE(memcmp(buffer + i, "k9Zq", 4) == 0);
-}
-
 void run_collector_runtime_tests(void);
 
 int main(int, char **) {
     UNITY_BEGIN();
-    RUN_TEST(test_xweb_example_with_declaration);
+    RUN_TEST(test_xweb_example);
     RUN_TEST(test_modbus_example);
     RUN_TEST(test_both_examples_in_one_set);
     RUN_TEST(test_defaults_applied);
@@ -885,19 +760,19 @@ int main(int, char **) {
     RUN_TEST(test_field_ranges);
     RUN_TEST(test_step_and_var_quotas);
     RUN_TEST(test_capture_schema);
-    RUN_TEST(test_xweb_before_declaration);
+    RUN_TEST(test_xweb_needs_no_grant);
     RUN_TEST(test_modbus_write_refused);
     RUN_TEST(test_get_with_body_refused);
     RUN_TEST(test_access_is_bad_job);
-    RUN_TEST(test_other_method_to_declared_path);
+    RUN_TEST(test_non_get_steps_are_literal);
     RUN_TEST(test_state_changing_get_accepted);
     RUN_TEST(test_udp_and_tcp_classing);
+    RUN_TEST(test_target_mac);
     RUN_TEST(test_target_rules);
     RUN_TEST(test_template_check);
     RUN_TEST(test_template_grammar_matches_engine);
     RUN_TEST(test_module_unavailable_and_order);
     RUN_TEST(test_http_args_schema);
-    RUN_TEST(test_binding_hash);
     RUN_TEST(test_capture_json_key);
     RUN_TEST(test_capture_header_cookie);
     RUN_TEST(test_capture_second_set_cookie_line);
@@ -905,9 +780,6 @@ int main(int, char **) {
     RUN_TEST(test_capture_over_limit_missing);
     RUN_TEST(test_capture_delimiters);
     RUN_TEST(test_expiry_rule);
-    RUN_TEST(test_apply_chain);
-    RUN_TEST(test_scrub_captures);
-    RUN_TEST(test_scrub_grows_body_at_cap);
     run_collector_runtime_tests();
     return UNITY_END();
 }

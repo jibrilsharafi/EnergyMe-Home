@@ -53,9 +53,7 @@ bool isValidHeaderName(const char *name);
 bool isValidHeaderValue(const char *value);
 
 // Headers the firmware owns because they frame the request (Host, Content-Length,
-// Transfer-Encoding, Connection, ...) and method-override headers, which would
-// let the server run another method than the one classed. Case-insensitive.
-// Letting the cloud set them would allow request smuggling against lenient LAN servers.
+// Transfer-Encoding, Connection, ...). Case-insensitive. Letting the cloud set them would allow request smuggling against lenient LAN servers.
 bool isReservedHeaderName(const char *name);
 
 // ---------------------------------------------------------------------------

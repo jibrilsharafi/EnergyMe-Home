@@ -229,14 +229,6 @@ ExpandStatus expandTemplate(const char *tmpl, size_t length, const Resolver *cha
         }
         if (value.length > half) return ExpandStatus::TOO_LONG;
         result->sensitive = result->sensitive || value.sensitive;
-        if (value.requireMac) {
-            if (result->requireMac && memcmp(result->mac, value.mac, 6) != 0) result->macConflict = true;
-            if (!result->requireMac) {
-                memcpy(result->mac, value.mac, 6);
-                result->macReasonCode = value.macReasonCode;
-            }
-            result->requireMac = true;
-        }
 
         if (!recordExpansion(*resolver, placeholder, buffers[0], value.length, false, result)) return ExpandStatus::RESOLVER_FAILED;
         size_t current = 0, currentLength = value.length;

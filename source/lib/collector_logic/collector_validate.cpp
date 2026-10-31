@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Jibril Sharafi
 
 // Job set validation (spec "Job schema and quotas", "Jobs are read-only",
-// "Placeholders and encodings", "Captures") and the binding hash. Stages run
+// "Placeholders and encodings", "Captures"). Stages run
 // over the whole set in the spec order, so the first failure reported is the
 // first failure of the earliest stage. Iterative: no recursion over steps.
 
@@ -196,7 +196,7 @@ const char *unknownKey(JsonObjectConst object, const char *const *allowed, size_
 const char *const TOP_KEYS[] = {"v", "budget_bytes_h", "jobs"};
 const char *const JOB_KEYS[] = {"id",          "rev",        "enabled",   "source_id", "target", "module",  "interval_s", "jitter_s",
                                 "step_timeout_ms", "deadline_s", "max_bytes", "vars",      "session", "steps", "publish"};
-const char *const TARGET_KEYS[] = {"ip", "port"};
+const char *const TARGET_KEYS[] = {"ip", "port", "mac"};
 const char *const SESSION_KEYS[] = {"login", "ttl_s", "expiry"};
 const char *const EXPIRY_KEYS[] = {"status", "marker"};
 const char *const STEP_KEYS[] = {"id", "args", "timeout_ms", "max_bytes", "captures"};
@@ -636,6 +636,11 @@ bool parseJob(Validation &v, size_t index, JsonVariantConst value) {
     job.ip[length] = '\0';
     if (getInt(target["port"], 1, 65535, &number) != Got::OK) return fail(v.error, BAD_JOB, job.id, "target");
     job.port = static_cast<uint16_t>(number);
+    if (!target["mac"].isNull()) {
+        if (getString(target["mac"], 17, 17, &text, &length) != Got::OK || !GatewayLogic::parseMac(text, job.mac))
+            return fail(v.error, BAD_JOB, job.id, "target");
+        job.hasMac = true;
+    }
 
     if (getString(object["module"], 1, 16, &text, &length) != Got::OK || !GatewayLogic::parseModule(text, &job.module))
         return fail(v.error, BAD_JOB, job.id, "module");
@@ -696,48 +701,23 @@ bool parseJob(Validation &v, size_t index, JsonVariantConst value) {
 // Stage 2: read-only classing
 // ---------------------------------------------------------------------------
 
-bool isRead(Validation &v, const Job &job, const Step &step, bool modbusWrite) {
-    GatewayLogic::PolicyRequest request{};
-    request.module = job.module;
-    memcpy(request.ip, job.octets, 4);
-    request.port = job.port;
-    request.access = GatewayLogic::Access::NONE;
-    uint8_t digest[GatewayLogic::DIGEST_BYTES];
+// Job steps run as caller-declared reads of the job's own target, so only what
+// cannot be a literal read is refused: Modbus writes, a GET with a body, and a
+// placeholder in a non-GET path or a tcp payload.
+bool isRead(const Job &job, const Step &step, bool modbusWrite) {
     const StepArgs &args = step.args;
     switch (job.module) {
         case Module::HTTP:
         case Module::HTTPS:
-            // No exact declaration can match a path that expands differently each run.
-            if (strcmp(args.method, "GET") != 0 && GatewayLogic::hasPlaceholder(args.path, strlen(args.path))) return false;
-            request.method = args.method;
-            request.path = args.path;
-            request.hasBody = (args.body != nullptr && args.body[0] != '\0') || args.bodyBytesLength > 0;
-            break;
+            if (strcmp(args.method, "GET") == 0) return (args.body == nullptr || args.body[0] == '\0') && args.bodyBytesLength == 0;
+            return !GatewayLogic::hasPlaceholder(args.path, strlen(args.path));
         case Module::MODBUS_TCP:
-            if (modbusWrite) return false;
-            request.function = GatewayLogic::functionFor(args.address.table, false, args.count, false);
-            request.modbus = args.address;
-            break;
+            return !modbusWrite;
         case Module::TCP:
-        case Module::UDP: {
-            const uint8_t *bytes = args.payloadBytes;
-            size_t length = args.payloadBytesLength;
-            if (args.payload != nullptr) {
-                if (GatewayLogic::hasPlaceholder(args.payload, strlen(args.payload))) return false;
-                bytes = reinterpret_cast<const uint8_t *>(args.payload);
-                length = strlen(args.payload);
-            }
-            request.payloadLength = length;
-            if (length > 0) {
-                if (v.context.sha256 == nullptr) return false;
-                v.context.sha256(bytes, length, digest);
-                request.payloadDigest = digest;
-            }
-            break;
-        }
+        case Module::UDP:
+            return args.payload == nullptr || !GatewayLogic::hasPlaceholder(args.payload, strlen(args.payload));
     }
-    int entry = -1;
-    return GatewayLogic::classify(request, v.context.grants, v.context.grantCount, &entry) == GatewayLogic::Verdict::READ;
+    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -747,7 +727,6 @@ bool isRead(Validation &v, const Job &job, const Step &step, bool modbusWrite) {
 struct Placeholder {
     char name[GatewayLogic::TEMPLATE_NAME_MAX + 1];
     char arg[GatewayLogic::TEMPLATE_ARG_MAX + 1];
-    EncodingChain chain;
     size_t length;
 };
 
@@ -783,35 +762,20 @@ bool parsePlaceholder(const char *p, const char *end, Placeholder *out) {
         if (n == 0) return false;
         out->arg[n] = '\0';
     }
-    out->chain.count = 0;
+    size_t encodings = 0;
     while (s < end && *s == '|') {
-        if (out->chain.count >= GatewayLogic::TEMPLATE_MAX_ENCODINGS) return false;
+        if (encodings++ >= GatewayLogic::TEMPLATE_MAX_ENCODINGS) return false;
         s++;
-        Encoding encoding;
-        if (startsWith(s, end, "url")) {
-            encoding = Encoding::URL;
+        if (startsWith(s, end, "url") || startsWith(s, end, "b64")) {
             s += 3;
         } else if (startsWith(s, end, "json")) {
-            encoding = Encoding::JSON;
             s += 4;
-        } else if (startsWith(s, end, "b64")) {
-            encoding = Encoding::B64;
-            s += 3;
         } else {
             return false;
         }
-        out->chain.encodings[out->chain.count++] = encoding;
     }
     if (s >= end || *s != '}') return false;
     out->length = static_cast<size_t>(s - p) + 1;
-    return true;
-}
-
-bool sameChain(const EncodingChain &a, const EncodingChain &b) {
-    if (a.count != b.count) return false;
-    for (size_t i = 0; i < a.count; i++) {
-        if (a.encodings[i] != b.encodings[i]) return false;
-    }
     return true;
 }
 
@@ -857,19 +821,11 @@ bool checkTemplate(Job &job, const char *text, bool login, size_t index) {
         } else if (strcmp(name, "var") == 0) {
             if (!varExists(job, arg)) return false;
         } else if (strcmp(name, "cap") == 0) {
-            Capture *capture = nullptr;
+            const Capture *capture = nullptr;
             for (size_t c = 0; c < job.captureCount; c++) {
                 if (strcmp(job.captures[c].name, arg) == 0) capture = &job.captures[c];
             }
             if (capture == nullptr || !captureAvailable(*capture, login, index)) return false;
-            bool known = false;
-            for (size_t c = 0; c < capture->chainCount; c++) {
-                known = known || sameChain(capture->chains[c], placeholder.chain);
-            }
-            if (!known) {
-                if (capture->chainCount >= CHAINS_PER_CAPTURE) return false;
-                capture->chains[capture->chainCount++] = placeholder.chain;
-            }
         } else if (strcmp(name, "secret") != 0 || arg[0] == '\0') {
             return false;
         }
@@ -887,91 +843,6 @@ bool checkStepTemplates(Job &job, const Step &step, bool login, size_t index) {
         if (!checkTemplate(job, args.headers[h].value, login, index)) return false;
     }
     return true;
-}
-
-// ---------------------------------------------------------------------------
-// Binding canonical form
-// ---------------------------------------------------------------------------
-
-struct Writer {
-    char *out;
-    size_t cap;
-    size_t used;
-    bool ok;
-
-    void raw(const void *data, size_t length) {
-        if (!ok || length > cap - used) {
-            ok = false;
-            return;
-        }
-        memcpy(out + used, data, length);
-        used += length;
-    }
-    void text(const char *s) { raw(s, strlen(s)); }
-    void number(int64_t value) {
-        char buffer[24];
-        int n = snprintf(buffer, sizeof(buffer), "%lld", static_cast<long long>(value));
-        raw(buffer, static_cast<size_t>(n));
-    }
-    // Length-prefixed bytes; `~` for an absent value.
-    void bytes(const void *data, size_t length, bool present) {
-        if (!present) {
-            raw("~", 1);
-            return;
-        }
-        number(static_cast<int64_t>(length));
-        raw(":", 1);
-        raw(data, length);
-    }
-    void string(const char *s) { bytes(s, s != nullptr ? strlen(s) : 0, s != nullptr); }
-    void field(const char *tag, int64_t value) {
-        text(tag);
-        number(value);
-        raw(";", 1);
-    }
-};
-
-void writeStep(Writer &w, const Job &job, const Step &step, size_t index) {
-    const StepArgs &a = step.args;
-    w.text("step=");
-    w.string(step.id);
-    w.text(";m=");
-    w.string(a.method);
-    w.text(";p=");
-    w.string(a.path);
-    w.field(";h=", a.headerCount);
-    for (size_t h = 0; h < a.headerCount; h++) {
-        w.string(a.headers[h].name);
-        w.string(a.headers[h].value);
-    }
-    w.text(";b=");
-    w.string(a.body);
-    w.text(";bb=");
-    w.bytes(a.bodyBytes, a.bodyBytesLength, a.bodyBytes != nullptr);
-    w.text(";c=");
-    w.string(a.certSha256);
-    w.field(";u=", a.address.unit);
-    w.field("t=", static_cast<int64_t>(a.address.table));
-    w.field("a=", a.address.address);
-    w.field("n=", a.count);
-    w.text("pl=");
-    w.string(a.payload);
-    w.text(";pb=");
-    w.bytes(a.payloadBytes, a.payloadBytesLength, a.payloadBytes != nullptr);
-    w.field(";i=", a.idleMs);
-    w.field("w=", a.waitMs);
-    for (size_t c = 0; c < job.captureCount; c++) {
-        const Capture &capture = job.captures[c];
-        if (!capture.login || capture.step != index) continue;
-        w.text("cap=");
-        w.string(capture.name);
-        w.text(capture.fromHeader ? "h" : "b");
-        w.string(capture.key);
-        w.string(capture.header);
-        w.string(capture.after);
-        w.string(capture.before);
-        w.raw(";", 1);
-    }
 }
 
 bool run(JsonDocument &doc, const char *text, size_t length, const ValidationContext &context, JobTable *table, ApplyError *error) {
@@ -997,15 +868,13 @@ bool run(JsonDocument &doc, const char *text, size_t length, const ValidationCon
         table->jobCount++;
     }
 
-    if (context.classify) {
-        for (size_t j = 0; j < table->jobCount; j++) {
-            const Job &job = table->jobs[j];
-            for (size_t i = 0; i < job.loginCount; i++) {
-                if (!isRead(v, job, job.login[i], v.modbusWrite[j][i])) return failStep(error, WRITE_NOT_ALLOWED, job.id, true, i);
-            }
-            for (size_t i = 0; i < job.stepCount; i++) {
-                if (!isRead(v, job, job.steps[i], v.modbusWrite[j][LOGIN_MAX + i])) return failStep(error, WRITE_NOT_ALLOWED, job.id, false, i);
-            }
+    for (size_t j = 0; j < table->jobCount; j++) {
+        const Job &job = table->jobs[j];
+        for (size_t i = 0; i < job.loginCount; i++) {
+            if (!isRead(job, job.login[i], v.modbusWrite[j][i])) return failStep(error, WRITE_NOT_ALLOWED, job.id, true, i);
+        }
+        for (size_t i = 0; i < job.stepCount; i++) {
+            if (!isRead(job, job.steps[i], v.modbusWrite[j][LOGIN_MAX + i])) return failStep(error, WRITE_NOT_ALLOWED, job.id, false, i);
         }
     }
 
@@ -1031,40 +900,11 @@ bool run(JsonDocument &doc, const char *text, size_t length, const ValidationCon
         if (job.module == Module::HTTPS && !context.httpsAvailable) return fail(error, MODULE_UNAVAILABLE, job.id, "module");
     }
 
-    // The canonical binding is written into the unused pool tail and hashed there.
-    for (size_t j = 0; j < table->jobCount; j++) {
-        Job &job = table->jobs[j];
-        char *scratch = table->pool + table->poolUsed;
-        size_t written = canonicalBinding(job, scratch, table->poolCap - table->poolUsed);
-        if (written == 0) return fail(error, QUOTA_EXCEEDED, job.id, "doc");
-        if (context.sha256 != nullptr) context.sha256(reinterpret_cast<const uint8_t *>(scratch), written, job.bindingHash);
-        memset(scratch, 0, written);
-    }
     if (context.sha256 != nullptr) context.sha256(reinterpret_cast<const uint8_t *>(text), length, table->sha256);
     return true;
 }
 
 } // namespace
-
-size_t canonicalBinding(const Job &job, char *out, size_t cap) {
-    Writer w{out, cap, 0, out != nullptr};
-    w.text("ip=");
-    w.text(job.ip);
-    w.field(";port=", job.port);
-    w.text("mod=");
-    w.text(GatewayLogic::moduleName(job.module));
-    w.field(";session=", job.hasSession ? 1 : 0);
-    if (job.hasSession) {
-        w.field("ttl=", job.ttlS);
-        w.field("status=", job.expiryStatusCount);
-        for (size_t i = 0; i < job.expiryStatusCount; i++) w.field(",", job.expiryStatus[i]);
-        w.text("marker=");
-        w.string(job.expiryMarker);
-        w.field(";login=", job.loginCount);
-        for (size_t i = 0; i < job.loginCount; i++) writeStep(w, job, job.login[i], i);
-    }
-    return w.ok ? w.used : 0;
-}
 
 bool validateJobSet(const char *doc, size_t length, const ValidationContext &context, JobTable *out, ApplyError *error) {
     error->code = nullptr;
