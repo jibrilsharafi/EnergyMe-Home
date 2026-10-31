@@ -60,8 +60,6 @@ uint32_t doubleWindow(uint32_t windowS, uint32_t windowMaxS) {
     return twice < WINDOW_MIN_S ? WINDOW_MIN_S : static_cast<uint32_t>(twice);
 }
 
-int64_t toSourceClock(uint64_t deviceUtcS, int64_t clockOffsetS) { return static_cast<int64_t>(deviceUtcS) - clockOffsetS; }
-
 // ---------------------------------------------------------------------------
 // Step outcomes
 // ---------------------------------------------------------------------------
@@ -198,7 +196,6 @@ size_t encodePartHeader(const PartHeader &h, char *out, size_t cap) {
     o.u("up", h.upMs);
     o.u("dq", h.dq);
     if (h.hasPs) o.s("ps", h.ps);
-    if (h.hasCo) o.s("co", h.co);
     if (h.module == Module::MODBUS_TCP && h.addr != nullptr) {
         o.str("addr", h.addr);
         o.u("cnt", h.cnt);

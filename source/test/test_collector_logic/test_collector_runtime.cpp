@@ -104,11 +104,6 @@ static void test_window_clock_steps_back(void) {
     TEST_ASSERT_EQUAL_UINT64(100, early.to);
 }
 
-static void test_source_clock(void) {
-    TEST_ASSERT_EQUAL_INT64(1730374960, toSourceClock(1730380000, 5040));
-    TEST_ASSERT_EQUAL_INT64(1730380100, toSourceClock(1730380000, -100));
-}
-
 // ---------------------------------------------------------------------------
 // Step outcomes
 // ---------------------------------------------------------------------------
@@ -167,8 +162,6 @@ PartHeader xwebData(uint32_t len, const char *sha) {
     PartHeader h = xweb();
     h.hasPs = true;
     h.ps = 200;
-    h.hasCo = true;
-    h.co = 5040;
     h.ct = "application/json";
     h.hasWin = true;
     h.winFrom = 1793396880;
@@ -210,12 +203,6 @@ PartHeader withPs(PartHeader h, int ps) {
     return h;
 }
 
-PartHeader withCo(PartHeader h) {
-    h.hasCo = true;
-    h.co = 5040;
-    return h;
-}
-
 PartHeader login(PartHeader h) {
     h.login = true;
     h.step = "login";
@@ -235,7 +222,7 @@ struct Golden {
 };
 
 PartHeader chunk(uint32_t i, uint32_t off, uint32_t len) {
-    PartHeader h = withCo(withPs(xweb(), 200));
+    PartHeader h = (withPs(xweb(), 200));
     h.seq = 2;
     h.i = i;
     h.n = 3;
@@ -255,13 +242,13 @@ PartHeader binaryBody() {
 }
 
 PartHeader http404() {
-    PartHeader h = body(withCo(withPs(xweb(), 404)), 120, "472ba4fc5b7cf83e9227a27cc6b3aef7c61fa5a7096a5bf8c69bb5fcaf5f981b");
+    PartHeader h = body((withPs(xweb(), 404)), 120, "472ba4fc5b7cf83e9227a27cc6b3aef7c61fa5a7096a5bf8c69bb5fcaf5f981b");
     h.ct = "text/html";
     return h;
 }
 
 PartHeader loginOk() {
-    PartHeader h = withCo(withPs(login(xweb()), 200));
+    PartHeader h = (withPs(login(xweb()), 200));
     h.total = 300;
     return h;
 }
@@ -299,22 +286,22 @@ const Golden GOLDENS[] = {
      R"({"v":1,"job":"raw_tcp","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"read","ph":"step","mod":"tcp","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"len":900,"total":900,"sha":"7ef083548a60be2cb2b46456df4f87d57e3aefac7290bb5d5bd5bf9367c05a94"})",
      binaryBody(), true},
     {"chunked_1_of_3",
-     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":2,"step":"chart","ph":"step","mod":"http","i":1,"n":3,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"len":400,"total":958,"sha":"12d74052d8039c6598935d83e90bec9352704b827de438277a6330e66cc854ac","ps":200,"co":5040})",
+     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":2,"step":"chart","ph":"step","mod":"http","i":1,"n":3,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"len":400,"total":958,"sha":"12d74052d8039c6598935d83e90bec9352704b827de438277a6330e66cc854ac","ps":200})",
      chunk(1, 0, 400), false},
     {"chunked_2_of_3",
-     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":2,"step":"chart","ph":"step","mod":"http","i":2,"n":3,"off":400,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"len":400,"total":958,"sha":"12d74052d8039c6598935d83e90bec9352704b827de438277a6330e66cc854ac","ps":200,"co":5040})",
+     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":2,"step":"chart","ph":"step","mod":"http","i":2,"n":3,"off":400,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"len":400,"total":958,"sha":"12d74052d8039c6598935d83e90bec9352704b827de438277a6330e66cc854ac","ps":200})",
      chunk(2, 400, 400), false},
     {"chunked_3_of_3",
-     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":2,"step":"chart","ph":"step","mod":"http","i":3,"n":3,"off":800,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"len":158,"total":958,"sha":"12d74052d8039c6598935d83e90bec9352704b827de438277a6330e66cc854ac","ps":200,"co":5040})",
+     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":2,"step":"chart","ph":"step","mod":"http","i":3,"n":3,"off":800,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"len":158,"total":958,"sha":"12d74052d8039c6598935d83e90bec9352704b827de438277a6330e66cc854ac","ps":200})",
      chunk(3, 800, 158), false},
     {"header_only_failure",
-     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"FAILED","ts":1793402820000,"up":41200,"dq":0,"rc":"CONNECT_FAILED","len":0,"total":0,"co":5040})",
-     withCo(failed(xweb(), "FAILED", "CONNECT_FAILED")), false},
+     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"FAILED","ts":1793402820000,"up":41200,"dq":0,"rc":"CONNECT_FAILED","len":0,"total":0})",
+     (failed(xweb(), "FAILED", "CONNECT_FAILED")), false},
     {"http_404",
-     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":404,"co":5040,"ct":"text/html","len":120,"total":120,"sha":"472ba4fc5b7cf83e9227a27cc6b3aef7c61fa5a7096a5bf8c69bb5fcaf5f981b"})",
+     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":404,"ct":"text/html","len":120,"total":120,"sha":"472ba4fc5b7cf83e9227a27cc6b3aef7c61fa5a7096a5bf8c69bb5fcaf5f981b"})",
      http404(), true},
     {"login",
-     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"login","ph":"login","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"len":0,"total":300,"ps":200,"co":5040})",
+     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"login","ph":"login","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"len":0,"total":300,"ps":200})",
      loginOk(), false},
     {"login_failed",
      R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"login","ph":"login","mod":"http","i":1,"n":1,"off":0,"st":"FAILED","ts":1793402820000,"up":41200,"dq":0,"rc":"LOGIN_FAILED","ps":200,"len":0,"total":0})",
@@ -323,10 +310,10 @@ const Golden GOLDENS[] = {
      R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"login","ph":"login","mod":"http","i":1,"n":1,"off":0,"st":"REJECTED","ts":1793402820000,"up":41200,"dq":0,"rc":"WRITE_NOT_ALLOWED","rdt":"WRITES_DENIED","len":0,"total":0})",
      loginRejected(), true},
     {"login_then_data[0]",
-     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"login","ph":"login","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"len":0,"total":300,"ps":200,"co":5040})",
+     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"login","ph":"login","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"len":0,"total":300,"ps":200})",
      loginOk(), false},
     {"login_then_data[1]",
-     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":200,"co":5040,"ct":"application/json","win":[1793396880,1793397780],"len":175,"total":175,"sha":"c66b3898918243d4edef7f6d45f54a8cc3662c7742cf00ede8eec1f0008bb693"})",
+     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":200,"ct":"application/json","win":[1793396880,1793397780],"len":175,"total":175,"sha":"c66b3898918243d4edef7f6d45f54a8cc3662c7742cf00ede8eec1f0008bb693"})",
      xwebData(175, SHA_23), true},
     {"modbus_batch[0]",
      R"({"v":1,"job":"mb_meters","rev":1,"set":3,"src":"src_9c1d0b44","boot":"a1b2c3d4e5f60718","seq":1,"step":"u3","ph":"step","mod":"modbus_tcp","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"addr":"u3/hr3000","cnt":60,"len":120,"total":120,"sha":"a7d2bebab786e8bca9f2cb7766ac4b2174b9be9c785c6cfc17f650d76933590d"})",
@@ -350,40 +337,40 @@ const Golden GOLDENS[] = {
      R"({"v":1,"job":"mb_meters","rev":1,"set":3,"src":"src_9c1d0b44","boot":"a1b2c3d4e5f60718","seq":1,"step":"u3","ph":"step","mod":"modbus_tcp","i":1,"n":1,"off":0,"st":"OK","ts":null,"up":41200,"dq":0,"addr":"u3/hr3000","cnt":2,"len":4,"total":4,"sha":"9f64a747e1b97f131fabb6b447296c9b6f0201e79fb3c5356e6c77e89b6a806a"})",
      tsNull(), true},
     {"session_expired",
-     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"FAILED","ts":1793402820000,"up":41200,"dq":0,"rc":"SESSION_EXPIRED","ps":401,"len":0,"total":0,"co":5040})",
-     withCo(withPs(failed(xweb(), "FAILED", "SESSION_EXPIRED"), 401)), false},
+     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"FAILED","ts":1793402820000,"up":41200,"dq":0,"rc":"SESSION_EXPIRED","ps":401,"len":0,"total":0})",
+     (withPs(failed(xweb(), "FAILED", "SESSION_EXPIRED"), 401)), false},
     {"xweb_datachart_device_23",
-     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":200,"co":5040,"ct":"application/json","win":[1793396880,1793397780],"len":175,"total":175,"sha":"c66b3898918243d4edef7f6d45f54a8cc3662c7742cf00ede8eec1f0008bb693"})",
+     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":200,"ct":"application/json","win":[1793396880,1793397780],"len":175,"total":175,"sha":"c66b3898918243d4edef7f6d45f54a8cc3662c7742cf00ede8eec1f0008bb693"})",
      xwebData(175, SHA_23), true},
     {"xweb_datachart_devices_13_17",
-     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":200,"co":5040,"ct":"application/json","win":[1793396880,1793397780],"len":913,"total":913,"sha":"4a005d592e0492f004a0150c0a35e115e15c8caf88c6831506c22820a949c3f2"})",
+     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":200,"ct":"application/json","win":[1793396880,1793397780],"len":913,"total":913,"sha":"4a005d592e0492f004a0150c0a35e115e15c8caf88c6831506c22820a949c3f2"})",
      xwebData(913, SHA_13_17), true},
     {"xweb_datachart_devices_18_22",
-     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":200,"co":5040,"ct":"application/json","win":[1793396880,1793397780],"len":913,"total":913,"sha":"805d7e369ce7973946dbe5cb5bdde7a839b949121642c8fcfdde21d31125919d"})",
+     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":200,"ct":"application/json","win":[1793396880,1793397780],"len":913,"total":913,"sha":"805d7e369ce7973946dbe5cb5bdde7a839b949121642c8fcfdde21d31125919d"})",
      xwebData(913, "805d7e369ce7973946dbe5cb5bdde7a839b949121642c8fcfdde21d31125919d"), true},
     {"xweb_datachart_devices_1_7",
-     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":200,"co":5040,"ct":"application/json","win":[1793396880,1793397780],"len":958,"total":958,"sha":"12d74052d8039c6598935d83e90bec9352704b827de438277a6330e66cc854ac"})",
+     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":200,"ct":"application/json","win":[1793396880,1793397780],"len":958,"total":958,"sha":"12d74052d8039c6598935d83e90bec9352704b827de438277a6330e66cc854ac"})",
      xwebData(958, SHA_1_7), true},
     {"xweb_datachart_devices_8_12",
-     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":200,"co":5040,"ct":"application/json","win":[1793396880,1793397780],"len":911,"total":911,"sha":"4f2451c7bb169c9603f9dcb2888503c2abd5116ea7f2263542bdd8a5220a8cd2"})",
+     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":200,"ct":"application/json","win":[1793396880,1793397780],"len":911,"total":911,"sha":"4f2451c7bb169c9603f9dcb2888503c2abd5116ea7f2263542bdd8a5220a8cd2"})",
      xwebData(911, "4f2451c7bb169c9603f9dcb2888503c2abd5116ea7f2263542bdd8a5220a8cd2"), true},
     {"xweb_date_carried",
-     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":200,"co":5040,"ct":"application/json","win":[1793396880,1793397780],"date":"Fri, 30 Oct 2026 22:03:00 GMT","len":913,"total":913,"sha":"4a005d592e0492f004a0150c0a35e115e15c8caf88c6831506c22820a949c3f2"})",
+     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":200,"ct":"application/json","win":[1793396880,1793397780],"date":"Fri, 30 Oct 2026 22:03:00 GMT","len":913,"total":913,"sha":"4a005d592e0492f004a0150c0a35e115e15c8caf88c6831506c22820a949c3f2"})",
      dateCarried(), true},
     {"xweb_expired_session_page",
-     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":200,"co":5040,"ct":"text/html","win":[1793396880,1793397780],"tr":true,"len":4096,"total":4096,"sha":"0fca97f8396f951e3827c051bfd3507a8981f1437ba2ad2f8358a6e03d49c62d"})",
+     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":200,"ct":"text/html","win":[1793396880,1793397780],"tr":true,"len":4096,"total":4096,"sha":"0fca97f8396f951e3827c051bfd3507a8981f1437ba2ad2f8358a6e03d49c62d"})",
      truncatedData(4096, "0fca97f8396f951e3827c051bfd3507a8981f1437ba2ad2f8358a6e03d49c62d", "text/html"), true},
     {"xweb_synthetic_empty",
-     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":200,"co":5040,"ct":"application/json","win":[1793396880,1793397780],"len":4,"total":4,"sha":"e3566b3a06430868d71e9287dfd6c6c520a3da027aabea01951d407ee131dc2f"})",
+     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":200,"ct":"application/json","win":[1793396880,1793397780],"len":4,"total":4,"sha":"e3566b3a06430868d71e9287dfd6c6c520a3da027aabea01951d407ee131dc2f"})",
      xwebData(4, "e3566b3a06430868d71e9287dfd6c6c520a3da027aabea01951d407ee131dc2f"), true},
     {"xweb_synthetic_malformed",
-     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":200,"co":5040,"ct":"application/json","win":[1793396880,1793397780],"len":51,"total":51,"sha":"fdfbb22535c8005700fc14a2af341c1482546dd17bfa91c46c26fd724ab50d44"})",
+     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":200,"ct":"application/json","win":[1793396880,1793397780],"len":51,"total":51,"sha":"fdfbb22535c8005700fc14a2af341c1482546dd17bfa91c46c26fd724ab50d44"})",
      xwebData(51, "fdfbb22535c8005700fc14a2af341c1482546dd17bfa91c46c26fd724ab50d44"), true},
     {"xweb_synthetic_probe_error",
-     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":200,"co":5040,"ct":"application/json","win":[1793396880,1793397780],"len":141,"total":141,"sha":"61011e16adc86a6cb18ffe21cbcf89789975cc82281d4f3fa6f19382ffa8ad3f"})",
+     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":200,"ct":"application/json","win":[1793396880,1793397780],"len":141,"total":141,"sha":"61011e16adc86a6cb18ffe21cbcf89789975cc82281d4f3fa6f19382ffa8ad3f"})",
      xwebData(141, "61011e16adc86a6cb18ffe21cbcf89789975cc82281d4f3fa6f19382ffa8ad3f"), true},
     {"xweb_synthetic_truncated",
-     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":200,"co":5040,"ct":"application/json","win":[1793396880,1793397780],"tr":true,"len":500,"total":500,"sha":"28c371733fd985ecdd01f5effc7a68eee2f37f17b2b0eabb40191dd3f55f8b24"})",
+     R"({"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":200,"ct":"application/json","win":[1793396880,1793397780],"tr":true,"len":500,"total":500,"sha":"28c371733fd985ecdd01f5effc7a68eee2f37f17b2b0eabb40191dd3f55f8b24"})",
      truncatedData(500, "28c371733fd985ecdd01f5effc7a68eee2f37f17b2b0eabb40191dd3f55f8b24", "application/json"), true},
 };
 
@@ -457,16 +444,15 @@ static void test_part_header_goldens(void) {
     TEST_ASSERT_EQUAL_size_t(22, exact);
 }
 
-static void test_part_header_spec_fields_dur_and_co(void) {
-    // The device sets co and dur on every part (spec); the goldens omit dur.
+static void test_part_header_spec_fields_dur(void) {
+    // The device sets dur on every part (spec); the goldens omit dur. No `co`: source clocks are fixed at the source.
     PartHeader h = body(modbus("u3", "u3/hr3000", 2), 4, SHA_REGS);
-    h.hasCo = true;
-    h.co = 0;
     h.hasDur = true;
     h.durMs = 37;
     char out[PART_HEADER_MAX + 1];
     TEST_ASSERT_TRUE(encodePartHeader(h, out, sizeof(out)) > 0);
-    TEST_ASSERT_NOT_NULL(strstr(out, ",\"co\":0,\"addr\":"));
+    TEST_ASSERT_NOT_NULL(strstr(out, ",\"dq\":0,\"addr\":"));
+    TEST_ASSERT_NULL(strstr(out, "\"co\":"));
     TEST_ASSERT_NOT_NULL(strstr(out, "\"dur\":37}"));
 }
 
@@ -572,8 +558,6 @@ static void test_part_header_max_fits_768(void) {
     h.upMs = UINT64_MAX;
     h.hasDur = true;
     h.durMs = UINT32_MAX;
-    h.hasCo = true;
-    h.co = -604800;
     h.hasWin = true;
     h.winFrom = INT64_MIN;
     h.winTo = INT64_MAX;
@@ -992,10 +976,9 @@ void run_collector_runtime_tests(void) {
     RUN_TEST(test_window_truncated_halves_from_same_start);
     RUN_TEST(test_window_halving_and_doubling_bounds);
     RUN_TEST(test_window_clock_steps_back);
-    RUN_TEST(test_source_clock);
     RUN_TEST(test_step_fates);
     RUN_TEST(test_part_header_goldens);
-    RUN_TEST(test_part_header_spec_fields_dur_and_co);
+    RUN_TEST(test_part_header_spec_fields_dur);
     RUN_TEST(test_part_header_omission_rules);
     RUN_TEST(test_part_header_max_fits_768);
     RUN_TEST(test_code_token);
