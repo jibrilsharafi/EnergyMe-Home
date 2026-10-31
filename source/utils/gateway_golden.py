@@ -290,6 +290,30 @@ def golden_cases(pc: str) -> list[tuple[str, str, dict]]:
     ]
 
 
+def golden_grants(pc: str, mac: str) -> list[dict]:
+    """Grants and read declarations that let the golden writes and POSTs run on firmware with write grants."""
+    return [
+        {"ip": pc, "port": MODBUS_PORT, "module": "modbus_tcp", "mac": mac, "allow": ["u1/hr200:4", "u1/co200:4"]},
+        {"ip": pc, "port": HTTP_PORT, "module": "http", "kind": "read", "mac": mac, "allow": ["POST /echo", "PUT /echo"]},
+        {"ip": pc, "port": UDP_PORT, "module": "udp", "mac": mac, "allow": ["*"]},
+        {"ip": pc, "port": CLOSED_UDP_PORT, "module": "udp", "mac": mac, "allow": ["*"]},
+    ]
+
+
+def grants(args: argparse.Namespace) -> int:
+    """Sets (or with --clear empties) the golden grant list through the local REST API."""
+    import requests
+    from requests.auth import HTTPDigestAuth
+
+    if args.host in BLOCKED_DEVICES:
+        print("refusing the PROD bench address", file=sys.stderr)
+        return 2
+    body = {"write_grants": [] if args.clear else golden_grants(args.pc, args.mac)}
+    response = requests.put(f"http://{args.host}/api/v1/gateway", json=body, auth=HTTPDigestAuth(args.user, args.password), timeout=10)
+    print(response.status_code, response.text)
+    return 0 if response.ok else 1
+
+
 def _bytes_b64(value: object) -> str:
     if isinstance(value, bytes):  # boto3 decodes BIN results
         return base64.b64encode(value).decode()
@@ -378,6 +402,14 @@ def main() -> int:
     cap.add_argument("--region", default="eu-west-1")
     cap.add_argument("--only", help="comma-separated case names")
     cap.set_defaults(func=capture)
+    grt = sub.add_parser("grants")
+    grt.add_argument("--host", required=True, help="device IPv4 (local REST API)")
+    grt.add_argument("--pc", required=True)
+    grt.add_argument("--mac", help="MAC of the PC running 'serve', lowercase aa:bb:..")
+    grt.add_argument("--clear", action="store_true")
+    grt.add_argument("--user", default="admin")
+    grt.add_argument("--password", default="energyme00")
+    grt.set_defaults(func=grants)
     cmp_ = sub.add_parser("compare")
     cmp_.add_argument("left")
     cmp_.add_argument("right")
