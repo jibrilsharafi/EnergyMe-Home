@@ -4,6 +4,7 @@
 #include "customserver.h"
 #include "gateway.h"
 #include "gateway_executor.h"
+#include "secrets.h"
 #include "tunnel.h"
 #include "app_image_descriptor.h"
 #include "custometh.h"
@@ -2908,7 +2909,7 @@ namespace CustomServer
                 obj["key"] = info.key;
                 obj["type"] = _nvsTypeToString(info.type);
 
-                if (_isNvsValueSensitive(info.key)) {
+                if (_isNvsValueSensitive(info.key) || strcmp(targetNamespace, PREFERENCES_NAMESPACE_SECRETS) == 0) {
                     obj["value"] = "<redacted>";
                 } else if (info.type == NVS_TYPE_STR) {
                     Preferences prefs;
@@ -2958,6 +2959,10 @@ namespace CustomServer
                 const char *key = json["key"].as<const char *>();
                 if (!ns || !key || json["value"].isNull()) {
                     _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Body requires 'namespace', 'key', 'value'");
+                    return;
+                }
+                if (strcmp(ns, PREFERENCES_NAMESPACE_SECRETS) == 0) {
+                    _sendErrorResponse(request, HTTP_CODE_FORBIDDEN, "Gateway secrets are written only through /api/v1/secrets");
                     return;
                 }
                 const char *type = json["type"].is<const char *>() ? json["type"].as<const char *>() : "string";
@@ -3017,6 +3022,10 @@ namespace CustomServer
             char key[NVS_NAME_BUFFER_SIZE];
             snprintf(ns, sizeof(ns), "%s", request->getParam("namespace")->value().c_str());
             snprintf(key, sizeof(key), "%s", request->getParam("key")->value().c_str());
+            if (strcmp(ns, PREFERENCES_NAMESPACE_SECRETS) == 0) {
+                _sendErrorResponse(request, HTTP_CODE_FORBIDDEN, "Gateway secrets are deleted only through /api/v1/secrets");
+                return;
+            }
 
             Preferences prefs;
             if (!prefs.begin(ns, false)) {
@@ -3047,6 +3056,10 @@ namespace CustomServer
             }
             char ns[NVS_NAME_BUFFER_SIZE];
             snprintf(ns, sizeof(ns), "%s", request->getParam("namespace")->value().c_str());
+            if (strcmp(ns, PREFERENCES_NAMESPACE_SECRETS) == 0) {
+                _sendErrorResponse(request, HTTP_CODE_FORBIDDEN, "Gateway secrets are deleted only through /api/v1/secrets");
+                return;
+            }
 
             Preferences prefs;
             if (!prefs.begin(ns, false)) {
@@ -3848,6 +3861,68 @@ namespace CustomServer
                 _sendSuccessResponse(request, "LAN gateway settings updated");
             });
         server.addHandler(setGatewayHandler);
+
+        // Gateway secrets (openspec capability: gateway-secrets): write-only on the LAN,
+        // behind the digest auth. GET returns metadata only, never a value or its length.
+        server.on("/api/v1/secrets", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            if (globalCommunityMode) {
+                _sendErrorResponse(request, HTTP_CODE_FORBIDDEN, "Gateway secrets are not available in community mode");
+                return;
+            }
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            Secrets::metadataToJson(doc.to<JsonObject>());
+            _sendJsonResponse(request, doc);
+        });
+
+        server.on("/api/v1/secrets", HTTP_DELETE, [](AsyncWebServerRequest *request)
+                  {
+            if (globalCommunityMode) {
+                _sendErrorResponse(request, HTTP_CODE_FORBIDDEN, "Gateway secrets are not available in community mode");
+                return;
+            }
+            if (!_validateRequest(request, "DELETE")) return;
+            if (!request->hasParam("name")) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Missing 'name' query parameter");
+                return;
+            }
+            char name[SecretsLogic::SECRET_NAME_MAX + 2];
+            snprintf(name, sizeof(name), "%s", request->getParam("name")->value().c_str());
+            Secrets::Outcome outcome;
+            if (!Secrets::removeLocal(name, outcome)) {
+                _sendErrorResponse(request, strcmp(outcome.status, "REJECTED") == 0 ? HTTP_CODE_BAD_REQUEST : HTTP_CODE_INTERNAL_SERVER_ERROR,
+                                   outcome.reasonDetail);
+                return;
+            }
+            _sendSuccessResponse(request, outcome.deleted ? "Secret deleted" : "No secret with this name");
+        });
+
+        static AsyncCallbackJsonWebHandler *setSecretHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/secrets",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (globalCommunityMode) {
+                    _sendErrorResponse(request, HTTP_CODE_FORBIDDEN, "Gateway secrets are not available in community mode");
+                    return;
+                }
+                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_SECRETS)) return;
+                const char *value = json["value"].as<const char *>();
+                if (!json["name"].is<const char *>() || !json["ip"].is<const char *>() || !json["port"].is<int64_t>() || value == nullptr ||
+                    (!json["mac"].isNull() && !json["mac"].is<const char *>())) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Expected {\"name\", \"ip\", \"port\", \"value\", \"mac\" (optional)}");
+                    return;
+                }
+                Secrets::Outcome outcome;
+                if (!Secrets::setLocal(json["name"].as<const char *>(), json["ip"].as<const char *>(), json["port"].as<int64_t>(),
+                                       json["mac"] | "", (const uint8_t *)value, strlen(value), outcome)) {
+                    _sendErrorResponse(request, strcmp(outcome.status, "REJECTED") == 0 ? HTTP_CODE_BAD_REQUEST : HTTP_CODE_INTERNAL_SERVER_ERROR,
+                                       outcome.reasonDetail[0] != '\0' ? outcome.reasonDetail : outcome.reasonCode);
+                    return;
+                }
+                _sendSuccessResponse(request, "Secret stored");
+            });
+        server.addHandler(setSecretHandler);
     }
 
     // === INFLUXDB ENDPOINTS ===
