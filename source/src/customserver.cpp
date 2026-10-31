@@ -3873,7 +3873,7 @@ namespace CustomServer
             }
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
-            if (!Collector::statusToJson(nullptr, doc.to<JsonObject>())) {
+            if (Collector::statusToJson(nullptr, doc.to<JsonObject>()) != Collector::StatusResult::OK) {
                 _sendErrorResponse(request, HTTP_CODE_SERVICE_UNAVAILABLE, "Collector status busy, retry");
                 return;
             }

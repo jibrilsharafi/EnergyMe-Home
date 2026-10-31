@@ -41,11 +41,11 @@ namespace Collector
     void reportToJson(JsonObject reported);
     bool applyDelta(JsonObjectConst delta, JsonObject reported);
 
-    // MQTT task: collector_status op. Fills `result` (IoT command result map)
-    // or returns false with NO_SUCH_JOB.
-    bool statusToResult(const char* job, JsonObject result);
-    // The same status as plain JSON (REST); false for an unknown job or a busy snapshot.
-    bool statusToJson(const char* job, JsonObject out);
+    enum class StatusResult { OK, NO_SUCH_JOB, BUSY };
+    // MQTT task: collector_status op. Fills `result` (IoT command result map).
+    StatusResult statusToResult(const char* job, JsonObject result);
+    // The same status as plain JSON (REST).
+    StatusResult statusToJson(const char* job, JsonObject out);
 
     // MQTT task: out-queue drain, at most one message per call.
     // `publish` streams header+payload parts on the source topic; returns true

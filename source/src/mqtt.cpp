@@ -1609,9 +1609,14 @@ namespace Mqtt
         }
         JsonDocument response(&allocator);
         response["status"] = "SUCCEEDED";
-        if (!Collector::statusToResult(job, response["result"].to<JsonObject>())) {
-            _publishCommandStatus(executionId, "REJECTED", "NO_SUCH_JOB", "No job with that id in the active set");
-            return;
+        switch (Collector::statusToResult(job, response["result"].to<JsonObject>())) {
+            case Collector::StatusResult::OK: break;
+            case Collector::StatusResult::NO_SUCH_JOB:
+                _publishCommandStatus(executionId, "REJECTED", "NO_SUCH_JOB", "No job with that id in the active set");
+                return;
+            case Collector::StatusResult::BUSY:
+                _publishCommandStatus(executionId, "FAILED", "NO_MEMORY", "Collector status snapshot unavailable, retry");
+                return;
         }
         char topic[MQTT_TOPIC_BUFFER_SIZE];
         _constructCommandTopic(executionId, "response/json", topic, sizeof(topic));

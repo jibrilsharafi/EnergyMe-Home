@@ -107,6 +107,7 @@ namespace Collector
 
     // Mailbox: MQTT task posts, gateway task adopts between steps.
     static Table _pending = {nullptr, nullptr};
+    static std::atomic<uint32_t> _revBump{0}; // same-content re-send: new set rev for the active table
 
     // Gateway task only.
     static Table _active = {nullptr, nullptr};
@@ -124,17 +125,19 @@ namespace Collector
     struct Pending {
         bool active;
         uint32_t seq;
+        uint8_t gen;
         uint32_t outstanding;
         bool dropped;
     };
     static Pending _pendingParts[JOBS_MAX] = {};
+    static uint8_t _gen = 0; // job table generation, bumped at every adoption (gateway task)
 
     // Called with the queue mutex held (push from the gateway task, endMessage from the MQTT task).
     static void _onPart(const PartTag& tag, bool published, void* context) {
         (void)context;
         if (tag.job >= JOBS_MAX) return;
         Pending& p = _pendingParts[tag.job];
-        if (!p.active || p.seq != tag.seq) return;
+        if (!p.active || p.seq != tag.seq || p.gen != tag.gen) return;
         if (!published) p.dropped = true;
         if (p.outstanding > 0) p.outstanding--;
     }
@@ -296,10 +299,14 @@ namespace Collector
         if (!LittleFS.exists(COLLECTOR_DIR)) LittleFS.mkdir(COLLECTOR_DIR);
         File out = LittleFS.open(COLLECTOR_JOBSET_TMP_PATH, FILE_WRITE);
         if (!out) return false;
+        size_t expected = measureJson(file);
         size_t written = serializeJson(file, out);
         out.flush();
         out.close();
-        if (written == 0) return false;
+        if (written == 0 || written != expected) {
+            LittleFS.remove(COLLECTOR_JOBSET_TMP_PATH);
+            return false;
+        }
         return LittleFS.rename(COLLECTOR_JOBSET_TMP_PATH, COLLECTOR_JOBSET_PATH); // lfs_rename replaces the old file atomically
     }
 
@@ -309,17 +316,20 @@ namespace Collector
         snprintf(_applied.errorCode, sizeof(_applied.errorCode), "%s", code ? code : "");
         snprintf(_applied.errorJob, sizeof(_applied.errorJob), "%s", job ? job : "");
         snprintf(_applied.errorField, sizeof(_applied.errorField), "%s", field ? field : "");
+        if (code != nullptr) LOG_WARNING("Collector job set rev %u refused: %s %s %s", (unsigned)rev, code, _applied.errorJob, _applied.errorField);
     }
 
-    static void _post(Table& table) {
-        if (!_take(_mailboxMutex())) {
+    // False when the mailbox could not be taken (the table is freed).
+    static bool _post(Table& table) {
+        if (!_take(_mailboxMutex(), 5000)) {
             _freeTable(table);
-            return;
+            return false;
         }
         if (_pending.table != nullptr) _freeTable(_pending); // a newer post replaces an unadopted one
         _pending = table;
         table = {nullptr, nullptr};
         _give(_mailboxMutex());
+        return true;
     }
 
     // Validates `doc` into a new table. False with `error` set.
@@ -340,12 +350,12 @@ namespace Collector
     }
 
     static void _loadStored() {
-        File in = LittleFS.open(COLLECTOR_JOBSET_PATH, FILE_READ);
-        if (!in) return; // no stored set: no jobs, rev 0
+        if (!LittleFS.exists(COLLECTOR_JOBSET_PATH)) return; // no stored set: no jobs, rev 0
         SpiRamAllocator allocator;
         JsonDocument file(&allocator);
-        bool parsed = !deserializeJson(file, in);
-        in.close();
+        File in = LittleFS.open(COLLECTOR_JOBSET_PATH, FILE_READ);
+        bool parsed = in && !deserializeJson(file, in);
+        if (in) in.close();
         uint8_t sha[32], stored[32];
         JsonString doc = file["doc"].as<JsonString>();
         bool ok = parsed && file["rev"].is<uint32_t>() && GatewayLogic::parseHexDigest(file["sha256"] | (const char*)nullptr, stored) &&
@@ -358,7 +368,6 @@ namespace Collector
         ApplyError error = {};
         if (ok) ok = _validate(doc.c_str(), doc.size(), false, &table, &error);
         if (!ok) {
-            LOG_WARNING("Stored collector job set is unusable (BAD_STORED_SET), no job runs");
             _applied.rev = 0;
             _applied.hasSha = false;
             _setError(0, "BAD_STORED_SET", nullptr, nullptr);
@@ -370,7 +379,7 @@ namespace Collector
         _applied.hasSha = true;
         memcpy(_applied.sha, sha, 32);
         LOG_INFO("Collector job set rev %u loaded: %u jobs", (unsigned)_applied.rev, (unsigned)table.table->jobCount);
-        _post(table);
+        if (!_post(table)) LOG_ERROR("Collector job set rev %u could not be handed to the gateway task", (unsigned)_applied.rev);
     }
 
     void begin() {
@@ -490,8 +499,9 @@ namespace Collector
                     return false;
                 }
                 _applied.rev = newRev;
-                if (_take(_mailboxMutex())) {
+                if (_take(_mailboxMutex(), 5000)) {
                     if (_pending.table != nullptr) _pending.table->rev = newRev;
+                    else _revBump = newRev;
                     _give(_mailboxMutex());
                 }
                 _setError(0, nullptr, nullptr, nullptr);
@@ -507,7 +517,6 @@ namespace Collector
         ApplyError error = {};
         if (!_validate(doc.c_str(), doc.size(), true, &table, &error)) {
             _setError(newRev, error.code ? error.code : "BAD_JOB", error.job, error.field);
-            LOG_WARNING("Collector job set rev %u refused: %s %s %s", (unsigned)newRev, error.code ? error.code : "", error.job, error.field);
             return false;
         }
         if (!_persist(newRev, shaHex, doc.c_str(), doc.size())) {
@@ -517,8 +526,12 @@ namespace Collector
         }
         table.table->rev = newRev;
         memcpy(table.table->sha256, sha, 32);
-        LOG_INFO("Collector job set rev %u applied: %u jobs", (unsigned)newRev, (unsigned)table.table->jobCount);
-        _post(table);
+        uint8_t jobCount = table.table->jobCount;
+        if (!_post(table)) {
+            _setError(newRev, "PERSIST_FAILED", nullptr, nullptr);
+            return false; // stored, so the next boot runs it; the cloud re-sends meanwhile
+        }
+        LOG_INFO("Collector job set rev %u applied: %u jobs", (unsigned)newRev, (unsigned)jobCount);
         _applied.rev = newRev;
         _applied.hasSha = true;
         memcpy(_applied.sha, sha, 32);
@@ -547,11 +560,11 @@ namespace Collector
     // collector_status (MQTT task)
     // ============================
 
-    bool statusToJson(const char* job, JsonObject out) {
+    StatusResult statusToJson(const char* job, JsonObject out) {
         Snapshot* snap = (Snapshot*)ps_malloc(sizeof(Snapshot));
         if (snap == nullptr || !_take(_snapshotMutex(), 100)) {
             free(snap);
-            return false;
+            return StatusResult::BUSY;
         }
         *snap = _snapshot;
         _give(_snapshotMutex());
@@ -562,7 +575,7 @@ namespace Collector
             }
             if (only < 0) {
                 free(snap);
-                return false;
+                return StatusResult::NO_SUCH_JOB;
             }
         }
         out["enabled"] = (bool)_enabled;
@@ -604,13 +617,14 @@ namespace Collector
             else e["cursor"] = nullptr;
         }
         free(snap);
-        return true;
+        return StatusResult::OK;
     }
 
-    bool statusToResult(const char* job, JsonObject result) {
+    StatusResult statusToResult(const char* job, JsonObject result) {
         SpiRamAllocator allocator;
         JsonDocument lists(&allocator);
-        if (!statusToJson(job, lists.to<JsonObject>())) return false;
+        StatusResult status = statusToJson(job, lists.to<JsonObject>());
+        if (status != StatusResult::OK) return status;
         JsonArray jobs = lists["jobs"].as<JsonArray>();
         auto setText = [&](const char* key, JsonVariantConst value) {
             size_t length = measureJson(value) + 1;
@@ -636,7 +650,7 @@ namespace Collector
             setText("jobs", lists["jobs"]);
             result["truncated"]["b"] = true;
         }
-        return true;
+        return StatusResult::OK;
     }
 
     // Drain (MQTT task)
@@ -770,6 +784,7 @@ namespace Collector
                 while (v < eol && (*v == ' ' || *v == '\t')) v++;
                 const char* ve = eol;
                 while (ve > v && (ve[-1] == '\r' || ve[-1] == ' ')) ve--;
+                if ((size_t)(ve - v) >= cap) return false; // too long: omitted, never cut
                 snprintf(out, cap, "%.*s", (int)(ve - v), v);
                 return true;
             }
@@ -786,14 +801,15 @@ namespace Collector
         return ok;
     }
 
-    // Queues (or stages, for `publish: batch`) every chunk of one part.
-    static void _emitPart(const Job& job, uint8_t jobIndex, PartHeader& h, const uint8_t* body, size_t total) {
+    // Queues (or stages, for `publish: batch`) every chunk of one part. False when
+    // the header cannot be encoded, so the step counts as failed.
+    static bool _emitPart(const Job& job, uint8_t jobIndex, PartHeader& h, const uint8_t* body, size_t total) {
         static char header[PART_HEADER_MAX + 1]; // gateway task only
         uint32_t chunks = chunkCount(total);
         if (body != nullptr) h.total = (uint32_t)total; // header-only parts keep the caller's total (login replies)
         h.n = chunks;
         h.dq = _queue.ready() ? _queue.droppedParts() : 0;
-        PartTag tag = {jobIndex, _run.seq, _run.body++};
+        PartTag tag = {jobIndex, _run.seq, _run.body++, _gen, chunks > 1};
         for (uint32_t i = 0; i < chunks; i++) {
             size_t offset = (size_t)i * CHUNK_BYTES;
             size_t length = total > offset ? (total - offset < CHUNK_BYTES ? total - offset : CHUNK_BYTES) : 0;
@@ -801,11 +817,16 @@ namespace Collector
             h.off = (uint32_t)offset;
             h.len = (uint32_t)length;
             size_t headerLength = encodePartHeader(h, header, sizeof(header));
+            if (headerLength == 0 && (h.ct != nullptr || h.date != nullptr)) {
+                h.ct = nullptr; // escaping can grow LAN-supplied values past the cap
+                h.date = nullptr;
+                headerLength = encodePartHeader(h, header, sizeof(header));
+            }
             if (headerLength == 0) {
                 LOG_WARNING("Collector part header for %s does not fit", job.id);
-                return;
+                return false;
             }
-            if (_states[jobIndex].advancePending || job.usesCursor) {
+            if (job.usesCursor) {
                 if (_take(_queueMutex(), 1000)) {
                     _pendingParts[jobIndex].outstanding++;
                     _give(_queueMutex());
@@ -830,6 +851,7 @@ namespace Collector
             _enqueue(job.sourceId, tag, header, headerLength, body + offset, length);
         }
         _run.bytes += (uint32_t)total;
+        return true;
     }
 
     static void _flushStage(const Job& job) {
@@ -844,7 +866,7 @@ namespace Collector
         memset(h, 0, sizeof(*h));
         h->job = job.id;
         h->rev = job.rev;
-        h->set = _active.table->rev;
+        h->set = _active.table->rev; // raised in place by a same-content re-send (_revBump)
         h->src = job.sourceId;
         h->boot = _boot;
         h->seq = _run.seq;
@@ -874,6 +896,15 @@ namespace Collector
         }
     }
 
+    // An abandoned run (pause, switch-off, adoption) waits for its next slot; backoff is untouched.
+    static void _skipToNextSlot(uint8_t jobIndex) {
+        const Job& job = _active.table->jobs[jobIndex];
+        JobState& js = _states[jobIndex];
+        uint64_t nowS = _uptimeS();
+        if (js.nextS <= nowS) js.nextS = nextSlotS(js.t0S, job.intervalS, nowS);
+        js.stats.nextRunS = js.nextS;
+    }
+
     static void _scheduleNext(uint8_t jobIndex, bool failed) {
         const Job& job = _active.table->jobs[jobIndex];
         JobState& js = _states[jobIndex];
@@ -900,6 +931,7 @@ namespace Collector
                 _pendingParts[jobIndex].active = false;
                 _give(_queueMutex());
             }
+            _skipToNextSlot(jobIndex);
             _run.active = false;
             _publishSnapshot();
             return;
@@ -925,12 +957,12 @@ namespace Collector
                                 nowUtc));
         if (job.usesCursor) {
             if (_run.truncated) js.windowS = halveWindow(js.windowS);
-            if (!failed) {
+            if (!failed && !_run.failedStep) {
                 js.advancePending = true;
                 js.advanceTo = _run.window.to;
             }
         }
-        if (!job.usesCursor || failed) {
+        if (!job.usesCursor || failed || _run.failedStep) {
             if (_take(_queueMutex(), 1000)) {
                 _pendingParts[jobIndex].active = false;
                 _give(_queueMutex());
@@ -965,17 +997,24 @@ namespace Collector
         }
     }
 
-    // Why a job cannot run now (nullptr when it can).
-    static const char* _waitReason(const Job& job) {
+    // Why a run must pause (abort before its next step); nullptr when it may go on.
+    static const char* _pauseReason(const Job& job) {
         if (Tunnel::isActive()) return "PAUSED_TUNNEL";
         if (_otaBusy) return "PAUSED_OTA";
         if (heap_caps_get_free_size(MALLOC_CAP_INTERNAL) < COLLECTOR_LOW_HEAP_FREE ||
             heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) < COLLECTOR_LOW_HEAP_BLOCK) {
             return "LOW_HEAP";
         }
+        if (job.usesCursor && !_cloudConnected) return "OFFLINE";
+        return nullptr;
+    }
+
+    // Why a job cannot start now (nullptr when it can).
+    static const char* _waitReason(const Job& job) {
+        const char* pause = _pauseReason(job);
+        if (pause != nullptr) return pause;
         if (!_allocateRing()) return "NO_MEMORY";
         if (job.usesTime && !CustomTime::isTimeSynched()) return "WAIT_CLOCK";
-        if (job.usesCursor && !_cloudConnected) return "OFFLINE";
         bool tokens = false;
         if (_take(_queueMutex(), 50)) {
             bucketRefill(&_bucket, millis64());
@@ -999,11 +1038,15 @@ namespace Collector
                 js.cursorSet = false; // first run after NTP, a change, or a clock step back
                 if (js.windowS == 0) js.windowS = job.windowMaxS;
             }
-            _run.window = computeWindow(nowUtc, js.cursorS, js.cursorSet, job.overlapS, job.backfillS, js.windowS ? js.windowS : job.windowMaxS);
+            if (job.usesCursor) {
+                _run.window = computeWindow(nowUtc, js.cursorS, js.cursorSet, job.overlapS, job.backfillS, js.windowS ? js.windowS : job.windowMaxS);
+            } else {
+                _run.window = {nowUtc, nowUtc}; // ${now} without ${cursor}: the run start
+            }
             _run.nowS = _run.window.to;
         }
         if (job.usesCursor && _take(_queueMutex(), 1000)) {
-            _pendingParts[jobIndex] = {true, _run.seq, 0, false};
+            _pendingParts[jobIndex] = {true, _run.seq, _gen, 0, false};
             _give(_queueMutex());
         }
         uint64_t upS = _uptimeS();
@@ -1049,6 +1092,7 @@ namespace Collector
             if (ok) {
                 _storeCapture(js, c, value, length);
                 ok = js.captures[c] != nullptr && _capturesHeld(job, js) <= CAPTURES_TOTAL_MAX;
+                if (!ok) _zeroCaptures(js); // no partial value is kept
             }
         }
         mbedtls_platform_zeroize(value, CAPTURE_VALUE_MAX);
@@ -1073,11 +1117,10 @@ namespace Collector
 
     static size_t _scrubBody(const Job& job, const JobState& js, uint8_t index, StepContext& ctx, uint8_t* body, size_t length, size_t cap,
                              bool* truncated, bool* redacted) {
-        bool own = false;
-        for (uint8_t c = 0; c < job.captureCount && !own; c++) {
-            own = !job.captures[c].login && job.captures[c].step == index && js.captures[c] != nullptr;
-        }
-        if (ctx.tokenCount == 0 && !own) return length; // nothing this step could echo
+        (void)index;
+        bool held = false;
+        for (uint8_t c = 0; c < job.captureCount && !held; c++) held = js.captures[c] != nullptr;
+        if (!held) return length; // nothing this step could echo
 
         size_t count = 0;
         size_t encodedCount = 0;
@@ -1091,7 +1134,7 @@ namespace Collector
         uint8_t* scratch = (uint8_t*)ps_malloc(scratchBytes);
         for (uint8_t c = 0; c < job.captureCount && scratch != nullptr; c++) {
             const Capture& capture = job.captures[c];
-            if (capture.login || capture.step != index || js.captures[c] == nullptr) continue;
+            if (js.captures[c] == nullptr) continue;
             _addForm(&count, js.captures[c], js.captureLength[c], capture.name);
             for (uint8_t k = 0; k < capture.chainCount && encodedCount < sizeof(_encoded) / sizeof(_encoded[0]); k++) {
                 uint8_t* out = (uint8_t*)ps_malloc(CAPTURE_VALUE_MAX * 3);
@@ -1298,7 +1341,8 @@ namespace Collector
             } else if (body != nullptr) {
                 bool truncated = result.truncated;
                 bool redacted = result.redacted;
-                length = _scrubBody(job, js, _run.index, ctx, body, length, step.maxBytes, &truncated, &redacted);
+                size_t cap = result.bodyCapacity < step.maxBytes ? result.bodyCapacity : step.maxBytes;
+                length = _scrubBody(job, js, _run.index, ctx, body, length, cap, &truncated, &redacted);
                 result.truncated = truncated;
                 h.rd = redacted;
             }
@@ -1316,9 +1360,14 @@ namespace Collector
                 GatewayLogic::formatHexDigest(digest, sha, sizeof(sha));
                 h.sha = sha;
             }
-            _emitPart(job, jobIndex, h, body, length);
+            bool queued = _emitPart(job, jobIndex, h, body, length);
             free(packed);
-            _run.okSteps++;
+            if (queued) {
+                _run.okSteps++;
+            } else {
+                _run.failedStep = true;
+                _fail("NO_MEMORY", nullptr);
+            }
             if (job.usesCursor && result.truncated) {
                 _run.truncated = true;
                 _fail("TRUNCATED", nullptr);
@@ -1327,6 +1376,7 @@ namespace Collector
         } else {
             _emitPart(job, jobIndex, h, nullptr, 0);
             _fail(result.reasonCode, detail);
+            _run.failedStep = true;
             if (fate == StepFate::STOP) _run.stopped = true;
         }
         _freeTokens(ctx);
@@ -1342,9 +1392,15 @@ namespace Collector
         Table incoming = _pending;
         _pending = {nullptr, nullptr};
         _give(_mailboxMutex());
-        if (incoming.table == nullptr) return;
+        if (incoming.table == nullptr) {
+            uint32_t bump = _revBump.exchange(0);
+            if (bump != 0 && _active.table != nullptr) _active.table->rev = bump;
+            return;
+        }
 
-        if (_run.active) _endRun(true); // abandoned: no cursor advance, nothing more published
+        if (_run.active) _endRun(true); // abandoned: no cursor advance, nothing more published, next slot
+        _revBump = 0;
+        _gen++;
         static JobState carried[JOBS_MAX]; // gateway task only, off the task stack
         memset(carried, 0, sizeof(carried));
         uint64_t nowS = _uptimeS();
@@ -1363,6 +1419,7 @@ namespace Collector
                 const Job& old = _active.table->jobs[o];
                 if (strcmp(old.id, job.id) != 0) continue;
                 JobState& prev = _states[o];
+                next.seq = prev.seq; // dedup ids (boot, job, seq) never repeat within a boot
                 if (old.rev == job.rev && memcmp(old.bindingHash, job.bindingHash, 32) == 0) {
                     // Same job and binding: backoff, session and captures carry over.
                     next.failures = prev.failures;
@@ -1376,7 +1433,6 @@ namespace Collector
                         prev.captures[c] = nullptr;
                         prev.captureLength[c] = 0;
                     }
-                    next.seq = prev.seq;
                     next.stats = prev.stats;
                     if (old.clockOffsetS == job.clockOffsetS) {
                         next.cursorSet = prev.cursorSet;
@@ -1430,34 +1486,33 @@ namespace Collector
         bool on = _enabled && Gateway::isEnabled();
         for (uint8_t i = 0; i < _active.table->jobCount; i++) _settleCursor(i);
 
+        uint64_t nowUtc = CustomTime::isTimeSynched() ? CustomTime::getUnixTime() : 0;
         if (_run.active) {
             const Job& job = _active.table->jobs[_run.job];
-            const char* wait = on ? _waitReason(job) : nullptr;
-            if (!on || wait != nullptr) {
-                JobState& js = _states[_run.job];
-                _endRun(true); // switch-off or pause: abandon before the next step
-                _noteHealth(on ? healthOnWait(&js.stats.health, wait, CustomTime::getUnixTime())
-                               : healthOnOff(&js.stats.health, Gateway::isEnabled() ? nullptr : "GATEWAY_DISABLED", CustomTime::getUnixTime()));
-                _scheduleNext(_run.job, false);
-                _publishSnapshot();
+            const char* pause = on ? _pauseReason(job) : nullptr;
+            if (on && pause == nullptr) {
+                _runStep();
                 return;
             }
-            _runStep();
-            return;
+            JobState& js = _states[_run.job];
+            _endRun(true); // switch-off or pause: abandon before the next step
+            if (pause != nullptr) _noteHealth(healthOnWait(&js.stats.health, pause, nowUtc));
+            if (on) return;
         }
 
-        uint64_t nowUtc = CustomTime::isTimeSynched() ? CustomTime::getUnixTime() : 0;
         bool changed = false;
         for (uint8_t i = 0; i < _active.table->jobCount; i++) {
             const Job& job = _active.table->jobs[i];
             JobState& js = _states[i];
             if (!job.enabled || !on) {
-                changed = healthOnOff(&js.stats.health, !job.enabled || _enabled ? nullptr : (Gateway::isEnabled() ? nullptr : "GATEWAY_DISABLED"), nowUtc) ||
-                          changed;
-                if (!Gateway::isEnabled() && job.enabled && _enabled) changed = healthOnOff(&js.stats.health, "GATEWAY_DISABLED", nowUtc) || changed;
+                // Off: captures are discarded; GATEWAY_DISABLED only for an enabled job of an enabled collector.
+                _zeroCaptures(js);
+                const char* code = job.enabled && _enabled && !Gateway::isEnabled() ? "GATEWAY_DISABLED" : nullptr;
+                changed = healthOnOff(&js.stats.health, code, nowUtc) || changed;
                 continue;
             }
             if (js.nextS > nowS) continue;
+            if (job.usesCursor && js.advancePending) continue; // the last run's parts are still queued
             const char* wait = _waitReason(job);
             if (wait != nullptr) {
                 changed = healthOnWait(&js.stats.health, wait, nowUtc) || changed;
