@@ -62,9 +62,12 @@ namespace GatewayExec
     void runHttp(const Prepared& prepared, Result& result, bool tls) {
         const Request& rq = *prepared.request;
         GatewayNet::Connection connection;
-        if (!connectAndSend(connection, prepared, result, tls, prepared.wire, prepared.wireLength)) return;
-        if (rq.probeOnly) return; // tls_probe: the certificate is the result
+        if (rq.probeOnly) {
+            connectAndSend(connection, prepared, result, tls, nullptr, 0); // tls_probe: the certificate is the result
+            return;
+        }
 
+        // Allocated before connecting, so a write is never sent without room for its reply.
         result.headers = (char*)ps_malloc(HEADER_BLOCK_MAX + 1);
         result.body = (uint8_t*)ps_malloc(rq.maxBytes);
         uint8_t* chunk = (uint8_t*)ps_malloc(READ_CHUNK_BYTES);
@@ -72,6 +75,11 @@ namespace GatewayExec
             free(chunk);
             result.release();
             setOutcome(result, Status::FAILED, "NO_MEMORY", "Could not allocate the HTTP buffers");
+            return;
+        }
+        if (!connectAndSend(connection, prepared, result, tls, prepared.wire, prepared.wireLength)) {
+            free(chunk);
+            result.release();
             return;
         }
 
@@ -205,15 +213,19 @@ namespace GatewayExec
         size_t count = rq.modbusWrite ? rq.valueCount : rq.count;
         uint8_t fc = functionFor(rq.address.table, rq.modbusWrite, count, rq.writeMultiple);
 
-        GatewayNet::Connection connection;
-        if (!connectAndSend(connection, prepared, result, false, nullptr, 0)) return;
-
         if (!rq.modbusWrite) {
             result.registers = (uint16_t*)ps_malloc(count * sizeof(uint16_t));
-            if (result.registers == nullptr) {
-                setOutcome(result, Status::FAILED, "NO_MEMORY", "Could not allocate the decode buffer");
-                return;
-            }
+        } else if (rq.verify) {
+            result.readback = (uint16_t*)ps_malloc(count * sizeof(uint16_t));
+        }
+        if ((!rq.modbusWrite && result.registers == nullptr) || (rq.verify && result.readback == nullptr)) {
+            setOutcome(result, Status::FAILED, "NO_MEMORY", "Could not allocate the decode buffer");
+            return;
+        }
+        GatewayNet::Connection connection;
+        if (!connectAndSend(connection, prepared, result, false, nullptr, 0)) {
+            result.release();
+            return;
         }
         size_t decodedCount = 0;
         uint8_t exception = 0;
@@ -235,11 +247,6 @@ namespace GatewayExec
         }
 
         uint8_t readFc = rq.address.table == ModbusTable::COILS ? 1 : 3;
-        result.readback = (uint16_t*)ps_malloc(count * sizeof(uint16_t));
-        if (result.readback == nullptr) {
-            setOutcome(result, Status::FAILED, "NO_MEMORY", "Could not allocate the read-back buffer");
-            return;
-        }
         exchange = _exchange(connection, prepared, result, readFc, rq.address.address, nullptr, count, result.readback, &result.readbackCount, &exception);
         if (_exchangeFailed(exchange, exception, result, true)) return;
         bool same = result.readbackCount == count;
@@ -261,11 +268,14 @@ namespace GatewayExec
 
     void runTcp(const Prepared& prepared, Result& result) {
         const Request& rq = *prepared.request;
-        GatewayNet::Connection connection;
-        if (!connectAndSend(connection, prepared, result, false, prepared.wire, prepared.wireLength)) return;
         result.body = (uint8_t*)ps_malloc(rq.maxBytes);
         if (result.body == nullptr) {
             setOutcome(result, Status::FAILED, "NO_MEMORY", "Could not allocate the reply buffer");
+            return;
+        }
+        GatewayNet::Connection connection;
+        if (!connectAndSend(connection, prepared, result, false, prepared.wire, prepared.wireLength)) {
+            result.release();
             return;
         }
         uint32_t idleMs = clampIdleMs(rq.idleMs);
