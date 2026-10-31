@@ -489,7 +489,7 @@ void systemDynamicInfoToJson(SystemDynamicInfo& info, JsonDocument &doc) {
     // Tasks the firmware does not own (libraries, core, IDF): only the stack low-water mark is
     // known. Looked up by name, so a task that does not exist on this product is left out.
     static const char *const systemTaskNames[] = {"AdvancedLogTask", "async_tcp", "arduino_events", "tiT",
-                                                  "sys_evt", "esp_timer", "wifi", "w5500_tsk", "ipc0", "ipc1"};
+                                                  "sys_evt", "esp_timer", "wifi", "w5500_tsk", "ipc0", "ipc1", "gateway_task"};
     for (const char *name : systemTaskNames) {
         TaskHandle_t handle = xTaskGetHandle(name);
         if (handle != NULL) doc["systemTasks"][name]["minimumFreeStack"] = (uint32_t)uxTaskGetStackHighWaterMark(handle);
