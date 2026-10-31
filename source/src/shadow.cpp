@@ -14,6 +14,7 @@
 #include "customwifi.h"
 #include "factory_keys.h"
 #include "gateway.h"
+#include "gateway_executor.h"
 #include "tunnel.h"
 #include "globals.h"
 #include "hardware_profile.h"
@@ -653,6 +654,7 @@ static void _reportSystem(JsonDocument& doc) {
     rep["log_level_print"] = AdvancedLogger::logLevelToString(AdvancedLogger::getPrintLevel());
     rep["log_level_save"] = AdvancedLogger::logLevelToString(AdvancedLogger::getSaveLevel());
     rep["gateway_enabled"] = Gateway::isEnabled();
+    GatewayExec::grantsToJson(rep["gateway_write_grants"].to<JsonArray>());
     rep["tunnel_enabled"] = Tunnel::isEnabled();
     Tunnel::portsToJson(rep["tunnel_ports"].to<JsonArray>());
     Tunnel::activeToJson(rep, "tunnel_active");
@@ -749,6 +751,18 @@ static bool _applySystem(JsonObjectConst delta, JsonObject reported) {
             }
         } else {
             LOG_WARNING("Rejected gateway_enabled: not a boolean");
+        }
+    }
+
+    // Replaces the whole list; an invalid list leaves the stored one unchanged.
+    v = delta["gateway_write_grants"];
+    if (!v.isNull()) {
+        char error[160] = "not an array";
+        if (v.is<JsonArrayConst>() && GatewayExec::setGrants(v.as<JsonArrayConst>(), error, sizeof(error))) {
+            GatewayExec::grantsToJson(reported["gateway_write_grants"].to<JsonArray>());
+            applied = true;
+        } else {
+            LOG_WARNING("Rejected gateway_write_grants: %s", error);
         }
     }
 
