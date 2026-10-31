@@ -839,6 +839,42 @@ static void test_queue_small_modbus_batch_one_message(void) {
     q.endMessage(true, note, &notes);
 }
 
+// A chunk of a multi-chunk body is published as its own message, never coalesced.
+static void test_queue_chunk_travels_alone(void) {
+    PartQueue q;
+    q.init(ring, sizeof(ring));
+    Notes notes{};
+    uint8_t regs[100] = {};
+    TEST_ASSERT_TRUE(q.push("src_9c1d", PartTag{0, 1, 1}, "{}", 2, regs, sizeof(regs), note, &notes));
+    TEST_ASSERT_TRUE(q.push("src_9c1d", PartTag{0, 1, 2, 0, true}, "{}", 2, regs, sizeof(regs), note, &notes));
+    TEST_ASSERT_TRUE(q.push("src_9c1d", PartTag{0, 1, 3}, "{}", 2, regs, sizeof(regs), note, &notes));
+    PartQueue::View view{};
+    TEST_ASSERT_TRUE(q.beginMessage(&view));
+    TEST_ASSERT_EQUAL_size_t(1, view.count);
+    q.endMessage(true, note, &notes);
+    TEST_ASSERT_TRUE(q.beginMessage(&view));
+    TEST_ASSERT_EQUAL_size_t(1, view.count); // the chunk
+    q.endMessage(true, note, &notes);
+    TEST_ASSERT_TRUE(q.beginMessage(&view));
+    TEST_ASSERT_EQUAL_size_t(1, view.count);
+    q.endMessage(true, note, &notes);
+}
+
+// The same job index, seq and body of another table generation is another body.
+static void test_queue_generation_separates_bodies(void) {
+    PartQueue q;
+    q.init(ring, sizeof(ring));
+    Notes notes{};
+    uint8_t regs[10] = {};
+    TEST_ASSERT_TRUE(q.push("src_9c1d", PartTag{0, 1, 1, 1}, "{}", 2, regs, sizeof(regs), note, &notes));
+    TEST_ASSERT_TRUE(q.push("src_9c1d", PartTag{0, 1, 1, 2}, "{}", 2, regs, sizeof(regs), note, &notes));
+    PartQueue::View view{};
+    TEST_ASSERT_TRUE(q.beginMessage(&view));
+    TEST_ASSERT_EQUAL_size_t(2, view.count);
+    q.endMessage(true, note, &notes);
+    TEST_ASSERT_EQUAL_size_t(0, q.parts());
+}
+
 static void test_queue_without_storage(void) {
     PartQueue q;
     TEST_ASSERT_FALSE(q.ready());
@@ -972,6 +1008,8 @@ void run_collector_runtime_tests(void) {
     RUN_TEST(test_queue_coalesces_by_source);
     RUN_TEST(test_queue_small_modbus_batch_one_message);
     RUN_TEST(test_queue_without_storage);
+    RUN_TEST(test_queue_chunk_travels_alone);
+    RUN_TEST(test_queue_generation_separates_bodies);
     RUN_TEST(test_token_bucket);
     RUN_TEST(test_health_err_after_three_failures);
     RUN_TEST(test_health_ok_after_one_success_clears);

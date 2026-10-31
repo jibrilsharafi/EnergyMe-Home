@@ -333,6 +333,8 @@ struct PartTag {
     uint8_t job;   // index in the active table
     uint32_t seq;
     uint32_t body; // a run-unique body number; every chunk of a body shares it
+    uint8_t gen = 0;    // job table generation, so tags never collide across adoptions
+    bool alone = false; // a chunk of a multi-chunk body: published as its own message
 };
 
 class PartQueue {
@@ -360,7 +362,8 @@ public:
         size_t headerLength[16];
     };
     // Pins the head part plus following parts of the same source while the
-    // message stays <= 5120 bytes (a larger part travels alone). False when empty.
+    // message stays <= 5120 bytes (a larger part, or a part tagged `alone`,
+    // travels alone). False when empty.
     bool beginMessage(View* view);
     // `published` true: removes the pinned parts and notifies them published;
     // false: unpins them for the next pass.

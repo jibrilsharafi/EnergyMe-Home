@@ -263,6 +263,7 @@ struct Record {
     uint32_t seq;
     uint32_t body;
     char sourceId[SOURCE_ID_MAX + 1];
+    uint8_t alone;
 };
 
 constexpr size_t RECORD_BYTES = (sizeof(Record) + 3) & ~static_cast<size_t>(3);
@@ -275,9 +276,11 @@ Record readRecord(const uint8_t *storage, size_t offset) {
 
 size_t partBytes(const Record &r) { return static_cast<size_t>(r.headerLength) + 1 + r.payloadLength; }
 
-bool sameBody(const Record &r, const PartTag &tag) { return r.job == tag.job && r.seq == tag.seq && r.body == tag.body; }
+bool sameTag(const PartTag &a, const PartTag &b) { return a.job == b.job && a.seq == b.seq && a.body == b.body && a.gen == b.gen; }
 
-PartTag tagOf(const Record &r) { return PartTag{r.job, r.seq, r.body}; }
+PartTag tagOf(const Record &r) { return PartTag{r.job, r.seq, r.body, r.reserved, r.alone != 0}; }
+
+bool sameBody(const Record &r, const PartTag &tag) { return sameTag(tagOf(r), tag); }
 
 } // namespace
 
@@ -326,7 +329,7 @@ bool PartQueue::push(const char *sourceId, const PartTag &tag, const char *heade
     };
     if (_storage == nullptr || sourceId == nullptr || header == nullptr || headerLength > UINT16_MAX || (payload == nullptr && payloadLength > 0))
         return dropNew();
-    if (_hasDroppedBody && _droppedBody.job == tag.job && _droppedBody.seq == tag.seq && _droppedBody.body == tag.body) return dropNew();
+    if (_hasDroppedBody && sameTag(_droppedBody, tag)) return dropNew();
 
     if (need > _capacity - _used) {
         // Whole bodies behind the pinned prefix can go, except bodies with a pinned part and this part's own body.
@@ -369,6 +372,8 @@ bool PartQueue::push(const char *sourceId, const PartTag &tag, const char *heade
     r.payloadLength = static_cast<uint32_t>(payloadLength);
     r.headerLength = static_cast<uint16_t>(headerLength);
     r.job = tag.job;
+    r.reserved = tag.gen;
+    r.alone = tag.alone ? 1 : 0;
     r.seq = tag.seq;
     r.body = tag.body;
     snprintf(r.sourceId, sizeof(r.sourceId), "%s", sourceId);
@@ -395,14 +400,14 @@ bool PartQueue::beginMessage(View *view) {
     while (offset < _used && view->count < limit) {
         Record r = readRecord(_storage, offset);
         size_t bytes = partBytes(r);
-        if (view->count > 0 && (strcmp(r.sourceId, first.sourceId) != 0 || view->bytes + bytes > COALESCE_BYTES)) break;
+        if (view->count > 0 && (r.alone || strcmp(r.sourceId, first.sourceId) != 0 || view->bytes + bytes > COALESCE_BYTES)) break;
         view->parts[view->count] = _storage + offset + RECORD_BYTES;
         view->partBytes[view->count] = bytes;
         view->headerLength[view->count] = r.headerLength;
         view->count++;
         view->bytes += bytes;
         offset += r.size;
-        if (view->bytes > COALESCE_BYTES) break; // a large part travels alone
+        if (view->bytes > COALESCE_BYTES || r.alone) break; // a large part or a chunk travels alone
     }
     _pinned = view->count;
     _pinnedBytes = offset;
