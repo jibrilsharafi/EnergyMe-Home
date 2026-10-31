@@ -37,6 +37,8 @@ constexpr const char* AWS_IOT_CORE_RULE_LOG_HOMEPRO    = "energyme_homepro_dev_r
 constexpr const char* AWS_IOT_CORE_RULE_GRID_HOMEPRO   = "energyme_homepro_dev_rule_grid";
 constexpr const char* AWS_IOT_CORE_RULE_ENERGY_HOMEPRO = "energyme_homepro_dev_rule_energy";
 constexpr const char* AWS_IOT_CORE_RULE_ALARM_HOMEPRO  = "energyme_homepro_dev_rule_alarm";
+constexpr const char* AWS_IOT_CORE_RULE_COLLECTOR_HOME    = "energyme_home_dev_rule_collector";
+constexpr const char* AWS_IOT_CORE_RULE_COLLECTOR_HOMEPRO = "energyme_homepro_dev_rule_collector";
 #else
 constexpr const char* AWS_IOT_CORE_RULE_METER_HOME      = "energyme_home_prod_rule_meter";
 constexpr const char* AWS_IOT_CORE_RULE_LOG_HOME        = "energyme_home_prod_rule_log";
@@ -48,6 +50,8 @@ constexpr const char* AWS_IOT_CORE_RULE_LOG_HOMEPRO    = "energyme_homepro_prod_
 constexpr const char* AWS_IOT_CORE_RULE_GRID_HOMEPRO   = "energyme_homepro_prod_rule_grid";
 constexpr const char* AWS_IOT_CORE_RULE_ENERGY_HOMEPRO = "energyme_homepro_prod_rule_energy";
 constexpr const char* AWS_IOT_CORE_RULE_ALARM_HOMEPRO  = "energyme_homepro_prod_rule_alarm";
+constexpr const char* AWS_IOT_CORE_RULE_COLLECTOR_HOME    = "energyme_home_prod_rule_collector";
+constexpr const char* AWS_IOT_CORE_RULE_COLLECTOR_HOMEPRO = "energyme_homepro_prod_rule_collector";
 #endif
 
 // AWS reserved topic prefixes

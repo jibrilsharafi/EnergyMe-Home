@@ -22,6 +22,7 @@ static_assert(SHA256_HEX_BUFFER_SIZE == RollbackLogic::SHA256_HEX_LEN + 1,
 #include "sha256_hex.h"
 #include "gateway.h"
 #include "tunnel.h"
+#include "collector.h"
 #include "mbedtls/base64.h"
 #include "mbedtls/sha256.h"
 #include "mbedtls/pk.h"
@@ -265,9 +266,11 @@ namespace Mqtt
     static void _queueCommand(const char* topic, const char* payload);
     static void _drainPendingCommand();
     static void _handleGatewayCommand(const char* executionId, JsonDocument& doc);
+    static void _handleCollectorStatus(const char* executionId, JsonDocument& doc);
     static void _drainGatewayResult();
     static void _handleTunnelCommand(const char* executionId, GatewayLogic::Op op, JsonDocument& doc);
     static void _serviceTunnel();
+    static void _serviceCollector();
     static void _publishCommandResponse(const char* executionId, char* responseJson);
     static void _handleAwsIotJobMessage(const char* message, const char* topic);
     
@@ -1557,9 +1560,12 @@ namespace Mqtt
         if (!Gateway::isEnabled()) {
             reasonCode = "GATEWAY_DISABLED";
             description = "Enable the gateway from the cloud (system shadow gateway_enabled)";
+        } else if (op == GatewayLogic::Op::COLLECTOR_STATUS) {
+            _handleCollectorStatus(executionId, doc);
+            return;
         } else if (op == GatewayLogic::Op::UNKNOWN) {
             reasonCode = "UNKNOWN_OP";
-            description = "op must be ping, net_scan, http_request, https_request, tls_probe, modbus_read, modbus_write, udp_send, tcp_request, secret_set, secret_delete, tunnel_open or tunnel_close";
+            description = "op must be ping, net_scan, http_request, https_request, tls_probe, modbus_read, modbus_write, udp_send, tcp_request, secret_set, secret_delete, tunnel_open, tunnel_close or collector_status";
         } else {
             switch (Gateway::submit(executionId, op, doc["args"])) {
                 case Gateway::SubmitResult::ACCEPTED:
@@ -1587,6 +1593,87 @@ namespace Mqtt
         LOG_WARNING("Gateway command %s %s: %s", executionId, status, reasonCode);
         _publishCommandStatus(executionId, status, reasonCode, description);
     }
+
+    // collector_status (openspec capability: lan-collector): answered here from the
+    // collector's health snapshot, without the gateway slot. `args` as for the primitives.
+    static void _handleCollectorStatus(const char* executionId, JsonDocument& doc) {
+        SpiRamAllocator allocator;
+        JsonDocument args(&allocator);
+        const char* job = nullptr;
+        if (!doc["args"].isNull()) {
+            if (!Gateway::parseArgs(doc["args"], args) || !args.is<JsonObject>() || (!args["job"].isNull() && !args["job"].is<const char*>())) {
+                _publishCommandStatus(executionId, "REJECTED", "BAD_ARGS", "args must be {} or {job}");
+                return;
+            }
+            job = args["job"].as<const char*>();
+        }
+        JsonDocument response(&allocator);
+        response["status"] = "SUCCEEDED";
+        if (!Collector::statusToResult(job, response["result"].to<JsonObject>())) {
+            _publishCommandStatus(executionId, "REJECTED", "NO_SUCH_JOB", "No job with that id in the active set");
+            return;
+        }
+        char topic[MQTT_TOPIC_BUFFER_SIZE];
+        _constructCommandTopic(executionId, "response/json", topic, sizeof(topic));
+        if (!_publishJsonStreaming(response, topic)) LOG_WARNING("Failed to publish collector_status %s", executionId);
+    }
+
+    // A queued `ts: null` header gets the reply time back-filled from `up` once
+    // the clock is synchronised (`bootUnixMs`: Unix ms at uptime 0, 0 while unknown).
+    // Returns the header length written to `out`, 0 when it does not fit.
+    static size_t _collectorHeader(const uint8_t* part, size_t headerLength, uint64_t bootUnixMs, char* out, size_t cap) {
+        static const char NULL_TS[] = "\"ts\":null,";
+        const char* header = (const char*)part;
+        if (headerLength >= cap) return 0;
+        const char* at = bootUnixMs != 0 ? (const char*)memmem(header, headerLength, NULL_TS, sizeof(NULL_TS) - 1) : nullptr;
+        const char* up = at != nullptr ? (const char*)memmem(header, headerLength, "\"up\":", 5) : nullptr;
+        if (up == nullptr) {
+            memcpy(out, header, headerLength);
+            return headerLength;
+        }
+        uint64_t ts = bootUnixMs + strtoull(up + 5, nullptr, 10);
+        size_t prefix = (size_t)(at - header);
+        size_t rest = headerLength - prefix - (sizeof(NULL_TS) - 1);
+        int n = snprintf(out, cap, "%.*s\"ts\":%llu,%.*s", (int)prefix, header, (unsigned long long)ts, (int)rest, at + sizeof(NULL_TS) - 1);
+        return n > 0 && (size_t)n < cap ? (size_t)n : 0;
+    }
+
+    // Streams one collector message (header line, newline, bytes per part)
+    // straight from the pinned PSRAM parts.
+    static bool _publishCollectorMessage(const Collector::Message& message, void* context) {
+        (void)context;
+        static char header[CollectorLogic::PART_HEADER_MAX + 32];
+        char finalTopic[sizeof(MQTT_TOPIC_COLLECTOR) + 1 + CollectorLogic::SOURCE_ID_MAX + 1];
+        char topic[MQTT_TOPIC_BUFFER_SIZE];
+        snprintf(finalTopic, sizeof(finalTopic), "%s/%s", MQTT_TOPIC_COLLECTOR, message.sourceId);
+        _constructMqttTopicWithRule(_selectByProduct(AWS_IOT_CORE_RULE_COLLECTOR_HOME, AWS_IOT_CORE_RULE_COLLECTOR_HOMEPRO), finalTopic, topic,
+                                    sizeof(topic));
+        // Read once, so both passes below produce the same header bytes.
+        uint64_t bootUnixMs = CustomTime::isTimeSynched() ? CustomTime::getUnixTimeMilliseconds() - millis64() : 0;
+        size_t total = 0;
+        for (size_t i = 0; i < message.count; i++) {
+            size_t h = _collectorHeader(message.parts[i], message.headerLength[i], bootUnixMs, header, sizeof(header));
+            if (h == 0) return false;
+            total += h + message.partBytes[i] - message.headerLength[i];
+        }
+        if (!_clientMqtt.connected() || !_clientMqtt.beginPublish(topic, total, false)) {
+            statistics.mqttMessagesPublishedError++;
+            return false;
+        }
+        size_t written = 0;
+        for (size_t i = 0; i < message.count; i++) {
+            size_t h = _collectorHeader(message.parts[i], message.headerLength[i], bootUnixMs, header, sizeof(header));
+            written += _clientMqtt.write((const uint8_t*)header, h);
+            // The newline and the payload follow the header in the part record.
+            written += _clientMqtt.write(message.parts[i] + message.headerLength[i], message.partBytes[i] - message.headerLength[i]);
+        }
+        bool ok = _clientMqtt.endPublish() && written == total;
+        if (ok) statistics.mqttMessagesPublished++;
+        else statistics.mqttMessagesPublishedError++;
+        return ok;
+    }
+
+    static void _serviceCollector() { Collector::drain(_publishCollectorMessage, nullptr); }
 
     // LAN tunnel (openspec capability: lan-tunnel). tunnel_open keeps its command
     // IN_PROGRESS for the whole session; its terminal status comes from
@@ -3574,6 +3661,8 @@ namespace Mqtt
             mqttLoopOk = _clientMqtt.loop();
         }
 
+        Collector::setOtaBusy(_otaTaskHandle != nullptr || _otaRebootPending);
+        Collector::setCloudConnected(wifiOk && mqttConnected && mqttLoopOk);
         if (!wifiOk || !mqttConnected || !mqttLoopOk) {
             LOG_DEBUG(
                 "MQTT disconnected, will reconnect next loop (wifi: %d, connected: %d, loop: %d)",
@@ -3593,11 +3682,12 @@ namespace Mqtt
         _checkIfPublishStatisticsNeeded();
         _checkIfPublishCrashNeeded();
         _checkPublishMqtt();
-        _checkOfflineEnergyReplay(); // After the live publishes, so a backlog never delays them
         Shadow::checkPublish(); // drain shadow deltas/local-edits/reports (MQTT task body)
         _drainPendingCommand(); // process queued IoT Command (broker RX or dev inject) off the callback
         _drainGatewayResult(); // publish a finished LAN gateway request from the task body
         _serviceTunnel(); // tunnel uplink frames and terminal status, after telemetry
+        _serviceCollector(); // collector parts, at most one message per second
+        _checkOfflineEnergyReplay(); // last, so a backlog never delays live publishes, commands or the tunnel
 #ifdef ENV_DEV
         _drainPendingJob(); // dev-injected synthetic job, same off-the-callback rule
 #endif

@@ -28,6 +28,7 @@ constexpr OpEntry OPS[] = {
     {"tls_probe", Op::TLS_PROBE},
     {"secret_set", Op::SECRET_SET},
     {"secret_delete", Op::SECRET_DELETE},
+    {"collector_status", Op::COLLECTOR_STATUS},
 };
 
 void putU16(uint8_t *p, uint16_t v) {
