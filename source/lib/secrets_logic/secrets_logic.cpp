@@ -167,7 +167,7 @@ uint64_t applyCeiling(bool clockSynced, uint64_t now, uint64_t hwm, bool *lowere
 
 SetVerdict decideSet(bool clockSynced, uint64_t now, uint64_t hwm, uint64_t issuedAt, bool sameSlot) {
     if (!clockSynced) return SetVerdict::CLOCK_NOT_SYNCED;
-    if (issuedAt + WINDOW_PAST_S < now) return SetVerdict::STALE;
+    if (issuedAt < now && now - issuedAt > WINDOW_PAST_S) return SetVerdict::STALE; // no overflow near UINT64_MAX
     if (issuedAt > now + WINDOW_FUTURE_S) return SetVerdict::CLOCK_SKEW;
     if (sameSlot) return SetVerdict::ALREADY_APPLIED;
     if (issuedAt <= hwm) return SetVerdict::STALE;
@@ -224,6 +224,7 @@ size_t scrub(uint8_t *buffer, size_t length, size_t cap, uint8_t *scratch, const
              bool *redacted) {
     size_t out = 0;
     size_t i = 0;
+    size_t protectedEnd = 0; // end of the last placeholder written: never cut into it
     bool cut = false;
     while (i < length) {
         const ScrubForm *match = nullptr;
@@ -250,6 +251,7 @@ size_t scrub(uint8_t *buffer, size_t length, size_t cap, uint8_t *scratch, const
         }
         memcpy(scratch + out, placeholder, placeholderLength);
         out += placeholderLength;
+        protectedEnd = out;
         i += match->length;
     }
     if (cut) *truncated = true;
@@ -260,8 +262,8 @@ size_t scrub(uint8_t *buffer, size_t length, size_t cap, uint8_t *scratch, const
         for (size_t f = 0; f < formCount; f++) {
             const ScrubForm &form = forms[f];
             if (form.length < SCRUB_MIN_BYTES) continue;
-            for (size_t p = form.length - 1; p > drop; p--) {
-                if (p <= out && memcmp(scratch + out - p, form.bytes, p) == 0) {
+            for (size_t p = form.length - 1; p > drop && p >= SCRUB_MIN_BYTES; p--) {
+                if (p <= out - protectedEnd && memcmp(scratch + out - p, form.bytes, p) == 0) {
                     drop = p;
                     break;
                 }
