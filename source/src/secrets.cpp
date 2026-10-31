@@ -177,8 +177,8 @@ namespace Secrets
         return true;
     }
 
-    // Target, name and MAC rules shared by the envelope and REST paths.
-    static bool _validateMeta(const char* name, const char* ip, int64_t port, const char* mac, SlotMeta* meta, Outcome& outcome) {
+    // Target and name rules shared by the envelope and REST paths.
+    static bool _validateMeta(const char* name, const char* ip, int64_t port, SlotMeta* meta, Outcome& outcome) {
         if (!isValidName(name)) {
             _fail(outcome, "REJECTED", "BAD_ARGS", "%s", NAME_RULE_DETAIL);
             return false;
@@ -193,12 +193,6 @@ namespace Secrets
             return false;
         }
         meta->port = (uint16_t)port;
-        meta->hasMac = mac != nullptr && mac[0] != '\0';
-        if (meta->hasMac && !GatewayLogic::parseMac(mac, meta->mac)) {
-            _fail(outcome, "REJECTED", "BAD_ARGS", "mac must be six lowercase hex pairs, unicast and non-zero");
-            return false;
-        }
-        if (!meta->hasMac) memset(meta->mac, 0, sizeof(meta->mac));
         snprintf(meta->name, sizeof(meta->name), "%s", name);
         return true;
     }
@@ -292,8 +286,7 @@ namespace Secrets
     // target is an already applied envelope: success with applied false, no decrypt.
     static bool _admitSetLocked(const SlotMeta& meta, const char* kid, Outcome& outcome, int* slot) {
         int index = _find(meta.name);
-        if (index >= 0 && _slots[index].setAt == meta.setAt && memcmp(_slots[index].ip, meta.ip, 4) == 0 && _slots[index].port == meta.port &&
-            _slots[index].hasMac == meta.hasMac && (!meta.hasMac || memcmp(_slots[index].mac, meta.mac, 6) == 0)) {
+        if (index >= 0 && _slots[index].setAt == meta.setAt && memcmp(_slots[index].ip, meta.ip, 4) == 0 && _slots[index].port == meta.port) {
             outcome.setAt = meta.setAt;
             outcome.applied = false;
             return false;
@@ -343,7 +336,6 @@ namespace Secrets
         JsonObjectConst env = args["env"].as<JsonObjectConst>();
         const char* name = args["name"] | (const char*)nullptr;
         const char* ip = args["ip"] | (const char*)nullptr;
-        const char* mac = args["mac"] | "";
         uint64_t issuedAt = 0;
         Envelope* envelope = (Envelope*)ps_malloc(sizeof(Envelope));
         uint8_t* plaintext = (uint8_t*)ps_malloc(PLAINTEXT_BYTES);
@@ -354,7 +346,8 @@ namespace Secrets
             return;
         }
 
-        bool shaped = name != nullptr && ip != nullptr && args["port"].is<int64_t>() && (args["mac"].isNull() || args["mac"].is<const char*>()) &&
+        // The target MAC travels on each gateway request, never with the secret.
+        bool shaped = name != nullptr && ip != nullptr && args["port"].is<int64_t>() && args["mac"].isNull() &&
                       _issuedAt(args["issued_at"], &issuedAt) && !env.isNull() && env["v"].is<int>() && env["alg"].is<const char*>() &&
                       env["kid"].is<const char*>() && strlen(env["kid"].as<const char*>()) == 64 && _decodeExact(env["ek"] | (const char*)nullptr, envelope->ek, ENVELOPE_EK_BYTES) &&
                       _decodeExact(env["iv"] | (const char*)nullptr, envelope->iv, ENVELOPE_IV_BYTES) &&
@@ -362,10 +355,10 @@ namespace Secrets
                       _decodeExact(env["tag"] | (const char*)nullptr, envelope->tag, ENVELOPE_TAG_BYTES);
         SlotMeta meta = {};
         if (!shaped) {
-            _fail(outcome, "REJECTED", "BAD_ARGS", "Expected name, ip, port, issued_at, optional mac and env {v, alg, kid, ek, iv, ct, tag}");
+            _fail(outcome, "REJECTED", "BAD_ARGS", "Expected name, ip, port, issued_at and env {v, alg, kid, ek, iv, ct, tag}, no mac");
         } else if (env["v"].as<int>() != 1 || strcmp(env["alg"].as<const char*>(), ALG) != 0) {
             _fail(outcome, "REJECTED", "UNSUPPORTED_ENVELOPE", "Only v 1 %s is supported", ALG);
-        } else if (_validateMeta(name, ip, args["port"].as<int64_t>(), mac, &meta, outcome)) {
+        } else if (_validateMeta(name, ip, args["port"].as<int64_t>(), &meta, outcome)) {
             snprintf(outcome.name, sizeof(outcome.name), "%s", name);
             meta.setAt = issuedAt;
             const char* envelopeKid = env["kid"].as<const char*>();
@@ -375,7 +368,7 @@ namespace Secrets
                 char aad[AAD_MAX];
                 const uint8_t* value = nullptr;
                 size_t length = 0;
-                Decrypt decrypted = buildAad(aad, sizeof(aad), DEVICE_ID, name, meta.ip, meta.port, meta.hasMac ? meta.mac : nullptr, issuedAt) == 0
+                Decrypt decrypted = buildAad(aad, sizeof(aad), DEVICE_ID, name, meta.ip, meta.port, issuedAt) == 0
                                         ? Decrypt::FAILED
                                         : _decrypt(*envelope, aad, plaintext);
                 if (decrypted == Decrypt::UNAVAILABLE) {
@@ -434,9 +427,9 @@ namespace Secrets
 
     void remove(JsonObjectConst args, Outcome& outcome) { removeLocal(args["name"] | (const char*)nullptr, outcome); }
 
-    bool setLocal(const char* name, const char* ip, int64_t port, const char* mac, const uint8_t* value, size_t length, Outcome& outcome) {
+    bool setLocal(const char* name, const char* ip, int64_t port, const uint8_t* value, size_t length, Outcome& outcome) {
         SlotMeta meta = {};
-        if (!_validateMeta(name, ip, port, mac, &meta, outcome)) return false;
+        if (!_validateMeta(name, ip, port, &meta, outcome)) return false;
         if (!isValidValue(value, length)) {
             _fail(outcome, "REJECTED", "BAD_ARGS", "value must be 1-256 bytes of UTF-8 without NUL, CR or LF");
             return false;
@@ -494,14 +487,11 @@ namespace Secrets
         for (size_t k = 0; k < count; k++) {
             const SlotMeta& slot = _slots[order[k]];
             JsonObject entry = list.add<JsonObject>();
-            char text[GatewayLogic::MAC_TEXT_BUFFER] = "";
+            char text[16];
             entry["name"] = (const char*)slot.name; // copied: serialized after the unlock
             _ipText(slot.ip, text, sizeof(text));
             entry["ip"] = text;
             entry["port"] = slot.port;
-            text[0] = '\0';
-            if (slot.hasMac) GatewayLogic::formatMac(slot.mac, text, sizeof(text));
-            entry["mac"] = text;
             entry["set_at"] = slot.setAt;
         }
         _unlock();
@@ -523,7 +513,6 @@ namespace Secrets
             row.add((const char*)slot.name);
             row.add(target);
             row.add(slot.setAt);
-            row.add(slot.hasMac ? 1 : 0);
         }
         _unlock();
         return true;

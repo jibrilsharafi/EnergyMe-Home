@@ -20,9 +20,9 @@ uint64_t getLe(const uint8_t *p, size_t bytes) {
     return value;
 }
 
-bool isZeroMac(const uint8_t mac[6]) {
-    for (size_t i = 0; i < 6; i++) {
-        if (mac[i] != 0) return false;
+bool isZero(const uint8_t *p, size_t bytes) {
+    for (size_t i = 0; i < bytes; i++) {
+        if (p[i] != 0) return false;
     }
     return true;
 }
@@ -92,7 +92,6 @@ size_t encodeSlot(const SlotMeta &meta, const uint8_t *value, size_t length, uin
     memcpy(out + 2, meta.name, nameLength);
     memcpy(out + 26, meta.ip, 4);
     putLe(out + 30, meta.port, 2);
-    if (meta.hasMac) memcpy(out + 32, meta.mac, 6);
     putLe(out + 38, meta.setAt, 8);
     putLe(out + 46, length, 2);
     memcpy(out + SLOT_HEADER_BYTES, value, length);
@@ -115,11 +114,8 @@ bool decodeSlot(const uint8_t *blob, size_t size, SlotMeta *meta, const uint8_t 
     decoded.name[nameLength] = '\0';
     memcpy(decoded.ip, blob + 26, 4);
     decoded.port = static_cast<uint16_t>(getLe(blob + 30, 2));
-    memcpy(decoded.mac, blob + 32, 6);
-    decoded.hasMac = !isZeroMac(decoded.mac);
     decoded.setAt = getLe(blob + 38, 8);
-    if (!isValidName(decoded.name) || decoded.port == 0 || !GatewayLogic::isPrivateIpv4(decoded.ip)) return false;
-    if (decoded.hasMac && (decoded.mac[0] & 0x01) != 0) return false; // multicast and broadcast
+    if (!isValidName(decoded.name) || decoded.port == 0 || !GatewayLogic::isPrivateIpv4(decoded.ip) || !isZero(blob + 32, 6)) return false;
     if (!isValidValue(blob + SLOT_HEADER_BYTES, valueLength)) return false;
     *meta = decoded;
     if (value != nullptr) *value = blob + SLOT_HEADER_BYTES;
@@ -127,11 +123,8 @@ bool decodeSlot(const uint8_t *blob, size_t size, SlotMeta *meta, const uint8_t 
     return true;
 }
 
-size_t buildAad(char *out, size_t cap, const char *deviceId, const char *name, const uint8_t ip[4], uint16_t port, const uint8_t *mac,
-                uint64_t issuedAt) {
-    char macText[GatewayLogic::MAC_TEXT_BUFFER] = "";
-    if (mac != nullptr) GatewayLogic::formatMac(mac, macText, sizeof(macText));
-    int n = snprintf(out, cap, "energyme-secret-v1|%s|%s|%u.%u.%u.%u:%u|%s|%llu", deviceId, name, ip[0], ip[1], ip[2], ip[3], port, macText,
+size_t buildAad(char *out, size_t cap, const char *deviceId, const char *name, const uint8_t ip[4], uint16_t port, uint64_t issuedAt) {
+    int n = snprintf(out, cap, "energyme-secret-v1|%s|%s|%u.%u.%u.%u:%u||%llu", deviceId, name, ip[0], ip[1], ip[2], ip[3], port,
                      static_cast<unsigned long long>(issuedAt));
     return n > 0 && static_cast<size_t>(n) < cap ? static_cast<size_t>(n) : 0;
 }

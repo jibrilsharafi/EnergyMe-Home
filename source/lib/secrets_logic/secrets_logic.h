@@ -33,8 +33,6 @@ struct SlotMeta {
     char name[SECRET_NAME_MAX + 1];
     uint8_t ip[4];
     uint16_t port;
-    bool hasMac;
-    uint8_t mac[6];
     uint64_t setAt;
 };
 
@@ -42,16 +40,17 @@ bool isValidName(const char *name);
 // 1-256 bytes of strict UTF-8 without NUL, CR or LF.
 bool isValidValue(const uint8_t *value, size_t length);
 
-// Slot blob: ver u8, name_len u8, name 24 B, ip 4 B, port u16 LE, mac 6 B (all
-// zero when unbound), set_at u64 LE, len u16 LE, value. Size 48 + len.
+// Slot blob: ver u8, name_len u8, name 24 B, ip 4 B, port u16 LE, 6 reserved
+// zero bytes, set_at u64 LE, len u16 LE, value. Size 48 + len.
 size_t encodeSlot(const SlotMeta &meta, const uint8_t *value, size_t length, uint8_t *out, size_t cap);
-// False on any malformation (version, size, name, mac, length, value).
+// False on any malformation (version, size, name, reserved bytes, length, value).
+// A slot from the MAC-bound layout fails on its reserved bytes and is erased at boot.
 bool decodeSlot(const uint8_t *blob, size_t size, SlotMeta *meta, const uint8_t **value, size_t *length);
 
-// `energyme-secret-v1|<device>|<name>|<ip>:<port>|<mac>|<issued_at>`, no
-// terminator in the AAD (out is NUL-terminated for convenience). 0 when it does not fit.
-size_t buildAad(char *out, size_t cap, const char *deviceId, const char *name, const uint8_t ip[4], uint16_t port, const uint8_t *mac,
-                uint64_t issuedAt);
+// `energyme-secret-v1|<device>|<name>|<ip>:<port>||<issued_at>`: the envelope v1
+// MAC field stays, always empty. No terminator in the AAD (out is NUL-terminated
+// for convenience). 0 when it does not fit.
+size_t buildAad(char *out, size_t cap, const char *deviceId, const char *name, const uint8_t ip[4], uint16_t port, uint64_t issuedAt);
 
 // Unix seconds as a JSON integer's decimal text or a digit string: digits only,
 // no leading zeros, at most 19 digits.

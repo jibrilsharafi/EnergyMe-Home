@@ -39,11 +39,11 @@ namespace Secrets
     void remove(JsonObjectConst args, Outcome& outcome);
 
     // Local REST: plaintext value from the authenticated LAN API.
-    bool setLocal(const char* name, const char* ip, int64_t port, const char* mac, const uint8_t* value, size_t length, Outcome& outcome);
+    bool setLocal(const char* name, const char* ip, int64_t port, const uint8_t* value, size_t length, Outcome& outcome);
     bool removeLocal(const char* name, Outcome& outcome);
 
     // False when the store lock timed out (nothing written to `out`).
-    bool metadataToJson(JsonObject out); // REST: kid, max, slots sorted by name with name, ip, port, mac ("" when unbound), set_at
+    bool metadataToJson(JsonObject out); // REST: kid, max, slots sorted by name with name, ip, port, set_at
     bool shadowToJson(JsonObject out);   // system shadow: kid, positional slots sorted by name
     const char* kid();
 
