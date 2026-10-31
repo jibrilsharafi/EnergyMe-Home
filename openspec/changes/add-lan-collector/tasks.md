@@ -55,6 +55,5 @@
 
 ## 5. Pilot (prod, each step needs Jibril's explicit consent)
 
-- [ ] 5.1 Read the XWEB MAC with `net_scan`, rotate the XWEB password on site and deliver it with `gateway_secret.py set --mac <xweb mac>` bound to the XWEB target (the MAC is mandatory for this on-link target, else every run fails `MAC_REQUIRED`), and confirm the reported slot shows the MAC flag
-- [ ] 5.1a Store the XWEB read declaration (`POST /cgi-bin/login.lua`, `POST /cgi-bin/datachart.cgi`, the same MAC as 5.1) in `system` desired `gateway_write_grants` through the infra jobs tool, keeping existing entries, and confirm the device reported it
+- [ ] 5.1 Read the XWEB MAC with `net_scan`, rotate the XWEB password on site and deliver it with `gateway_secret.py set` bound to the XWEB target, and put the MAC on the XWEB job `target` (mandatory for this on-link target, else every run fails `MAC_REQUIRED`)
 - [ ] 5.2 Apply the XWEB job on 9070698753dc, enable the collector, verify decoded points in the cloud, then stop the cloud-side one-shot polling

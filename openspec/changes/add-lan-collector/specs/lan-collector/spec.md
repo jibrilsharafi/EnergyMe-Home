@@ -89,7 +89,7 @@ An applied job set SHALL be written to LittleFS as `/collector/jobset.json` (hol
 - **THEN** `/collector/jobset.json` is gone and `collector_enabled` is false after reboot
 
 ### Requirement: Job schema and quotas
-The job document SHALL be `{v: 1, budget_bytes_h?, jobs: [...]}` with `budget_bytes_h` 65536 to 8388608 (default 2097152). Each job SHALL hold: `id` (`[a-z0-9_.-]{1,32}`, unique), `rev` (integer >= 1), `enabled` (boolean), `source_id` (`src_` plus 4 to 8 lowercase hex, ADR-034), `target` `{ip, port}`, `module` (`http`, `https`, `modbus_tcp`, `tcp`, `udp`; raw payloads only with a read declaration, see "Jobs are read-only"), `interval_s` (60 to 86400), `jitter_s` (0 to min(interval_s/2, 300), default 0), `step_timeout_ms` (100 to 10000, default 5000), `deadline_s` (5 to min(300, interval_s/2), default min(60, interval_s/2)), `max_bytes` (1 to 131072, default 16384), `vars` (optional), `session` (optional), `steps` (1 to 8) and `publish` (`per_step` or `batch`, default `per_step`). A step SHALL hold `id` (same grammar, unique across login and data steps of the job), `args` (the module's request fields from `add-gateway-modules` without `module`, `target`, `access`, `writes`, `timeout_ms` and `max_bytes`), and optional `timeout_ms`, `max_bytes` and `captures`. Limits per job: 4 login steps, 8 captures (each at most 2048 bytes, together at most 4096 bytes held at once, see "Captures"), 8 vars (names `[A-Za-z0-9_.-]{1,32}`, values integers or strings of at most 2048 bytes), and the sum of the data steps' effective `max_bytes` at most 131072, so one run always fits the out-queue. Jobs that share a `source_id` SHALL share `target` and `module`. At most 8 jobs SHALL be configured. Unknown keys at any level SHALL be refused with `BAD_JOB`; quota violations with `QUOTA_EXCEEDED`. A job with `enabled: false` SHALL be stored and reported with state `off` but not run.
+The job document SHALL be `{v: 1, budget_bytes_h?, jobs: [...]}` with `budget_bytes_h` 65536 to 8388608 (default 2097152). Each job SHALL hold: `id` (`[a-z0-9_.-]{1,32}`, unique), `rev` (integer >= 1), `enabled` (boolean), `source_id` (`src_` plus 4 to 8 lowercase hex, ADR-034), `target` `{ip, port, mac?}` (`mac` lowercase `aa:bb:cc:dd:ee:ff`, sent with every step, see "Jobs are read-only"), `module` (`http`, `https`, `modbus_tcp`, `tcp`, `udp`), `interval_s` (60 to 86400), `jitter_s` (0 to min(interval_s/2, 300), default 0), `step_timeout_ms` (100 to 10000, default 5000), `deadline_s` (5 to min(300, interval_s/2), default min(60, interval_s/2)), `max_bytes` (1 to 131072, default 16384), `vars` (optional), `session` (optional), `steps` (1 to 8) and `publish` (`per_step` or `batch`, default `per_step`). A step SHALL hold `id` (same grammar, unique across login and data steps of the job), `args` (the module's request fields from `add-gateway-modules` without `module`, `target`, `access`, `writes`, `timeout_ms` and `max_bytes`), and optional `timeout_ms`, `max_bytes` and `captures`. Limits per job: 4 login steps, 8 captures (each at most 2048 bytes, together at most 4096 bytes held at once, see "Captures"), 8 vars (names `[A-Za-z0-9_.-]{1,32}`, values integers or strings of at most 2048 bytes), and the sum of the data steps' effective `max_bytes` at most 131072, so one run always fits the out-queue. Jobs that share a `source_id` SHALL share `target` and `module`. At most 8 jobs SHALL be configured. Unknown keys at any level SHALL be refused with `BAD_JOB`; quota violations with `QUOTA_EXCEEDED`. A job with `enabled: false` SHALL be stored and reported with state `off` but not run.
 
 #### Scenario: Ninth job
 - **WHEN** a set holds 9 jobs
@@ -112,11 +112,9 @@ The job document SHALL be `{v: 1, budget_bytes_h?, jobs: [...]}` with `budget_by
 - **THEN** the set is refused with `BAD_JOB`, field `deadline_s`
 
 ### Requirement: Jobs are read-only
-Collector steps SHALL be classed by the classifier of `add-gateway-modules` against the stored read declarations (`kind: "read"` entries of `gateway_write_grants`), never against a per-step flag: a job step carries no `access` field (`BAD_JOB`). At apply time every login and data step SHALL be classed as written, and a step classed write SHALL refuse the whole set with `WRITE_NOT_ALLOWED`, field `steps[i]` (or `session.login[i]`). So a `modbus_tcp` write is refused; an `http`/`https` GET without a body is read, and a GET step with a non-empty `body` or `body_b64` is write, so it is refused at apply time with `WRITE_NOT_ALLOWED` and, after a later change, at run time with `WRITES_DENIED`; a POST, PUT, PATCH or DELETE is read only when a read declaration with the same `ip`, `port` and `module` lists its canonical address `<METHOD> <path>` (method and path before `?`) exactly, another method to a declared path is write, and the body takes no part in the match; a `tcp` step with an empty payload is read; a `tcp` step with a payload and every `udp` step are read only when the SHA-256 of the exact payload bytes is in a read declaration for the same `ip`, `port` and `module`. Because declarations are exact paths and exact hashes, a non-GET HTTP step whose path contains a placeholder, and a `tcp`/`udp` step whose payload contains a placeholder, SHALL be classed write at apply time. The read declarations a job set needs SHALL therefore be stored (through the `system` shadow or local REST) before the set is applied; a set applied first is refused and the cloud re-sends it after the declarations are acked.
+Every login and data step SHALL run as a caller-declared read of the job's own target: the collector SHALL set `declared_read` and `writes: "deny"` (the caller fields of `add-gateway-modules` "Read-only callers") on every step, so a literal POST, PUT, PATCH or DELETE or a `tcp`/`udp` payload is classed read without a grant list entry, and anything the executor still classes write is `REJECTED` `WRITE_NOT_ALLOWED` with reason_detail `WRITES_DENIED` before any socket opens whatever write grants exist. A job step carries no `access` field (`BAD_JOB`) and the job schema has no `writes` or `declared_read` key, so the cloud cannot change either. Write grants SHALL never apply to collector jobs: they authorize one-shot commands only. At apply time (and at boot load) a step that cannot be a literal read SHALL refuse the whole set with `WRITE_NOT_ALLOWED`, field `steps[i]` (or `session.login[i]`): a `modbus_tcp` step with `values`, an `http`/`https` GET with a non-empty `body` or `body_b64`, a POST, PUT, PATCH or DELETE whose path contains a placeholder, and a `tcp` step whose text payload contains a placeholder. Placeholders in a non-GET body stay allowed (the XWEB login body carries `${secret:...}`). The job `target` `mac`, when present, SHALL be sent with every step; the executor requires it for an on-link non-GET or payload step and for a step that expands a secret (`MAC_REQUIRED`), compares it with the ARP entry before the first byte (`TARGET_MAC_CHANGED`) and refuses it for an off-link target. A run-time `WRITE_NOT_ALLOWED` or `SECRET_TARGET_MISMATCH` (reason_detail `WRITES_DENIED`, `MAC_REQUIRED` or `TARGET_MAC_CHANGED`) SHALL stop the run like a target rule failure.
 
-Declarations can change after apply, so every step SHALL be classed again by the executor at run time, after expansion: the collector SHALL set `writes: "deny"` (the read-only caller field of `add-gateway-modules`) on every login and data step, so a request classed write is `REJECTED` `WRITE_NOT_ALLOWED` with reason_detail `WRITES_DENIED` before any socket opens whatever write grants exist. The job schema has no `writes` key, so the cloud cannot clear it. Write grants SHALL never apply to collector jobs: they authorize one-shot commands only. A run-time `WRITE_NOT_ALLOWED` (reason_detail `WRITES_DENIED`, `MAC_REQUIRED` for an on-link declaration without `mac`, or `TARGET_MAC_CHANGED` for another device at the target IP) SHALL stop the run like a target rule failure. Boot load of the stored set SHALL NOT re-apply the apply-time classing (a revoked declaration then fails only the runs that need it, not the whole stored set).
-
-An `http`/`https` GET step without a body SHALL be classed read by method, and the device SHALL NOT try to tell a state-changing GET (for example Shelly `GET /rpc/Switch.Set?on=false`) from a read: a job step cannot raise its class (`access` is `BAD_JOB`) and `writes: "deny"` never fires on a request classed read. "Jobs are read-only" therefore holds only as far as the device classifier can tell. This residual is accepted on the device; the control is the cloud jobs tool (infra `energyme-home-iot-pipeline-lan-points`), which writes a job set only when every GET step matches the source driver's `READ_REQUESTS`.
+An `http`/`https` GET step without a body SHALL be classed read by method, and the device SHALL NOT try to tell a state-changing GET (for example Shelly `GET /rpc/Switch.Set?on=false`) from a read: a job step cannot raise its class (`access` is `BAD_JOB`) and `writes: "deny"` never fires on a request classed read. Likewise a declared-read POST is read whatever its body. "Jobs are read-only" therefore holds only as far as the job document is a read list; the control is the cloud jobs tool (infra `energyme-home-iot-pipeline-lan-points`), which writes a job set only when every step matches the source driver's `READ_REQUESTS`.
 
 #### Scenario: Modbus write in a job
 - **WHEN** a `modbus_tcp` step carries `values`
@@ -126,49 +124,37 @@ An `http`/`https` GET step without a body SHALL be classed read by method, and t
 - **WHEN** a set holds a step `GET /rpc` to a Shelly target with the body `{"method":"Switch.Set","params":{"id":0,"on":false}}`
 - **THEN** the set is refused with `WRITE_NOT_ALLOWED`, field `steps[i]`
 
-#### Scenario: XWEB POSTs with a stored read declaration
-- **WHEN** the read declaration `{ip:"192.168.1.50", port:80, module:"http", kind:"read", mac:"<xweb mac>", allow:["POST /cgi-bin/login.lua","POST /cgi-bin/datachart.cgi"]}` is stored and a set holds the XWEB job of design worked example 1
+#### Scenario: XWEB POSTs
+- **WHEN** a set holds the XWEB job of design worked example 1 with `target` `{ip:"192.168.1.50", port:80, mac:"<xweb mac>"}` and no grant list entry covers the XWEB
 - **THEN** the set is accepted, and each run sends the login and data POSTs after the executor matches the XWEB MAC
-
-#### Scenario: XWEB job applied before its read declaration
-- **WHEN** the XWEB job set arrives while no read declaration covers `192.168.1.50:80`
-- **THEN** the set is refused with `WRITE_NOT_ALLOWED`, field `session.login[0]`, and the previous set keeps running
 
 #### Scenario: Step claims read
 - **WHEN** an `http` POST step carries `access: "read"`
 - **THEN** the set is refused with `BAD_JOB`, field `access`
 
-#### Scenario: Other method to a declared path
-- **WHEN** the XWEB read declaration is stored and a job step sends `DELETE /cgi-bin/datachart.cgi`
-- **THEN** the set is refused with `WRITE_NOT_ALLOWED`, since only `POST /cgi-bin/datachart.cgi` is declared
+#### Scenario: Templated non-GET path
+- **WHEN** a job step sends `POST /cgi-bin/datachart.cgi?t=${now}`
+- **THEN** the set is refused with `WRITE_NOT_ALLOWED`, since the path is not literal
 
 #### Scenario: State-changing GET accepted by the device
-- **WHEN** a set holds an `http` step `GET /rpc/Switch.Set?on=false` to a Shelly target and no read declaration covers it
+- **WHEN** a set holds an `http` step `GET /rpc/Switch.Set?on=false` to a Shelly target
 - **THEN** the device classes it read, accepts the set and sends it every run; nothing on the device detects it, and the only control is the cloud jobs tool refusing GET steps outside the driver's `READ_REQUESTS` before the set is written
 
-#### Scenario: Declaration revoked after apply
-- **WHEN** the XWEB set is applied and the cloud then replaces `gateway_write_grants` with a list without the XWEB read declaration, while a write grant `["*"]` covers the XWEB target
-- **THEN** each run fails at the login step, whose header-only part carries `st: "REJECTED"`, `rc: "WRITE_NOT_ALLOWED"` and `rdt: "WRITES_DENIED"`, the write grant is never consulted, no byte reaches the XWEB, the job backs off and its health shows `code: "WRITE_NOT_ALLOWED"` with `detail: "WRITES_DENIED"`
+#### Scenario: On-link XWEB job without a MAC
+- **WHEN** the XWEB job `target` has no `mac` and the XWEB is on-link
+- **THEN** the set is applied and each run fails at the login step before any socket opens, its part carrying `st: "REJECTED"`, `rc: "WRITE_NOT_ALLOWED"` and `rdt: "MAC_REQUIRED"`
 
-#### Scenario: Declaration on a swapped device
+#### Scenario: Swapped device
 - **WHEN** another device takes the XWEB IP after DHCP renumbering
-- **THEN** each run fails at the login step before any byte is sent, its part carries `st: "REJECTED"`, `rc: "WRITE_NOT_ALLOWED"` and `rdt: "TARGET_MAC_CHANGED"`, and the job's health shows `detail: "TARGET_MAC_CHANGED"`, so the cloud tells it from a revoked declaration
+- **THEN** each run fails at the login step before any byte is sent, its part carries `st: "REJECTED"`, `rc: "WRITE_NOT_ALLOWED"` and `rdt: "TARGET_MAC_CHANGED"`, and the job's health shows `detail: "TARGET_MAC_CHANGED"`
 
-#### Scenario: UDP job with a grant but no declaration
-- **WHEN** a set contains a `udp` step and only a write grant covers its target
-- **THEN** the set is refused with `WRITE_NOT_ALLOWED`, field `steps[0]`, the previous set keeps running and no datagram is ever sent
-
-#### Scenario: Fixed UDP query declared read
-- **WHEN** a `udp` step carries a fixed 17-byte query frame whose SHA-256 is in a MAC-bound read declaration for its target
-- **THEN** the set is accepted and each run publishes the reply datagram
-
-#### Scenario: TCP step with an undeclared payload
-- **WHEN** a `tcp` step carries `payload: "STATUS\r\n"` and no read declaration holds its hash
-- **THEN** the set is refused with `WRITE_NOT_ALLOWED`
+#### Scenario: Literal UDP and TCP queries
+- **WHEN** a `udp` step carries a fixed 17-byte query frame, or a `tcp` step carries `payload: "STATUS\r\n"`, and the job target has its `mac`
+- **THEN** the set is accepted and each run publishes the reply, with no grant list entry
 
 #### Scenario: Templated TCP payload
 - **WHEN** a `tcp` step payload contains `${now}`
-- **THEN** the set is refused with `WRITE_NOT_ALLOWED`, since no exact hash can match it
+- **THEN** the set is refused with `WRITE_NOT_ALLOWED`, since the payload is not literal
 
 #### Scenario: TCP banner read
 - **WHEN** a `tcp` step carries no payload
@@ -190,8 +176,8 @@ The collector SHALL provide these resolvers to the expansion stage of `add-gatew
 - **THEN** the set is applied, each run fails with the secret store's reason code and backs off, and runs succeed once the secret is set
 
 #### Scenario: On-link secret without a MAC
-- **WHEN** a job's login step uses `${secret:xweb_pw}` and the slot is bound to the on-link XWEB `192.168.1.50:80` without a MAC
-- **THEN** the set is applied, each run fails at the login step before any socket opens with a part carrying `st: "REJECTED"`, `rc: "SECRET_TARGET_MISMATCH"` and `rdt: "MAC_REQUIRED"`, and runs succeed once the secret is set again with the XWEB MAC
+- **WHEN** a GET step of a job uses `${secret:meter_token}` in a header, its target is on-link and the job `target` has no `mac`
+- **THEN** the set is applied, each run fails at that step before any socket opens with a part carrying `st: "REJECTED"`, `rc: "SECRET_TARGET_MISMATCH"` and `rdt: "MAC_REQUIRED"`, and runs succeed once the job target carries the MAC
 
 #### Scenario: Capture placeholder in a one-shot command
 - **WHEN** a cloud `http_request` command to 192.168.1.99 carries body `${cap:sses}` while the XWEB job holds a live `sses`
