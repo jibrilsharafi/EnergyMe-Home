@@ -98,8 +98,7 @@ static PolicyRequest modbusReq(uint8_t fc, const char *address, const uint16_t *
     return r;
 }
 
-static PolicyRequest rawReq(Module module, uint16_t port, size_t length, const uint8_t *digest,
-                            Access access = Access::NONE) {
+static PolicyRequest rawReq(Module module, uint16_t port, size_t length, Access access = Access::NONE) {
     PolicyRequest r;
     memset(&r, 0, sizeof(r));
     r.module = module;
@@ -107,7 +106,6 @@ static PolicyRequest rawReq(Module module, uint16_t port, size_t length, const u
     r.port = port;
     r.access = access;
     r.payloadLength = length;
-    r.payloadDigest = digest;
     return r;
 }
 
@@ -281,18 +279,11 @@ void test_grant_valid_entries(void) {
     entry("10.20.0.5", 502, "modbus_tcp", "write", nullptr, {"u1/hr65535:1"});
     entry("172.16.0.1", 443, "https", "read", nullptr, {"PUT /a", "PATCH /b", "DELETE /c", "POST /d"});
 
-    uint8_t d[DIGEST_BYTES];
-    fakeDigest(1, d);
-    char hex[65];
-    toHex(d, hex);
-    GrantEntry u = entry("192.168.2.61", 4210, "udp", nullptr, "00:11:22:33:44:77", {hex});
-    TEST_ASSERT_FALSE(u.wildcard);
-    TEST_ASSERT_TRUE(grantAllowText(u, 0, text, sizeof(text)));
-    TEST_ASSERT_EQUAL_STRING(hex, text);
-    TEST_ASSERT_EQUAL_MEMORY(d, u.allow[0], DIGEST_BYTES); // stored as 32 bytes binary
-    entry("192.168.2.61", 4210, "tcp", "read", nullptr, {hex});
+    // Raw grants take only "*"
     GrantEntry uw = entry("192.168.2.61", 4210, "udp", "write", nullptr, {"*"});
     TEST_ASSERT_TRUE(uw.wildcard);
+    GrantEntry tw = entry("192.168.2.61", 4000, "tcp", nullptr, nullptr, {"*"});
+    TEST_ASSERT_TRUE(tw.wildcard);
 }
 
 void test_grant_invalid_entries(void) {
@@ -300,12 +291,6 @@ void test_grant_invalid_entries(void) {
     fakeDigest(2, d);
     char hex[65];
     toHex(d, hex);
-    char hex63[64];
-    memcpy(hex63, hex, 63);
-    hex63[63] = '\0';
-    char hexUpper[65];
-    memcpy(hexUpper, hex, sizeof(hexUpper));
-    for (char &c : hexUpper) if (c >= 'a' && c <= 'f') c = static_cast<char>(c - 'a' + 'A');
 
     const char *mac = "00:11:22:33:44:55";
     // Target
@@ -351,12 +336,13 @@ void test_grant_invalid_entries(void) {
     TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", nullptr, mac, {"/rpc/a b"}));
     TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", nullptr, mac, {"*", "/a"}));
     TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", nullptr, mac, {"POST /a"}));
-    // Raw payload hashes
-    TEST_ASSERT_TRUE(refused("192.168.2.61", 4210, "tcp", nullptr, mac, {hex63}));
-    TEST_ASSERT_TRUE(refused("192.168.2.61", 4210, "tcp", nullptr, mac, {hexUpper}));
+    // Raw grants accept only ["*"]
+    TEST_ASSERT_TRUE(refused("192.168.2.61", 4210, "tcp", nullptr, mac, {hex}));
+    TEST_ASSERT_TRUE(refused("192.168.2.61", 4210, "udp", nullptr, mac, {hex}));
     TEST_ASSERT_TRUE(refused("192.168.2.61", 4210, "tcp", nullptr, mac, {"*", hex}));
-    TEST_ASSERT_TRUE(refused("192.168.2.61", 4210, "udp", nullptr, mac, {hex, "*"}));
+    TEST_ASSERT_TRUE(refused("192.168.2.61", 4210, "udp", nullptr, mac, {"*", "*"}));
     TEST_ASSERT_TRUE(refused("192.168.2.61", 4210, "udp", "read", mac, {"*"}));
+    TEST_ASSERT_TRUE(refused("192.168.2.61", 4210, "tcp", "read", mac, {"*"}));
     TEST_ASSERT_TRUE(refused("192.168.2.61", 4210, "udp", nullptr, mac, {"/a"}));
     // MAC
     const char *badMacs[] = {"00:11:22:33:44",    "00-11-22-33-44-55", "ff:ff:ff:ff:ff:ff", "01:00:5e:00:00:01",
@@ -444,12 +430,6 @@ static void assertEntriesEqual(const GrantEntry &a, const GrantEntry &b) {
 }
 
 static size_t fillEight(GrantEntry *entries) {
-    uint8_t d[DIGEST_BYTES];
-    char h[4][65];
-    for (uint8_t i = 0; i < 4; i++) {
-        fakeDigest(static_cast<uint8_t>(10 + i), d);
-        toHex(d, h[i]);
-    }
     char path48[49];
     path48[0] = '/';
     memset(path48 + 1, 'z', 47);
@@ -458,10 +438,10 @@ static size_t fillEight(GrantEntry *entries) {
     entries[1] = entry("192.168.2.40", 80, "http", nullptr, "00:11:22:33:44:55", {"/rpc/Switch.*", path48});
     entries[2] = entry("192.168.2.41", 80, "https", nullptr, nullptr, {"*"});
     entries[3] = entry("192.168.2.50", 502, "modbus_tcp", nullptr, "00:11:22:33:44:66", {"u1/hr100:2=0..400", "u1/co0:4"});
-    entries[4] = entry("192.168.2.61", 4210, "udp", nullptr, "00:11:22:33:44:77", {h[0], h[1], h[2], h[3]});
-    entries[5] = entry("192.168.2.60", 47808, "udp", "read", "00:11:22:33:44:88", {h[0]});
+    entries[4] = entry("192.168.2.61", 4210, "udp", nullptr, "00:11:22:33:44:77", {"*"});
+    entries[5] = entry("192.168.2.42", 8080, "http", nullptr, "00:11:22:33:44:88", {"/a", "/b*", "/c", path48});
     entries[6] = entry("10.20.0.5", 9000, "tcp", nullptr, nullptr, {"*"});
-    entries[7] = entry("172.16.5.5", 65535, "tcp", "read", nullptr, {h[3]});
+    entries[7] = entry("172.16.5.5", 65535, "modbus_tcp", nullptr, nullptr, {"u255/hr65535:1"});
     return 8;
 }
 
@@ -650,39 +630,17 @@ void test_classify_modbus(void) {
     TEST_ASSERT_TRUE(classify(modbusReq(3, "u1/hr100", nullptr, 0, Access::WRITE), nullptr, 0, &idx) == Verdict::BAD_ARGS);
 }
 
-void test_classify_raw_payloads(void) {
-    uint8_t declared[DIGEST_BYTES], other[DIGEST_BYTES];
-    fakeDigest(3, declared);
-    memcpy(other, declared, DIGEST_BYTES);
-    other[16] ^= 0x01; // the same frame with one byte changed hashes differently
-    char hex[65];
-    toHex(declared, hex);
-    GrantEntry decls[2] = {entry("192.168.2.60", 47808, "udp", "read", "00:11:22:33:44:88", {hex}),
-                           entry("192.168.2.60", 4000, "tcp", "read", "00:11:22:33:44:88", {hex})};
+void test_classify_raw(void) {
     int idx = 7;
-
-    // Only an empty tcp payload is a banner read; every udp send needs a declared hash
-    TEST_ASSERT_TRUE(classify(rawReq(Module::UDP, 47808, 0, nullptr), decls, 2, &idx) == Verdict::WRITE);
-    // Empty tcp payload: banner read, no declaration needed
-    TEST_ASSERT_TRUE(classify(rawReq(Module::TCP, 4000, 0, nullptr), nullptr, 0, &idx) == Verdict::READ);
-    TEST_ASSERT_TRUE(classify(rawReq(Module::TCP, 4000, 0, nullptr, Access::WRITE), nullptr, 0, &idx) == Verdict::WRITE);
-
-    TEST_ASSERT_TRUE(classify(rawReq(Module::UDP, 47808, 17, declared), decls, 2, &idx) == Verdict::READ);
-    TEST_ASSERT_EQUAL_INT(0, idx);
-    TEST_ASSERT_TRUE(classify(rawReq(Module::UDP, 47808, 17, other), decls, 2, &idx) == Verdict::WRITE);
-    TEST_ASSERT_TRUE(classify(rawReq(Module::UDP, 47808, 17, declared, Access::WRITE), decls, 2, &idx) == Verdict::WRITE);
-    TEST_ASSERT_TRUE(classify(rawReq(Module::UDP, 47809, 17, declared), decls, 2, &idx) == Verdict::WRITE);
-    TEST_ASSERT_TRUE(classify(rawReq(Module::UDP, 4000, 17, declared), decls, 2, &idx) == Verdict::WRITE); // tcp decl
-    TEST_ASSERT_TRUE(classify(rawReq(Module::UDP, 47808, 17, declared), nullptr, 0, &idx) == Verdict::WRITE);
-
-    TEST_ASSERT_TRUE(classify(rawReq(Module::TCP, 4000, 12, declared), decls, 2, &idx) == Verdict::READ);
-    TEST_ASSERT_EQUAL_INT(1, idx);
-    TEST_ASSERT_TRUE(classify(rawReq(Module::TCP, 4000, 12, other), decls, 2, &idx) == Verdict::WRITE);
-    TEST_ASSERT_TRUE(classify(rawReq(Module::TCP, 47808, 12, declared), decls, 2, &idx) == Verdict::WRITE); // udp decl
-
-    // A write entry holding the same hash does not class it read
-    GrantEntry grant = entry("192.168.2.60", 47808, "udp", nullptr, "00:11:22:33:44:88", {hex});
-    TEST_ASSERT_TRUE(classify(rawReq(Module::UDP, 47808, 17, declared), &grant, 1, &idx) == Verdict::WRITE);
+    // tcp with an empty payload is a banner read
+    TEST_ASSERT_TRUE(classify(rawReq(Module::TCP, 4000, 0), nullptr, 0, &idx) == Verdict::READ);
+    TEST_ASSERT_TRUE(classify(rawReq(Module::TCP, 4000, 0, Access::WRITE), nullptr, 0, &idx) == Verdict::WRITE);
+    // tcp with a payload is a write
+    TEST_ASSERT_TRUE(classify(rawReq(Module::TCP, 4000, 12), nullptr, 0, &idx) == Verdict::WRITE);
+    TEST_ASSERT_TRUE(classify(rawReq(Module::TCP, 4000, 12, Access::READ), nullptr, 0, &idx) == Verdict::WRITE);
+    // every udp send is a write
+    TEST_ASSERT_TRUE(classify(rawReq(Module::UDP, 47808, 17), nullptr, 0, &idx) == Verdict::WRITE);
+    TEST_ASSERT_TRUE(classify(rawReq(Module::UDP, 47808, 17, Access::READ), nullptr, 0, &idx) == Verdict::WRITE);
 }
 
 // ============================================================================
@@ -777,27 +735,12 @@ void test_match_http_paths(void) {
                      GrantMatch::NOT_ALLOWED);
 }
 
-void test_match_raw_payloads(void) {
-    uint8_t granted[DIGEST_BYTES], other[DIGEST_BYTES];
-    fakeDigest(4, granted);
-    memcpy(other, granted, DIGEST_BYTES);
-    other[0] ^= 0x80;
-    char hex[65];
-    toHex(granted, hex);
-    GrantEntry g = entry("192.168.2.60", 4210, "udp", nullptr, "00:11:22:33:44:99", {hex});
-    int idx;
-    TEST_ASSERT_TRUE(matchWriteGrant(rawReq(Module::UDP, 4210, 12, granted), &g, 1, &idx) == GrantMatch::ALLOWED);
-    TEST_ASSERT_TRUE(matchWriteGrant(rawReq(Module::UDP, 4210, 12, other), &g, 1, &idx) == GrantMatch::NOT_ALLOWED);
-    TEST_ASSERT_TRUE(matchWriteGrant(rawReq(Module::TCP, 4210, 12, granted), &g, 1, &idx) == GrantMatch::NOT_ALLOWED);
-
+void test_match_raw_wildcard(void) {
     GrantEntry all = entry("192.168.2.60", 4210, "udp", nullptr, "00:11:22:33:44:99", {"*"});
-    TEST_ASSERT_TRUE(matchWriteGrant(rawReq(Module::UDP, 4210, 12, other), &all, 1, &idx) == GrantMatch::ALLOWED);
-    TEST_ASSERT_TRUE(matchWriteGrant(rawReq(Module::UDP, 4211, 12, other), &all, 1, &idx) == GrantMatch::NOT_ALLOWED);
-
-    // A read declaration with the same hash does not admit a write
-    GrantEntry decl = entry("192.168.2.60", 4210, "udp", "read", "00:11:22:33:44:99", {hex});
-    TEST_ASSERT_TRUE(matchWriteGrant(rawReq(Module::UDP, 4210, 12, granted, Access::WRITE), &decl, 1, &idx) ==
-                     GrantMatch::NOT_ALLOWED);
+    int idx;
+    TEST_ASSERT_TRUE(matchWriteGrant(rawReq(Module::UDP, 4210, 12), &all, 1, &idx) == GrantMatch::ALLOWED);
+    TEST_ASSERT_TRUE(matchWriteGrant(rawReq(Module::UDP, 4211, 12), &all, 1, &idx) == GrantMatch::NOT_ALLOWED);
+    TEST_ASSERT_TRUE(matchWriteGrant(rawReq(Module::TCP, 4210, 12), &all, 1, &idx) == GrantMatch::NOT_ALLOWED);
 }
 
 // ============================================================================
@@ -898,11 +841,11 @@ void run_gateway_policy_tests(void) {
     RUN_TEST(test_classify_http_undeclared_is_write);
     RUN_TEST(test_match_plain_prefix);
     RUN_TEST(test_classify_modbus);
-    RUN_TEST(test_classify_raw_payloads);
+    RUN_TEST(test_classify_raw);
     RUN_TEST(test_match_modbus_range);
     RUN_TEST(test_match_modbus_unbounded_and_coils);
     RUN_TEST(test_match_http_paths);
-    RUN_TEST(test_match_raw_payloads);
+    RUN_TEST(test_match_raw_wildcard);
     RUN_TEST(test_on_link);
     RUN_TEST(test_mac_check_decisions);
     RUN_TEST(test_hex_digest);

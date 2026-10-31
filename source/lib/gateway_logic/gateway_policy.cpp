@@ -317,10 +317,7 @@ const char *validateGrant(const GrantInput &input, GrantEntry *out) {
         if (text == nullptr) return "allow entries must be strings";
         size_t length = strlen(text);
         uint8_t *slot = entry.allow[i];
-        if (isRawModule(entry.module)) {
-            if (!parseHexDigest(text, slot)) return "tcp/udp allow strings must be 64 lowercase hex (SHA-256)";
-            continue;
-        }
+        if (isRawModule(entry.module)) return "tcp/udp grants take only [\"*\"]";
         if (length > GRANT_ALLOW_SLOT_BYTES) return "allow strings are at most 48 bytes";
         if (entry.module == Module::MODBUS_TCP) {
             ModbusRange range{};
@@ -346,10 +343,6 @@ bool grantAllowText(const GrantEntry &entry, size_t i, char *out, size_t cap) {
     if (entry.wildcard) {
         snprintf(out, cap, "*");
         return true;
-    }
-    if (isRawModule(entry.module)) {
-        formatHexDigest(entry.allow[i], out, cap);
-        return out[0] != '\0';
     }
     size_t length = slotLength(entry.allow[i]);
     int n = snprintf(out, cap, "%.*s", static_cast<int>(length), reinterpret_cast<const char *>(entry.allow[i]));
@@ -403,7 +396,7 @@ bool deserializeGrants(const uint8_t *blob, size_t length, GrantEntry *out, size
         const char *allow[GRANT_ALLOW_MAX];
         if (e.allowCount < 1 || e.allowCount > GRANT_ALLOW_MAX || (e.wildcard && e.allowCount != 1)) return false;
         if (e.wildcard) {
-            // The flag alone must not turn a stored path or digest into a whole-target grant.
+            // The flag alone must not turn a stored path into a whole-target grant.
             uint8_t rest = 0;
             for (size_t b = 1; b < sizeof(e.allow); b++) rest |= (&e.allow[0][0])[b];
             if (e.allow[0][0] != '*' || rest != 0) return false;
@@ -441,10 +434,7 @@ Verdict classify(const PolicyRequest &request, const GrantEntry *entries, size_t
         return *readEntry >= 0 ? Verdict::READ : Verdict::WRITE;
     }
 
-    if (request.module == Module::TCP && request.payloadLength == 0) return Verdict::READ;
-    if (request.payloadDigest == nullptr) return Verdict::WRITE;
-    *readEntry = findReadDeclaration(request, entries, count, [&](const uint8_t *slot) { return digestEquals(slot, request.payloadDigest); });
-    return *readEntry >= 0 ? Verdict::READ : Verdict::WRITE;
+    return request.module == Module::TCP && request.payloadLength == 0 ? Verdict::READ : Verdict::WRITE;
 }
 
 GrantMatch matchWriteGrant(const PolicyRequest &request, const GrantEntry *entries, size_t count, int *entryIndex) {
@@ -462,9 +452,7 @@ GrantMatch matchWriteGrant(const PolicyRequest &request, const GrantEntry *entri
             bool admitted = false;
             if (isHttpModule(request.module)) {
                 admitted = request.path != nullptr && slotMatchesPath(e.allow[a], request.path, pathLength);
-            } else if (isRawModule(request.module)) {
-                admitted = request.payloadDigest != nullptr && digestEquals(e.allow[a], request.payloadDigest);
-            } else {
+            } else if (!isRawModule(request.module)) {
                 char text[GRANT_ALLOW_SLOT_BYTES + 1];
                 size_t length = slotLength(e.allow[a]);
                 memcpy(text, e.allow[a], length);

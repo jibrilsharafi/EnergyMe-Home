@@ -67,7 +67,7 @@ inline constexpr size_t GRANT_ENTRY_BYTES = 208;
 inline constexpr uint8_t GRANT_BLOB_VERSION = 1;
 inline constexpr size_t GRANT_BLOB_MAX_BYTES = 1 + GRANT_MAX_ENTRIES * GRANT_ENTRY_BYTES; // 1665
 inline constexpr size_t GRANT_JSON_MAX_BYTES = 3072;
-inline constexpr size_t GRANT_ALLOW_TEXT_BUFFER = 65; // 64-hex digest + NUL
+inline constexpr size_t GRANT_ALLOW_TEXT_BUFFER = GRANT_ALLOW_SLOT_BYTES + 1;
 inline constexpr size_t MAC_TEXT_BUFFER = 18;
 
 struct GrantEntry {
@@ -79,8 +79,7 @@ struct GrantEntry {
     bool wildcard; // allow: ["*"]
     uint8_t mac[6];
     uint8_t allowCount;
-    // Path or Modbus range text (NUL-padded, not terminated at 48 bytes), or a
-    // 32-byte SHA-256 for tcp/udp.
+    // Path or Modbus range text (NUL-padded, not terminated at 48 bytes).
     uint8_t allow[GRANT_ALLOW_MAX][GRANT_ALLOW_SLOT_BYTES];
 };
 
@@ -102,7 +101,7 @@ const char *validateGrant(const GrantInput &input, GrantEntry *out);
 bool parseMac(const char *text, uint8_t out[6]); // lowercase aa:bb:..; refuses zero, broadcast, multicast
 void formatMac(const uint8_t mac[6], char *out, size_t cap);
 
-// Text form of allow slot `i` ("*", a path, a range or 64-hex); false if out of range.
+// Text form of allow slot `i` ("*", a path or a range); false if out of range.
 bool grantAllowText(const GrantEntry &entry, size_t i, char *out, size_t cap);
 
 // Version byte + count fixed-size entries. Returns the blob length, 0 on error.
@@ -129,9 +128,8 @@ struct PolicyRequest {
     ModbusAddress modbus;
     const uint16_t *values;
     size_t valueCount;
-    // tcp/udp: payload length and its SHA-256 (null when empty)
+    // tcp/udp
     size_t payloadLength;
-    const uint8_t *payloadDigest;
 };
 
 enum class Verdict { READ, WRITE, BAD_ARGS };

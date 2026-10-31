@@ -452,7 +452,7 @@ namespace Gateway
             _fail(doc, "TLS_FAILED", "No peer certificate");
             return;
         }
-        char sha[GatewayLogic::GRANT_ALLOW_TEXT_BUFFER];
+        char sha[GatewayLogic::DIGEST_BYTES * 2 + 1];
         GatewayLogic::formatHexDigest(result.cert.sha256, sha, sizeof(sha));
         JsonObject out = _succeed(doc);
         _setString(out, "cert_sha256", sha);

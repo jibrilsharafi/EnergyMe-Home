@@ -471,23 +471,9 @@ static void test_udp_and_tcp_classing(void) {
     std::string udp = std::string(R"([{"id":"q","args":{"payload_b64":")") + frame + R"(","wait_ms":500}}])";
     expectError(set(job("u", "udp", "192.168.1.80", 47808, udp)), "WRITE_NOT_ALLOWED", "u", "steps[0]");
 
-    // A MAC-bound read declaration holding the frame's digest classes it read.
-    uint8_t bytes[17];
-    for (int i = 0; i < 17; i++) bytes[i] = static_cast<uint8_t>(i + 1);
-    uint8_t digest[32];
-    stubSha(bytes, sizeof(bytes), digest);
-    char hex[65];
-    GatewayLogic::formatHexDigest(digest, hex, sizeof(hex));
-    addGrant("192.168.1.80", 47808, "udp", "read", {hex});
-    expectValid(set(job("u", "udp", "192.168.1.80", 47808, udp)));
-
-    // tcp: an undeclared payload is write, an empty payload is read, a templated payload is write.
+    // tcp: a payload is write, an empty payload is read.
     std::string status = R"([{"id":"t","args":{"payload":"STATUS\r\n"}}])";
     expectError(set(job("t", "tcp", "192.168.1.81", 4000, status)), "WRITE_NOT_ALLOWED", "t", "steps[0]");
-    stubSha(reinterpret_cast<const uint8_t *>("STATUS\r\n"), 8, digest);
-    GatewayLogic::formatHexDigest(digest, hex, sizeof(hex));
-    addGrant("192.168.1.81", 4000, "tcp", "read", {hex});
-    expectValid(set(job("t", "tcp", "192.168.1.81", 4000, status)));
     expectError(set(job("t", "tcp", "192.168.1.81", 4000, R"([{"id":"t","args":{"payload":"T=${now}"}}])")), "WRITE_NOT_ALLOWED", "t",
                 "steps[0]");
     expectValid(set(job("t", "tcp", "192.168.1.82", 4000, R"([{"id":"t","args":{"idle_ms":300}}])")));

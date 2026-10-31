@@ -13,7 +13,6 @@
 #include "lwip/netif.h"
 #include "lwip/tcpip.h"
 #include "mbedtls/platform_util.h"
-#include "mbedtls/sha256.h"
 
 #include "constants.h"
 #include "gateway.h"
@@ -439,11 +438,6 @@ namespace GatewayExec
         }
 
         const char* expandedPath = (const char*)buffers.path;
-        uint8_t digest[DIGEST_BYTES];
-        bool hasDigest = false;
-        if ((rq.module == Module::TCP || rq.module == Module::UDP) && buffers.wireLength > 0) {
-            hasDigest = mbedtls_sha256(buffers.wire, buffers.wireLength, digest, 0) == 0;
-        }
         PolicyRequest policy = {};
         policy.module = rq.module;
         memcpy(policy.ip, octets, 4);
@@ -459,7 +453,6 @@ namespace GatewayExec
         policy.values = rq.values;
         policy.valueCount = rq.valueCount;
         policy.payloadLength = buffers.wireLength;
-        policy.payloadDigest = hasDigest ? digest : nullptr;
 
         size_t grantCount = _copyGrants(_snapshot);
         int readEntry = -1;

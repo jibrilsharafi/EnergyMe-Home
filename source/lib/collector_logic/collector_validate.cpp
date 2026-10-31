@@ -702,7 +702,6 @@ bool isRead(Validation &v, const Job &job, const Step &step, bool modbusWrite) {
     memcpy(request.ip, job.octets, 4);
     request.port = job.port;
     request.access = GatewayLogic::Access::NONE;
-    uint8_t digest[GatewayLogic::DIGEST_BYTES];
     const StepArgs &args = step.args;
     switch (job.module) {
         case Module::HTTP:
@@ -719,22 +718,9 @@ bool isRead(Validation &v, const Job &job, const Step &step, bool modbusWrite) {
             request.modbus = args.address;
             break;
         case Module::TCP:
-        case Module::UDP: {
-            const uint8_t *bytes = args.payloadBytes;
-            size_t length = args.payloadBytesLength;
-            if (args.payload != nullptr) {
-                if (GatewayLogic::hasPlaceholder(args.payload, strlen(args.payload))) return false;
-                bytes = reinterpret_cast<const uint8_t *>(args.payload);
-                length = strlen(args.payload);
-            }
-            request.payloadLength = length;
-            if (length > 0) {
-                if (v.context.sha256 == nullptr) return false;
-                v.context.sha256(bytes, length, digest);
-                request.payloadDigest = digest;
-            }
+        case Module::UDP:
+            request.payloadLength = args.payload != nullptr ? strlen(args.payload) : args.payloadBytesLength;
             break;
-        }
     }
     int entry = -1;
     return GatewayLogic::classify(request, v.context.grants, v.context.grantCount, &entry) == GatewayLogic::Verdict::READ;
