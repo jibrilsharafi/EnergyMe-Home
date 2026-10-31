@@ -1,14 +1,29 @@
 ## 1. Golden baseline (before any refactor, dev only)
 
-- [ ] 1.1 Add `source/utils/gateway_golden.py` (dev AWS only, refuses `--env prod` and the PROD bench address): runs a fixed list of `gateway` commands through StartCommandExecution and stores each command response as JSON
-- [ ] 1.2 PC test targets for the golden set: `mock_server.py` cases (text, binary with NUL, empty 200, chunked with few large chunks, 10 KB UTF-8 with a multibyte char at byte 4096, header trickle, 3 KB header block, 3xx), a pymodbus server (FC1-4 reads, FC5/6/15/16 writes, exception 2), a UDP echo, a closed port, an unused private IP
-- [ ] 1.3 Capture the golden set on Home .174 and Home Pro .80 with the current development firmware and commit it under `source/utils/gateway_golden/`
+- [x] 1.1 Add `source/utils/gateway_golden.py` (dev AWS only, refuses `--env prod` and the PROD bench address): runs a fixed list of `gateway` commands through StartCommandExecution and stores each command response as JSON
+- [x] 1.2 PC test targets for the golden set: `mock_server.py` cases (text, binary with NUL, empty 200, chunked with few large chunks, 10 KB UTF-8 with a multibyte char at byte 4096, header trickle, 3 KB header block, 3xx), a pymodbus server (FC1-4 reads, FC5/6/15/16 writes, exception 2), a UDP echo, a closed port, an unused private IP
+- [x] 1.3 Capture the golden set on Home .174 and Home Pro .80 with the current development firmware and commit it under `source/utils/gateway_golden/`
+  - 2026-10-31, firmware 4e00de87 on both meters: 43 cases (`gateway_golden.py serve` targets, not `mock_server.py`, which is the web UI mock). Two captures per meter were identical (43/43) and Home equals Pro, so the set has no run-to-run noise apart from `rtt_avg_ms`. A closed PC port reads `TIMEOUT` (the Windows firewall drops the SYN, no RST).
 
 ## 2. HTTPS feasibility bench (early, gates task 5.6)
 
-- [ ] 2.1 Throwaway dev build with the D9 raw `mbedtls_ssl` path (non-blocking socket, deadline-checked handshake loop, `mbedtls_ssl_get_peer_cert` pin before the first write) that runs 20 TLS handshakes per certificate type (RSA-2048, ECDSA P-256, PC test server) from the gateway task and logs over UDP: internal heap minimum free, largest internal block, gateway stack high-water, MQTT disconnects, meter publish gaps
-- [ ] 2.2 Stall case: PC server that accepts TCP and never answers the ClientHello; the step ends with `TIMEOUT` within `timeout_ms` at 1000 and 10000 ms and internal heap returns to its pre-handshake level. If the deadline-bounded loop cannot be made to work, the module stays `MODULE_UNAVAILABLE` (no fallback to `NetworkClientSecure`, whose 120 s handshake timeout breaks the deadline)
-- [ ] 2.3 Run on Home .174 and Home Pro .80 against the D9 thresholds (internal floor >= 24 KB, largest block >= 8 KB, stack <= 12 KB with >= 1024 B free, no disconnect or publish gap, stall case passed); record the numbers here and set `GATEWAY_HTTPS_MIN_INTERNAL_HEAP` per product, or mark the product `MODULE_UNAVAILABLE`
+- [x] 2.1 Throwaway dev build with the D9 raw `mbedtls_ssl` path (non-blocking socket, deadline-checked handshake loop, `mbedtls_ssl_get_peer_cert` pin before the first write) that runs 20 TLS handshakes per certificate type (RSA-2048, ECDSA P-256, PC test server) from the gateway task and logs over UDP: internal heap minimum free, largest internal block, gateway stack high-water, MQTT disconnects, meter publish gaps
+- [x] 2.2 Stall case: PC server that accepts TCP and never answers the ClientHello; the step ends with `TIMEOUT` within `timeout_ms` at 1000 and 10000 ms and internal heap returns to its pre-handshake level. If the deadline-bounded loop cannot be made to work, the module stays `MODULE_UNAVAILABLE` (no fallback to `NetworkClientSecure`, whose 120 s handshake timeout breaks the deadline)
+- [x] 2.3 Run on Home .174 and Home Pro .80 against the D9 thresholds (internal floor >= 24 KB, largest block >= 8 KB, stack <= 12 KB with >= 1024 B free, no disconnect or publish gap, stall case passed); record the numbers here and set `GATEWAY_HTTPS_MIN_INTERNAL_HEAP` per product, or mark the product `MODULE_UNAVAILABLE`
+  - 2026-10-31, `GatewayTls::Session` (raw `mbedtls_ssl`, non-blocking socket, `select` capped at 50 ms per wait) driven by a throwaway `tls_bench` op on branch `bench/https-gate`, 20 handshakes per certificate against `gateway_golden.py serve --tls-dir`, MQTT connected and meter publishing, no tunnel:
+
+    | | Home .174 RSA | Home .174 ECDSA | Pro .80 RSA | Pro .80 ECDSA |
+    |---|---|---|---|---|
+    | ok / 20 | 20 | 20 | 20 | 20 |
+    | handshake avg / max ms | 287 / 322 | 496 / 600 | 269 / 295 | 469 / 529 |
+    | internal free before | 91844 | 92532 | 71624 | 71464 |
+    | internal free min (sampled per socket wait) | 91336 | 91640 | 71008 | 71256 |
+    | largest internal block min | 41972 | 41972 | 31732 | 31732 |
+    | boot-time internal watermark, before / after | 76952 / 76952 | 76952 / 76952 | 45876 / 45876 | 45876 / 45876 |
+    | gateway stack free (8 KB stack) | 4660 | 4352 | 4656 | 4656 |
+
+    The internal-heap cost of a handshake is about 1.1 KB, because `main.cpp` routes every mbedTLS allocation (both 16 KB record buffers included) to PSRAM; the `CONFIG_MBEDTLS_INTERNAL_MEM_ALLOC` concern of add-lan-tunnel does not apply to this path. The stack stays at 8 KB (peak use 3.8 KB). Stall case (server accepts TCP, never answers the ClientHello): `TIMEOUT` after 1003-1006 ms at `timeout_ms` 1000 and 10003-10005 ms at 10000, three runs per meter, internal heap back to its pre-handshake value. No MQTT disconnect in the device log during the runs. Gate passed on both products: `https` enabled on Home and Home Pro.
+    `GATEWAY_HTTPS_MIN_INTERNAL_HEAP` is 32 KB, not the literal "peak cost plus 8 KB" (about 9 KB): with a 1.1 KB peak that rule would let a handshake start below the 24 KB floor of D9, so the threshold is the 24 KB floor plus 8 KB of margin, which still covers the measured peak several times.
 
 ## 3. Pure logic in `lib/gateway_logic` with unit tests (`pio test -e native`, WSL)
 
