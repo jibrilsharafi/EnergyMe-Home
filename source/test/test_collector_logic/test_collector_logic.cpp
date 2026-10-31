@@ -2,8 +2,7 @@
 // Copyright (C) 2026 Jibril Sharafi
 
 // Unit tests for collector_logic: job set validation (schema, quotas,
-// read-only classing, targets, templates, modules), binding hash, captures,
-// encoding chains, expiry and the capture echo scrub.
+// read-only classing, targets, templates, modules), captures and expiry.
 
 #include <unity.h>
 
@@ -166,14 +165,10 @@ static void test_xweb_example(void) {
     TEST_ASSERT_FALSE(c.fromHeader);
     TEST_ASSERT_EQUAL_STRING("sses=", c.after);
     TEST_ASSERT_EQUAL_STRING("&", c.before);
-    TEST_ASSERT_EQUAL_UINT8(1, c.chainCount);
-    TEST_ASSERT_EQUAL_UINT8(1, c.chains[0].count);
-    TEST_ASSERT_TRUE(c.chains[0].encodings[0] == Encoding::URL);
     TEST_ASSERT_TRUE(j.usesTime);
     TEST_ASSERT_TRUE(j.usesCursor);
     TEST_ASSERT_FALSE(j.batch);
     uint8_t zero[32] = {};
-    TEST_ASSERT_TRUE(memcmp(zero, j.bindingHash, 32) != 0);
     TEST_ASSERT_TRUE(memcmp(zero, table.sha256, 32) != 0);
     TEST_ASSERT_TRUE(table.poolUsed < POOL_BYTES);
 }
@@ -500,7 +495,6 @@ static void test_template_check(void) {
     steps = R"([{"id":"a","args":{"method":"GET","path":"/a"},"captures":[{"name":"tok","from":"body","key":"next"}]},)"
             R"({"id":"b","args":{"method":"GET","path":"/b?t=${cap:tok|url}&r=${cap:tok}","headers":{"X-T":"${cap:tok|b64|url}"}}}])";
     expectValid(set(job("t", "http", "192.168.1.50", 80, steps)));
-    TEST_ASSERT_EQUAL_UINT8(3, table.jobs[0].captures[0].chainCount);
     TEST_ASSERT_FALSE(table.jobs[0].usesTime);
 
     const char *bad[] = {"/x?${foo}",      "/x?${var:missing}", "/x?${now:s}",     "/x?${secret}",
@@ -602,40 +596,6 @@ static void test_http_args_schema(void) {
     const StepArgs &args = table.jobs[0].steps[0].args;
     TEST_ASSERT_EQUAL_UINT16(4, args.bodyBytesLength);
     TEST_ASSERT_EQUAL_HEX8(0xFF, args.bodyBytes[3]);
-}
-
-// ---------------------------------------------------------------------------
-// Binding hash
-// ---------------------------------------------------------------------------
-
-static void test_binding_hash(void) {
-    reset();
-    expectValid(set(XWEB_JOB));
-    uint8_t base[32];
-    memcpy(base, table.jobs[0].bindingHash, 32);
-    char canonical[2048];
-    TEST_ASSERT_TRUE(canonicalBinding(table.jobs[0], canonical, sizeof(canonical)) > 0);
-    TEST_ASSERT_EQUAL_size_t(0, canonicalBinding(table.jobs[0], canonical, 16)); // does not fit
-
-    // Reordered keys and a changed interval or data step: same binding.
-    std::string reordered = replace(XWEB_JOB, R"("target":{"ip":"192.168.1.50","port":80})", R"("target":{"port":80,"ip":"192.168.1.50"})");
-    reordered = replace(reordered, R"("ttl_s":1800,"expiry":{"status":[401,403],"marker":"login.lua"},)", "");
-    reordered = replace(reordered, R"("session":{)", R"("session":{"expiry":{"marker":"login.lua","status":[401,403]},"ttl_s":1800,)");
-    reordered = replace(reordered, R"("interval_s":300)", R"("interval_s":600)");
-    expectValid(set(reordered));
-    TEST_ASSERT_EQUAL_UINT8_ARRAY(base, table.jobs[0].bindingHash, 32);
-
-    // Target, session or module change: different binding.
-    expectValid(set(replace(XWEB_JOB, "192.168.1.50", "192.168.1.51")));
-    TEST_ASSERT_TRUE(memcmp(base, table.jobs[0].bindingHash, 32) != 0);
-    expectValid(set(replace(XWEB_JOB, R"("ttl_s":1800)", R"("ttl_s":1700)")));
-    TEST_ASSERT_TRUE(memcmp(base, table.jobs[0].bindingHash, 32) != 0);
-    expectValid(set(replace(XWEB_JOB, R"("after":"sses=")", R"("after":"sid=")")));
-    TEST_ASSERT_TRUE(memcmp(base, table.jobs[0].bindingHash, 32) != 0);
-    // Job-level limits the login step inherits are not session values.
-    expectValid(set(replace(replace(XWEB_JOB, R"("max_bytes":131072)", R"("max_bytes":65536)"), R"("step_timeout_ms":8000)",
-                            R"("step_timeout_ms":5000)")));
-    TEST_ASSERT_EQUAL_UINT8_ARRAY(base, table.jobs[0].bindingHash, 32);
 }
 
 // ---------------------------------------------------------------------------
@@ -781,48 +741,6 @@ static void test_expiry_rule(void) {
     TEST_ASSERT_FALSE(isExpired(table.jobs[0], 401, nullptr, 0)); // no session
 }
 
-static void test_apply_chain(void) {
-    const uint8_t raw[] = "a b&c";
-    uint8_t out[64], scratch[64];
-    EncodingChain none{0, {}};
-    TEST_ASSERT_EQUAL_size_t(5, applyChain(none, raw, 5, out, sizeof(out), scratch, sizeof(scratch)));
-    EncodingChain url{1, {Encoding::URL}};
-    size_t n = applyChain(url, raw, 5, out, sizeof(out), scratch, sizeof(scratch));
-    TEST_ASSERT_EQUAL_STRING_LEN("a%20b%26c", out, n);
-    EncodingChain b64url{2, {Encoding::B64, Encoding::URL}};
-    const uint8_t q[] = {0xFB, 0xFF};
-    n = applyChain(b64url, q, 2, out, sizeof(out), scratch, sizeof(scratch));
-    TEST_ASSERT_EQUAL_STRING_LEN("%2B%2F8%3D", out, n);
-    EncodingChain three{3, {Encoding::JSON, Encoding::URL, Encoding::B64}};
-    n = applyChain(three, reinterpret_cast<const uint8_t *>("\""), 1, out, sizeof(out), scratch, sizeof(scratch));
-    TEST_ASSERT_EQUAL_STRING_LEN("JTVDJTIy", out, n); // \" -> %5C%22 -> base64
-    TEST_ASSERT_EQUAL_size_t(0, applyChain(url, raw, 5, out, 4, scratch, sizeof(scratch)));
-}
-
-static void test_scrub_captures(void) {
-    // Data step sent SSES=${cap:sses|url}; the reply echoes the raw and URL forms.
-    const char *raw = "ab cd/ef";
-    uint8_t encoded[32];
-    bool ok = false;
-    size_t encodedLength = GatewayLogic::encodeUrl(reinterpret_cast<const uint8_t *>(raw), strlen(raw), encoded, sizeof(encoded), &ok);
-    SecretsLogic::ScrubForm forms[] = {{reinterpret_cast<const uint8_t *>(raw), strlen(raw), "sses"}, {encoded, encodedLength, "sses"}};
-    char body[128];
-    int n = snprintf(body, sizeof(body), "x=ab cd/ef;y=%.*s;z", static_cast<int>(encodedLength), encoded);
-    uint8_t buffer[256], scratch[256];
-    memcpy(buffer, body, static_cast<size_t>(n));
-    bool truncated = false, redacted = false;
-    size_t length = scrubCaptures(buffer, static_cast<size_t>(n), sizeof(buffer), scratch, forms, 2, &truncated, &redacted);
-    TEST_ASSERT_EQUAL_STRING_LEN("x=****;y=****;z", buffer, length);
-    TEST_ASSERT_TRUE(redacted);
-    TEST_ASSERT_FALSE(truncated);
-
-    // Nothing to replace: rd stays false.
-    redacted = false;
-    memcpy(buffer, "nothing here", 12);
-    TEST_ASSERT_EQUAL_size_t(12, scrubCaptures(buffer, 12, sizeof(buffer), scratch, forms, 2, &truncated, &redacted));
-    TEST_ASSERT_FALSE(redacted);
-}
-
 void run_collector_runtime_tests(void);
 
 int main(int, char **) {
@@ -855,7 +773,6 @@ int main(int, char **) {
     RUN_TEST(test_template_grammar_matches_engine);
     RUN_TEST(test_module_unavailable_and_order);
     RUN_TEST(test_http_args_schema);
-    RUN_TEST(test_binding_hash);
     RUN_TEST(test_capture_json_key);
     RUN_TEST(test_capture_header_cookie);
     RUN_TEST(test_capture_second_set_cookie_line);
@@ -863,8 +780,6 @@ int main(int, char **) {
     RUN_TEST(test_capture_over_limit_missing);
     RUN_TEST(test_capture_delimiters);
     RUN_TEST(test_expiry_rule);
-    RUN_TEST(test_apply_chain);
-    RUN_TEST(test_scrub_captures);
     run_collector_runtime_tests();
     return UNITY_END();
 }

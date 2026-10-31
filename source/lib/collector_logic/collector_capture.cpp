@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Jibril Sharafi
 
-// Capture extraction, encoding chains, the session expiry rule and the
-// capture echo scrub (spec "Captures", "Session handling with one re-login").
+// Capture extraction and the session expiry rule (spec "Captures",
+// "Session handling with one re-login").
 // No allocation: the JSON key lookup is a bounded scanner over the top level.
 
 #include <cstring>
 
 #include "collector_logic.h"
-#include "gateway_template.h"
 
 namespace CollectorLogic {
 
@@ -300,51 +299,12 @@ CaptureStatus extractCapture(const Capture &capture, const char *headers, size_t
     return CaptureStatus::MISSING;
 }
 
-size_t applyChain(const EncodingChain &chain, const uint8_t *value, size_t length, uint8_t *out, size_t cap, uint8_t *scratch, size_t scratchCap) {
-    if (chain.count == 0) {
-        if (length > cap) return 0;
-        memcpy(out, value, length);
-        return length;
-    }
-    // Alternate buffers so the last encoding writes into `out`.
-    uint8_t *buffers[2] = {out, scratch};
-    size_t caps[2] = {cap, scratchCap};
-    size_t target = (chain.count % 2 == 1) ? 0 : 1;
-    const uint8_t *from = value;
-    size_t fromLength = length;
-    for (size_t e = 0; e < chain.count && e < 3; e++) {
-        bool ok = false;
-        size_t produced = 0;
-        switch (chain.encodings[e]) {
-            case Encoding::URL: produced = GatewayLogic::encodeUrl(from, fromLength, buffers[target], caps[target], &ok); break;
-            case Encoding::JSON: produced = GatewayLogic::encodeJson(from, fromLength, buffers[target], caps[target], &ok); break;
-            case Encoding::B64: produced = GatewayLogic::encodeBase64(from, fromLength, buffers[target], caps[target], &ok); break;
-            case Encoding::NONE:
-                if (fromLength > caps[target]) return 0;
-                memmove(buffers[target], from, fromLength);
-                produced = fromLength;
-                ok = true;
-                break;
-        }
-        if (!ok) return 0;
-        from = buffers[target];
-        fromLength = produced;
-        target = 1 - target;
-    }
-    return fromLength;
-}
-
 bool isExpired(const Job &job, int protoStatus, const uint8_t *body, size_t bodyLength) {
     if (!job.hasSession) return false;
     for (size_t i = 0; i < job.expiryStatusCount && i < 4; i++) {
         if (protoStatus == job.expiryStatus[i]) return true;
     }
     return job.expiryMarker != nullptr && body != nullptr && find(body, bodyLength, job.expiryMarker) < bodyLength;
-}
-
-size_t scrubCaptures(uint8_t *buffer, size_t length, size_t, uint8_t *, const SecretsLogic::ScrubForm *forms, size_t formCount, bool *truncated,
-                     bool *redacted) {
-    return SecretsLogic::scrub(buffer, length, forms, formCount, *truncated, redacted);
 }
 
 } // namespace CollectorLogic

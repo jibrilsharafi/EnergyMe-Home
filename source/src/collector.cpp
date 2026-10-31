@@ -693,20 +693,12 @@ namespace Collector
     // Resolvers (gateway task, per step)
     // ==================================
 
-    struct CapToken {
-        uint8_t capture;
-        uint8_t* encoded;
-        size_t encodedLength;
-    };
-
     struct StepContext {
         const Job* job;
         JobState* state;
         int64_t nowS;    // device UTC seconds: window end and start
         int64_t cursorS;
         bool hasCursor;
-        uint8_t tokenCount;
-        CapToken tokens[CAPTURES_MAX * 2];
     };
 
     static int _captureIndex(const Job& job, const char* name) {
@@ -748,29 +740,6 @@ namespace Collector
         if (n < 0 || (size_t)n >= out->cap) return GatewayLogic::ResolveStatus::FAILED;
         out->length = (size_t)n;
         return GatewayLogic::ResolveStatus::OK;
-    }
-
-    // Records the form of each expanded capture actually sent, for the capture scrub.
-    static bool _expanded(void* context, const char* name, const char* arg, const uint8_t* bytes, size_t length, bool final) {
-        StepContext* ctx = (StepContext*)context;
-        if (!final || strcmp(name, "cap") != 0) return true;
-        if (ctx->tokenCount >= sizeof(ctx->tokens) / sizeof(ctx->tokens[0])) return false;
-        CapToken& t = ctx->tokens[ctx->tokenCount];
-        t.encoded = (uint8_t*)ps_malloc(length);
-        if (t.encoded == nullptr) return false;
-        memcpy(t.encoded, bytes, length);
-        t.encodedLength = length;
-        t.capture = (uint8_t)_captureIndex(*ctx->job, arg);
-        ctx->tokenCount++;
-        return true;
-    }
-
-    static void _freeTokens(StepContext& ctx) {
-        for (uint8_t i = 0; i < ctx.tokenCount; i++) {
-            mbedtls_platform_zeroize(ctx.tokens[i].encoded, ctx.tokens[i].encodedLength);
-            free(ctx.tokens[i].encoded);
-        }
-        ctx.tokenCount = 0;
     }
 
     // Parts
@@ -1094,70 +1063,6 @@ namespace Collector
         return ok;
     }
 
-    // Capture echo scrub of a data step's body: the forms it expanded plus every
-    // value it captured from its own reply, raw and in each encoding the job uses.
-    // Gateway task only, so the form table is static rather than on the task stack.
-    static constexpr size_t SCRUB_FORMS_MAX = CAPTURES_MAX * (CHAINS_PER_CAPTURE + 1) + CAPTURES_MAX * 2 * 2;
-    static SecretsLogic::ScrubForm _forms[SCRUB_FORMS_MAX];
-    static uint8_t* _encoded[CAPTURES_MAX * CHAINS_PER_CAPTURE];
-
-    static void _addForm(size_t* count, const uint8_t* bytes, size_t length, const char* name) {
-        if (length == 0 || *count >= SCRUB_FORMS_MAX) return;
-        for (size_t i = 0; i < *count; i++) {
-            if (_forms[i].length == length && memcmp(_forms[i].bytes, bytes, length) == 0) return;
-        }
-        _forms[(*count)++] = {bytes, length, name};
-    }
-
-    static size_t _scrubBody(const Job& job, const JobState& js, StepContext& ctx, uint8_t* body, size_t length, size_t cap, bool* truncated,
-                             bool* redacted) {
-        bool held = false;
-        for (uint8_t c = 0; c < job.captureCount && !held; c++) held = js.captures[c] != nullptr;
-        if (!held) return length; // nothing this step could echo
-
-        size_t count = 0;
-        size_t encodedCount = 0;
-        for (uint8_t t = 0; t < ctx.tokenCount; t++) {
-            uint8_t c = ctx.tokens[t].capture;
-            if (c >= job.captureCount || js.captures[c] == nullptr) continue;
-            _addForm(&count, js.captures[c], js.captureLength[c], job.captures[c].name);
-            _addForm(&count, ctx.tokens[t].encoded, ctx.tokens[t].encodedLength, job.captures[c].name);
-        }
-        size_t scratchBytes = cap > CAPTURE_VALUE_MAX * 3 ? cap : CAPTURE_VALUE_MAX * 3;
-        uint8_t* scratch = (uint8_t*)ps_malloc(scratchBytes);
-        for (uint8_t c = 0; c < job.captureCount && scratch != nullptr; c++) {
-            const Capture& capture = job.captures[c];
-            if (js.captures[c] == nullptr) continue;
-            _addForm(&count, js.captures[c], js.captureLength[c], capture.name);
-            for (uint8_t k = 0; k < capture.chainCount && encodedCount < sizeof(_encoded) / sizeof(_encoded[0]); k++) {
-                uint8_t* out = (uint8_t*)ps_malloc(CAPTURE_VALUE_MAX * 3);
-                if (out == nullptr) continue;
-                _encoded[encodedCount++] = out;
-                size_t n = applyChain(capture.chains[k], js.captures[c], js.captureLength[c], out, CAPTURE_VALUE_MAX * 3, scratch, scratchBytes);
-                _addForm(&count, out, n, capture.name);
-            }
-        }
-        size_t result = length;
-        if (scratch == nullptr) {
-            *truncated = true; // fail closed: nothing published rather than an echo
-            *redacted = true;
-            result = 0;
-        } else if (count > 0) {
-            result = scrubCaptures(body, length, cap, scratch, _forms, count, truncated, redacted);
-        }
-        for (size_t i = 0; i < encodedCount; i++) {
-            mbedtls_platform_zeroize(_encoded[i], CAPTURE_VALUE_MAX * 3);
-            free(_encoded[i]);
-            _encoded[i] = nullptr;
-        }
-        memset(_forms, 0, sizeof(_forms));
-        if (scratch != nullptr) {
-            mbedtls_platform_zeroize(scratch, scratchBytes);
-            free(scratch);
-        }
-        return result;
-    }
-
     static void _buildRequest(const Job& job, const Step& step, GatewayExec::Request& rq, GatewayExec::Header* headers) {
         rq.module = job.module;
         rq.ip = job.ip;
@@ -1194,11 +1099,10 @@ namespace Collector
     }
 
     // Stops the run on a header-only part; `h` already carries st and rc.
-    static void _stopRun(const Job& job, uint8_t jobIndex, PartHeader& h, const char* detail, StepContext* ctx) {
+    static void _stopRun(const Job& job, uint8_t jobIndex, PartHeader& h, const char* detail) {
         _emitPart(job, jobIndex, h, nullptr, 0);
         _fail(h.rc, detail);
         _run.stopped = true;
-        if (ctx != nullptr) _freeTokens(*ctx);
         _endRun(false);
     }
 
@@ -1225,7 +1129,7 @@ namespace Collector
             _baseHeader(job, step, login, &h);
             h.st = "REJECTED";
             h.rc = Gateway::targetCheckReasonCode(target);
-            _stopRun(job, jobIndex, h, nullptr, nullptr);
+            _stopRun(job, jobIndex, h, nullptr);
             return;
         }
 
@@ -1236,7 +1140,7 @@ namespace Collector
         ctx.nowS = job.usesTime ? (int64_t)_run.window.to : 0;
         ctx.cursorS = job.usesTime ? (int64_t)_run.window.from : 0;
         Secrets::RequestState secretState;
-        GatewayLogic::Resolver chain[] = {{_resolve, &ctx, _expanded}, Secrets::resolver(&secretState)};
+        GatewayLogic::Resolver chain[] = {{_resolve, &ctx, nullptr}, Secrets::resolver(&secretState)};
         static GatewayExec::Header headers[STEP_HEADERS_MAX];
         static GatewayExec::Request rq;
         rq = GatewayExec::Request{};
@@ -1265,7 +1169,7 @@ namespace Collector
 
         if (login) {
             if (!ok) {
-                _stopRun(job, jobIndex, h, detail, &ctx);
+                _stopRun(job, jobIndex, h, detail);
                 return;
             }
             bool captured = _capture(job, js, true, _run.index, result);
@@ -1274,7 +1178,7 @@ namespace Collector
                 h.st = "FAILED";
                 h.rc = "LOGIN_FAILED";
                 _zeroCaptures(js);
-                _stopRun(job, jobIndex, h, nullptr, &ctx);
+                _stopRun(job, jobIndex, h, nullptr);
                 return;
             }
             _emitPart(job, jobIndex, h, nullptr, 0); // login replies: status and length only
@@ -1285,7 +1189,6 @@ namespace Collector
                 _run.login = false;
                 _run.index = _run.retrying ? _run.retryStep : 0;
             }
-            _freeTokens(ctx);
             return;
         }
 
@@ -1297,13 +1200,12 @@ namespace Collector
                 _run.retryStep = _run.index;
                 _run.login = true;
                 _run.index = 0;
-                _freeTokens(ctx);
                 return;
             }
             h.st = "FAILED";
             h.rc = "SESSION_EXPIRED";
             _zeroCaptures(js);
-            _stopRun(job, jobIndex, h, nullptr, &ctx);
+            _stopRun(job, jobIndex, h, nullptr);
             return;
         }
 
@@ -1311,7 +1213,7 @@ namespace Collector
             if (!_capture(job, js, false, _run.index, result)) {
                 h.st = "FAILED";
                 h.rc = "CAPTURE_MISSING";
-                _stopRun(job, jobIndex, h, nullptr, &ctx);
+                _stopRun(job, jobIndex, h, nullptr);
                 return;
             }
             uint8_t* body = result.body;
@@ -1322,15 +1224,9 @@ namespace Collector
                 packed = (uint8_t*)ps_malloc(result.registerCount * 2 + 1);
                 length = packed ? packRegisters(result.registers, result.registerCount, bits, packed, result.registerCount * 2 + 1) : 0;
                 body = packed;
-            } else if (body != nullptr) {
-                bool truncated = result.truncated;
-                bool redacted = result.redacted;
-                size_t cap = step.maxBytes;
-                length = _scrubBody(job, js, ctx, body, length, cap, &truncated, &redacted);
-                result.truncated = truncated;
-                h.rd = redacted;
             }
             h.tr = result.truncated;
+            h.rd = result.redacted;
             if (job.module == GatewayLogic::Module::HTTP || job.module == GatewayLogic::Module::HTTPS) {
                 static char contentType[65], date[41];
                 h.ct = result.headers && _headerValue(result.headers, result.headersLength, "content-type", contentType, sizeof(contentType)) ? contentType
@@ -1363,7 +1259,6 @@ namespace Collector
             _run.failedStep = true;
             if (fate == StepFate::STOP) _run.stopped = true;
         }
-        _freeTokens(ctx);
         _run.index++;
         if (_run.stopped || _run.index >= job.stepCount) _endRun(false);
     }
@@ -1404,19 +1299,12 @@ namespace Collector
                 if (strcmp(old.id, job.id) != 0) continue;
                 JobState& prev = _states[o];
                 next.seq = prev.seq; // dedup ids (boot, job, seq) never repeat within a boot
-                if (old.rev == job.rev && memcmp(old.bindingHash, job.bindingHash, 32) == 0) {
-                    // Same job and binding: backoff, session and captures carry over.
+                if (old.rev == job.rev) {
+                    // Same job rev: slot, backoff, cursor and window carry over. The session never
+                    // does, so a changed target cannot receive a capture held for the old one.
                     next.failures = prev.failures;
                     next.t0S = prev.t0S;
                     next.nextS = prev.nextS;
-                    next.sessionHeld = prev.sessionHeld;
-                    next.loginAtS = prev.loginAtS;
-                    for (uint8_t c = 0; c < CAPTURES_MAX; c++) {
-                        next.captures[c] = prev.captures[c];
-                        next.captureLength[c] = prev.captureLength[c];
-                        prev.captures[c] = nullptr;
-                        prev.captureLength[c] = 0;
-                    }
                     next.stats = prev.stats;
                     next.cursorSet = prev.cursorSet;
                     next.cursorS = prev.cursorS;
