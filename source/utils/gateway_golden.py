@@ -155,7 +155,50 @@ class ThreadingTcp(socketserver.ThreadingMixIn, socketserver.TCPServer):
     daemon_threads = True
 
 
-def serve(_args: argparse.Namespace) -> int:
+TLS_PORTS = {"rsa": 18443, "ecdsa": 18444, "rsa_alt": 18445}  # rsa_alt: a replaced certificate
+
+
+def _self_signed(directory: Path, name: str) -> tuple[Path, Path, str]:
+    """Self-signed test certificate kept outside the repo. Returns (cert, key, sha256 of the DER)."""
+    import datetime
+    import hashlib
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec, rsa
+    from cryptography.x509.oid import NameOID
+
+    cert_path, key_path = directory / f"{name}.crt", directory / f"{name}.key"
+    if not cert_path.exists():
+        key = ec.generate_private_key(ec.SECP256R1()) if name == "ecdsa" else rsa.generate_private_key(65537, 2048)
+        subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, f"golden-{name}")])
+        now = datetime.datetime.now(datetime.timezone.utc)
+        cert = (
+            x509.CertificateBuilder().subject_name(subject).issuer_name(subject).public_key(key.public_key())
+            .serial_number(x509.random_serial_number()).not_valid_before(now)
+            .not_valid_after(datetime.datetime(2036, 1, 1, tzinfo=datetime.timezone.utc)).sign(key, hashes.SHA256())
+        )
+        key_path.write_bytes(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+        cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    der = x509.load_pem_x509_certificate(cert_path.read_bytes()).public_bytes(serialization.Encoding.DER)
+    return cert_path, key_path, hashlib.sha256(der).hexdigest()
+
+
+def _tls_server(port: int, cert: Path, key: Path) -> ThreadingTcp:
+    import ssl
+
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(cert, key)
+
+    class TlsHttpHandler(HttpHandler):
+        def setup(self) -> None:
+            self.request.settimeout(10)
+            self.request = context.wrap_socket(self.request, server_side=True)
+
+    return ThreadingTcp(("0.0.0.0", port), TlsHttpHandler)
+
+
+def serve(args: argparse.Namespace) -> int:
     from pymodbus.datastore import ModbusDeviceContext, ModbusSequentialDataBlock, ModbusServerContext
     from pymodbus.server import StartAsyncTcpServer
 
@@ -164,6 +207,17 @@ def serve(_args: argparse.Namespace) -> int:
         ThreadingTcp(("0.0.0.0", SILENT_PORT), SilentHandler),
         socketserver.ThreadingUDPServer(("0.0.0.0", UDP_PORT), UdpEcho),
     ]
+    if args.tls_dir:
+        directory = Path(args.tls_dir)
+        directory.mkdir(parents=True, exist_ok=True)
+        for name, port in TLS_PORTS.items():
+            cert, key, digest = _self_signed(directory, name)
+            try:
+                servers.append(_tls_server(port, cert, key))
+            except OSError as error:
+                print(f"tls {name}: {error}", flush=True)
+                continue
+            print(f"https {name} :{port} cert_sha256 {digest}", flush=True)
     for server in servers:
         threading.Thread(target=server.serve_forever, daemon=True).start()
 
@@ -313,7 +367,9 @@ def compare(args: argparse.Namespace) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("serve").set_defaults(func=serve)
+    srv = sub.add_parser("serve")
+    srv.add_argument("--tls-dir", help="also serve HTTPS with self-signed test certificates kept in this directory")
+    srv.set_defaults(func=serve)
     cap = sub.add_parser("capture")
     cap.add_argument("--device", required=True)
     cap.add_argument("--pc", required=True, help="IPv4 of the PC running 'serve'")
