@@ -727,7 +727,6 @@ bool isRead(const Job &job, const Step &step, bool modbusWrite) {
 struct Placeholder {
     char name[GatewayLogic::TEMPLATE_NAME_MAX + 1];
     char arg[GatewayLogic::TEMPLATE_ARG_MAX + 1];
-    EncodingChain chain;
     size_t length;
 };
 
@@ -763,35 +762,20 @@ bool parsePlaceholder(const char *p, const char *end, Placeholder *out) {
         if (n == 0) return false;
         out->arg[n] = '\0';
     }
-    out->chain.count = 0;
+    size_t encodings = 0;
     while (s < end && *s == '|') {
-        if (out->chain.count >= GatewayLogic::TEMPLATE_MAX_ENCODINGS) return false;
+        if (encodings++ >= GatewayLogic::TEMPLATE_MAX_ENCODINGS) return false;
         s++;
-        Encoding encoding;
-        if (startsWith(s, end, "url")) {
-            encoding = Encoding::URL;
+        if (startsWith(s, end, "url") || startsWith(s, end, "b64")) {
             s += 3;
         } else if (startsWith(s, end, "json")) {
-            encoding = Encoding::JSON;
             s += 4;
-        } else if (startsWith(s, end, "b64")) {
-            encoding = Encoding::B64;
-            s += 3;
         } else {
             return false;
         }
-        out->chain.encodings[out->chain.count++] = encoding;
     }
     if (s >= end || *s != '}') return false;
     out->length = static_cast<size_t>(s - p) + 1;
-    return true;
-}
-
-bool sameChain(const EncodingChain &a, const EncodingChain &b) {
-    if (a.count != b.count) return false;
-    for (size_t i = 0; i < a.count; i++) {
-        if (a.encodings[i] != b.encodings[i]) return false;
-    }
     return true;
 }
 
@@ -837,19 +821,11 @@ bool checkTemplate(Job &job, const char *text, bool login, size_t index) {
         } else if (strcmp(name, "var") == 0) {
             if (!varExists(job, arg)) return false;
         } else if (strcmp(name, "cap") == 0) {
-            Capture *capture = nullptr;
+            const Capture *capture = nullptr;
             for (size_t c = 0; c < job.captureCount; c++) {
                 if (strcmp(job.captures[c].name, arg) == 0) capture = &job.captures[c];
             }
             if (capture == nullptr || !captureAvailable(*capture, login, index)) return false;
-            bool known = false;
-            for (size_t c = 0; c < capture->chainCount; c++) {
-                known = known || sameChain(capture->chains[c], placeholder.chain);
-            }
-            if (!known) {
-                if (capture->chainCount >= CHAINS_PER_CAPTURE) return false;
-                capture->chains[capture->chainCount++] = placeholder.chain;
-            }
         } else if (strcmp(name, "secret") != 0 || arg[0] == '\0') {
             return false;
         }

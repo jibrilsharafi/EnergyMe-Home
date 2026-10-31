@@ -9,7 +9,6 @@
 #include <ArduinoJson.h>
 
 #include "gateway_policy.h"
-#include "secrets_logic.h"
 
 // Pure logic of the LAN collector (openspec capability: lan-collector): job set
 // validation into a compact job table, the static template check, capture
@@ -39,7 +38,6 @@ inline constexpr size_t VAR_VALUE_MAX = 2048;
 inline constexpr size_t DELIMITER_MAX = 32;    // capture after/before, expiry marker
 inline constexpr size_t RUN_BYTES_MAX = 131072; // sum of data steps' max_bytes
 inline constexpr size_t STEP_HEADERS_MAX = 16;
-inline constexpr size_t CHAINS_PER_CAPTURE = 4; // distinct encoding chains a job applies to one capture
 inline constexpr uint32_t BUDGET_DEFAULT = 2097152;
 inline constexpr uint32_t BUDGET_MIN = 65536;
 inline constexpr uint32_t BUDGET_MAX = 8388608;
@@ -56,13 +54,6 @@ inline constexpr size_t CODE_MAX = 24; // [A-Z_]{1,24}
 // Job table (validated, compact, all strings in `pool`)
 // ---------------------------------------------------------------------------
 
-enum class Encoding : uint8_t { NONE = 0, URL = 1, JSON = 2, B64 = 3 };
-
-struct EncodingChain {
-    uint8_t count;           // 0 = raw
-    Encoding encodings[3];
-};
-
 struct Capture {
     char name[ID_MAX + 1];
     bool login;               // captured by a login step
@@ -72,8 +63,6 @@ struct Capture {
     const char* header;       // header name (from header), or nullptr
     const char* after;        // nullptr when absent
     const char* before;       // nullptr when absent
-    uint8_t chainCount;       // encoding chains any step of the job applies to ${cap:name}
-    EncodingChain chains[CHAINS_PER_CAPTURE];
 };
 
 struct Header {
@@ -204,19 +193,8 @@ enum class CaptureStatus { OK, MISSING };
 CaptureStatus extractCapture(const Capture& capture, const char* headers, size_t headersLength, const uint8_t* body, size_t bodyLength,
                              uint8_t* out, size_t cap, size_t* length);
 
-// Applies an encoding chain to `value` (same encoders as the template engine).
-size_t applyChain(const EncodingChain& chain, const uint8_t* value, size_t length, uint8_t* out, size_t cap, uint8_t* scratch, size_t scratchCap);
-
 // True when a reply matches the session expiry rule.
 bool isExpired(const Job& job, int protoStatus, const uint8_t* body, size_t bodyLength);
-
-// Capture echo scrub (spec "Raw publish topic and part format"): the shared
-// scrub of add-gateway-secrets with `${cap:<name>}` placeholders. `forms` holds
-// the raw and encoded forms of every capture the step expanded or captured
-// (ScrubForm::name = capture name); `scratch` at least `cap` bytes. Sets
-// `truncated` when the output was cut at `cap`, `redacted` when anything changed.
-size_t scrubCaptures(uint8_t* buffer, size_t length, size_t cap, uint8_t* scratch, const SecretsLogic::ScrubForm* forms, size_t formCount,
-                     bool* truncated, bool* redacted);
 
 // ---------------------------------------------------------------------------
 // Scheduling, backoff, window

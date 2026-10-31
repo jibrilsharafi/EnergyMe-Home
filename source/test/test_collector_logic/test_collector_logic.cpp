@@ -2,8 +2,7 @@
 // Copyright (C) 2026 Jibril Sharafi
 
 // Unit tests for collector_logic: job set validation (schema, quotas,
-// read-only classing, targets, templates, modules), binding hash, captures,
-// encoding chains, expiry and the capture echo scrub.
+// read-only classing, targets, templates, modules), captures and expiry.
 
 #include <unity.h>
 
@@ -166,9 +165,6 @@ static void test_xweb_example(void) {
     TEST_ASSERT_FALSE(c.fromHeader);
     TEST_ASSERT_EQUAL_STRING("sses=", c.after);
     TEST_ASSERT_EQUAL_STRING("&", c.before);
-    TEST_ASSERT_EQUAL_UINT8(1, c.chainCount);
-    TEST_ASSERT_EQUAL_UINT8(1, c.chains[0].count);
-    TEST_ASSERT_TRUE(c.chains[0].encodings[0] == Encoding::URL);
     TEST_ASSERT_TRUE(j.usesTime);
     TEST_ASSERT_TRUE(j.usesCursor);
     TEST_ASSERT_FALSE(j.batch);
@@ -499,7 +495,6 @@ static void test_template_check(void) {
     steps = R"([{"id":"a","args":{"method":"GET","path":"/a"},"captures":[{"name":"tok","from":"body","key":"next"}]},)"
             R"({"id":"b","args":{"method":"GET","path":"/b?t=${cap:tok|url}&r=${cap:tok}","headers":{"X-T":"${cap:tok|b64|url}"}}}])";
     expectValid(set(job("t", "http", "192.168.1.50", 80, steps)));
-    TEST_ASSERT_EQUAL_UINT8(3, table.jobs[0].captures[0].chainCount);
     TEST_ASSERT_FALSE(table.jobs[0].usesTime);
 
     const char *bad[] = {"/x?${foo}",      "/x?${var:missing}", "/x?${now:s}",     "/x?${secret}",
@@ -746,65 +741,6 @@ static void test_expiry_rule(void) {
     TEST_ASSERT_FALSE(isExpired(table.jobs[0], 401, nullptr, 0)); // no session
 }
 
-static void test_apply_chain(void) {
-    const uint8_t raw[] = "a b&c";
-    uint8_t out[64], scratch[64];
-    EncodingChain none{0, {}};
-    TEST_ASSERT_EQUAL_size_t(5, applyChain(none, raw, 5, out, sizeof(out), scratch, sizeof(scratch)));
-    EncodingChain url{1, {Encoding::URL}};
-    size_t n = applyChain(url, raw, 5, out, sizeof(out), scratch, sizeof(scratch));
-    TEST_ASSERT_EQUAL_STRING_LEN("a%20b%26c", out, n);
-    EncodingChain b64url{2, {Encoding::B64, Encoding::URL}};
-    const uint8_t q[] = {0xFB, 0xFF};
-    n = applyChain(b64url, q, 2, out, sizeof(out), scratch, sizeof(scratch));
-    TEST_ASSERT_EQUAL_STRING_LEN("%2B%2F8%3D", out, n);
-    EncodingChain three{3, {Encoding::JSON, Encoding::URL, Encoding::B64}};
-    n = applyChain(three, reinterpret_cast<const uint8_t *>("\""), 1, out, sizeof(out), scratch, sizeof(scratch));
-    TEST_ASSERT_EQUAL_STRING_LEN("JTVDJTIy", out, n); // \" -> %5C%22 -> base64
-    TEST_ASSERT_EQUAL_size_t(0, applyChain(url, raw, 5, out, 4, scratch, sizeof(scratch)));
-}
-
-static void test_scrub_captures(void) {
-    // Data step sent SSES=${cap:sses|url}; the reply echoes the raw and URL forms.
-    const char *raw = "ab cd/ef";
-    uint8_t encoded[32];
-    bool ok = false;
-    size_t encodedLength = GatewayLogic::encodeUrl(reinterpret_cast<const uint8_t *>(raw), strlen(raw), encoded, sizeof(encoded), &ok);
-    SecretsLogic::ScrubForm forms[] = {{reinterpret_cast<const uint8_t *>(raw), strlen(raw), "sses"}, {encoded, encodedLength, "sses"}};
-    char body[128];
-    int n = snprintf(body, sizeof(body), "x=ab cd/ef;y=%.*s;z", static_cast<int>(encodedLength), encoded);
-    uint8_t buffer[256], scratch[256];
-    memcpy(buffer, body, static_cast<size_t>(n));
-    bool truncated = false, redacted = false;
-    size_t length = scrubCaptures(buffer, static_cast<size_t>(n), sizeof(buffer), scratch, forms, 2, &truncated, &redacted);
-    TEST_ASSERT_EQUAL_STRING_LEN("x=${cap:sses};y=${cap:sses};z", buffer, length);
-    TEST_ASSERT_TRUE(redacted);
-    TEST_ASSERT_FALSE(truncated);
-
-    // Nothing to replace: rd stays false.
-    redacted = false;
-    memcpy(buffer, "nothing here", 12);
-    TEST_ASSERT_EQUAL_size_t(12, scrubCaptures(buffer, 12, sizeof(buffer), scratch, forms, 2, &truncated, &redacted));
-    TEST_ASSERT_FALSE(redacted);
-}
-
-static void test_scrub_grows_body_at_cap(void) {
-    // max_bytes 4096 filled with copies of a 4-byte capture.
-    static uint8_t buffer[4096], scratch[4096];
-    for (size_t i = 0; i < sizeof(buffer); i += 4) memcpy(buffer + i, "k9Zq", 4);
-    SecretsLogic::ScrubForm form{reinterpret_cast<const uint8_t *>("k9Zq"), 4, "tok"};
-    bool truncated = false, redacted = false;
-    size_t length = scrubCaptures(buffer, sizeof(buffer), sizeof(buffer), scratch, &form, 1, &truncated, &redacted);
-    TEST_ASSERT_TRUE(length <= 4096);
-    TEST_ASSERT_TRUE(truncated);
-    TEST_ASSERT_TRUE(redacted);
-    const char *placeholder = "${cap:tok}";
-    size_t p = strlen(placeholder);
-    TEST_ASSERT_EQUAL_size_t(0, length % p); // ends on a whole placeholder
-    TEST_ASSERT_EQUAL_MEMORY(placeholder, buffer + length - p, p);
-    for (size_t i = 0; i + 4 <= length; i++) TEST_ASSERT_FALSE(memcmp(buffer + i, "k9Zq", 4) == 0);
-}
-
 void run_collector_runtime_tests(void);
 
 int main(int, char **) {
@@ -844,9 +780,6 @@ int main(int, char **) {
     RUN_TEST(test_capture_over_limit_missing);
     RUN_TEST(test_capture_delimiters);
     RUN_TEST(test_expiry_rule);
-    RUN_TEST(test_apply_chain);
-    RUN_TEST(test_scrub_captures);
-    RUN_TEST(test_scrub_grows_body_at_cap);
     run_collector_runtime_tests();
     return UNITY_END();
 }
