@@ -201,15 +201,9 @@ int hexValue(char c) {
 bool isReservedHeaderName(const char *name) {
     if (name == nullptr) return true;
     static const char *const RESERVED[] = {"host", "content-length", "transfer-encoding", "connection", "expect",
-                                           "te", "upgrade", "keep-alive", "proxy-connection", "trailer",
-                                           "x-http-method-override", "x-http-method", "x-method-override"};
-    // CGI servers map '_' and '-' to the same HTTP_* variable: compare with '_' as '-'.
-    char normalized[32];
-    size_t length = strlen(name);
-    if (length >= sizeof(normalized)) return false;
-    for (size_t i = 0; i <= length; i++) normalized[i] = name[i] == '_' ? '-' : name[i];
+                                           "te", "upgrade", "keep-alive", "proxy-connection", "trailer"};
     for (const char *r : RESERVED) {
-        if (equalsIgnoreCase(normalized, r)) return true;
+        if (equalsIgnoreCase(name, r)) return true;
     }
     return false;
 }

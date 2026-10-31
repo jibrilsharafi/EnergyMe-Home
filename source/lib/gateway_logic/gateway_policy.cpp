@@ -25,8 +25,6 @@ constexpr const char *TABLE_NAMES[] = {"co", "di", "ir", "hr"};
 
 bool isDigit(char c) { return c >= '0' && c <= '9'; }
 
-char lower(char c) { return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c; }
-
 // Decimal without sign or leading zeros, at most 5 digits and `maxValue`. Advances `*p`.
 bool parseDecimal(const char **p, uint32_t maxValue, uint32_t *out) {
     const char *s = *p;
@@ -127,13 +125,13 @@ bool sameTarget(const GrantEntry &e, const PolicyRequest &r) {
     return memcmp(e.ip, r.ip, 4) == 0 && e.port == r.port && e.module == r.module;
 }
 
-// Path rules for allow strings and request paths: valid, safe, no query.
+// Allow paths: a valid HTTP path without a query, `*` only as the last byte.
 bool isValidAllowPath(const char *path, size_t length, bool allowStar) {
     char buffer[GRANT_ALLOW_SLOT_BYTES + 1];
     if (length == 0 || length > GRANT_ALLOW_SLOT_BYTES) return false;
     memcpy(buffer, path, length);
     buffer[length] = '\0';
-    if (!isValidHttpPath(buffer) || !isSafeGrantPath(buffer) || strchr(buffer, '?') != nullptr) return false;
+    if (!isValidHttpPath(buffer) || strchr(buffer, '?') != nullptr) return false;
     const char *star = strchr(buffer, '*');
     if (star == nullptr) return true;
     return allowStar && star == buffer + length - 1;
@@ -238,28 +236,6 @@ bool formatHttpAddress(const char *method, const char *path, char *out, size_t c
     return n > 0 && static_cast<size_t>(n) < cap;
 }
 
-bool isSafeGrantPath(const char *path) {
-    if (path == nullptr) return false;
-    size_t length = httpPathLength(path);
-    for (size_t i = 0; i < length; i++) {
-        char c = path[i];
-        if (c == '\\') return false;
-        if (c == '/' && i + 1 < length && path[i + 1] == '/') return false;
-        if (c == '%' && i + 2 < length) {
-            char a = path[i + 1], b = lower(path[i + 2]);
-            if (a == '2' && (b == 'e' || b == 'f')) return false;
-            if (a == '5' && b == 'c') return false;
-        }
-        if (c == '/') {
-            size_t start = i + 1, end = start;
-            while (end < length && path[end] != '/' && path[end] != ';') end++;
-            size_t segment = end - start;
-            if ((segment == 1 && path[start] == '.') || (segment == 2 && path[start] == '.' && path[start + 1] == '.')) return false;
-        }
-    }
-    return true;
-}
-
 bool parseMac(const char *text, uint8_t out[6]) {
     if (text == nullptr || strlen(text) != 17) return false;
     uint8_t mac[6];
@@ -356,7 +332,7 @@ const char *validateGrant(const GrantInput &input, GrantEntry *out) {
                 return "http read declarations must be \"<POST|PUT|PATCH|DELETE> <path>\" without * or ?";
             }
         } else if (!isValidAllowPath(text, length, true)) {
-            return "http allow paths must start with /, hold no dot segment, //, backslash, encoded separator or ?, and * only at the end";
+            return "http allow paths must start with /, hold no space or ?, and * only at the end";
         }
         memcpy(slot, text, length);
     }
@@ -485,8 +461,7 @@ GrantMatch matchWriteGrant(const PolicyRequest &request, const GrantEntry *entri
         for (size_t a = 0; a < e.allowCount; a++) {
             bool admitted = false;
             if (isHttpModule(request.module)) {
-                // A path the server may normalize never matches, whatever classed the request write.
-                admitted = request.path != nullptr && isSafeGrantPath(request.path) && slotMatchesPath(e.allow[a], request.path, pathLength);
+                admitted = request.path != nullptr && slotMatchesPath(e.allow[a], request.path, pathLength);
             } else if (isRawModule(request.module)) {
                 admitted = request.payloadDigest != nullptr && digestEquals(e.allow[a], request.payloadDigest);
             } else {

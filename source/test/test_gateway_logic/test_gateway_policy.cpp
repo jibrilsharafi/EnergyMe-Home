@@ -124,17 +124,6 @@ void test_parse_new_ops(void) {
     TEST_ASSERT_EQUAL_STRING("tls_probe", opName(Op::TLS_PROBE));
 }
 
-void test_method_override_headers_reserved(void) {
-    TEST_ASSERT_TRUE(isReservedHeaderName("X-HTTP-Method-Override"));
-    TEST_ASSERT_TRUE(isReservedHeaderName("x-http-method-override"));
-    TEST_ASSERT_TRUE(isReservedHeaderName("X-HTTP-Method"));
-    TEST_ASSERT_TRUE(isReservedHeaderName("x-http-METHOD"));
-    TEST_ASSERT_TRUE(isReservedHeaderName("X-Method-Override"));
-    TEST_ASSERT_TRUE(isReservedHeaderName("X-METHOD-OVERRIDE"));
-    TEST_ASSERT_FALSE(isReservedHeaderName("X-HTTP-Method-Overrides"));
-    TEST_ASSERT_FALSE(isReservedHeaderName("X-Method"));
-}
-
 void test_parse_module(void) {
     Module m;
     TEST_ASSERT_TRUE(parseModule("http", &m) && m == Module::HTTP);
@@ -256,32 +245,6 @@ void test_http_address_drops_query(void) {
     TEST_ASSERT_EQUAL_size_t(1, httpPathLength("/?"));
 }
 
-void test_safe_grant_path(void) {
-    const char *good[] = {"/rpc/Switch.Set", "/", "/cgi-bin/datachart.cgi", "/a.b/c.d", "/file..txt", "/a/.hidden",
-                          "/a?x=../y", "/a?x=%2f", "/a?x=//", "/a?x=\\", "/a%20b"};
-    for (const char *s : good) TEST_ASSERT_TRUE_MESSAGE(isSafeGrantPath(s), s);
-    const char *bad[] = {"/a/./b",
-                         "/a/../b",
-                         "/..",
-                         "/.",
-                         "/a/.",
-                         "/a/..",
-                         "/a/..?x=1",
-                         "/rpc/Switch./../Sys.Reboot",
-                         "/rpc/Switch.%2e%2e/Sys.Reboot",
-                         "/rpc/Switch.%2E%2E/Sys.Reboot",
-                         "/a%2fb",
-                         "/a%2Fb",
-                         "/a%5cb",
-                         "/a%5Cb",
-                         "/a%2eb",
-                         "/rpc//Switch.Set",
-                         "//",
-                         "/a\\b",
-                         "/cgi-bin/datachart.cgi/../setpoint.cgi"};
-    for (const char *s : bad) TEST_ASSERT_FALSE_MESSAGE(isSafeGrantPath(s), s);
-}
-
 // ============================================================================
 // Grant validation
 // ============================================================================
@@ -380,14 +343,12 @@ void test_grant_invalid_entries(void) {
     TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", "read", mac, {"POST  /cgi-bin/datachart.cgi"}));
     TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", "read", mac, {"POST/cgi-bin/datachart.cgi"}));
     TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", "read", mac, {"HEAD /a"}));
-    TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", "read", mac, {"POST /a/../b"}));
     TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", "read", mac, {"POST cgi-bin/x"}));
     // HTTP write paths
     TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", nullptr, mac, {"rpc/Switch.Set"}));
-    TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", nullptr, mac, {"/rpc/../Sys.Reboot"}));
-    TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", nullptr, mac, {"/rpc//x"}));
-    TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", nullptr, mac, {"/rpc%2fx"}));
-    TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", nullptr, mac, {"/a\\b"}));
+    TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", nullptr, mac, {"/rpc/Switch.Set?id=0"}));
+    TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", nullptr, mac, {"/rpc/*/Set"}));
+    TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", nullptr, mac, {"/rpc/a b"}));
     TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", nullptr, mac, {"*", "/a"}));
     TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", nullptr, mac, {"POST /a"}));
     // Raw payload hashes
@@ -659,26 +620,17 @@ void test_classify_http_undeclared_is_write(void) {
     TEST_ASSERT_TRUE(classify(r, &grant, 1, &idx) == Verdict::WRITE);
 }
 
-// The executor refuses unsafe non-GET paths before classify() runs; here the
-// matchers must still never let an escape attempt hit a declaration or prefix.
-void test_classify_http_escape_never_matches(void) {
-    GrantEntry decl = xwebDeclaration();
-    int idx;
-    PolicyRequest r = httpReq("POST", "/cgi-bin/datachart.cgi/../setpoint.cgi");
-    TEST_ASSERT_TRUE(classify(r, &decl, 1, &idx) != Verdict::READ);
+// Paths match as plain strings before '?': no normalization of dot segments,
+// "//" or percent-encoding.
+void test_match_plain_prefix(void) {
     GrantEntry prefix = entry("192.168.2.40", 80, "http", nullptr, "00:11:22:33:44:55", {"/rpc/Switch.*"});
-    // Spec scenario paths are refused by the path rule the executor applies
-    TEST_ASSERT_FALSE(isSafeGrantPath("/rpc/Switch./../Sys.Reboot"));
-    TEST_ASSERT_FALSE(isSafeGrantPath("/rpc/Switch.%2e%2e/Sys.Reboot"));
-    r = httpReq("POST", "/rpc/Sys.Reboot");
-    TEST_ASSERT_TRUE(matchWriteGrant(r, &prefix, 1, &idx) == GrantMatch::NOT_ALLOWED);
-    // A GET with a body is classed write; the matcher refuses its unsafe path too
-    r = httpReq("GET", "/rpc/Switch./../Sys.Reboot", Access::NONE, true);
-    TEST_ASSERT_TRUE(classify(r, nullptr, 0, &idx) == Verdict::WRITE);
-    TEST_ASSERT_TRUE(matchWriteGrant(r, &prefix, 1, &idx) == GrantMatch::NOT_ALLOWED);
-    // A plain GET is read whatever its path
-    r = httpReq("GET", "/a/../b");
-    TEST_ASSERT_TRUE(classify(r, nullptr, 0, &idx) == Verdict::READ);
+    GrantEntry exact = entry("192.168.2.40", 80, "http", nullptr, "00:11:22:33:44:55", {"/a/../b"});
+    int idx;
+    TEST_ASSERT_TRUE(matchWriteGrant(httpReq("POST", "/rpc/Switch./../Sys.Reboot"), &prefix, 1, &idx) == GrantMatch::ALLOWED);
+    TEST_ASSERT_TRUE(matchWriteGrant(httpReq("POST", "/rpc/Switch.%2e%2e?x=/"), &prefix, 1, &idx) == GrantMatch::ALLOWED);
+    TEST_ASSERT_TRUE(matchWriteGrant(httpReq("POST", "/rpc//Switch.Set"), &prefix, 1, &idx) == GrantMatch::NOT_ALLOWED);
+    TEST_ASSERT_TRUE(matchWriteGrant(httpReq("POST", "/a/../b?q=1"), &exact, 1, &idx) == GrantMatch::ALLOWED);
+    TEST_ASSERT_TRUE(matchWriteGrant(httpReq("POST", "/b"), &exact, 1, &idx) == GrantMatch::NOT_ALLOWED);
 }
 
 void test_classify_modbus(void) {
@@ -911,16 +863,8 @@ void test_digest_equals(void) {
     TEST_ASSERT_FALSE(digestEquals(a, b));
 }
 
-// Review findings: underscore override headers, matrix-parameter dot segments,
-// a wildcard flag that would widen a stored path entry.
-void test_review_hardening(void) {
-    TEST_ASSERT_TRUE(isReservedHeaderName("X_HTTP_Method_Override"));
-    TEST_ASSERT_TRUE(isReservedHeaderName("x_method_override"));
-    TEST_ASSERT_FALSE(isReservedHeaderName("X_Custom_Header"));
-    TEST_ASSERT_FALSE(isSafeGrantPath("/rpc/Switch.x/..;/Sys.Reboot"));
-    TEST_ASSERT_FALSE(isSafeGrantPath("/a/.;x/b"));
-    TEST_ASSERT_TRUE(isSafeGrantPath("/a/b;v=1"));
-
+// A wildcard flag set on a stored path entry must not widen it.
+void test_wildcard_flag_never_widens(void) {
     GrantEntry path = entry("192.168.2.40", 80, "http", nullptr, "00:11:22:33:44:55", {"/rpc/Switch.Set"});
     uint8_t blob[GRANT_BLOB_MAX_BYTES];
     size_t length = serializeGrants(&path, 1, blob, sizeof(blob));
@@ -933,9 +877,8 @@ void test_review_hardening(void) {
 }
 
 void run_gateway_policy_tests(void) {
-    RUN_TEST(test_review_hardening);
+    RUN_TEST(test_wildcard_flag_never_widens);
     RUN_TEST(test_parse_new_ops);
-    RUN_TEST(test_method_override_headers_reserved);
     RUN_TEST(test_parse_module);
     RUN_TEST(test_modbus_address_round_trip);
     RUN_TEST(test_modbus_address_malformed);
@@ -944,7 +887,6 @@ void run_gateway_policy_tests(void) {
     RUN_TEST(test_modbus_table_for_function);
     RUN_TEST(test_modbus_range_fits);
     RUN_TEST(test_http_address_drops_query);
-    RUN_TEST(test_safe_grant_path);
     RUN_TEST(test_grant_valid_entries);
     RUN_TEST(test_grant_invalid_entries);
     RUN_TEST(test_grant_48_byte_boundary);
@@ -954,7 +896,7 @@ void run_gateway_policy_tests(void) {
     RUN_TEST(test_classify_http_get);
     RUN_TEST(test_classify_http_declared_post);
     RUN_TEST(test_classify_http_undeclared_is_write);
-    RUN_TEST(test_classify_http_escape_never_matches);
+    RUN_TEST(test_match_plain_prefix);
     RUN_TEST(test_classify_modbus);
     RUN_TEST(test_classify_raw_payloads);
     RUN_TEST(test_match_modbus_range);

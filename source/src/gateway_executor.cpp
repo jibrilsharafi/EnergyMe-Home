@@ -211,7 +211,7 @@ namespace GatewayExec
                         return false;
                     }
                     if (isReservedHeaderName(rq.headers[i].name)) {
-                        setOutcome(result, Status::REJECTED, "BAD_ARGS", "Framing and method-override headers are set by the device");
+                        setOutcome(result, Status::REJECTED, "BAD_ARGS", "Framing headers are set by the device");
                         return false;
                     }
                 }
@@ -438,14 +438,7 @@ namespace GatewayExec
             return;
         }
 
-        // Also for a GET with a body, which is classed write below: a server may
-        // normalize dot segments or encoded separators past a prefix grant.
         const char* expandedPath = (const char*)buffers.path;
-        if (http && (strcmp(rq.method, "GET") != 0 || rq.access == Access::WRITE || buffers.bodyLength > 0) && !isSafeGrantPath(expandedPath)) {
-            setOutcome(result, Status::REJECTED, "BAD_ARGS", "path holds a dot segment, //, a backslash or an encoded separator");
-            return;
-        }
-
         uint8_t digest[DIGEST_BYTES];
         bool hasDigest = false;
         if ((rq.module == Module::TCP || rq.module == Module::UDP) && buffers.wireLength > 0) {

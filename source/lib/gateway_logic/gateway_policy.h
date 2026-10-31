@@ -54,11 +54,6 @@ bool formatHttpAddress(const char *method, const char *path, char *out, size_t c
 // Length of the path before its query.
 size_t httpPathLength(const char *path);
 
-// No "." or ".." segment, no "//", no backslash and no %2e, %2f or %5c in any
-// case, in the part before '?'. LAN servers often normalize these, which would
-// let a request escape a prefix grant or a read declaration.
-bool isSafeGrantPath(const char *path);
-
 // ---------------------------------------------------------------------------
 // Write grants and read declarations
 // ---------------------------------------------------------------------------
