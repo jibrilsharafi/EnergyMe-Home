@@ -460,6 +460,23 @@ static void test_udp_and_tcp_classing(void) {
 // Targets, templates, modules and stage order
 // ---------------------------------------------------------------------------
 
+static void test_target_mac(void) {
+    reset();
+    const char *target = R"("target":{"ip":"192.168.1.60","port":502})";
+    expectValid(set(MODBUS_JOB));
+    TEST_ASSERT_FALSE(table.jobs[0].hasMac);
+    expectValid(set(replace(MODBUS_JOB, target, R"("target":{"ip":"192.168.1.60","port":502,"mac":"02:11:22:33:44:55"})")));
+    TEST_ASSERT_TRUE(table.jobs[0].hasMac);
+    TEST_ASSERT_EQUAL_HEX8(0x02, table.jobs[0].mac[0]);
+    TEST_ASSERT_EQUAL_HEX8(0x55, table.jobs[0].mac[5]);
+    const char *bad[] = {"02:11:22:33:44:5G", "02-11-22-33-44-55", "ff:ff:ff:ff:ff:ff", "00:00:00:00:00:00", ""};
+    for (const char *mac : bad) {
+        std::string doc = replace(MODBUS_JOB, target, std::string(R"("target":{"ip":"192.168.1.60","port":502,"mac":")") + mac + "\"}");
+        expectError(set(doc), "BAD_JOB", "mb_meters", "target");
+    }
+    expectError(set(replace(MODBUS_JOB, target, R"("target":{"ip":"192.168.1.60","port":502,"mac":1})")), "BAD_JOB", "mb_meters", "target");
+}
+
 static void test_target_rules(void) {
     reset();
     targetVerdict = 1;
@@ -849,6 +866,7 @@ int main(int, char **) {
     RUN_TEST(test_non_get_steps_are_literal);
     RUN_TEST(test_state_changing_get_accepted);
     RUN_TEST(test_udp_and_tcp_classing);
+    RUN_TEST(test_target_mac);
     RUN_TEST(test_target_rules);
     RUN_TEST(test_template_check);
     RUN_TEST(test_template_grammar_matches_engine);

@@ -120,6 +120,8 @@ struct Job {
     char ip[16];
     uint8_t octets[4];
     uint16_t port;
+    bool hasMac;              // target.mac, sent on every step of the job
+    uint8_t mac[6];
     GatewayLogic::Module module;
     uint32_t intervalS;
     uint32_t jitterS;

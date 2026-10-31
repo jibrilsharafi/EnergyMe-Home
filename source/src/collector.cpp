@@ -1164,6 +1164,8 @@ namespace Collector
         rq.port = job.port;
         rq.writes = GatewayExec::Writes::DENY; // jobs are read-only whatever the grants
         rq.declaredRead = true;
+        rq.hasMac = job.hasMac;
+        memcpy(rq.mac, job.mac, sizeof(rq.mac));
         rq.timeoutMs = step.timeoutMs;
         rq.maxBytes = step.maxBytes;
         rq.callerId = job.id;

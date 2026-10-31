@@ -196,7 +196,7 @@ const char *unknownKey(JsonObjectConst object, const char *const *allowed, size_
 const char *const TOP_KEYS[] = {"v", "budget_bytes_h", "jobs"};
 const char *const JOB_KEYS[] = {"id",          "rev",        "enabled",   "source_id", "target", "module",  "interval_s", "jitter_s",
                                 "step_timeout_ms", "deadline_s", "max_bytes", "vars",      "session", "steps", "publish"};
-const char *const TARGET_KEYS[] = {"ip", "port"};
+const char *const TARGET_KEYS[] = {"ip", "port", "mac"};
 const char *const SESSION_KEYS[] = {"login", "ttl_s", "expiry"};
 const char *const EXPIRY_KEYS[] = {"status", "marker"};
 const char *const STEP_KEYS[] = {"id", "args", "timeout_ms", "max_bytes", "captures"};
@@ -636,6 +636,11 @@ bool parseJob(Validation &v, size_t index, JsonVariantConst value) {
     job.ip[length] = '\0';
     if (getInt(target["port"], 1, 65535, &number) != Got::OK) return fail(v.error, BAD_JOB, job.id, "target");
     job.port = static_cast<uint16_t>(number);
+    if (!target["mac"].isNull()) {
+        if (getString(target["mac"], 17, 17, &text, &length) != Got::OK || !GatewayLogic::parseMac(text, job.mac))
+            return fail(v.error, BAD_JOB, job.id, "target");
+        job.hasMac = true;
+    }
 
     if (getString(object["module"], 1, 16, &text, &length) != Got::OK || !GatewayLogic::parseModule(text, &job.module))
         return fail(v.error, BAD_JOB, job.id, "module");
