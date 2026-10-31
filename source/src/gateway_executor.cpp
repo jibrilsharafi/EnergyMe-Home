@@ -312,8 +312,8 @@ namespace GatewayExec
         size_t length = 0;
         if (!_expand(rq, context, rq.path, b.path, Buffers::PATH - 1, b.scratch, expansion, &length, result)) return false;
         b.path[length] = '\0';
-        // Grant and declaration matching and the path rules run on the expanded path, so a
-        // sensitive value there would turn refusals into an oracle on it.
+        // Grant matching runs on the expanded path, so a sensitive value there would
+        // turn refusals into an oracle on it.
         if (expansion->sensitive) {
             setOutcome(result, Status::REJECTED, "BAD_TEMPLATE", "Sensitive placeholders are not allowed in the path");
             return false;
@@ -446,6 +446,7 @@ namespace GatewayExec
         policy.method = rq.method;
         policy.path = expandedPath;
         policy.hasBody = http && buffers.bodyLength > 0;
+        policy.declaredRead = rq.declaredRead;
         policy.function = rq.module == Module::MODBUS_TCP
                               ? functionFor(rq.address.table, rq.modbusWrite, rq.modbusWrite ? rq.valueCount : rq.count, rq.writeMultiple)
                               : 0;
@@ -454,9 +455,7 @@ namespace GatewayExec
         policy.valueCount = rq.valueCount;
         policy.payloadLength = buffers.wireLength;
 
-        size_t grantCount = _copyGrants(_snapshot);
-        int readEntry = -1;
-        Verdict verdict = classify(policy, _snapshot, grantCount, &readEntry);
+        Verdict verdict = classify(policy);
         if (verdict == Verdict::BAD_ARGS) {
             setOutcome(result, Status::REJECTED, "BAD_ARGS", "access contradicts the Modbus function");
             return;
@@ -465,8 +464,9 @@ namespace GatewayExec
             setOutcome(result, Status::REJECTED, "WRITE_NOT_ALLOWED", "WRITES_DENIED");
             return;
         }
-        int entryIndex = readEntry;
+        int entryIndex = -1;
         if (verdict == Verdict::WRITE) {
+            size_t grantCount = _copyGrants(_snapshot);
             GrantMatch match = matchWriteGrant(policy, _snapshot, grantCount, &entryIndex);
             if (match != GrantMatch::ALLOWED) {
                 setOutcome(result, Status::REJECTED, match == GrantMatch::OUT_OF_RANGE ? "WRITE_OUT_OF_RANGE" : "WRITE_NOT_ALLOWED",
@@ -510,8 +510,6 @@ namespace GatewayExec
         // Audit: writes change a LAN device, so they are logged at INFO; reads (every poll) only at DEBUG.
         if (verdict == Verdict::WRITE) {
             LOG_INFO("Gateway %s: %s write by entry %d %s:%u %s", rq.callerId, moduleName(rq.module), entryIndex, rq.ip, rq.port, result.address);
-        } else if (entryIndex >= 0) {
-            LOG_DEBUG("Gateway %s: %s read by entry %d %s:%u %s", rq.callerId, moduleName(rq.module), entryIndex, rq.ip, rq.port, result.address);
         } else {
             LOG_DEBUG("Gateway %s: %s read %s:%u %s", rq.callerId, moduleName(rq.module), rq.ip, rq.port, result.address);
         }
@@ -660,8 +658,6 @@ namespace GatewayExec
         return persisted;
     }
 
-    size_t copyGrants(GrantEntry* out) { return _copyGrants(out); }
-
     void grantsToJson(JsonArray out) {
         GrantEntry* entries = (GrantEntry*)ps_malloc(sizeof(GrantEntry) * GRANT_MAX_ENTRIES);
         if (entries == nullptr) return;
@@ -674,7 +670,7 @@ namespace GatewayExec
             entry["ip"] = text;
             entry["port"] = e.port;
             entry["module"] = moduleName(e.module);
-            entry["kind"] = e.kind == GrantKind::READ ? "read" : "write";
+            entry["kind"] = "write";
             if (e.hasMac) {
                 formatMac(e.mac, text, sizeof(text));
                 entry["mac"] = text;

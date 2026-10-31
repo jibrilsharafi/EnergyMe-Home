@@ -7,8 +7,8 @@
 #include <cstdint>
 
 // Pure logic for the gateway executor (openspec capability: gateway-modules):
-// canonical addresses, read/write classification, write grants and read
-// declarations, target MAC binding decisions. Sockets, ARP lookups, SHA-256 and
+// canonical addresses, read/write classification, write grants, target MAC
+// binding decisions. Sockets, ARP lookups, SHA-256 and
 // JSON live in the firmware; everything here is host-testable.
 
 namespace GatewayLogic {
@@ -55,17 +55,15 @@ bool formatHttpAddress(const char *method, const char *path, char *out, size_t c
 size_t httpPathLength(const char *path);
 
 // ---------------------------------------------------------------------------
-// Write grants and read declarations
+// Write grants
 // ---------------------------------------------------------------------------
-
-enum class GrantKind : uint8_t { WRITE = 0, READ = 1 };
 
 inline constexpr size_t GRANT_MAX_ENTRIES = 8;
 inline constexpr size_t GRANT_ALLOW_MAX = 4;
 inline constexpr size_t GRANT_ALLOW_SLOT_BYTES = 48;
-inline constexpr size_t GRANT_ENTRY_BYTES = 208;
+inline constexpr size_t GRANT_ENTRY_BYTES = 207;
 inline constexpr uint8_t GRANT_BLOB_VERSION = 1;
-inline constexpr size_t GRANT_BLOB_MAX_BYTES = 1 + GRANT_MAX_ENTRIES * GRANT_ENTRY_BYTES; // 1665
+inline constexpr size_t GRANT_BLOB_MAX_BYTES = 1 + GRANT_MAX_ENTRIES * GRANT_ENTRY_BYTES;
 inline constexpr size_t GRANT_JSON_MAX_BYTES = 3072;
 inline constexpr size_t GRANT_ALLOW_TEXT_BUFFER = GRANT_ALLOW_SLOT_BYTES + 1;
 inline constexpr size_t MAC_TEXT_BUFFER = 18;
@@ -74,7 +72,6 @@ struct GrantEntry {
     uint8_t ip[4];
     uint16_t port;
     Module module;
-    GrantKind kind;
     bool hasMac;
     bool wildcard; // allow: ["*"]
     uint8_t mac[6];
@@ -88,7 +85,7 @@ struct GrantInput {
     const char *ip;
     int64_t port;
     const char *module;
-    const char *kind; // null -> "write"
+    const char *kind; // null or "write"; "read" is refused
     const char *mac;  // null -> none
     const char *const *allow;
     size_t allowCount;
@@ -123,6 +120,9 @@ struct PolicyRequest {
     const char *method;
     const char *path;
     bool hasBody; // non-empty body or body_b64
+    // The caller asserts the literal request is a read of its own target (collector
+    // job steps): a non-GET http/https request or a tcp/udp payload is classed read.
+    bool declaredRead;
     // modbus_tcp
     uint8_t function;
     ModbusAddress modbus;
@@ -134,13 +134,12 @@ struct PolicyRequest {
 
 enum class Verdict { READ, WRITE, BAD_ARGS };
 
-// Classes the request from the module rules and the stored read declarations.
-// `readEntry` gets the index of the declaration that classed it read, -1 if none.
-Verdict classify(const PolicyRequest &request, const GrantEntry *entries, size_t count, int *readEntry);
+// Classes the request from the module rules and `declaredRead`.
+Verdict classify(const PolicyRequest &request);
 
 enum class GrantMatch { ALLOWED, NOT_ALLOWED, OUT_OF_RANGE };
 
-// For a request classed write: the first `write` entry that admits it.
+// For a request classed write: the first entry that admits it.
 GrantMatch matchWriteGrant(const PolicyRequest &request, const GrantEntry *entries, size_t count, int *entryIndex);
 
 // ---------------------------------------------------------------------------

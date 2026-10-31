@@ -696,34 +696,23 @@ bool parseJob(Validation &v, size_t index, JsonVariantConst value) {
 // Stage 2: read-only classing
 // ---------------------------------------------------------------------------
 
-bool isRead(Validation &v, const Job &job, const Step &step, bool modbusWrite) {
-    GatewayLogic::PolicyRequest request{};
-    request.module = job.module;
-    memcpy(request.ip, job.octets, 4);
-    request.port = job.port;
-    request.access = GatewayLogic::Access::NONE;
+// Job steps run as caller-declared reads of the job's own target, so only what
+// cannot be a literal read is refused: Modbus writes, a GET with a body, and a
+// placeholder in a non-GET path or a tcp payload.
+bool isRead(const Job &job, const Step &step, bool modbusWrite) {
     const StepArgs &args = step.args;
     switch (job.module) {
         case Module::HTTP:
         case Module::HTTPS:
-            // No exact declaration can match a path that expands differently each run.
-            if (strcmp(args.method, "GET") != 0 && GatewayLogic::hasPlaceholder(args.path, strlen(args.path))) return false;
-            request.method = args.method;
-            request.path = args.path;
-            request.hasBody = (args.body != nullptr && args.body[0] != '\0') || args.bodyBytesLength > 0;
-            break;
+            if (strcmp(args.method, "GET") == 0) return (args.body == nullptr || args.body[0] == '\0') && args.bodyBytesLength == 0;
+            return !GatewayLogic::hasPlaceholder(args.path, strlen(args.path));
         case Module::MODBUS_TCP:
-            if (modbusWrite) return false;
-            request.function = GatewayLogic::functionFor(args.address.table, false, args.count, false);
-            request.modbus = args.address;
-            break;
+            return !modbusWrite;
         case Module::TCP:
         case Module::UDP:
-            request.payloadLength = args.payload != nullptr ? strlen(args.payload) : args.payloadBytesLength;
-            break;
+            return args.payload == nullptr || !GatewayLogic::hasPlaceholder(args.payload, strlen(args.payload));
     }
-    int entry = -1;
-    return GatewayLogic::classify(request, v.context.grants, v.context.grantCount, &entry) == GatewayLogic::Verdict::READ;
+    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -983,15 +972,13 @@ bool run(JsonDocument &doc, const char *text, size_t length, const ValidationCon
         table->jobCount++;
     }
 
-    if (context.classify) {
-        for (size_t j = 0; j < table->jobCount; j++) {
-            const Job &job = table->jobs[j];
-            for (size_t i = 0; i < job.loginCount; i++) {
-                if (!isRead(v, job, job.login[i], v.modbusWrite[j][i])) return failStep(error, WRITE_NOT_ALLOWED, job.id, true, i);
-            }
-            for (size_t i = 0; i < job.stepCount; i++) {
-                if (!isRead(v, job, job.steps[i], v.modbusWrite[j][LOGIN_MAX + i])) return failStep(error, WRITE_NOT_ALLOWED, job.id, false, i);
-            }
+    for (size_t j = 0; j < table->jobCount; j++) {
+        const Job &job = table->jobs[j];
+        for (size_t i = 0; i < job.loginCount; i++) {
+            if (!isRead(job, job.login[i], v.modbusWrite[j][i])) return failStep(error, WRITE_NOT_ALLOWED, job.id, true, i);
+        }
+        for (size_t i = 0; i < job.stepCount; i++) {
+            if (!isRead(job, job.steps[i], v.modbusWrite[j][LOGIN_MAX + i])) return failStep(error, WRITE_NOT_ALLOWED, job.id, false, i);
         }
     }
 

@@ -37,35 +37,20 @@ void stubSha(const uint8_t *data, size_t length, uint8_t out[32]) {
 int targetVerdict = 0;
 int targetCheck(const uint8_t[4]) { return targetVerdict; }
 
-GatewayLogic::GrantEntry grants[GatewayLogic::GRANT_MAX_ENTRIES];
-size_t grantCount = 0;
-
-void addGrant(const char *ip, int port, const char *module, const char *kind, std::initializer_list<const char *> allow) {
-    const char *list[GatewayLogic::GRANT_ALLOW_MAX];
-    size_t n = 0;
-    for (const char *a : allow) list[n++] = a;
-    GatewayLogic::GrantInput input{ip, port, module, kind, "02:11:22:33:44:55", list, n};
-    const char *why = GatewayLogic::validateGrant(input, &grants[grantCount]);
-    TEST_ASSERT_NULL_MESSAGE(why, why);
-    grantCount++;
-}
-
-void addXwebDeclaration() { addGrant("192.168.1.50", 80, "http", "read", {"POST /cgi-bin/login.lua", "POST /cgi-bin/datachart.cgi"}); }
-
 char poolStorage[POOL_BYTES];
 JobTable table; // static: the table is large
 ApplyError error;
 bool httpsAvailable = true;
 
-bool validate(const std::string &doc, bool classify = true) {
-    ValidationContext context{grants, grantCount, stubSha, targetCheck, httpsAvailable, classify, nullptr};
+bool validate(const std::string &doc) {
+    ValidationContext context{stubSha, targetCheck, httpsAvailable, nullptr};
     table.pool = poolStorage;
     table.poolCap = sizeof(poolStorage);
     return validateJobSet(doc.c_str(), doc.size(), context, &table, &error);
 }
 
-void expectError(const std::string &doc, const char *code, const char *job, const char *field, bool classify = true) {
-    bool ok = validate(doc, classify);
+void expectError(const std::string &doc, const char *code, const char *job, const char *field) {
+    bool ok = validate(doc);
     char message[200];
     snprintf(message, sizeof(message), "got %s job=%s field=%s", error.code ? error.code : "(ok)", error.job, error.field);
     TEST_ASSERT_FALSE_MESSAGE(ok, message);
@@ -74,8 +59,8 @@ void expectError(const std::string &doc, const char *code, const char *job, cons
     TEST_ASSERT_EQUAL_STRING_MESSAGE(field, error.field, message);
 }
 
-void expectValid(const std::string &doc, bool classify = true) {
-    bool ok = validate(doc, classify);
+void expectValid(const std::string &doc) {
+    bool ok = validate(doc);
     char message[200];
     snprintf(message, sizeof(message), "got %s job=%s field=%s", error.code ? error.code : "(ok)", error.job, error.field);
     TEST_ASSERT_TRUE_MESSAGE(ok, message);
@@ -129,7 +114,6 @@ std::string httpStep(const char *method, const char *path, const std::string &mo
 }
 
 void reset() {
-    grantCount = 0;
     targetVerdict = 0;
     httpsAvailable = true;
     memset(&error, 0, sizeof(error));
@@ -141,9 +125,8 @@ void reset() {
 // Worked examples
 // ---------------------------------------------------------------------------
 
-static void test_xweb_example_with_declaration(void) {
+static void test_xweb_example(void) {
     reset();
-    addXwebDeclaration();
     expectValid(set(XWEB_JOB));
     TEST_ASSERT_EQUAL_UINT8(1, table.jobCount);
     TEST_ASSERT_EQUAL_UINT32(2097152, table.budgetBytesH);
@@ -214,7 +197,6 @@ static void test_modbus_example(void) {
 
 static void test_both_examples_in_one_set(void) {
     reset();
-    addXwebDeclaration();
     std::string doc = set(std::string(XWEB_JOB) + "," + MODBUS_JOB);
     TEST_ASSERT_TRUE(doc.size() <= DOC_MAX);
     expectValid(doc);
@@ -406,11 +388,10 @@ static void test_capture_schema(void) {
 // Read-only classing
 // ---------------------------------------------------------------------------
 
-static void test_xweb_before_declaration(void) {
+// The XWEB POSTs are read by declaration: no grant list entry is needed.
+static void test_xweb_needs_no_grant(void) {
     reset();
-    expectError(set(XWEB_JOB), "WRITE_NOT_ALLOWED", "xweb_hist", "session.login[0]");
-    // Boot load skips the apply-time classing.
-    expectValid(set(XWEB_JOB), false);
+    expectValid(set(XWEB_JOB));
 }
 
 static void test_modbus_write_refused(void) {
@@ -434,7 +415,6 @@ static void test_get_with_body_refused(void) {
 
 static void test_access_is_bad_job(void) {
     reset();
-    addXwebDeclaration();
     expectError(set(job("a", "http", "192.168.1.50", 80, R"([{"id":"s1","access":"read","args":{"method":"POST","path":"/cgi-bin/login.lua"}}])")),
                 "BAD_JOB", "a", "access");
     expectError(set(job("a", "http", "192.168.1.50", 80, httpStep("POST", "/cgi-bin/login.lua", R"(,"access":"read")"))), "BAD_JOB", "a",
@@ -444,15 +424,12 @@ static void test_access_is_bad_job(void) {
     expectError(set(job("a", "http", "192.168.1.50", 80, httpStep("GET", "/", R"(,"target":{})"))), "BAD_JOB", "a", "target");
 }
 
-static void test_other_method_to_declared_path(void) {
+static void test_non_get_steps_are_literal(void) {
     reset();
-    addXwebDeclaration();
     expectValid(set(job("x", "http", "192.168.1.50", 80, httpStep("POST", "/cgi-bin/datachart.cgi?a=1"))));
-    expectError(set(job("x", "http", "192.168.1.50", 80, httpStep("DELETE", "/cgi-bin/datachart.cgi"))), "WRITE_NOT_ALLOWED", "x", "steps[0]");
-    expectError(set(job("x", "http", "192.168.1.50", 80, httpStep("PUT", "/cgi-bin/login.lua"))), "WRITE_NOT_ALLOWED", "x", "steps[0]");
-    // Declarations are bound to the target.
-    expectError(set(job("x", "http", "192.168.1.51", 80, httpStep("POST", "/cgi-bin/datachart.cgi"))), "WRITE_NOT_ALLOWED", "x", "steps[0]");
-    // A templated non-GET path can never match an exact declaration.
+    expectValid(set(job("x", "http", "192.168.1.50", 80, httpStep("DELETE", "/cgi-bin/datachart.cgi"))));
+    expectValid(set(job("x", "http", "192.168.1.50", 80, httpStep("PUT", "/cgi-bin/login.lua", R"(,"body":"a=${now}")"))));
+    // A templated non-GET path is not a literal read.
     expectError(set(job("x", "http", "192.168.1.50", 80, httpStep("POST", "/cgi-bin/datachart.cgi?t=${now}"))), "WRITE_NOT_ALLOWED", "x",
                 "steps[0]");
 }
@@ -466,14 +443,12 @@ static void test_state_changing_get_accepted(void) {
 
 static void test_udp_and_tcp_classing(void) {
     reset();
-    addGrant("192.168.1.80", 47808, "udp", "write", {"*"});
+    // Literal payloads are read by declaration; a templated payload is refused.
     const char *frame = "AQIDBAUGBwgJCgsMDQ4PEBE="; // 17 bytes
     std::string udp = std::string(R"([{"id":"q","args":{"payload_b64":")") + frame + R"(","wait_ms":500}}])";
-    expectError(set(job("u", "udp", "192.168.1.80", 47808, udp)), "WRITE_NOT_ALLOWED", "u", "steps[0]");
-
-    // tcp: a payload is write, an empty payload is read.
+    expectValid(set(job("u", "udp", "192.168.1.80", 47808, udp)));
     std::string status = R"([{"id":"t","args":{"payload":"STATUS\r\n"}}])";
-    expectError(set(job("t", "tcp", "192.168.1.81", 4000, status)), "WRITE_NOT_ALLOWED", "t", "steps[0]");
+    expectValid(set(job("t", "tcp", "192.168.1.81", 4000, status)));
     expectError(set(job("t", "tcp", "192.168.1.81", 4000, R"([{"id":"t","args":{"payload":"T=${now}"}}])")), "WRITE_NOT_ALLOWED", "t",
                 "steps[0]");
     expectValid(set(job("t", "tcp", "192.168.1.82", 4000, R"([{"id":"t","args":{"idle_ms":300}}])")));
@@ -492,12 +467,12 @@ static void test_target_rules(void) {
     targetVerdict = 2;
     expectError(set(MODBUS_JOB), "TARGET_NOT_ALLOWED", "mb_meters", "target");
     // Classing comes first.
-    expectError(set(XWEB_JOB), "WRITE_NOT_ALLOWED", "xweb_hist", "session.login[0]");
+    expectError(set(job("w", "modbus_tcp", "192.168.1.60", 502, R"([{"id":"u1","args":{"address":"u1/hr0","values":[1]}}])")),
+                "WRITE_NOT_ALLOWED", "w", "steps[0]");
 }
 
 static void test_template_check(void) {
     reset();
-    addXwebDeclaration();
     // Capture used before it is set: step 1 uses sses, step 2 captures it.
     std::string steps = R"([{"id":"a","args":{"method":"GET","path":"/a?s=${cap:sses}"}},)"
                         R"({"id":"b","args":{"method":"GET","path":"/b"},"captures":[{"name":"sses","from":"body","key":"sses"}]}])";
@@ -606,7 +581,6 @@ static void test_http_args_schema(void) {
     expectValid(set(job("h", "http", "192.168.1.50", 80, R"([{"id":"s1","args":{}}])")));
     TEST_ASSERT_EQUAL_STRING("GET", table.jobs[0].steps[0].args.method);
     TEST_ASSERT_EQUAL_STRING("/", table.jobs[0].steps[0].args.path);
-    addXwebDeclaration();
     expectValid(set(job("h", "http", "192.168.1.50", 80, httpStep("POST", "/cgi-bin/login.lua", R"(,"body_b64":"AAEC/w==")"))));
     const StepArgs &args = table.jobs[0].steps[0].args;
     TEST_ASSERT_EQUAL_UINT16(4, args.bodyBytesLength);
@@ -619,8 +593,6 @@ static void test_http_args_schema(void) {
 
 static void test_binding_hash(void) {
     reset();
-    addXwebDeclaration();
-    addGrant("192.168.1.51", 80, "http", "read", {"POST /cgi-bin/login.lua", "POST /cgi-bin/datachart.cgi"});
     expectValid(set(XWEB_JOB));
     uint8_t base[32];
     memcpy(base, table.jobs[0].bindingHash, 32);
@@ -780,7 +752,6 @@ static void test_capture_delimiters(void) {
 
 static void test_expiry_rule(void) {
     reset();
-    addXwebDeclaration();
     expectValid(set(XWEB_JOB));
     const Job &j = table.jobs[0];
     const char *page = "<html><form action=\"/cgi-bin/login.lua\"></html>";
@@ -856,7 +827,7 @@ void run_collector_runtime_tests(void);
 
 int main(int, char **) {
     UNITY_BEGIN();
-    RUN_TEST(test_xweb_example_with_declaration);
+    RUN_TEST(test_xweb_example);
     RUN_TEST(test_modbus_example);
     RUN_TEST(test_both_examples_in_one_set);
     RUN_TEST(test_defaults_applied);
@@ -871,11 +842,11 @@ int main(int, char **) {
     RUN_TEST(test_field_ranges);
     RUN_TEST(test_step_and_var_quotas);
     RUN_TEST(test_capture_schema);
-    RUN_TEST(test_xweb_before_declaration);
+    RUN_TEST(test_xweb_needs_no_grant);
     RUN_TEST(test_modbus_write_refused);
     RUN_TEST(test_get_with_body_refused);
     RUN_TEST(test_access_is_bad_job);
-    RUN_TEST(test_other_method_to_declared_path);
+    RUN_TEST(test_non_get_steps_are_literal);
     RUN_TEST(test_state_changing_get_accepted);
     RUN_TEST(test_udp_and_tcp_classing);
     RUN_TEST(test_target_rules);

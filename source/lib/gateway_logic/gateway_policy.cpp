@@ -105,16 +105,6 @@ uint8_t hexValue(char c) { return isDigit(c) ? static_cast<uint8_t>(c - '0') : s
 bool isRawModule(Module m) { return m == Module::TCP || m == Module::UDP; }
 bool isHttpModule(Module m) { return m == Module::HTTP || m == Module::HTTPS; }
 
-// Methods a read declaration may name (GET is read without one).
-const char *const DECLARABLE_METHODS[] = {"POST", "PUT", "PATCH", "DELETE"};
-
-bool isDeclarableMethod(const char *method, size_t length) {
-    for (const char *m : DECLARABLE_METHODS) {
-        if (strlen(m) == length && strncmp(m, method, length) == 0) return true;
-    }
-    return false;
-}
-
 size_t slotLength(const uint8_t *slot) {
     size_t n = 0;
     while (n < GRANT_ALLOW_SLOT_BYTES && slot[n] != 0) n++;
@@ -126,15 +116,14 @@ bool sameTarget(const GrantEntry &e, const PolicyRequest &r) {
 }
 
 // Allow paths: a valid HTTP path without a query, `*` only as the last byte.
-bool isValidAllowPath(const char *path, size_t length, bool allowStar) {
+bool isValidAllowPath(const char *path, size_t length) {
     char buffer[GRANT_ALLOW_SLOT_BYTES + 1];
     if (length == 0 || length > GRANT_ALLOW_SLOT_BYTES) return false;
     memcpy(buffer, path, length);
     buffer[length] = '\0';
     if (!isValidHttpPath(buffer) || strchr(buffer, '?') != nullptr) return false;
     const char *star = strchr(buffer, '*');
-    if (star == nullptr) return true;
-    return allowStar && star == buffer + length - 1;
+    return star == nullptr || star == buffer + length - 1;
 }
 
 bool slotMatchesPath(const uint8_t *slot, const char *path, size_t pathLength) {
@@ -143,26 +132,6 @@ bool slotMatchesPath(const uint8_t *slot, const char *path, size_t pathLength) {
         return pathLength >= length - 1 && memcmp(slot, path, length - 1) == 0;
     }
     return length == pathLength && memcmp(slot, path, length) == 0;
-}
-
-bool slotMatchesRead(const uint8_t *slot, const char *method, const char *path, size_t pathLength) {
-    size_t length = slotLength(slot);
-    size_t methodLength = strlen(method);
-    return length == methodLength + 1 + pathLength && memcmp(slot, method, methodLength) == 0 && slot[methodLength] == ' ' &&
-           memcmp(slot + methodLength + 1, path, pathLength) == 0;
-}
-
-// Index of the first `read` entry for the request's target with a slot `matches` accepts, -1 if none.
-template <typename Match>
-int findReadDeclaration(const PolicyRequest &request, const GrantEntry *entries, size_t count, Match matches) {
-    for (size_t i = 0; i < count; i++) {
-        const GrantEntry &e = entries[i];
-        if (e.kind != GrantKind::READ || !sameTarget(e, request)) continue;
-        for (size_t a = 0; a < e.allowCount; a++) {
-            if (matches(e.allow[a])) return static_cast<int>(i);
-        }
-    }
-    return -1;
 }
 
 } // namespace
@@ -285,14 +254,7 @@ const char *validateGrant(const GrantInput &input, GrantEntry *out) {
     if (!isValidPort(input.port)) return "port must be 1-65535";
     entry.port = static_cast<uint16_t>(input.port);
     if (!parseModule(input.module, &entry.module)) return "module must be http, https, modbus_tcp, tcp or udp";
-    if (input.kind == nullptr || strcmp(input.kind, "write") == 0) {
-        entry.kind = GrantKind::WRITE;
-    } else if (strcmp(input.kind, "read") == 0) {
-        entry.kind = GrantKind::READ;
-    } else {
-        return "kind must be write or read";
-    }
-    if (entry.kind == GrantKind::READ && entry.module == Module::MODBUS_TCP) return "modbus_tcp entries cannot be kind read";
+    if (input.kind != nullptr && strcmp(input.kind, "write") != 0) return "kind must be write (entries are write grants only)";
     if (input.mac != nullptr) {
         if (!parseMac(input.mac, entry.mac)) return "mac must be six lowercase hex pairs, unicast and non-zero";
         entry.hasMac = true;
@@ -303,7 +265,6 @@ const char *validateGrant(const GrantInput &input, GrantEntry *out) {
     for (size_t i = 0; i < input.allowCount; i++) star = star || (input.allow[i] != nullptr && strcmp(input.allow[i], "*") == 0);
     if (star) {
         if (input.allowCount != 1) return "\"*\" must be the only allow string";
-        if (entry.kind == GrantKind::READ) return "read entries cannot hold \"*\"";
         if (entry.module == Module::MODBUS_TCP) return "modbus_tcp grants take ranges, not \"*\"";
         entry.wildcard = true;
         entry.allowCount = 1;
@@ -322,13 +283,7 @@ const char *validateGrant(const GrantInput &input, GrantEntry *out) {
         if (entry.module == Module::MODBUS_TCP) {
             ModbusRange range{};
             if (!parseModbusRange(text, &range)) return "modbus_tcp allow must be u<unit>/<co|hr><start>:<count>[=<min>..<max>]";
-        } else if (entry.kind == GrantKind::READ) {
-            const char *space = strchr(text, ' ');
-            if (space == nullptr || !isDeclarableMethod(text, static_cast<size_t>(space - text)) || strchr(space + 1, ' ') != nullptr ||
-                !isValidAllowPath(space + 1, length - static_cast<size_t>(space + 1 - text), false)) {
-                return "http read declarations must be \"<POST|PUT|PATCH|DELETE> <path>\" without * or ?";
-            }
-        } else if (!isValidAllowPath(text, length, true)) {
+        } else if (!isValidAllowPath(text, length)) {
             return "http allow paths must start with /, hold no space or ?, and * only at the end";
         }
         memcpy(slot, text, length);
@@ -349,7 +304,7 @@ bool grantAllowText(const GrantEntry &entry, size_t i, char *out, size_t cap) {
     return n >= 0 && static_cast<size_t>(n) < cap;
 }
 
-// Entry layout (208 B): ip 4, port 2 (big endian), module 1, kind 1, flags 1
+// Entry layout (207 B): ip 4, port 2 (big endian), module 1, flags 1
 // (bit 0 mac, bit 1 "*"), mac 6, allow count 1, 4 x 48 B allow slots.
 size_t serializeGrants(const GrantEntry *entries, size_t count, uint8_t *out, size_t cap) {
     size_t length = 1 + count * GRANT_ENTRY_BYTES;
@@ -363,11 +318,10 @@ size_t serializeGrants(const GrantEntry *entries, size_t count, uint8_t *out, si
         p[4] = static_cast<uint8_t>(e.port >> 8);
         p[5] = static_cast<uint8_t>(e.port & 0xFF);
         p[6] = static_cast<uint8_t>(e.module);
-        p[7] = static_cast<uint8_t>(e.kind);
-        p[8] = static_cast<uint8_t>((e.hasMac ? 1 : 0) | (e.wildcard ? 2 : 0));
-        memcpy(p + 9, e.mac, 6);
-        p[15] = e.allowCount;
-        memcpy(p + 16, e.allow, sizeof(e.allow));
+        p[7] = static_cast<uint8_t>((e.hasMac ? 1 : 0) | (e.wildcard ? 2 : 0));
+        memcpy(p + 8, e.mac, 6);
+        p[14] = e.allowCount;
+        memcpy(p + 15, e.allow, sizeof(e.allow));
     }
     return length;
 }
@@ -383,12 +337,11 @@ bool deserializeGrants(const uint8_t *blob, size_t length, GrantEntry *out, size
         memcpy(e.ip, p, 4);
         e.port = static_cast<uint16_t>((p[4] << 8) | p[5]);
         e.module = static_cast<Module>(p[6]);
-        e.kind = static_cast<GrantKind>(p[7]);
-        e.hasMac = (p[8] & 1) != 0;
-        e.wildcard = (p[8] & 2) != 0;
-        memcpy(e.mac, p + 9, 6);
-        e.allowCount = p[15];
-        memcpy(e.allow, p + 16, sizeof(e.allow));
+        e.hasMac = (p[7] & 1) != 0;
+        e.wildcard = (p[7] & 2) != 0;
+        memcpy(e.mac, p + 8, 6);
+        e.allowCount = p[14];
+        memcpy(e.allow, p + 15, sizeof(e.allow));
 
         // Re-validate through the text form so a corrupted blob never widens a grant.
         char ipText[16], macText[MAC_TEXT_BUFFER];
@@ -407,16 +360,14 @@ bool deserializeGrants(const uint8_t *blob, size_t length, GrantEntry *out, size
         }
         snprintf(ipText, sizeof(ipText), "%u.%u.%u.%u", e.ip[0], e.ip[1], e.ip[2], e.ip[3]);
         formatMac(e.mac, macText, sizeof(macText));
-        GrantInput input{ipText, e.port, moduleName(e.module), e.kind == GrantKind::READ ? "read" : (e.kind == GrantKind::WRITE ? "write" : "?"),
-                         e.hasMac ? macText : nullptr, allow, e.allowCount};
+        GrantInput input{ipText, e.port, moduleName(e.module), nullptr, e.hasMac ? macText : nullptr, allow, e.allowCount};
         if (validateGrant(input, &out[i]) != nullptr) return false;
     }
     *count = n;
     return true;
 }
 
-Verdict classify(const PolicyRequest &request, const GrantEntry *entries, size_t count, int *readEntry) {
-    *readEntry = -1;
+Verdict classify(const PolicyRequest &request) {
     if (request.module == Module::MODBUS_TCP) {
         bool write = isModbusWriteFunction(request.function);
         if (!write && !isModbusReadFunction(request.function)) return Verdict::BAD_ARGS;
@@ -428,13 +379,11 @@ Verdict classify(const PolicyRequest &request, const GrantEntry *entries, size_t
     if (isHttpModule(request.module)) {
         if (request.method == nullptr || request.path == nullptr) return Verdict::BAD_ARGS;
         if (strcmp(request.method, "GET") == 0) return request.hasBody ? Verdict::WRITE : Verdict::READ;
-        size_t pathLength = httpPathLength(request.path);
-        *readEntry = findReadDeclaration(request, entries, count,
-                                         [&](const uint8_t *slot) { return slotMatchesRead(slot, request.method, request.path, pathLength); });
-        return *readEntry >= 0 ? Verdict::READ : Verdict::WRITE;
+        return request.declaredRead ? Verdict::READ : Verdict::WRITE;
     }
 
-    return request.module == Module::TCP && request.payloadLength == 0 ? Verdict::READ : Verdict::WRITE;
+    if (request.module == Module::TCP && request.payloadLength == 0) return Verdict::READ;
+    return request.declaredRead ? Verdict::READ : Verdict::WRITE;
 }
 
 GrantMatch matchWriteGrant(const PolicyRequest &request, const GrantEntry *entries, size_t count, int *entryIndex) {
@@ -443,7 +392,7 @@ GrantMatch matchWriteGrant(const PolicyRequest &request, const GrantEntry *entri
     size_t pathLength = isHttpModule(request.module) ? httpPathLength(request.path) : 0;
     for (size_t i = 0; i < count; i++) {
         const GrantEntry &e = entries[i];
-        if (e.kind != GrantKind::WRITE || !sameTarget(e, request)) continue;
+        if (!sameTarget(e, request)) continue;
         if (e.wildcard) {
             *entryIndex = static_cast<int>(i);
             return GrantMatch::ALLOWED;

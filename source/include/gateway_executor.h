@@ -42,6 +42,9 @@ namespace GatewayExec
         uint16_t port = 0;
         Access access = Access::NONE;
         Writes writes = Writes::ALLOW;
+        // The caller asserts this literal request is a read of its own target
+        // (collector job steps): no grant lookup for a non-GET or a tcp/udp payload.
+        bool declaredRead = false;
         uint32_t timeoutMs = 5000;
         size_t maxBytes = 4096;
         const char* callerId = "";
@@ -124,11 +127,9 @@ namespace GatewayExec
 
     bool httpsAvailable();
 
-    // Write grants and read declarations (one list, replaced as a whole).
+    // Write grants (one list, replaced as a whole).
     void begin(); // loads the list from NVS
     // Validates and persists; `error` gets the reason when it returns false.
     bool setGrants(JsonArrayConst list, char* error, size_t errorSize);
     void grantsToJson(JsonArray out);
-    // Copies the list into `out` (GRANT_MAX_ENTRIES entries); empty on a lock failure.
-    size_t copyGrants(GatewayLogic::GrantEntry* out);
 }

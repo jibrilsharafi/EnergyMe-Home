@@ -340,18 +340,15 @@ namespace Collector
     }
 
     // Validates `doc` into a new table. False with `error` set.
-    static bool _validate(const char* doc, size_t length, bool classify, Table* out, ApplyError* error) {
+    static bool _validate(const char* doc, size_t length, Table* out, ApplyError* error) {
         *out = _newTable();
         if (out->table == nullptr) {
             error->code = "PERSIST_FAILED";
             return false;
         }
-        GatewayLogic::GrantEntry* grants = (GatewayLogic::GrantEntry*)ps_calloc(GatewayLogic::GRANT_MAX_ENTRIES, sizeof(GatewayLogic::GrantEntry));
-        size_t grantCount = grants != nullptr ? GatewayExec::copyGrants(grants) : 0;
         SpiRamAllocator allocator;
-        ValidationContext context = {grants, grantCount, _sha256, _targetCheck, GatewayExec::httpsAvailable(), classify, &allocator};
+        ValidationContext context = {_sha256, _targetCheck, GatewayExec::httpsAvailable(), &allocator};
         bool ok = validateJobSet(doc, length, context, out->table, error);
-        free(grants);
         if (!ok) _freeTable(*out);
         return ok;
     }
@@ -373,7 +370,7 @@ namespace Collector
         }
         Table table = {nullptr, nullptr};
         ApplyError error = {};
-        if (ok) ok = _validate(doc.c_str(), doc.size(), false, &table, &error);
+        if (ok) ok = _validate(doc.c_str(), doc.size(), &table, &error);
         if (!ok) {
             _applied.rev = 0;
             _applied.hasSha = false;
@@ -522,7 +519,7 @@ namespace Collector
         }
         Table table = {nullptr, nullptr};
         ApplyError error = {};
-        if (!_validate(doc.c_str(), doc.size(), true, &table, &error)) {
+        if (!_validate(doc.c_str(), doc.size(), &table, &error)) {
             _setError(newRev, error.code ? error.code : "BAD_JOB", error.job, error.field);
             return false;
         }
@@ -1166,6 +1163,7 @@ namespace Collector
         rq.ip = job.ip;
         rq.port = job.port;
         rq.writes = GatewayExec::Writes::DENY; // jobs are read-only whatever the grants
+        rq.declaredRead = true;
         rq.timeoutMs = step.timeoutMs;
         rq.maxBytes = step.maxBytes;
         rq.callerId = job.id;

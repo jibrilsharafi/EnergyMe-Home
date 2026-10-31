@@ -175,16 +175,11 @@ struct ApplyError {
 
 // What validation needs from the firmware.
 struct ValidationContext {
-    // Read declarations and write grants (`kind: "read"` entries class steps read).
-    const GatewayLogic::GrantEntry* grants;
-    size_t grantCount;
     // SHA-256 of `length` bytes into `out` (mbedTLS on the device, a test stub on the host).
     void (*sha256)(const uint8_t* data, size_t length, uint8_t out[32]);
     // lan-gateway target rules: 0 OK, 1 TARGET_NOT_PRIVATE, 2 TARGET_NOT_ALLOWED.
     int (*targetCheck)(const uint8_t octets[4]);
     bool httpsAvailable;
-    // Apply-time read-only classing; false at boot load (run-time classing replaces it).
-    bool classify;
     // Allocator of the parse JsonDocument (SpiRamAllocator on the device); nullptr = default.
     ArduinoJson::Allocator* allocator;
 };

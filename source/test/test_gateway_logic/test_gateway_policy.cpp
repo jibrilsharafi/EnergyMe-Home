@@ -63,12 +63,6 @@ static bool refused(const char *ip, int64_t port, const char *module, const char
 
 static const uint8_t XWEB_IP[4] = {192, 168, 2, 40};
 
-// The read declaration of the spec scenarios.
-static GrantEntry xwebDeclaration() {
-    return entry("192.168.2.40", 80, "http", "read", "00:11:22:33:44:55",
-                 {"POST /cgi-bin/login.lua", "POST /cgi-bin/datachart.cgi"});
-}
-
 static PolicyRequest httpReq(const char *method, const char *path, Access access = Access::NONE, bool hasBody = false,
                              uint16_t port = 80, Module module = Module::HTTP) {
     PolicyRequest r;
@@ -249,7 +243,6 @@ void test_http_address_drops_query(void) {
 
 void test_grant_valid_entries(void) {
     GrantEntry e = entry("192.168.2.40", 80, "http", nullptr, "00:11:22:33:44:55", {"/rpc/Switch.*"});
-    TEST_ASSERT_TRUE(e.kind == GrantKind::WRITE); // kind defaults to write
     TEST_ASSERT_TRUE(e.module == Module::HTTP);
     TEST_ASSERT_EQUAL_UINT8(192, e.ip[0]);
     TEST_ASSERT_EQUAL_UINT8(40, e.ip[3]);
@@ -269,15 +262,14 @@ void test_grant_valid_entries(void) {
     TEST_ASSERT_TRUE(grantAllowText(w, 0, text, sizeof(text)));
     TEST_ASSERT_EQUAL_STRING("*", text);
 
-    GrantEntry r = xwebDeclaration();
-    TEST_ASSERT_TRUE(r.kind == GrantKind::READ);
-    TEST_ASSERT_EQUAL_UINT8(2, r.allowCount);
-    TEST_ASSERT_TRUE(grantAllowText(r, 1, text, sizeof(text)));
-    TEST_ASSERT_EQUAL_STRING("POST /cgi-bin/datachart.cgi", text);
+    GrantEntry two = entry("192.168.2.40", 80, "http", nullptr, nullptr, {"/cgi-bin/login.lua", "/cgi-bin/set*"});
+    TEST_ASSERT_EQUAL_UINT8(2, two.allowCount);
+    TEST_ASSERT_TRUE(grantAllowText(two, 1, text, sizeof(text)));
+    TEST_ASSERT_EQUAL_STRING("/cgi-bin/set*", text);
 
     entry("192.168.2.50", 502, "modbus_tcp", nullptr, "00:11:22:33:44:66", {"u1/hr100:2=0..400", "u1/co0:4", "u2/hr0:1"});
     entry("10.20.0.5", 502, "modbus_tcp", "write", nullptr, {"u1/hr65535:1"});
-    entry("172.16.0.1", 443, "https", "read", nullptr, {"PUT /a", "PATCH /b", "DELETE /c", "POST /d"});
+    entry("172.16.0.1", 443, "https", "write", nullptr, {"/a", "/b", "/c", "/d"});
 
     // Raw grants take only "*"
     GrantEntry uw = entry("192.168.2.61", 4210, "udp", "write", nullptr, {"*"});
@@ -303,7 +295,7 @@ void test_grant_invalid_entries(void) {
     TEST_ASSERT_TRUE(refused("192.168.2.40", 80, nullptr, nullptr, mac, {"/a"}));
     // Kind
     TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", "admin", mac, {"/a"}));
-    TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", "READ", mac, {"POST /a"}));
+    TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", "WRITE", mac, {"/a"}));
     // Allow count
     TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", nullptr, mac, {}));
     TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", nullptr, mac, {"/a", "/b", "/c", "/d", "/e"}));
@@ -319,16 +311,10 @@ void test_grant_invalid_entries(void) {
     TEST_ASSERT_TRUE(refused("192.168.2.50", 502, "modbus_tcp", nullptr, mac, {"u1/hr100"}));
     TEST_ASSERT_TRUE(refused("192.168.2.50", 502, "modbus_tcp", nullptr, mac, {"u256/hr100:1"}));
     TEST_ASSERT_TRUE(refused("192.168.2.50", 502, "modbus_tcp", nullptr, mac, {"*"}));
-    // HTTP read declarations
-    TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", "read", mac, {"POST /a*"}));
-    TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", "read", mac, {"*"}));
+    // Read declarations are gone: kind "read" is refused for every module
+    TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", "read", mac, {"POST /cgi-bin/datachart.cgi"}));
     TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", "read", mac, {"/cgi-bin/datachart.cgi"}));
-    TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", "read", mac, {"GET /cgi-bin/datachart.cgi"}));
-    TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", "read", mac, {"post /cgi-bin/datachart.cgi"}));
-    TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", "read", mac, {"POST  /cgi-bin/datachart.cgi"}));
-    TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", "read", mac, {"POST/cgi-bin/datachart.cgi"}));
-    TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", "read", mac, {"HEAD /a"}));
-    TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", "read", mac, {"POST cgi-bin/x"}));
+    TEST_ASSERT_TRUE(refused("192.168.2.40", 443, "https", "read", mac, {"/a"}));
     // HTTP write paths
     TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", nullptr, mac, {"rpc/Switch.Set"}));
     TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", nullptr, mac, {"/rpc/Switch.Set?id=0"}));
@@ -370,18 +356,6 @@ void test_grant_48_byte_boundary(void) {
     TEST_ASSERT_TRUE(grantAllowText(e, 0, text, sizeof(text)));
     TEST_ASSERT_EQUAL_STRING(path48, text); // full 48 bytes, no terminator in the slot
 
-    // Read strings: method and space count toward the 48 bytes
-    char read48[49];
-    memcpy(read48, "POST /", 6);
-    memset(read48 + 6, 'b', 42);
-    read48[48] = '\0';
-    char read49[50];
-    memcpy(read49, "POST /", 6);
-    memset(read49 + 6, 'b', 43);
-    read49[49] = '\0';
-    TEST_ASSERT_FALSE(refused("192.168.2.40", 80, "http", "read", nullptr, {read48}));
-    TEST_ASSERT_TRUE(refused("192.168.2.40", 80, "http", "read", nullptr, {read49}));
-
     // Modbus string over 48 bytes
     char modbus49[50];
     memset(modbus49, '0', sizeof(modbus49));
@@ -416,7 +390,6 @@ static void assertEntriesEqual(const GrantEntry &a, const GrantEntry &b) {
     TEST_ASSERT_EQUAL_MEMORY(a.ip, b.ip, 4);
     TEST_ASSERT_EQUAL_UINT16(a.port, b.port);
     TEST_ASSERT_TRUE(a.module == b.module);
-    TEST_ASSERT_TRUE(a.kind == b.kind);
     TEST_ASSERT_EQUAL(a.hasMac, b.hasMac);
     TEST_ASSERT_EQUAL(a.wildcard, b.wildcard);
     if (a.hasMac) TEST_ASSERT_EQUAL_MEMORY(a.mac, b.mac, 6);
@@ -434,7 +407,7 @@ static size_t fillEight(GrantEntry *entries) {
     path48[0] = '/';
     memset(path48 + 1, 'z', 47);
     path48[48] = '\0';
-    entries[0] = xwebDeclaration();
+    entries[0] = entry("192.168.2.40", 80, "http", nullptr, "00:11:22:33:44:55", {"/cgi-bin/login.lua", "/cgi-bin/set*"});
     entries[1] = entry("192.168.2.40", 80, "http", nullptr, "00:11:22:33:44:55", {"/rpc/Switch.*", path48});
     entries[2] = entry("192.168.2.41", 80, "https", nullptr, nullptr, {"*"});
     entries[3] = entry("192.168.2.50", 502, "modbus_tcp", nullptr, "00:11:22:33:44:66", {"u1/hr100:2=0..400", "u1/co0:4"});
@@ -449,11 +422,11 @@ void test_grant_blob_round_trip(void) {
     GrantEntry entries[GRANT_MAX_ENTRIES];
     memset(entries, 0, sizeof(entries));
     size_t n = fillEight(entries);
-    TEST_ASSERT_EQUAL_size_t(1665, GRANT_BLOB_MAX_BYTES);
+    TEST_ASSERT_EQUAL_size_t(1657, GRANT_BLOB_MAX_BYTES);
 
     static uint8_t blob[GRANT_BLOB_MAX_BYTES];
     size_t len = serializeGrants(entries, n, blob, sizeof(blob));
-    TEST_ASSERT_EQUAL_size_t(1665, len);
+    TEST_ASSERT_EQUAL_size_t(1657, len);
     TEST_ASSERT_EQUAL_UINT8(GRANT_BLOB_VERSION, blob[0]);
 
     GrantEntry back[GRANT_MAX_ENTRIES];
@@ -462,11 +435,11 @@ void test_grant_blob_round_trip(void) {
     TEST_ASSERT_EQUAL_size_t(8, count);
     for (size_t i = 0; i < n; i++) assertEntriesEqual(entries[i], back[i]);
 
-    // One entry is 1 + 208 bytes
+    // One entry is 1 + 207 bytes
     TEST_ASSERT_EQUAL_size_t(1 + GRANT_ENTRY_BYTES, serializeGrants(entries, 1, blob, sizeof(blob)));
-    TEST_ASSERT_EQUAL_size_t(209, 1 + GRANT_ENTRY_BYTES);
+    TEST_ASSERT_EQUAL_size_t(208, 1 + GRANT_ENTRY_BYTES);
     // Too small a buffer
-    TEST_ASSERT_EQUAL_size_t(0, serializeGrants(entries, 8, blob, 1664));
+    TEST_ASSERT_EQUAL_size_t(0, serializeGrants(entries, 8, blob, 1656));
 }
 
 void test_grant_blob_corruption_refused(void) {
@@ -475,7 +448,7 @@ void test_grant_blob_corruption_refused(void) {
     size_t n = fillEight(entries);
     static uint8_t blob[GRANT_BLOB_MAX_BYTES];
     size_t len = serializeGrants(entries, n, blob, sizeof(blob));
-    TEST_ASSERT_EQUAL_size_t(1665, len);
+    TEST_ASSERT_EQUAL_size_t(1657, len);
     GrantEntry back[GRANT_MAX_ENTRIES];
     size_t count;
 
@@ -516,88 +489,63 @@ void test_grant_blob_corruption_refused(void) {
 // ============================================================================
 
 void test_classify_http_get(void) {
-    GrantEntry decl = xwebDeclaration();
-    int idx = 7;
     PolicyRequest r = httpReq("GET", "/status");
-    TEST_ASSERT_TRUE(classify(r, &decl, 1, &idx) == Verdict::READ);
-    TEST_ASSERT_EQUAL_INT(-1, idx);
-    TEST_ASSERT_TRUE(classify(r, nullptr, 0, &idx) == Verdict::READ);
+    TEST_ASSERT_TRUE(classify(r) == Verdict::READ);
     // access: "read" never lowers, and is harmless on a read
     r = httpReq("GET", "/status", Access::READ);
-    TEST_ASSERT_TRUE(classify(r, nullptr, 0, &idx) == Verdict::READ);
+    TEST_ASSERT_TRUE(classify(r) == Verdict::READ);
     // GET with a body is write
     r = httpReq("GET", "/rpc", Access::NONE, true);
-    TEST_ASSERT_TRUE(classify(r, nullptr, 0, &idx) == Verdict::WRITE);
+    TEST_ASSERT_TRUE(classify(r) == Verdict::WRITE);
     r = httpReq("GET", "/rpc", Access::READ, true);
-    TEST_ASSERT_TRUE(classify(r, nullptr, 0, &idx) == Verdict::WRITE);
+    TEST_ASSERT_TRUE(classify(r) == Verdict::WRITE);
     // GET raised to write
     r = httpReq("GET", "/rpc/Switch.Set?id=0&on=false", Access::WRITE);
-    TEST_ASSERT_TRUE(classify(r, nullptr, 0, &idx) == Verdict::WRITE);
+    TEST_ASSERT_TRUE(classify(r) == Verdict::WRITE);
     // A GET can reach https too
     r = httpReq("GET", "/", Access::NONE, false, 443, Module::HTTPS);
-    TEST_ASSERT_TRUE(classify(r, nullptr, 0, &idx) == Verdict::READ);
+    TEST_ASSERT_TRUE(classify(r) == Verdict::READ);
 }
 
-void test_classify_http_declared_post(void) {
-    GrantEntry decl = xwebDeclaration();
-    int idx = -5;
+// Without a caller declaration a non-GET is a write, whatever access says.
+void test_classify_http_post_is_write(void) {
     PolicyRequest r = httpReq("POST", "/cgi-bin/datachart.cgi");
-    TEST_ASSERT_TRUE(classify(r, &decl, 1, &idx) == Verdict::READ);
-    TEST_ASSERT_EQUAL_INT(0, idx);
-    r = httpReq("POST", "/cgi-bin/login.lua");
-    TEST_ASSERT_TRUE(classify(r, &decl, 1, &idx) == Verdict::READ);
-    // Body is not part of the match
-    r = httpReq("POST", "/cgi-bin/datachart.cgi", Access::NONE, true);
-    TEST_ASSERT_TRUE(classify(r, &decl, 1, &idx) == Verdict::READ);
-    // Query outside the match
-    r = httpReq("POST", "/cgi-bin/datachart.cgi?lang=en");
-    TEST_ASSERT_TRUE(classify(r, &decl, 1, &idx) == Verdict::READ);
-    // access: "read" accepted
+    TEST_ASSERT_TRUE(classify(r) == Verdict::WRITE);
     r = httpReq("POST", "/cgi-bin/datachart.cgi", Access::READ);
-    TEST_ASSERT_TRUE(classify(r, &decl, 1, &idx) == Verdict::READ);
-    // access: "write" raises it
-    r = httpReq("POST", "/cgi-bin/datachart.cgi", Access::WRITE);
-    TEST_ASSERT_TRUE(classify(r, &decl, 1, &idx) == Verdict::WRITE);
-    // Declaration found at a later index
-    GrantEntry list[2] = {entry("192.168.2.40", 80, "http", nullptr, "00:11:22:33:44:55", {"*"}), decl};
-    r = httpReq("POST", "/cgi-bin/datachart.cgi");
-    TEST_ASSERT_TRUE(classify(r, list, 2, &idx) == Verdict::READ);
-    TEST_ASSERT_EQUAL_INT(1, idx);
+    TEST_ASSERT_TRUE(classify(r) == Verdict::WRITE);
+    const char *methods[] = {"DELETE", "PUT", "PATCH"};
+    for (const char *m : methods) TEST_ASSERT_TRUE_MESSAGE(classify(httpReq(m, "/x")) == Verdict::WRITE, m);
 }
 
-void test_classify_http_undeclared_is_write(void) {
-    GrantEntry decl = xwebDeclaration();
-    int idx = 7;
-    // Undeclared path, even claiming read
-    PolicyRequest r = httpReq("POST", "/cgi-bin/setpoint.cgi", Access::READ);
-    TEST_ASSERT_TRUE(classify(r, &decl, 1, &idx) == Verdict::WRITE);
-    TEST_ASSERT_EQUAL_INT(-1, idx);
-    // No declaration at all
-    r = httpReq("POST", "/cgi-bin/datachart.cgi");
-    TEST_ASSERT_TRUE(classify(r, nullptr, 0, &idx) == Verdict::WRITE);
-    // Another method to a declared path
-    const char *methods[] = {"DELETE", "PUT", "PATCH"};
-    for (const char *m : methods) {
-        r = httpReq(m, "/cgi-bin/datachart.cgi");
-        TEST_ASSERT_TRUE_MESSAGE(classify(r, &decl, 1, &idx) == Verdict::WRITE, m);
-    }
-    // Another port, module or ip
-    r = httpReq("POST", "/cgi-bin/datachart.cgi", Access::NONE, false, 8080);
-    TEST_ASSERT_TRUE(classify(r, &decl, 1, &idx) == Verdict::WRITE);
-    r = httpReq("POST", "/cgi-bin/datachart.cgi", Access::NONE, false, 80, Module::HTTPS);
-    TEST_ASSERT_TRUE(classify(r, &decl, 1, &idx) == Verdict::WRITE);
-    r = httpReq("POST", "/cgi-bin/datachart.cgi");
-    r.ip[3] = 41;
-    TEST_ASSERT_TRUE(classify(r, &decl, 1, &idx) == Verdict::WRITE);
-    // A prefix of the declared path, or a longer path, is not the declared address
-    r = httpReq("POST", "/cgi-bin/datachart");
-    TEST_ASSERT_TRUE(classify(r, &decl, 1, &idx) == Verdict::WRITE);
-    r = httpReq("POST", "/cgi-bin/datachart.cgi/x");
-    TEST_ASSERT_TRUE(classify(r, &decl, 1, &idx) == Verdict::WRITE);
-    // A write entry never classes a request read
-    GrantEntry grant = entry("192.168.2.40", 80, "http", nullptr, "00:11:22:33:44:55", {"/cgi-bin/datachart.cgi"});
-    r = httpReq("POST", "/cgi-bin/datachart.cgi");
-    TEST_ASSERT_TRUE(classify(r, &grant, 1, &idx) == Verdict::WRITE);
+// A caller-declared read (collector job steps) classes the literal request read
+// without any grant lookup, except where the module rules say write.
+void test_classify_declared_read(void) {
+    PolicyRequest r = httpReq("POST", "/cgi-bin/datachart.cgi", Access::NONE, true);
+    r.declaredRead = true;
+    TEST_ASSERT_TRUE(classify(r) == Verdict::READ);
+    r = httpReq("DELETE", "/x", Access::NONE, false, 443, Module::HTTPS);
+    r.declaredRead = true;
+    TEST_ASSERT_TRUE(classify(r) == Verdict::READ);
+    // access: "write" still raises it
+    r = httpReq("POST", "/cgi-bin/datachart.cgi", Access::WRITE);
+    r.declaredRead = true;
+    TEST_ASSERT_TRUE(classify(r) == Verdict::WRITE);
+    // A GET with a body stays a write
+    r = httpReq("GET", "/rpc", Access::NONE, true);
+    r.declaredRead = true;
+    TEST_ASSERT_TRUE(classify(r) == Verdict::WRITE);
+    // tcp/udp payloads
+    r = rawReq(Module::TCP, 4000, 12);
+    r.declaredRead = true;
+    TEST_ASSERT_TRUE(classify(r) == Verdict::READ);
+    r = rawReq(Module::UDP, 47808, 17);
+    r.declaredRead = true;
+    TEST_ASSERT_TRUE(classify(r) == Verdict::READ);
+    // Modbus classes by function code
+    const uint16_t one[] = {215};
+    r = modbusReq(6, "u1/hr100", one, 1);
+    r.declaredRead = true;
+    TEST_ASSERT_TRUE(classify(r) == Verdict::WRITE);
 }
 
 // Paths match as plain strings before '?': no normalization of dot segments,
@@ -614,33 +562,31 @@ void test_match_plain_prefix(void) {
 }
 
 void test_classify_modbus(void) {
-    int idx;
     const uint16_t one[] = {215};
-    TEST_ASSERT_TRUE(classify(modbusReq(1, "u1/co0", nullptr, 0), nullptr, 0, &idx) == Verdict::READ);
-    TEST_ASSERT_TRUE(classify(modbusReq(2, "u1/di0", nullptr, 0), nullptr, 0, &idx) == Verdict::READ);
-    TEST_ASSERT_TRUE(classify(modbusReq(3, "u3/hr3000", nullptr, 0), nullptr, 0, &idx) == Verdict::READ);
-    TEST_ASSERT_TRUE(classify(modbusReq(4, "u1/ir10", nullptr, 0), nullptr, 0, &idx) == Verdict::READ);
-    TEST_ASSERT_TRUE(classify(modbusReq(3, "u3/hr3000", nullptr, 0, Access::READ), nullptr, 0, &idx) == Verdict::READ);
-    TEST_ASSERT_TRUE(classify(modbusReq(5, "u1/co0", one, 1), nullptr, 0, &idx) == Verdict::WRITE);
-    TEST_ASSERT_TRUE(classify(modbusReq(6, "u1/hr100", one, 1), nullptr, 0, &idx) == Verdict::WRITE);
-    TEST_ASSERT_TRUE(classify(modbusReq(15, "u1/co0", one, 1), nullptr, 0, &idx) == Verdict::WRITE);
-    TEST_ASSERT_TRUE(classify(modbusReq(16, "u1/hr100", one, 1, Access::WRITE), nullptr, 0, &idx) == Verdict::WRITE);
+    TEST_ASSERT_TRUE(classify(modbusReq(1, "u1/co0", nullptr, 0)) == Verdict::READ);
+    TEST_ASSERT_TRUE(classify(modbusReq(2, "u1/di0", nullptr, 0)) == Verdict::READ);
+    TEST_ASSERT_TRUE(classify(modbusReq(3, "u3/hr3000", nullptr, 0)) == Verdict::READ);
+    TEST_ASSERT_TRUE(classify(modbusReq(4, "u1/ir10", nullptr, 0)) == Verdict::READ);
+    TEST_ASSERT_TRUE(classify(modbusReq(3, "u3/hr3000", nullptr, 0, Access::READ)) == Verdict::READ);
+    TEST_ASSERT_TRUE(classify(modbusReq(5, "u1/co0", one, 1)) == Verdict::WRITE);
+    TEST_ASSERT_TRUE(classify(modbusReq(6, "u1/hr100", one, 1)) == Verdict::WRITE);
+    TEST_ASSERT_TRUE(classify(modbusReq(15, "u1/co0", one, 1)) == Verdict::WRITE);
+    TEST_ASSERT_TRUE(classify(modbusReq(16, "u1/hr100", one, 1, Access::WRITE)) == Verdict::WRITE);
     // Contradictions both ways
-    TEST_ASSERT_TRUE(classify(modbusReq(6, "u1/hr100", one, 1, Access::READ), nullptr, 0, &idx) == Verdict::BAD_ARGS);
-    TEST_ASSERT_TRUE(classify(modbusReq(3, "u1/hr100", nullptr, 0, Access::WRITE), nullptr, 0, &idx) == Verdict::BAD_ARGS);
+    TEST_ASSERT_TRUE(classify(modbusReq(6, "u1/hr100", one, 1, Access::READ)) == Verdict::BAD_ARGS);
+    TEST_ASSERT_TRUE(classify(modbusReq(3, "u1/hr100", nullptr, 0, Access::WRITE)) == Verdict::BAD_ARGS);
 }
 
 void test_classify_raw(void) {
-    int idx = 7;
     // tcp with an empty payload is a banner read
-    TEST_ASSERT_TRUE(classify(rawReq(Module::TCP, 4000, 0), nullptr, 0, &idx) == Verdict::READ);
-    TEST_ASSERT_TRUE(classify(rawReq(Module::TCP, 4000, 0, Access::WRITE), nullptr, 0, &idx) == Verdict::WRITE);
+    TEST_ASSERT_TRUE(classify(rawReq(Module::TCP, 4000, 0)) == Verdict::READ);
+    TEST_ASSERT_TRUE(classify(rawReq(Module::TCP, 4000, 0, Access::WRITE)) == Verdict::WRITE);
     // tcp with a payload is a write
-    TEST_ASSERT_TRUE(classify(rawReq(Module::TCP, 4000, 12), nullptr, 0, &idx) == Verdict::WRITE);
-    TEST_ASSERT_TRUE(classify(rawReq(Module::TCP, 4000, 12, Access::READ), nullptr, 0, &idx) == Verdict::WRITE);
+    TEST_ASSERT_TRUE(classify(rawReq(Module::TCP, 4000, 12)) == Verdict::WRITE);
+    TEST_ASSERT_TRUE(classify(rawReq(Module::TCP, 4000, 12, Access::READ)) == Verdict::WRITE);
     // every udp send is a write
-    TEST_ASSERT_TRUE(classify(rawReq(Module::UDP, 47808, 17), nullptr, 0, &idx) == Verdict::WRITE);
-    TEST_ASSERT_TRUE(classify(rawReq(Module::UDP, 47808, 17, Access::READ), nullptr, 0, &idx) == Verdict::WRITE);
+    TEST_ASSERT_TRUE(classify(rawReq(Module::UDP, 47808, 17)) == Verdict::WRITE);
+    TEST_ASSERT_TRUE(classify(rawReq(Module::UDP, 47808, 17, Access::READ)) == Verdict::WRITE);
 }
 
 // ============================================================================
@@ -729,10 +675,6 @@ void test_match_http_paths(void) {
     GrantEntry all = entry("192.168.2.40", 80, "http", nullptr, "00:11:22:33:44:55", {"*"});
     TEST_ASSERT_TRUE(matchWriteGrant(httpReq("DELETE", "/anything/at/all"), &all, 1, &idx) == GrantMatch::ALLOWED);
 
-    // A read declaration never admits a write
-    GrantEntry decl = xwebDeclaration();
-    TEST_ASSERT_TRUE(matchWriteGrant(httpReq("POST", "/cgi-bin/datachart.cgi", Access::WRITE), &decl, 1, &idx) ==
-                     GrantMatch::NOT_ALLOWED);
 }
 
 void test_match_raw_wildcard(void) {
@@ -812,7 +754,7 @@ void test_wildcard_flag_never_widens(void) {
     uint8_t blob[GRANT_BLOB_MAX_BYTES];
     size_t length = serializeGrants(&path, 1, blob, sizeof(blob));
     TEST_ASSERT_EQUAL(1 + GRANT_ENTRY_BYTES, length);
-    blob[1 + 8] |= 2; // set the wildcard flag on a path entry
+    blob[1 + 7] |= 2; // set the wildcard flag on a path entry
     GrantEntry out[GRANT_MAX_ENTRIES];
     size_t count = 9;
     TEST_ASSERT_FALSE(deserializeGrants(blob, length, out, GRANT_MAX_ENTRIES, &count));
@@ -837,8 +779,8 @@ void run_gateway_policy_tests(void) {
     RUN_TEST(test_grant_blob_round_trip);
     RUN_TEST(test_grant_blob_corruption_refused);
     RUN_TEST(test_classify_http_get);
-    RUN_TEST(test_classify_http_declared_post);
-    RUN_TEST(test_classify_http_undeclared_is_write);
+    RUN_TEST(test_classify_http_post_is_write);
+    RUN_TEST(test_classify_declared_read);
     RUN_TEST(test_match_plain_prefix);
     RUN_TEST(test_classify_modbus);
     RUN_TEST(test_classify_raw);
