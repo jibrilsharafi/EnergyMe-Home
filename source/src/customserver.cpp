@@ -3872,7 +3872,10 @@ namespace CustomServer
             }
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
-            Secrets::metadataToJson(doc.to<JsonObject>());
+            if (!Secrets::metadataToJson(doc.to<JsonObject>())) {
+                _sendErrorResponse(request, HTTP_CODE_SERVICE_UNAVAILABLE, "Secret store busy, retry");
+                return;
+            }
             _sendJsonResponse(request, doc);
         });
 
@@ -3895,7 +3898,11 @@ namespace CustomServer
                                    outcome.reasonDetail);
                 return;
             }
-            _sendSuccessResponse(request, outcome.deleted ? "Secret deleted" : "No secret with this name");
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            doc["deleted"] = outcome.deleted;
+            _sendJsonResponse(request, doc);
+            releaseMutex(&_apiMutex); // taken by _validateRequest; only the success/error helpers release it
         });
 
         static AsyncCallbackJsonWebHandler *setSecretHandler = new AsyncCallbackJsonWebHandler(
@@ -3906,21 +3913,32 @@ namespace CustomServer
                     _sendErrorResponse(request, HTTP_CODE_FORBIDDEN, "Gateway secrets are not available in community mode");
                     return;
                 }
+                if (request->contentLength() > HTTP_MAX_CONTENT_LENGTH_SECRETS) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Body larger than 1024 bytes");
+                    return;
+                }
                 if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_SECRETS)) return;
-                const char *value = json["value"].as<const char *>();
-                if (!json["name"].is<const char *>() || !json["ip"].is<const char *>() || !json["port"].is<int64_t>() || value == nullptr ||
+                JsonString value = json["value"].as<JsonString>(); // size() keeps an embedded NUL for the value rule to refuse
+                if (!json["name"].is<const char *>() || !json["ip"].is<const char *>() || !json["port"].is<int64_t>() || !json["value"].is<const char *>() ||
                     (!json["mac"].isNull() && !json["mac"].is<const char *>())) {
                     _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Expected {\"name\", \"ip\", \"port\", \"value\", \"mac\" (optional)}");
                     return;
                 }
                 Secrets::Outcome outcome;
                 if (!Secrets::setLocal(json["name"].as<const char *>(), json["ip"].as<const char *>(), json["port"].as<int64_t>(),
-                                       json["mac"] | "", (const uint8_t *)value, strlen(value), outcome)) {
-                    _sendErrorResponse(request, strcmp(outcome.status, "REJECTED") == 0 ? HTTP_CODE_BAD_REQUEST : HTTP_CODE_INTERNAL_SERVER_ERROR,
-                                       outcome.reasonDetail[0] != '\0' ? outcome.reasonDetail : outcome.reasonCode);
+                                       json["mac"] | "", (const uint8_t *)value.c_str(), value.size(), outcome)) {
+                    int code = strcmp(outcome.status, "REJECTED") != 0 ? HTTP_CODE_INTERNAL_SERVER_ERROR
+                               : (outcome.reasonCode != nullptr && strcmp(outcome.reasonCode, "SECRET_STORE_FULL") == 0) ? HTTP_CODE_CONFLICT
+                                                                                                                         : HTTP_CODE_BAD_REQUEST;
+                    _sendErrorResponse(request, code, outcome.reasonDetail[0] != '\0' ? outcome.reasonDetail : outcome.reasonCode);
                     return;
                 }
-                _sendSuccessResponse(request, "Secret stored");
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
+                doc["name"] = outcome.name;
+                doc["set_at"] = outcome.setAt;
+                _sendJsonResponse(request, doc);
+                releaseMutex(&_apiMutex);
             });
         server.addHandler(setSecretHandler);
     }

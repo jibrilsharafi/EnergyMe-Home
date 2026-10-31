@@ -2662,8 +2662,9 @@ paths:
                   max:
                     type: integer
                     example: 16
-                  secrets:
+                  slots:
                     type: array
+                    description: Sorted by name
                     items:
                       type: object
                       properties:
@@ -2678,13 +2679,15 @@ paths:
                           example: 80
                         mac:
                           type: string
-                          description: Bound target MAC, absent when unbound
+                          description: Bound target MAC, "" when unbound
                           example: 00:11:22:33:44:55
                         set_at:
                           type: integer
                           description: Unix seconds
         '403':
           description: Not available in community mode
+        '503':
+          description: Secret store busy, retry
     put:
       summary: Store or rotate a gateway secret
       description: Stores a value bound to one LAN target (private IPv4 and port, plus the target MAC for on-link targets). Rotating a name overwrites its slot. The value is sent in clear on the LAN, behind digest auth; remote delivery uses the encrypted secret_set gateway op instead. At most 16 secrets.
@@ -2723,11 +2726,19 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SuccessResponse'
+                type: object
+                properties:
+                  name:
+                    type: string
+                  set_at:
+                    type: integer
+                    description: Unix seconds
         '400':
           $ref: '#/components/responses/BadRequest'
         '403':
           description: Not available in community mode
+        '409':
+          description: All 16 slots are used (SECRET_STORE_FULL)
         '500':
           $ref: '#/components/responses/InternalServerError'
     delete:
@@ -2746,7 +2757,10 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SuccessResponse'
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
         '400':
           $ref: '#/components/responses/BadRequest'
         '403':
