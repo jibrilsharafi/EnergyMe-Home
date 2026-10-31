@@ -37,6 +37,9 @@ HTTP_PORT = 18080
 MODBUS_PORT = 15020
 UDP_PORT = 19000
 SILENT_PORT = 18081  # accepts TCP, never answers
+TCP_ECHO_PORT = 18082
+MODBUS_ACK_ONLY_PORT = 15021  # acknowledges writes, never answers reads (verify read-back timeout)
+MODBUS_FIXED_READS_PORT = 15022  # acknowledges writes, reads every holding register as 200 (verify mismatch)
 CLOSED_PORT = 18099  # nothing listens here
 CLOSED_UDP_PORT = 19099
 UNUSED_IP = "192.168.2.251"
@@ -94,6 +97,7 @@ class HttpHandler(socketserver.BaseRequestHandler):
             method, path, headers, body = self._read_request()
         except OSError:
             return
+        print(f"http {self.server.server_address[1]} {self.client_address[0]} {method} {path} body={len(body)}", flush=True)
         send = self.request.sendall
         route = path.split("?")[0]
         if route == "/text":
@@ -142,6 +146,48 @@ class SilentHandler(socketserver.BaseRequestHandler):
                 pass
         except OSError:
             pass
+
+
+class TcpEcho(socketserver.BaseRequestHandler):
+    def handle(self) -> None:
+        self.request.settimeout(2)
+        try:
+            data = self.request.recv(8192)
+            print(f"tcp echo {self.client_address[0]} {len(data)} bytes", flush=True)
+            if data:
+                self.request.sendall(data)
+        except OSError:
+            pass
+
+
+class ModbusAckOnly(socketserver.BaseRequestHandler):
+    """Echoes FC5/6/15/16 write requests as their reply and stays silent on reads."""
+
+    fixed_reads = False
+
+    def handle(self) -> None:
+        self.request.settimeout(15)
+        try:
+            while True:
+                frame = self.request.recv(260)
+                if not frame:
+                    return
+                fc = frame[7] if len(frame) > 7 else 0
+                print(f"modbus ack-only fc {fc}", flush=True)
+                if fc in (5, 6):
+                    self.request.sendall(frame[:12])
+                elif fc in (15, 16):
+                    self.request.sendall(frame[:4] + bytes([0, 6]) + frame[6:12])
+                elif fc == 3 and self.fixed_reads:
+                    count = int.from_bytes(frame[10:12], "big")
+                    pdu = bytes([3, 2 * count]) + (200).to_bytes(2, "big") * count
+                    self.request.sendall(frame[:4] + (len(pdu) + 1).to_bytes(2, "big") + frame[6:7] + pdu)
+        except OSError:
+            pass
+
+
+class ModbusFixedReads(ModbusAckOnly):
+    fixed_reads = True
 
 
 class UdpEcho(socketserver.BaseRequestHandler):
@@ -205,6 +251,9 @@ def serve(args: argparse.Namespace) -> int:
     servers = [
         ThreadingTcp(("0.0.0.0", HTTP_PORT), HttpHandler),
         ThreadingTcp(("0.0.0.0", SILENT_PORT), SilentHandler),
+        ThreadingTcp(("0.0.0.0", TCP_ECHO_PORT), TcpEcho),
+        ThreadingTcp(("0.0.0.0", MODBUS_ACK_ONLY_PORT), ModbusAckOnly),
+        ThreadingTcp(("0.0.0.0", MODBUS_FIXED_READS_PORT), ModbusFixedReads),
         socketserver.ThreadingUDPServer(("0.0.0.0", UDP_PORT), UdpEcho),
     ]
     if args.tls_dir:
