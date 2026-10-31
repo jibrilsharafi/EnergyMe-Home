@@ -1559,7 +1559,7 @@ namespace Mqtt
             description = "Enable the gateway from the cloud (system shadow gateway_enabled)";
         } else if (op == GatewayLogic::Op::UNKNOWN) {
             reasonCode = "UNKNOWN_OP";
-            description = "op must be ping, net_scan, http_request, modbus_read, modbus_write, udp_send, tunnel_open or tunnel_close";
+            description = "op must be ping, net_scan, http_request, https_request, tls_probe, modbus_read, modbus_write, udp_send, tcp_request, tunnel_open or tunnel_close";
         } else {
             switch (Gateway::submit(executionId, op, doc["args"])) {
                 case Gateway::SubmitResult::ACCEPTED:
