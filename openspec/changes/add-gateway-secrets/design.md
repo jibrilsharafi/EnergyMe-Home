@@ -89,6 +89,9 @@ Key-name matching would not catch `s00`. The browser redacts every entry of `sec
 - [Collision on `issued_at` between concurrent operators] → One automatic retry in the tool; rare in practice.
 - [Crash during expansion leaves the value in a core dump] → Zeroize narrows the window; core dumps stay on the device unless explicitly fetched.
 - [NVS partition full] → `NVS_WRITE_FAILED` distinct from `SECRET_STORE_FULL`; init logs free entries at DEBUG.
+- [Refusals on an expanded value act as an oracle on it (adversarial review)] → grant and read-declaration matching, the path rules and the request line all see the expanded path, so a `secret` placeholder in a path is refused with `BAD_TEMPLATE`; credentials go in header values or the body. The one-send size check still sees the expanded length, a residual that needs many commands per bit and is left to command rights (Non-Goals).
+- [The store lock was held across the RSA operation] → the replay, kid and slot decision is taken under the lock, the decrypt runs outside it, and the decision is taken again before the write, so the shadow report and REST never wait on RSA; a lock timeout leaves the `secrets` key out of the report (503 on REST) instead of reporting an empty store.
+- [A PSRAM failure while recording an expanded token would leave an echo unscrubbed] → the engine's `expanded` hook can refuse, and the request fails with `NO_MEMORY` before any byte is sent.
 
 ## Migration Plan
 
