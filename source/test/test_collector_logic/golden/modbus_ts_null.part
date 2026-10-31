@@ -1,0 +1,2 @@
+{"v":1,"job":"mb_meters","rev":1,"set":3,"src":"src_9c1d0b44","boot":"a1b2c3d4e5f60718","seq":1,"step":"u3","ph":"step","mod":"modbus_tcp","i":1,"n":1,"off":0,"st":"OK","ts":null,"up":41200,"dq":0,"addr":"u3/hr3000","cnt":2,"len":4,"total":4,"sha":"9f64a747e1b97f131fabb6b447296c9b6f0201e79fb3c5356e6c77e89b6a806a"}
+

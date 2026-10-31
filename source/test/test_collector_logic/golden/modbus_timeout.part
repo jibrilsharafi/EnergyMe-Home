@@ -1,0 +1,1 @@
+{"v":1,"job":"mb_meters","rev":1,"set":3,"src":"src_9c1d0b44","boot":"a1b2c3d4e5f60718","seq":1,"step":"u3","ph":"step","mod":"modbus_tcp","i":1,"n":1,"off":0,"st":"FAILED","ts":1793402820000,"up":41200,"dq":0,"addr":"u3/hr3000","cnt":4,"rc":"TIMEOUT","len":0,"total":0}

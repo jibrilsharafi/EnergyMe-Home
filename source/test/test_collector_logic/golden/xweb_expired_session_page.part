@@ -1,0 +1,83 @@
+{"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":200,"co":5040,"ct":"text/html","win":[1793396880,1793397780],"tr":true,"len":4096,"total":4096,"sha":"0fca97f8396f951e3827c051bfd3507a8981f1437ba2ad2f8358a6e03d49c62d"}
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<title>XWEB EVO</title>
+		<meta name="application-name" content="XWEB EVO">
+		<meta name="description" content="XWEB EVO Client">
+		<meta name="robots" content="noindex,nofollow,noodp,nosnippet,noarchive,noimageindex,noydir">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+		<link rel="icon" sizes="16x16" type="image/vnd.microsoft.icon" href="img/icons/icon16.ico">
+		<link rel="icon" sizes="16x16" type="image/png" href="img/icons/icon16.png">
+		<link rel="icon" sizes="32x32" type="image/png" href="img/icons/icon32.png">
+		<link rel="icon" sizes="64x64" type="image/png" href="img/icons/icon64.png">
+		<link rel="icon" sizes="128x128" type="image/png" href="img/icons/icon128.png">
+		<link rel="icon" sizes="180x180" type="image/png" href="img/icons/icon180.png">
+		<link rel="icon" sizes="192x192" type="image/png" href="img/icons/icon192.png">
+
+		<link rel="stylesheet" href="css/icons.css">
+		<style type="text/css">.icon-2x{font-size:2em;}</style>
+		<link rel="stylesheet" href="css/style.min.css">
+		<link rel="stylesheet" href="css/fullcalendar.css">
+	</head>
+	<body>
+
+		<!--
+		##        #######   ######   #### ##    ##
+		##       ##     ## ##    ##   ##  ###   ##
+		##       ##     ## ##         ##  ####  ##
+		##       ##     ## ##   ####  ##  ## ## ##
+		##       ##     ## ##    ##   ##  ##  ####
+		##       ##     ## ##    ##   ##  ##   ###
+		########  #######   ######   #### ##    ##
+		-->
+		<div id="login-screen">
+			<img id="login-logo" src="img/xweb-logo.png" style="display: none">
+			<!--<progress id="login-progress" min="0" max="100"></progress>-->
+			<p id="login-sysname" class="align-center" style="display: none"></p>
+			<p id="login-error" style="display: none"></p>
+			<div id="login-status" style="display: none" >
+				<i id="login-lock" class="icon-lock icon-2x" style="display: none"></i>
+				<i id="login-alarms" class="icon-alarms icon-2x" style="display: none"></i>
+			</div>
+			<form id="login-form" action="javascript:return false;" onsubmit="javascript:return false;" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" style="display: none">
+				<select id="login-mode" class="select">
+					<option value="standard">Standard Login</option>
+					<option value="ldap">LDAP Login</option>
+				</select>
+				<input id="login-username" type="text" placeholder="username" class="input" autofocus required>
+				<input id="login-password" type="password" placeholder="password" class="input" required>
+				<select id="login-language" class="select"></select>
+				<button id="login-button" class="button">Login</button>
+			</form>
+			<time id="login-date" style="color: rgba(0, 0, 0, 0.5)"></time>
+			<p id="login-macaddress"></p>
+		</div>
+
+		<!--
+		   ###     ######  #### ########  ########
+		  ## ##   ##    ##  ##  ##     ## ##
+		 ##   ##  ##        ##  ##     ## ##
+		##     ##  ######   ##  ##     ## ######
+		#########       ##  ##  ##     ## ##
+		##     ## ##    ##  ##  ##     ## ##
+		##     ##  ######  #### ########  ########
+		-->
+		<aside>
+			<div id="aside-toolbar">
+				<button id="aside-toggle" class="button" style="border-radius: 0; box-shadow: none"><i class="icon-menu icon-2x"></i></button>
+				<div style="flex: 1"></div>
+				<button id="aside-user" class="button" style="border-radius: 0; box-shadow: none"><i class="icon-user"></i> <span>user</span></button>
+			</div>
+			<div class="aside-section align-center">
+				<h1 id="system-logo"><img src="img/xweb-logo-alt.png" style="max-width: 70%"></h1>
+				<p id="system-version">-</p>
+				<p id="system-name">XWEB EVO</p>
+				<time id="system-time">-</time>
+				<div style="margin-top: 0.5rem; display: flex; flex-flow: row nowrap; justify-content: center; align-items: center; align-content: center">
+					<i id="system-home" class="icon-home icon-2x"></i>
+					<i id="system-acq" class="icon-acq icon-2x" style="margin-left: 1rem"></i>
+					<i id="system-alarms" class="icon-warning icon-2x" style="margin-left: 1rem"></i>
+					<i id="system-l
