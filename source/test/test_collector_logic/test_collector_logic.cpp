@@ -87,7 +87,7 @@ const char *const XWEB_JOB = R"({
  "id":"xweb_hist","rev":1,"enabled":true,"source_id":"src_7f3a",
  "target":{"ip":"192.168.1.50","port":80},"module":"http",
  "interval_s":300,"jitter_s":30,"step_timeout_ms":8000,"deadline_s":60,"max_bytes":131072,
- "vars":{"clock_offset_s":5040,"overlap_s":900,"backfill_s":21600,"window_max_s":3600,"user":"energyme",
+ "vars":{"overlap_s":900,"backfill_s":21600,"window_max_s":3600,"user":"energyme",
    "req":"{\"13\":[1,4],\"14\":[1,4],\"15\":[1,4]}"},
  "session":{"ttl_s":1800,"expiry":{"status":[401,403],"marker":"login.lua"},
    "login":[{"id":"login","args":{"method":"POST","path":"/cgi-bin/login.lua",
@@ -156,14 +156,13 @@ static void test_xweb_example_with_declaration(void) {
     TEST_ASSERT_EQUAL_UINT32(300, j.intervalS);
     TEST_ASSERT_EQUAL_UINT32(30, j.jitterS);
     TEST_ASSERT_EQUAL_UINT32(60, j.deadlineS);
-    TEST_ASSERT_EQUAL_INT64(5040, j.clockOffsetS);
     TEST_ASSERT_EQUAL_UINT32(900, j.overlapS);
     TEST_ASSERT_EQUAL_UINT32(21600, j.backfillS);
     TEST_ASSERT_EQUAL_UINT32(3600, j.windowMaxS);
-    TEST_ASSERT_EQUAL_UINT8(6, j.varCount);
-    TEST_ASSERT_EQUAL_STRING("5040", j.vars[0].text);
-    TEST_ASSERT_EQUAL_STRING("energyme", j.vars[4].text);
-    TEST_ASSERT_EQUAL_STRING("{\"13\":[1,4],\"14\":[1,4],\"15\":[1,4]}", j.vars[5].text);
+    TEST_ASSERT_EQUAL_UINT8(5, j.varCount);
+    TEST_ASSERT_EQUAL_STRING("900", j.vars[0].text);
+    TEST_ASSERT_EQUAL_STRING("energyme", j.vars[3].text);
+    TEST_ASSERT_EQUAL_STRING("{\"13\":[1,4],\"14\":[1,4],\"15\":[1,4]}", j.vars[4].text);
     TEST_ASSERT_TRUE(j.hasSession);
     TEST_ASSERT_EQUAL_UINT32(1800, j.ttlS);
     TEST_ASSERT_EQUAL_UINT8(2, j.expiryStatusCount);
@@ -211,7 +210,6 @@ static void test_modbus_example(void) {
     TEST_ASSERT_EQUAL_UINT32(256, j.steps[1].maxBytes);
     TEST_ASSERT_EQUAL_UINT32(1000, j.steps[1].timeoutMs);
     TEST_ASSERT_EQUAL_UINT32(3600, j.backfillS);
-    TEST_ASSERT_EQUAL_INT64(0, j.clockOffsetS);
 }
 
 static void test_both_examples_in_one_set(void) {
@@ -362,7 +360,8 @@ static void test_step_and_var_quotas(void) {
     std::string longValue(2049, 'x');
     expectError(set(job("q", "modbus_tcp", "192.168.1.60", 502, mb, R"(,"vars":{"a":")" + longValue + "\"}")), "QUOTA_EXCEEDED", "q", "vars");
     expectError(set(job("q", "modbus_tcp", "192.168.1.60", 502, mb, R"(,"vars":{"a":true})")), "BAD_JOB", "q", "vars");
-    expectError(set(job("q", "modbus_tcp", "192.168.1.60", 502, mb, R"(,"vars":{"clock_offset_s":604801})")), "BAD_JOB", "q", "clock_offset_s");
+    // No source clock offset: the name is an ordinary var, the source clock is fixed at the source.
+    expectValid(set(job("q", "modbus_tcp", "192.168.1.60", 502, mb, R"(,"vars":{"clock_offset_s":604801})")));
     expectError(set(job("q", "modbus_tcp", "192.168.1.60", 502, mb, R"(,"vars":{"overlap_s":600,"backfill_s":300})")), "BAD_JOB", "q",
                 "backfill_s");
     expectError(set(job("q", "modbus_tcp", "192.168.1.60", 502, mb, R"(,"vars":{"window_max_s":30})")), "BAD_JOB", "q", "window_max_s");
@@ -662,10 +661,6 @@ static void test_binding_hash(void) {
     expectValid(set(replace(replace(XWEB_JOB, R"("max_bytes":131072)", R"("max_bytes":65536)"), R"("step_timeout_ms":8000)",
                             R"("step_timeout_ms":5000)")));
     TEST_ASSERT_EQUAL_UINT8_ARRAY(base, table.jobs[0].bindingHash, 32);
-    // Clock offset alone is not part of the binding (handled separately at adoption).
-    expectValid(set(replace(XWEB_JOB, R"("clock_offset_s":5040)", R"("clock_offset_s":8640)")));
-    TEST_ASSERT_EQUAL_UINT8_ARRAY(base, table.jobs[0].bindingHash, 32);
-    TEST_ASSERT_EQUAL_INT64(8640, table.jobs[0].clockOffsetS);
 }
 
 // ---------------------------------------------------------------------------

@@ -128,7 +128,6 @@ struct Job {
     uint32_t maxBytes;
     bool batch;               // publish: batch
     // Reserved vars, with defaults applied.
-    int64_t clockOffsetS;
     uint32_t overlapS;
     uint32_t backfillS;
     uint32_t windowMaxS;
@@ -248,7 +247,6 @@ struct Window {
 Window computeWindow(uint64_t nowS, uint64_t cursorS, bool cursorSet, uint32_t overlapS, uint32_t backfillS, uint32_t windowS);
 uint32_t halveWindow(uint32_t windowS);                       // down to 60
 uint32_t doubleWindow(uint32_t windowS, uint32_t windowMaxS); // up to window_max_s
-int64_t toSourceClock(uint64_t deviceUtcS, int64_t clockOffsetS); // device UTC - offset
 
 // ---------------------------------------------------------------------------
 // Step outcomes
@@ -293,8 +291,6 @@ struct PartHeader {
     uint64_t upMs;
     bool hasDur;       // `dur` omitted when false
     uint32_t durMs;
-    bool hasCo;        // `co` omitted when false
-    int64_t co;
     bool hasWin;
     int64_t winFrom;
     int64_t winTo;
@@ -308,8 +304,8 @@ struct PartHeader {
 
 // One-line JSON header without the newline. 0 when it would exceed `cap` or
 // PART_HEADER_MAX, or a string field is not printable ASCII. Field order:
-// v job rev set src boot seq step ph mod i n off st ts up dq ps co addr cnt ct
-// win date tr rc rdt rd len total sha dur. Omitted: ps/co/dur without their
+// v job rev set src boot seq step ph mod i n off st ts up dq ps addr cnt ct
+// win date tr rc rdt rd len total sha dur. Omitted: ps/dur without their
 // has-flag; addr/cnt off modbus_tcp; ct off http/https or when absent, empty,
 // longer than 64 bytes or not printable ASCII; win without hasWin; date off
 // http/https data parts or when not 1-40 printable ASCII bytes; tr, rd when

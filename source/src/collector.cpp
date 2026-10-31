@@ -705,8 +705,8 @@ namespace Collector
     struct StepContext {
         const Job* job;
         JobState* state;
-        int64_t nowSource;
-        int64_t cursorSource;
+        int64_t nowS;    // device UTC seconds: window end and start
+        int64_t cursorS;
         bool hasCursor;
         uint8_t tokenCount;
         CapToken tokens[CAPTURES_MAX * 2];
@@ -727,7 +727,7 @@ namespace Collector
         if (strcmp(name, "now") == 0 || strcmp(name, "cursor") == 0) {
             bool ms = strcmp(arg, "ms") == 0;
             if (arg[0] != '\0' && !ms) return GatewayLogic::ResolveStatus::UNKNOWN;
-            int64_t value = name[0] == 'n' ? ctx->nowSource : ctx->cursorSource;
+            int64_t value = name[0] == 'n' ? ctx->nowS : ctx->cursorS;
             n = ms ? snprintf((char*)out->value, out->cap, "%lld000", (long long)value) : snprintf((char*)out->value, out->cap, "%lld", (long long)value);
         } else if (strcmp(name, "var") == 0) {
             for (uint8_t v = 0; v < ctx->job->varCount && n < 0; v++) {
@@ -885,12 +885,10 @@ namespace Collector
         h->tsKnown = CustomTime::isTimeSynched();
         h->tsMs = h->tsKnown ? CustomTime::getUnixTimeMilliseconds() : 0;
         h->upMs = millis64();
-        h->hasCo = true;
-        h->co = job.clockOffsetS;
         h->hasWin = job.usesTime;
         if (job.usesTime) {
-            h->winFrom = toSourceClock(_run.window.from, job.clockOffsetS);
-            h->winTo = toSourceClock(_run.window.to, job.clockOffsetS);
+            h->winFrom = (int64_t)_run.window.from;
+            h->winTo = (int64_t)_run.window.to;
         }
     }
 
@@ -1235,8 +1233,8 @@ namespace Collector
         ctx = StepContext{};
         ctx.job = &job;
         ctx.state = &js;
-        ctx.nowSource = job.usesTime ? toSourceClock(_run.window.to, job.clockOffsetS) : 0;
-        ctx.cursorSource = job.usesTime ? toSourceClock(_run.window.from, job.clockOffsetS) : 0;
+        ctx.nowS = job.usesTime ? (int64_t)_run.window.to : 0;
+        ctx.cursorS = job.usesTime ? (int64_t)_run.window.from : 0;
         Secrets::RequestState secretState;
         GatewayLogic::Resolver chain[] = {{_resolve, &ctx, _expanded}, Secrets::resolver(&secretState)};
         static GatewayExec::Header headers[STEP_HEADERS_MAX];
@@ -1420,13 +1418,9 @@ namespace Collector
                         prev.captureLength[c] = 0;
                     }
                     next.stats = prev.stats;
-                    if (old.clockOffsetS == job.clockOffsetS) {
-                        next.cursorSet = prev.cursorSet;
-                        next.cursorS = prev.cursorS;
-                        next.windowS = prev.windowS;
-                    } else {
-                        next.stats.cursorSet = false; // a corrected offset re-requests the last backfill
-                    }
+                    next.cursorSet = prev.cursorSet;
+                    next.cursorS = prev.cursorS;
+                    next.windowS = prev.windowS;
                 }
                 break;
             }

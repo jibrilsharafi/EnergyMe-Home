@@ -1,4 +1,4 @@
-{"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":200,"co":5040,"ct":"text/html","win":[1793396880,1793397780],"tr":true,"len":4096,"total":4096,"sha":"0fca97f8396f951e3827c051bfd3507a8981f1437ba2ad2f8358a6e03d49c62d"}
+{"v":1,"job":"xweb_hist","rev":1,"set":8,"src":"src_7f3a91c2","boot":"a1b2c3d4e5f60718","seq":1,"step":"chart","ph":"step","mod":"http","i":1,"n":1,"off":0,"st":"OK","ts":1793402820000,"up":41200,"dq":0,"ps":200,"ct":"text/html","win":[1793396880,1793397780],"tr":true,"len":4096,"total":4096,"sha":"0fca97f8396f951e3827c051bfd3507a8981f1437ba2ad2f8358a6e03d49c62d"}
 <!DOCTYPE html>
 <html>
 	<head>

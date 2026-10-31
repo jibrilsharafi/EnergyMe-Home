@@ -28,7 +28,6 @@ constexpr const char *TARGET_NOT_ALLOWED = "TARGET_NOT_ALLOWED";
 constexpr const char *BAD_TEMPLATE = "BAD_TEMPLATE";
 constexpr const char *MODULE_UNAVAILABLE = "MODULE_UNAVAILABLE";
 
-constexpr int64_t CLOCK_OFFSET_MAX_S = 604800;
 constexpr int64_t INTERVAL_MIN_S = 60;
 constexpr int64_t INTERVAL_MAX_S = 86400;
 constexpr int64_t JITTER_MAX_S = 300;
@@ -513,8 +512,7 @@ bool parseVars(Validation &v, Job &job, JsonVariantConst value) {
             const char *name;
             int64_t min, max;
         };
-        static const Reserved RESERVED[] = {{"clock_offset_s", -CLOCK_OFFSET_MAX_S, CLOCK_OFFSET_MAX_S},
-                                            {"overlap_s", 0, OVERLAP_MAX_S},
+        static const Reserved RESERVED[] = {{"overlap_s", 0, OVERLAP_MAX_S},
                                             {"backfill_s", 0, BACKFILL_MAX_S},
                                             {"window_max_s", WINDOW_MIN_S, INTERVAL_MAX_S}};
         const Reserved *reserved = nullptr;
@@ -529,13 +527,12 @@ bool parseVars(Validation &v, Job &job, JsonVariantConst value) {
         if (item.is<int64_t>()) {
             int64_t x = item.as<int64_t>();
             if (reserved != nullptr && (x < reserved->min || x > reserved->max)) return fail(v.error, BAD_JOB, job.id, name);
-            if (reserved == &RESERVED[0]) job.clockOffsetS = x;
-            if (reserved == &RESERVED[1]) job.overlapS = static_cast<uint32_t>(x);
-            if (reserved == &RESERVED[2]) {
+            if (reserved == &RESERVED[0]) job.overlapS = static_cast<uint32_t>(x);
+            if (reserved == &RESERVED[1]) {
                 job.backfillS = static_cast<uint32_t>(x);
                 backfillSet = true;
             }
-            if (reserved == &RESERVED[3]) job.windowMaxS = static_cast<uint32_t>(x);
+            if (reserved == &RESERVED[2]) job.windowMaxS = static_cast<uint32_t>(x);
             snprintf(number, sizeof(number), "%lld", static_cast<long long>(x));
             text = number;
             length = strlen(number);
