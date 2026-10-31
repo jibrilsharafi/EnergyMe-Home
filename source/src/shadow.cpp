@@ -15,6 +15,7 @@
 #include "factory_keys.h"
 #include "gateway.h"
 #include "gateway_executor.h"
+#include "secrets.h"
 #include "tunnel.h"
 #include "globals.h"
 #include "hardware_profile.h"
@@ -655,6 +656,7 @@ static void _reportSystem(JsonDocument& doc) {
     rep["log_level_save"] = AdvancedLogger::logLevelToString(AdvancedLogger::getSaveLevel());
     rep["gateway_enabled"] = Gateway::isEnabled();
     GatewayExec::grantsToJson(rep["gateway_write_grants"].to<JsonArray>());
+    if (!globalCommunityMode) Secrets::shadowToJson(rep["secrets"].to<JsonObject>());
     rep["tunnel_enabled"] = Tunnel::isEnabled();
     Tunnel::portsToJson(rep["tunnel_ports"].to<JsonArray>());
     Tunnel::activeToJson(rep, "tunnel_active");
