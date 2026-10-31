@@ -19,6 +19,7 @@
 #include "constants.h"
 #include "gateway_executor.h"
 #include "gateway_stream.h"
+#include "secrets.h"
 #include "utils.h"
 
 using GatewayLogic::Op;
@@ -408,6 +409,10 @@ namespace Gateway
             }
         }
 
+        Secrets::RequestState secretState;
+        GatewayLogic::Resolver chain[] = {Secrets::resolver(&secretState)};
+        rq.resolvers = chain;
+        rq.resolverCount = 1;
         GatewayExec::Result result;
         GatewayExec::run(rq, result);
         free(headers);
@@ -417,6 +422,7 @@ namespace Gateway
         JsonObject out = _succeed(doc);
         _setNumber(out, "status_code", result.protoStatus);
         _setBool(out, "truncated", result.truncated);
+        if (result.redacted) _setString(out, "redacted", "true");
         // Same s/bin rule as the body: a non-UTF-8 byte in a header would make AWS refuse the whole response.
         if (returnHeaders) _setPayloadOrFail(out, "headers", (const uint8_t*)result.headers, result.headersLength, false, doc, "Could not encode the headers");
         if (doc["status"] == "SUCCEEDED") {
@@ -525,6 +531,37 @@ namespace Gateway
         if (context.received > 0) _setNumber(result, "rtt_avg_ms", context.rttSumMs / context.received);
     }
 
+    static void _mapSecretOutcome(const Secrets::Outcome& outcome, JsonDocument& doc) {
+        const char* detail = outcome.reasonDetail[0] != '\0' ? outcome.reasonDetail : nullptr;
+        if (strcmp(outcome.status, "REJECTED") == 0) _reject(doc, outcome.reasonCode, detail);
+        else _fail(doc, outcome.reasonCode, detail);
+    }
+
+    static void _runSecretSet(JsonObjectConst args, JsonDocument& doc, const char* executionId) {
+        Secrets::Outcome outcome;
+        Secrets::setFromEnvelope(args, outcome);
+        LOG_INFO("Gateway %s: secret_set %s", executionId, outcome.name);
+        if (strcmp(outcome.status, "SUCCEEDED") != 0) {
+            _mapSecretOutcome(outcome, doc);
+            return;
+        }
+        JsonObject out = _succeed(doc);
+        _setString(out, "name", outcome.name);
+        _setNumber(out, "set_at", (int64_t)outcome.setAt);
+        _setString(out, "applied", outcome.applied ? "true" : "false");
+    }
+
+    static void _runSecretDelete(JsonObjectConst args, JsonDocument& doc, const char* executionId) {
+        Secrets::Outcome outcome;
+        Secrets::remove(args, outcome);
+        LOG_INFO("Gateway %s: secret_delete %s", executionId, outcome.name);
+        if (strcmp(outcome.status, "SUCCEEDED") != 0) {
+            _mapSecretOutcome(outcome, doc);
+            return;
+        }
+        _setString(_succeed(doc), "deleted", outcome.deleted ? "true" : "false");
+    }
+
     // NetworkUDP buffers one MTU of payload: it reads at most 1460 bytes, and a
     // longer write is split into two datagrams.
     static constexpr size_t UDP_MAX_DATAGRAM_BYTES = GatewayExec::UDP_REPLY_MAX;
@@ -608,6 +645,10 @@ namespace Gateway
         rq.payload = payloadText;
         rq.payloadBytes = payload;
         rq.payloadBytesLength = payloadLength;
+        Secrets::RequestState secretState;
+        GatewayLogic::Resolver chain[] = {Secrets::resolver(&secretState)};
+        rq.resolvers = chain;
+        rq.resolverCount = 1;
 
         GatewayExec::Result result;
         GatewayExec::run(rq, result);
@@ -875,6 +916,8 @@ namespace Gateway
                 case Op::HTTPS_REQUEST: _runHttp(args, doc, request.executionId, true); break;
                 case Op::TLS_PROBE: _runTlsProbe(args, doc, request.executionId); break;
                 case Op::TCP_REQUEST: _runTcp(args, doc, request.executionId); break;
+                case Op::SECRET_SET: _runSecretSet(args, doc, request.executionId); break;
+                case Op::SECRET_DELETE: _runSecretDelete(args, doc, request.executionId); break;
                 case Op::PING: _runPing(args, doc, request.executionId); break;
                 case Op::UDP_SEND: _runUdp(args, doc, request.executionId); break;
                 case Op::MODBUS_READ: _runModbus(args, doc, request.executionId, false); break;
