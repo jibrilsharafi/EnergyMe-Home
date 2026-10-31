@@ -2486,7 +2486,7 @@ paths:
   /api/v1/gateway:
     get:
       summary: Get the LAN gateway and tunnel switches
-      description: Whether the cloud may run LAN gateway primitives (ping, scan, HTTP, HTTPS, Modbus TCP, raw TCP, UDP) towards private IPv4 targets, the write grants and read declarations, whether it may open a LAN TCP tunnel (needs both switches), and the open tunnel session if any. Always false in community mode.
+      description: Whether the cloud may run LAN gateway primitives (ping, scan, HTTP, HTTPS, Modbus TCP, raw TCP, UDP) towards private IPv4 targets, the write grants, whether it may open a LAN TCP tunnel (needs both switches), and the open tunnel session if any. Always false in community mode.
       tags:
         - MQTT
       responses:
@@ -2510,7 +2510,7 @@ paths:
                   write_grants:
                     type: array
                     maxItems: 8
-                    description: Write grants and read declarations (openspec gateway-modules). Every LAN target is read-only unless a write grant matches; a non-GET HTTP request or a raw tcp/udp payload is read only when a read declaration lists it. At most 3072 bytes as compact JSON. Same list as the system shadow field gateway_write_grants.
+                    description: Write grants (openspec gateway-modules). Every LAN target is read-only unless a write grant matches; a non-GET HTTP request, a GET with a body, a tcp payload and every udp send are writes. The target MAC is not part of a grant; one-shot commands carry it as the optional mac argument. At most 3072 bytes as compact JSON. Same list as the system shadow field gateway_write_grants.
                     items:
                       type: object
                       required:
@@ -2531,18 +2531,14 @@ paths:
                           enum: [http, https, modbus_tcp, tcp, udp]
                         kind:
                           type: string
-                          enum: [write, read]
+                          enum: [write]
                           default: write
-                          description: read entries (read declarations) are not allowed for modbus_tcp
-                        mac:
-                          type: string
-                          description: Target MAC (lowercase aa:bb:cc:dd:ee:ff), required for on-link targets and compared with ARP before the first byte
-                          example: 00:11:22:33:44:66
+                          description: Entries are write grants only; "read" and a mac key are refused
                         allow:
                           type: array
                           minItems: 1
                           maxItems: 4
-                          description: 'http/https write: paths (exact, or prefix ending in *), or ["*"]. http/https read: "<POST|PUT|PATCH|DELETE> <path>". modbus_tcp: u<unit>/<co|hr><start>:<count>[=<min>..<max>]. tcp/udp: 64-hex SHA-256 of an exact payload, or ["*"] (write only). Strings at most 48 bytes.'
+                          description: 'http/https: paths before ? (exact, or prefix ending in *; compared as plain strings), or ["*"]. modbus_tcp: u<unit>/<co|hr><start>:<count>[=<min>..<max>]. tcp/udp: only ["*"]. Strings at most 48 bytes.'
                           items:
                             type: string
                           example: ["u1/hr100:2=0..400"]
@@ -2589,7 +2585,7 @@ paths:
                 write_grants:
                   type: array
                   maxItems: 8
-                  description: Write grants and read declarations (openspec gateway-modules). Every LAN target is read-only unless a write grant matches; a non-GET HTTP request or a raw tcp/udp payload is read only when a read declaration lists it. At most 3072 bytes as compact JSON. Same list as the system shadow field gateway_write_grants.
+                  description: Write grants (openspec gateway-modules). Every LAN target is read-only unless a write grant matches; a non-GET HTTP request, a GET with a body, a tcp payload and every udp send are writes. The target MAC is not part of a grant; one-shot commands carry it as the optional mac argument. At most 3072 bytes as compact JSON. Same list as the system shadow field gateway_write_grants.
                   items:
                     type: object
                     required:
@@ -2610,18 +2606,14 @@ paths:
                         enum: [http, https, modbus_tcp, tcp, udp]
                       kind:
                         type: string
-                        enum: [write, read]
+                        enum: [write]
                         default: write
-                        description: read entries (read declarations) are not allowed for modbus_tcp
-                      mac:
-                        type: string
-                        description: Target MAC (lowercase aa:bb:cc:dd:ee:ff), required for on-link targets and compared with ARP before the first byte
-                        example: 00:11:22:33:44:66
+                        description: Entries are write grants only; "read" and a mac key are refused
                       allow:
                         type: array
                         minItems: 1
                         maxItems: 4
-                        description: 'http/https write: paths (exact, or prefix ending in *), or ["*"]. http/https read: "<POST|PUT|PATCH|DELETE> <path>". modbus_tcp: u<unit>/<co|hr><start>:<count>[=<min>..<max>]. tcp/udp: 64-hex SHA-256 of an exact payload, or ["*"] (write only). Strings at most 48 bytes.'
+                        description: 'http/https: paths before ? (exact, or prefix ending in *; compared as plain strings), or ["*"]. modbus_tcp: u<unit>/<co|hr><start>:<count>[=<min>..<max>]. tcp/udp: only ["*"]. Strings at most 48 bytes.'
                         items:
                           type: string
                         example: ["u1/hr100:2=0..400"]
