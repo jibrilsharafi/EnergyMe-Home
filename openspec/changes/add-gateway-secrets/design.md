@@ -96,4 +96,4 @@ New namespace, no data migration. Firmware without this change rejects the ops w
 
 ## Open Questions
 
-- Exact RSA decrypt time and stack use on the S3 (task 1 records them; they do not change the design unless a fallback triggers).
+- Answered 2026-10-31 (task 1): a `secret_set` takes about 0.5 s on the device and leaves at least 3752 B of the 8 KB gateway stack free (mbedTLS contexts in PSRAM); RSA-OAEP-SHA256 works with the padding set explicitly. Neither fallback applies. Task 7.6 measured the `system` document at 7536 B with 16 maximal secrets, a maximal grant list reported and another pending in desired and 16 `tunnel_ports` (about 7.66 KB with an active tunnel), under 8192 B.
