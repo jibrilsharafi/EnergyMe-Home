@@ -11,18 +11,18 @@
 
 ## 2. Pure logic (`source/lib/secrets_logic`)
 
-- [x] 2.1 Slot blob encode/decode (48 + `len` layout with the 6-byte `mac`, all zero when absent) with every malformation rejected, name, value and `mac` validation (broadcast, multicast refused)
-- [x] 2.2 AAD builder and envelope args parser (types, base64 lengths, `v`/`alg`, digit-string `issued_at`, optional `mac` as the empty AAD field when absent); idempotent repeat compares the MAC too
-- [x] 2.3 Replay decision function (`hwm` ceiling at `now + 300` with persist and WARNING flag before decide, delete and local set, window, idempotent repeat, `hwm`, delete bump, local set `set_at`, `hwm=` in `SECRET_STALE` and `SECRET_CLOCK_SKEW`); test a 2031 `hwm` after clock correction
-- [x] 2.4 Resolver decision on the add-gateway-modules engine (no own tokenizer): secret name rule on `arg`, 8-placeholder cap, module `http`/`https` only (`SECRET_MODULE_NOT_ALLOWED`), `SECRET_NOT_FOUND`, `SECRET_TARGET_MISMATCH` with effective port defaults, MAC rules from the on-link flag (`MAC_REQUIRED` on-link without MAC before the NVS read, `TARGET_MAC_CHANGED` MAC-bound but off-link, ARP compare required when MAC-bound and on-link); host tests drive the real engine with chained encodings, `$${` and untemplated `body_b64`
-- [x] 2.5 Echo scrub (raw value and each token's final encoded form after its chain, 4-byte floor, overlapping matches, cut prefix) with the output bounded by the buffer cap: a 4096-byte body of repeated 4-byte echoes yields at most 4096 bytes ending in a whole placeholder, `truncated` and `redacted` true, and no write past the buffer (guard bytes after it unchanged); same for a 2048-byte header block
+- [x] 2.1 Slot blob encode/decode (48 + `len` layout, 6 reserved zero bytes where an earlier draft kept a slot MAC) with every malformation rejected, name and value validation
+- [x] 2.2 AAD builder and envelope args parser (types, base64 lengths, `v`/`alg`, digit-string `issued_at`, a `mac` key refused, the AAD MAC field always empty); idempotent repeat on name, `set_at` and target
+- [x] 2.3 ~~Replay decision function~~ dropped by the complexity audit (design D4): the last set wins, no `hwm`, no window, no clock
+- [x] 2.4 Resolver decision on the add-gateway-modules engine (no own tokenizer): secret name rule on `arg`, 8-placeholder cap, module `http`/`https` only (`SECRET_MODULE_NOT_ALLOWED`), `SECRET_NOT_FOUND`, `SECRET_TARGET_MISMATCH` with effective port defaults, no MAC rule (the executor checks the request `mac`, design D6a); host tests drive the real engine with chained encodings, `$${` and untemplated `body_b64`
+- [x] 2.5 Echo scrub (raw value and each token's final encoded form after its chain, 4-byte floor, overlapping matches, cut prefix) replaced in place with `****`: a 4096-byte body of repeated 4-byte echoes stays 4096 bytes, `redacted` true, and no write past the buffer (guard bytes after it unchanged)
 - [x] 2.6 Unity tests in `source/test/test_secrets_logic`, green via `pio test -e native` from WSL
   - `source/test/test_secrets_logic`: 66 tests, written from the spec by a separate agent; it found and we fixed a missing include, a `NAME_MAX` clash with the POSIX macro (now `SECRET_NAME_MAX`) and an embedded NUL hiding the rest of a stored name from the name rule.
 
 ## 3. Firmware store
 
 - [x] 3.1 `secrets_ns` in `TO_INITIALIZE_NVS_NAMESPACES_LIST` and `EXCLUDED_NVS_NAMESPACES_LIST`; explicit clear in `_factoryReset()` next to `auth_ns`
-- [x] 3.2 `Secrets` module: boot load and repair, RAM metadata cache under a mutex, `kid` from `cert_pem`, set/rotate/delete with `hwm`, zeroized value reads
+- [x] 3.2 `Secrets` module: boot load and repair, RAM metadata cache under a mutex, `kid` from `cert_pem`, set/rotate/delete, zeroized value reads
 - [x] 3.3 Decrypt path from task 1 hardened into the module (all failures one code, zeroize on every path, `mbedtls_pk_free`)
 
 ## 4. Gateway integration
@@ -35,16 +35,16 @@
 
 ## 5. Local surfaces
 
-- [x] 5.1 `GET/PUT/DELETE /api/v1/secrets` with `mac` (1 KB body cap, 403 community mode, write only in the request callback after the auth middleware), swagger (stage with autocrlf off)
+- [x] 5.1 `GET/PUT/DELETE /api/v1/secrets` without `mac` (1 KB body cap, 403 community mode, write only in the request callback after the auth middleware), swagger (stage with autocrlf off)
 - [x] 5.2 Dev NVS browser: `secrets_ns` entries redacted, POST/DELETE routes refuse it with 403
-- [x] 5.3 `system` shadow `secrets` object from the cache in the positional slot form (`[name, "ip:port", set_at, m]`, no `max`, MAC as a 0/1 flag), at most 1200 B with 16 maximal slots; delta on `secrets` nulled
+- [x] 5.3 `system` shadow `secrets` object from the cache in the positional slot form (`[name, "ip:port", set_at]`, no `max`, no `hwm`), at most 1200 B with 16 maximal slots; delta on `secrets` nulled
 - [x] 5.4 `pio run -e esp32s3-dev` and `-e esp32s3-dev-pro` build
 
 ## 6. Operator tool (`source/utils/gateway_secret.py`)
 
-- [x] 6.1 `uv add cryptography`; `encrypt`, `set`, `delete`, `list`; optional `--mac` with a warning when absent; value from stdin or prompt only; `kid` and `hwm` from the `system` shadow; one retry on `SECRET_STALE` from the `hwm=` description; on `SECRET_CLOCK_SKEW` wait until the tool clock reaches `hwm + 1` when that is at most 310 s ahead, else exit naming `hwm` and the difference; at most 3 envelopes per `set`; fixed 258-byte padded plaintext; prod confirmation
+- [x] 6.1 `uv add cryptography`; `encrypt`, `set`, `delete`, `list`; no `--mac`; value from stdin or prompt only; `kid` from the `system` shadow; `issued_at = now`, one envelope per `set`, no retry; fixed 258-byte padded plaintext; prod confirmation
   - Value from stdin or `getpass` only; extra positional arguments are refused before any AWS call. `cryptography` added with `uv add`.
-- [x] 6.2 Test-only key pair and golden vectors under `source/utils/tests/fixtures/`; pytest for envelope round trip with and without `mac`, AAD bytes, argv refusal, kid mismatch, stale then skew retry with bounded wait
+- [x] 6.2 Test-only key pair and golden vector under `source/utils/tests/fixtures/`; pytest for envelope round trip, AAD bytes, argv refusal, kid mismatch, one envelope per `set`
   - Test-only RSA key pair and golden vectors (with and without `mac`) under `source/utils/tests/fixtures/`; 29 pytest cases (round trip, AAD bytes, tampering, padding size, argv refusal, prod confirmation, MAC rules, kid mismatch, stale-then-skew retry with the bounded wait, at most 3 envelopes).
 
 ## 7. Dev end-to-end (Home .174, Home Pro .80)
@@ -61,3 +61,12 @@
   - Dev `command_events` for Home, last 2 h: 52 `secret_set`/`secret_delete` executions, args hold only the envelope fields, results only `name`/`set_at`/`applied`/`deleted`; no plaintext.
 - [x] 7.6 Combined `system` shadow budget on dev: maximal `gateway_write_grants` (2977 B, 8 `udp` entries with `mac` and four hashes) applied in reported and a second maximal list pending in desired, 16 secrets with 24-character names, 15-character IPs, 5-digit ports and MACs, 16 `tunnel_ports`, an active tunnel; read-only `GetThingShadow` shows the state document under 8192 B and both the cloud grant write and the device report accepted; record the size in design.md D8
   - Both meters: 16 secrets (24-character names, 15-character IPs, 5-digit ports, MACs, 256 B values), a maximal 8-entry grant list reported plus a second maximal list pending in desired, 16 `tunnel_ports`: `secrets` object 1157 B, `system` state 7536 B (about 7.66 KB with an active tunnel's 0.12 KB), under 8192 B; AWS accepted the cloud grant write and the device report.
+
+## 8. Simplification (complexity audit 2026-10-31)
+
+Bench results in sections 1 and 7 predate this section where they mention a slot MAC, `hwm`, `SECRET_STALE`/`SECRET_CLOCK_SKEW` or `${secret:<name>}` placeholders in the scrub.
+
+- [x] 8.1 Slot MAC removed (design D6a): `SlotMeta` without MAC, reserved zero bytes in the blob, `mac` refused in `secret_set` args and REST PUT, no MAC in REST GET or the shadow; the AAD MAC field stays empty, the no-MAC golden vector unchanged
+- [x] 8.2 Replay protection removed (design D4): no `hwm` key, ceiling, window, `SECRET_STALE`, `SECRET_CLOCK_SKEW` or `CLOCK_NOT_SYNCED` for `secret_set`; local set stamps the device clock or 0; tool sends one envelope with `issued_at = now`
+- [x] 8.3 In-place `****` scrub (design D7): no cap, straddle cut, scratch or `bodyCapacity`; host tests for the marker, no growth, longest first and the cut prefix
+- [ ] 8.4 Bench on Home .174 and Home Pro .80: set a secret again (old MAC-bound slots are erased at boot), expand it with the request `mac` (OK, `MAC_REQUIRED` without it, `TARGET_MAC_CHANGED` with another), echo scrubbed to `****` with `redacted: "true"`
