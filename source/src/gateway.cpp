@@ -17,6 +17,7 @@
 #include "ping/ping_sock.h"
 
 #include "constants.h"
+#include "collector.h"
 #include "gateway_executor.h"
 #include "gateway_stream.h"
 #include "secrets.h"
@@ -955,12 +956,16 @@ namespace Gateway
         LOG_DEBUG("Gateway task started");
         bool shouldRun = true;
         while (shouldRun) {
+            // Commands first, then at most one collector step, so a command waits at most one step.
             Request request;
-            if (xQueueReceive(_queue, &request, pdMS_TO_TICKS(GATEWAY_QUEUE_WAIT_MS)) == pdTRUE) {
+            if (xQueueReceive(_queue, &request, pdMS_TO_TICKS(Collector::nextWaitMs(GATEWAY_QUEUE_WAIT_MS))) == pdTRUE) {
+                uint64_t startMs = millis64();
                 _run(request);
                 free(request.args);
+                Collector::noteCommandMs((uint32_t)(millis64() - startMs));
             }
             if (ulTaskNotifyTake(pdTRUE, 0) > 0) shouldRun = false;
+            else Collector::step();
         }
         LOG_DEBUG("Gateway task stopping");
         _taskHandle = nullptr;
