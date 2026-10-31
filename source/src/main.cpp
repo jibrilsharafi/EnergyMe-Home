@@ -27,6 +27,7 @@
 #include "led.h"
 #include "modbustcp.h"
 #include "gateway.h"
+#include "secrets.h"
 #include "tunnel.h"
 #include "mqtt.h"
 #include "custommqtt.h"
@@ -303,6 +304,7 @@ void setup()
 
   if (!globalCommunityMode) {
     LOG_DEBUG("Setting up LAN gateway...");
+    Secrets::begin();
     Gateway::begin();
     LOG_DEBUG("LAN gateway setup done");
     logHeapLedger("lan gateway");
