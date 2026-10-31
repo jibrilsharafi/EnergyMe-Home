@@ -20,8 +20,6 @@
 // web server task, the shadow report in the MQTT task; the metadata cache and
 // every NVS access are guarded by one mutex.
 
-#define SECRETS_HWM_KEY "hwm"
-
 namespace Secrets
 {
     struct Outcome {
@@ -45,8 +43,8 @@ namespace Secrets
     bool removeLocal(const char* name, Outcome& outcome);
 
     // False when the store lock timed out (nothing written to `out`).
-    bool metadataToJson(JsonObject out); // REST: kid, hwm, max, slots sorted by name with name, ip, port, mac ("" when unbound), set_at
-    bool shadowToJson(JsonObject out);   // system shadow: kid, hwm, positional slots sorted by name
+    bool metadataToJson(JsonObject out); // REST: kid, max, slots sorted by name with name, ip, port, mac ("" when unbound), set_at
+    bool shadowToJson(JsonObject out);   // system shadow: kid, positional slots sorted by name
     const char* kid();
 
     // Per-request state of the `secret` resolver: the tokens it expanded, kept

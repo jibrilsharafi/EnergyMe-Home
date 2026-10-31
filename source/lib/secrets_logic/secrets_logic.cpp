@@ -160,24 +160,6 @@ bool unpadPlaintext(const uint8_t *plaintext, size_t size, const uint8_t **value
     return true;
 }
 
-uint64_t applyCeiling(bool clockSynced, uint64_t now, uint64_t hwm, bool *lowered) {
-    *lowered = clockSynced && hwm > now + WINDOW_FUTURE_S;
-    return *lowered ? now + WINDOW_FUTURE_S : hwm;
-}
-
-SetVerdict decideSet(bool clockSynced, uint64_t now, uint64_t hwm, uint64_t issuedAt, bool sameSlot) {
-    if (!clockSynced) return SetVerdict::CLOCK_NOT_SYNCED;
-    if (issuedAt < now && now - issuedAt > WINDOW_PAST_S) return SetVerdict::STALE; // no overflow near UINT64_MAX
-    if (issuedAt > now + WINDOW_FUTURE_S) return SetVerdict::CLOCK_SKEW;
-    if (sameSlot) return SetVerdict::ALREADY_APPLIED;
-    if (issuedAt <= hwm) return SetVerdict::STALE;
-    return SetVerdict::APPLY;
-}
-
-uint64_t hwmAfterDelete(bool clockSynced, uint64_t now, uint64_t hwm) { return clockSynced && now > hwm ? now : hwm; }
-
-uint64_t localSetAt(bool clockSynced, uint64_t now, uint64_t hwm) { return clockSynced && now > hwm + 1 ? now : hwm + 1; }
-
 Decision decide(const GatewayLogic::ResolveContext &context, const char *arg, const SlotMeta *slots, const bool *used, size_t count,
                 size_t placeholders) {
     Decision d{-1, nullptr, nullptr};

@@ -39,7 +39,6 @@ namespace Secrets
 
     static SlotMeta _slots[SLOT_COUNT];
     static bool _used[SLOT_COUNT];
-    static uint64_t _hwm = 0;
     static char _kid[65] = "";
     static bool _loaded = false; // a set before the boot load would overwrite an unseen slot
 
@@ -76,24 +75,8 @@ namespace Secrets
         return false;
     }
 
-    static bool _clockSynced() { return CustomTime::isTimeSynched(); }
-    static uint64_t _now() { return CustomTime::getUnixTime(); }
-
     // Store
     // =====
-
-    static bool _persistHwm(Preferences& preferences, uint64_t hwm) { return preferences.putULong64(SECRETS_HWM_KEY, hwm) == sizeof(uint64_t); }
-
-    // Caller holds the lock and an open read-write namespace. False when the lowered
-    // mark could not be persisted (the RAM value is lowered anyway).
-    static bool _applyCeiling(Preferences& preferences) {
-        bool lowered = false;
-        uint64_t capped = applyCeiling(_clockSynced(), _now(), _hwm, &lowered);
-        if (!lowered) return true;
-        LOG_WARNING("Secrets hwm %llu is ahead of the clock, lowered to %llu", (unsigned long long)_hwm, (unsigned long long)capped);
-        _hwm = capped;
-        return _persistHwm(preferences, _hwm);
-    }
 
     static void _computeKid() {
         char* pem = (char*)ps_calloc(1, PEM_MAX);
@@ -127,7 +110,6 @@ namespace Secrets
         }
         Preferences preferences;
         if (preferences.begin(PREFERENCES_NAMESPACE_SECRETS, false)) {
-            _hwm = preferences.getULong64(SECRETS_HWM_KEY, 0);
             for (size_t i = 0; i < SLOT_COUNT; i++) {
                 char key[4];
                 _slotKey(i, key, sizeof(key));
@@ -151,10 +133,6 @@ namespace Secrets
                     LOG_WARNING("Secret slot %s duplicates a name, erased", key);
                     preferences.remove(key);
                     _used[drop] = false;
-                }
-                if (_used[i] && _slots[i].setAt > _hwm) {
-                    _hwm = _slots[i].setAt;
-                    _persistHwm(preferences, _hwm);
                 }
             }
             preferences.end();
@@ -183,7 +161,7 @@ namespace Secrets
         return -1;
     }
 
-    // Caller holds the lock. Writes one slot blob (rotation is one NVS write) and raises hwm.
+    // Caller holds the lock. Writes one slot blob (rotation is one NVS write).
     static bool _write(Preferences& preferences, int index, const SlotMeta& meta, const uint8_t* value, size_t length) {
         uint8_t* blob = (uint8_t*)ps_malloc(SLOT_MAX_BYTES);
         if (blob == nullptr) return false;
@@ -196,11 +174,6 @@ namespace Secrets
         if (!ok) return false;
         _slots[index] = meta;
         _used[index] = true;
-        // The slot is written; a lost hwm bump is recovered at boot from the slot's set_at.
-        if (meta.setAt > _hwm) {
-            _hwm = meta.setAt;
-            if (!_persistHwm(preferences, _hwm)) LOG_WARNING("Could not persist the secrets hwm");
-        }
         return true;
     }
 
@@ -314,69 +287,50 @@ namespace Secrets
         return value.is<const char*>() && parseIssuedAt(value.as<const char*>(), out);
     }
 
-    // Replay, kid and free-slot checks under the lock (spec order). APPLY means
-    // decrypt and then _commitSet; anything else has filled `outcome`.
-    static SetVerdict _decideSetLocked(Preferences& preferences, const SlotMeta& meta, uint64_t issuedAt, const char* kid, Outcome& outcome,
-                                       int* slot) {
-        if (!_applyCeiling(preferences)) {
-            _fail(outcome, "FAILED", "NVS_WRITE_FAILED", "Could not persist the replay high-water mark");
-            return SetVerdict::STALE;
-        }
+    // Repeat, kid and free-slot checks under the lock (spec order). True means decrypt
+    // or write; false has filled `outcome`. A slot with the same name, set_at and
+    // target is an already applied envelope: success with applied false, no decrypt.
+    static bool _admitSetLocked(const SlotMeta& meta, const char* kid, Outcome& outcome, int* slot) {
         int index = _find(meta.name);
-        bool sameSlot = index >= 0 && _slots[index].setAt == issuedAt && memcmp(_slots[index].ip, meta.ip, 4) == 0 && _slots[index].port == meta.port &&
-                        _slots[index].hasMac == meta.hasMac && (!meta.hasMac || memcmp(_slots[index].mac, meta.mac, 6) == 0);
-        SetVerdict verdict = decideSet(_clockSynced(), _now(), _hwm, issuedAt, sameSlot);
-        switch (verdict) {
-            case SetVerdict::CLOCK_NOT_SYNCED: _fail(outcome, "REJECTED", "CLOCK_NOT_SYNCED", "The device clock is not synchronised"); break;
-            case SetVerdict::STALE: _fail(outcome, "REJECTED", "SECRET_STALE", "hwm=%llu", (unsigned long long)_hwm); break;
-            case SetVerdict::CLOCK_SKEW: _fail(outcome, "REJECTED", "SECRET_CLOCK_SKEW", "hwm=%llu", (unsigned long long)_hwm); break;
-            case SetVerdict::ALREADY_APPLIED:
-                outcome.setAt = issuedAt;
-                outcome.applied = false;
-                break;
-            case SetVerdict::APPLY:
-                if (_kid[0] == '\0' || strcmp(kid, _kid) != 0) {
-                    _fail(outcome, "REJECTED", "SECRET_KEY_MISMATCH", "kid does not match this device certificate");
-                    return SetVerdict::STALE;
-                }
-                if (index < 0) index = _free();
-                if (index < 0) {
-                    _fail(outcome, "REJECTED", "SECRET_STORE_FULL", "%s", STORE_FULL_DETAIL);
-                    return SetVerdict::STALE;
-                }
-                *slot = index;
-                break;
+        if (index >= 0 && _slots[index].setAt == meta.setAt && memcmp(_slots[index].ip, meta.ip, 4) == 0 && _slots[index].port == meta.port &&
+            _slots[index].hasMac == meta.hasMac && (!meta.hasMac || memcmp(_slots[index].mac, meta.mac, 6) == 0)) {
+            outcome.setAt = meta.setAt;
+            outcome.applied = false;
+            return false;
         }
-        return verdict;
+        if (_kid[0] == '\0' || strcmp(kid, _kid) != 0) {
+            _fail(outcome, "REJECTED", "SECRET_KEY_MISMATCH", "kid does not match this device certificate");
+            return false;
+        }
+        if (index < 0) index = _free();
+        if (index < 0) {
+            _fail(outcome, "REJECTED", "SECRET_STORE_FULL", "%s", STORE_FULL_DETAIL);
+            return false;
+        }
+        *slot = index;
+        return true;
     }
 
-    static SetVerdict _decideSet(const SlotMeta& meta, uint64_t issuedAt, const char* kid, Outcome& outcome) {
-        if (!_lockLoaded(outcome)) return SetVerdict::STALE;
-        Preferences preferences;
-        SetVerdict verdict = SetVerdict::STALE;
+    static bool _admitSet(const SlotMeta& meta, const char* kid, Outcome& outcome) {
+        if (!_lockLoaded(outcome)) return false;
         int slot = -1;
-        if (!preferences.begin(PREFERENCES_NAMESPACE_SECRETS, false)) {
-            _fail(outcome, "FAILED", "NVS_WRITE_FAILED", "Could not open the secret store");
-        } else {
-            verdict = _decideSetLocked(preferences, meta, issuedAt, kid, outcome, &slot);
-            preferences.end();
-        }
+        bool admitted = _admitSetLocked(meta, kid, outcome, &slot);
         _unlock();
-        return verdict;
+        return admitted;
     }
 
-    static void _commitSet(const SlotMeta& meta, const uint8_t* value, size_t length, uint64_t issuedAt, const char* kid, Outcome& outcome) {
+    static void _commitSet(const SlotMeta& meta, const uint8_t* value, size_t length, const char* kid, Outcome& outcome) {
         if (!_lockLoaded(outcome)) return;
         Preferences preferences;
         int slot = -1;
         if (!preferences.begin(PREFERENCES_NAMESPACE_SECRETS, false)) {
             _fail(outcome, "FAILED", "NVS_WRITE_FAILED", "Could not open the secret store");
         } else {
-            if (_decideSetLocked(preferences, meta, issuedAt, kid, outcome, &slot) == SetVerdict::APPLY) {
+            if (_admitSetLocked(meta, kid, outcome, &slot)) {
                 if (!_write(preferences, slot, meta, value, length)) {
                     _fail(outcome, "FAILED", "NVS_WRITE_FAILED", "Could not write the secret slot");
                 } else {
-                    outcome.setAt = issuedAt;
+                    outcome.setAt = meta.setAt;
                     outcome.applied = true;
                 }
             }
@@ -416,8 +370,8 @@ namespace Secrets
             meta.setAt = issuedAt;
             const char* envelopeKid = env["kid"].as<const char*>();
             // The RSA operation runs outside the lock so REST and the shadow report never
-            // wait on it; the replay decision is taken again before the write.
-            if (_decideSet(meta, issuedAt, envelopeKid, outcome) == SetVerdict::APPLY) {
+            // wait on it; the slot is chosen again before the write.
+            if (_admitSet(meta, envelopeKid, outcome)) {
                 char aad[AAD_MAX];
                 const uint8_t* value = nullptr;
                 size_t length = 0;
@@ -431,7 +385,7 @@ namespace Secrets
                 } else if (!unpadPlaintext(plaintext, PLAINTEXT_BYTES, &value, &length) || !isValidValue(value, length)) {
                     _fail(outcome, "REJECTED", "BAD_SECRET_VALUE", "The decrypted value breaks the value rules");
                 } else {
-                    _commitSet(meta, value, length, issuedAt, envelopeKid, outcome);
+                    _commitSet(meta, value, length, envelopeKid, outcome);
                 }
             }
         }
@@ -443,14 +397,8 @@ namespace Secrets
 
     enum class Erase { DELETED, ABSENT, FAILED };
 
-    // Caller holds the lock and an open namespace. The hwm bump comes first: a delete
-    // whose bump is lost would reopen replay of the deleted value inside the window.
+    // Caller holds the lock and an open namespace.
     static Erase _erase(Preferences& preferences, const char* name) {
-        uint64_t hwm = hwmAfterDelete(_clockSynced(), _now(), _hwm);
-        if (hwm != _hwm) {
-            if (!_persistHwm(preferences, hwm)) return Erase::FAILED;
-            _hwm = hwm;
-        }
         int index = _find(name);
         if (index < 0) return Erase::ABSENT;
         char key[4];
@@ -466,7 +414,7 @@ namespace Secrets
             _fail(outcome, "FAILED", "NVS_WRITE_FAILED", "Could not open the secret store");
             return;
         }
-        Erase erased = _applyCeiling(preferences) ? _erase(preferences, name) : Erase::FAILED;
+        Erase erased = _erase(preferences, name);
         preferences.end();
         if (erased == Erase::FAILED) _fail(outcome, "FAILED", "NVS_WRITE_FAILED", "Could not update the secret store");
         outcome.deleted = erased == Erase::DELETED;
@@ -499,13 +447,10 @@ namespace Secrets
         if (!preferences.begin(PREFERENCES_NAMESPACE_SECRETS, false)) {
             _fail(outcome, "FAILED", "NVS_WRITE_FAILED", "Could not open the secret store");
         } else {
-            bool ceilingOk = _applyCeiling(preferences);
             int index = _find(name);
             if (index < 0) index = _free();
-            meta.setAt = localSetAt(_clockSynced(), _now(), _hwm);
-            if (!ceilingOk) {
-                _fail(outcome, "FAILED", "NVS_WRITE_FAILED", "Could not persist the replay high-water mark");
-            } else if (index < 0) {
+            meta.setAt = CustomTime::isTimeSynched() ? CustomTime::getUnixTime() : 0;
+            if (index < 0) {
                 _fail(outcome, "REJECTED", "SECRET_STORE_FULL", "%s", STORE_FULL_DETAIL);
             } else if (!_write(preferences, index, meta, value, length)) {
                 _fail(outcome, "FAILED", "NVS_WRITE_FAILED", "Could not write the secret slot");
@@ -542,7 +487,6 @@ namespace Secrets
     bool metadataToJson(JsonObject out) {
         if (!_lock()) return false;
         out["kid"] = _kid;
-        out["hwm"] = _hwm;
         out["max"] = SLOT_COUNT;
         JsonArray list = out["slots"].to<JsonArray>();
         uint8_t order[SLOT_COUNT];
@@ -568,7 +512,6 @@ namespace Secrets
     bool shadowToJson(JsonObject out) {
         if (!_lock()) return false;
         out["kid"] = _kid;
-        out["hwm"] = _hwm;
         JsonArray list = out["slots"].to<JsonArray>();
         uint8_t order[SLOT_COUNT];
         size_t count = _sortedSlots(order);

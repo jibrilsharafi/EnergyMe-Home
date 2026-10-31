@@ -12,7 +12,7 @@
 
 // Pure logic of the gateway secret store (openspec capability: gateway-secrets):
 // slot blob layout, name and value rules, envelope AAD and plaintext padding,
-// replay decisions, the `secret` resolver decision and the echo scrub. NVS,
+// the `secret` resolver decision and the echo scrub. NVS,
 // mbedTLS and JSON live in secrets.cpp; everything here is host-testable.
 
 namespace SecretsLogic {
@@ -25,8 +25,6 @@ inline constexpr size_t SLOT_MAX_BYTES = SLOT_HEADER_BYTES + VALUE_MAX;
 inline constexpr uint8_t SLOT_VERSION = 1;
 inline constexpr size_t PLAINTEXT_BYTES = 258; // u16 length + value + zero padding
 inline constexpr size_t AAD_MAX = 160;
-inline constexpr uint64_t WINDOW_PAST_S = 900;
-inline constexpr uint64_t WINDOW_FUTURE_S = 300;
 inline constexpr size_t PLACEHOLDERS_MAX = 8;
 inline constexpr size_t SCRUB_MIN_BYTES = 4;
 inline constexpr size_t PLACEHOLDER_MAX = 34; // "${secret:" + 24 + "}"
@@ -61,21 +59,6 @@ bool parseIssuedAt(const char *text, uint64_t *out);
 
 // Decrypted plaintext: u16 LE length 1-256, value, zero padding to 258 bytes.
 bool unpadPlaintext(const uint8_t *plaintext, size_t size, const uint8_t **value, size_t *length);
-
-// Replay
-// ======
-
-// Ceiling before every decision: with a synchronised clock, `hwm` above
-// now + 300 comes down to now + 300 (`*lowered` set, the caller persists and warns).
-uint64_t applyCeiling(bool clockSynced, uint64_t now, uint64_t hwm, bool *lowered);
-
-enum class SetVerdict { APPLY, ALREADY_APPLIED, STALE, CLOCK_SKEW, CLOCK_NOT_SYNCED };
-
-// `sameSlot`: a slot with this name, set_at == issuedAt, the same target and MAC.
-SetVerdict decideSet(bool clockSynced, uint64_t now, uint64_t hwm, uint64_t issuedAt, bool sameSlot);
-
-uint64_t hwmAfterDelete(bool clockSynced, uint64_t now, uint64_t hwm);
-uint64_t localSetAt(bool clockSynced, uint64_t now, uint64_t hwm);
 
 // Resolver decision
 // =================
