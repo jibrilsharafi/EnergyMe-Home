@@ -492,7 +492,7 @@ namespace Gateway
         uint32_t pings = GatewayLogic::clampPingCount(count);
         uint32_t perPingTimeoutMs = timeoutMs < PING_REPLY_TIMEOUT_MAX_MS ? timeoutMs : PING_REPLY_TIMEOUT_MAX_MS;
 
-        LOG_INFO("Gateway %s: ping %s x%u", executionId, ip, pings);
+        LOG_DEBUG("Gateway %s: ping %s x%u", executionId, ip, pings);
 
         PingContext context = {xSemaphoreCreateBinary(), 0, 0};
         if (context.done == nullptr) {
@@ -846,7 +846,7 @@ namespace Gateway
             return;
         }
 
-        LOG_INFO("Gateway %s: net_scan%s%s", executionId, service[0] ? " + mDNS " : "", service[0] ? mdnsArg.as<const char*>() : "");
+        LOG_DEBUG("Gateway %s: net_scan%s%s", executionId, service[0] ? " + mDNS " : "", service[0] ? mdnsArg.as<const char*>() : "");
 
         ScanHost* hosts = (ScanHost*)ps_malloc(GATEWAY_SCAN_MAX_HOSTS * sizeof(ScanHost));
         if (hosts == nullptr) {
@@ -930,7 +930,7 @@ namespace Gateway
 
         const char* status = doc["status"] | "FAILED";
         if (strcmp(status, "SUCCEEDED") == 0) {
-            LOG_INFO("Gateway %s: %s succeeded", request.executionId, GatewayLogic::opName(request.op));
+            LOG_DEBUG("Gateway %s: %s succeeded", request.executionId, GatewayLogic::opName(request.op));
         } else {
             LOG_WARNING("Gateway %s: %s %s %s", request.executionId, GatewayLogic::opName(request.op), status,
                         doc["statusReason"]["reasonCode"] | "");

@@ -388,8 +388,6 @@ namespace GatewayExec
         return count;
     }
 
-    static const char* _accessName(Verdict verdict) { return verdict == Verdict::WRITE ? "write" : "read"; }
-
     static void _runChecked(const Request& rq, Result& result, uint32_t start) {
         if (!_validate(rq, result)) return;
 
@@ -523,11 +521,13 @@ namespace GatewayExec
             prepared.resolverMacReason = expansion.macReasonCode;
         }
 
-        if (entryIndex >= 0) {
-            LOG_INFO("Gateway %s: %s %s by entry %d %s:%u %s", rq.callerId, moduleName(rq.module), _accessName(verdict), entryIndex, rq.ip, rq.port,
-                     result.address);
+        // Audit: writes change a LAN device, so they are logged at INFO; reads (every poll) only at DEBUG.
+        if (verdict == Verdict::WRITE) {
+            LOG_INFO("Gateway %s: %s write by entry %d %s:%u %s", rq.callerId, moduleName(rq.module), entryIndex, rq.ip, rq.port, result.address);
+        } else if (entryIndex >= 0) {
+            LOG_DEBUG("Gateway %s: %s read by entry %d %s:%u %s", rq.callerId, moduleName(rq.module), entryIndex, rq.ip, rq.port, result.address);
         } else {
-            LOG_INFO("Gateway %s: %s %s %s:%u %s", rq.callerId, moduleName(rq.module), _accessName(verdict), rq.ip, rq.port, result.address);
+            LOG_DEBUG("Gateway %s: %s read %s:%u %s", rq.callerId, moduleName(rq.module), rq.ip, rq.port, result.address);
         }
 
         result.status = Status::OK;
@@ -556,8 +556,9 @@ namespace GatewayExec
         _runChecked(rq, result, start);
         if (result.status == Status::OK && _resultScrub != nullptr && rq.resolverCount > 0) _resultScrub(rq, result);
         result.totalMs = elapsedSince(start);
+        // Callers report failures (command status, collector health); a failing poll must not warn every interval.
         if (result.status != Status::OK) {
-            LOG_WARNING("Gateway %s: %s %s %s %s", rq.callerId, moduleName(rq.module), result.status == Status::REJECTED ? "REJECTED" : "FAILED",
+            LOG_DEBUG("Gateway %s: %s %s %s %s", rq.callerId, moduleName(rq.module), result.status == Status::REJECTED ? "REJECTED" : "FAILED",
                         result.reasonCode, result.reasonDetail);
         }
     }
