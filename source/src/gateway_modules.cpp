@@ -72,6 +72,7 @@ namespace GatewayExec
         // Allocated before connecting, so a write is never sent without room for its reply.
         result.headers = (char*)ps_malloc(HEADER_BLOCK_MAX + 1);
         result.body = (uint8_t*)ps_malloc(rq.maxBytes);
+        if (result.body != nullptr) result.bodyCapacity = rq.maxBytes;
         uint8_t* chunk = (uint8_t*)ps_malloc(READ_CHUNK_BYTES);
         if (result.headers == nullptr || result.body == nullptr || chunk == nullptr) {
             free(chunk);
@@ -271,6 +272,7 @@ namespace GatewayExec
     void runTcp(const Prepared& prepared, Result& result) {
         const Request& rq = *prepared.request;
         result.body = (uint8_t*)ps_malloc(rq.maxBytes);
+        if (result.body != nullptr) result.bodyCapacity = rq.maxBytes;
         if (result.body == nullptr) {
             setOutcome(result, Status::FAILED, "NO_MEMORY", "Could not allocate the reply buffer");
             return;
@@ -336,6 +338,7 @@ namespace GatewayExec
         }
 
         result.body = (uint8_t*)ps_malloc(UDP_REPLY_MAX);
+        if (result.body != nullptr) result.bodyCapacity = UDP_REPLY_MAX;
         if (result.body == nullptr) {
             udp.stop();
             setOutcome(result, Status::FAILED, "NO_MEMORY", "Could not allocate the reply buffer");

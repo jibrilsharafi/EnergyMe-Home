@@ -718,7 +718,8 @@ namespace Secrets
             result.headers[result.headersLength] = '\0';
         }
         if (result.body != nullptr && result.bodyLength > 0) {
-            result.bodyLength = scrub(*state, result.body, result.bodyLength, request.maxBytes, &result.truncated, &redacted);
+            size_t cap = result.bodyCapacity < request.maxBytes ? result.bodyCapacity : request.maxBytes;
+            result.bodyLength = scrub(*state, result.body, result.bodyLength, cap, &result.truncated, &redacted);
         }
         result.redacted = redacted;
     }
