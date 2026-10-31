@@ -383,6 +383,7 @@ namespace Collector
         _loadStored();
         if (_enabled) _allocateRing(); // at boot, before PSRAM fragments
         bucketInit(&_bucket, BUDGET_DEFAULT, millis64());
+        _publishSnapshot();
         LOG_INFO("Collector ready (%s)", _enabled ? "enabled" : "disabled");
     }
 
@@ -416,10 +417,10 @@ namespace Collector
         }
         JsonObject e = reported["apply_error"].to<JsonObject>();
         e["rev"] = _applied.errorRev;
-        e["code"] = _applied.errorCode;
-        if (_applied.errorJob[0] != '\0') e["job"] = _applied.errorJob;
+        e["code"] = (const char*)_applied.errorCode;
+        if (_applied.errorJob[0] != '\0') e["job"] = (const char*)_applied.errorJob;
         else e["job"] = nullptr;
-        if (_applied.errorField[0] != '\0') e["field"] = _applied.errorField;
+        if (_applied.errorField[0] != '\0') e["field"] = (const char*)_applied.errorField;
         else e["field"] = nullptr;
     }
 
@@ -450,13 +451,13 @@ namespace Collector
         for (uint8_t i = 0; i < _reportedJobs.count; i++) {
             const JobSnapshot& j = _reportedJobs.jobs[i];
             JsonObject e = jobs.add<JsonObject>();
-            e["id"] = j.id;
+            e["id"] = (const char*)j.id;
             e["rev"] = j.rev;
             e["st"] = healthStateName(j.health.st);
             e["since"] = j.health.since;
-            if (j.health.code[0] != '\0') e["code"] = j.health.code;
+            if (j.health.code[0] != '\0') e["code"] = (const char*)j.health.code;
             else e["code"] = nullptr;
-            if (j.health.detail[0] != '\0') e["detail"] = j.health.detail;
+            if (j.health.detail[0] != '\0') e["detail"] = (const char*)j.health.detail;
             else e["detail"] = nullptr;
         }
     }
@@ -567,7 +568,7 @@ namespace Collector
         out["enabled"] = (bool)_enabled;
         out["active"] = snap->runActive;
         out["rev"] = _applied.rev;
-        out["boot"] = _boot;
+        out["boot"] = (const char*)_boot;
         JsonObject queue = out["queue"].to<JsonObject>();
         if (_take(_queueMutex(), 100)) {
             queue["bytes"] = _queue.ready() ? _queue.bytes() : 0;
@@ -585,7 +586,7 @@ namespace Collector
             if (only >= 0 && i != only) continue;
             const JobSnapshot& j = snap->jobs[i];
             JsonObject e = jobs.add<JsonObject>();
-            e["id"] = j.id;
+            e["id"] = (const char*)j.id; // copied: a char array would be stored by pointer
             e["rev"] = j.rev;
             e["st"] = healthStateName(j.health.st);
             e["code"] = j.health.code[0] ? j.health.code : nullptr;
@@ -624,7 +625,7 @@ namespace Collector
         char number[16];
         snprintf(number, sizeof(number), "%u", lists["rev"].as<unsigned>());
         result["rev"]["s"] = number;
-        result["boot"]["s"] = _boot;
+        result["boot"]["s"] = (const char*)_boot;
         setText("queue", lists["queue"]);
         setText("budget", lists["budget"]);
         // The cut applies to the whole result as published (the jobs text is escaped inside it).
