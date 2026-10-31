@@ -653,6 +653,8 @@ namespace GatewayExec
             }
             _unlockGrants();
             if (!persisted) snprintf(error, errorSize, "Could not persist the write grants");
+        } else if (valid) {
+            snprintf(error, errorSize, "Could not lock the write grants");
         }
         free(entries);
         free(blob);
