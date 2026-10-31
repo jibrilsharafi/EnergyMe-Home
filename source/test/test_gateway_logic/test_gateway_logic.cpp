@@ -478,6 +478,10 @@ void test_utf8_truncated_to_nothing_is_not_text(void) {
     TEST_ASSERT_FALSE(text(lone, sizeof(lone), true, &n));
 }
 
+void run_gateway_policy_tests(void);
+void run_gateway_template_tests(void);
+void run_gateway_stream_tests(void);
+
 int main(int, char **) {
     UNITY_BEGIN();
     RUN_TEST(test_parse_op_known_and_unknown);
@@ -518,5 +522,8 @@ int main(int, char **) {
     RUN_TEST(test_utf8_empty_is_not_text);
     RUN_TEST(test_utf8_truncated_at_cap);
     RUN_TEST(test_utf8_truncated_to_nothing_is_not_text);
+    run_gateway_policy_tests();
+    run_gateway_template_tests();
+    run_gateway_stream_tests();
     return UNITY_END();
 }
