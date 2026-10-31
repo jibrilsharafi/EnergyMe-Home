@@ -23,7 +23,7 @@ inline constexpr size_t RESPONSE_CAP_BYTES = 4096;
 inline constexpr size_t HTTP_HEADER_CAP_BYTES = 2048; // Status line + headers of a LAN reply
 inline constexpr size_t HTTP_PATH_MAX_LEN = 512;
 
-enum class Op { UNKNOWN, PING, NET_SCAN, HTTP_REQUEST, MODBUS_READ, MODBUS_WRITE, UDP_SEND, TUNNEL_OPEN, TUNNEL_CLOSE };
+enum class Op { UNKNOWN, PING, NET_SCAN, HTTP_REQUEST, MODBUS_READ, MODBUS_WRITE, UDP_SEND, TUNNEL_OPEN, TUNNEL_CLOSE, TCP_REQUEST, HTTPS_REQUEST, TLS_PROBE };
 
 Op parseOp(const char *op);
 const char *opName(Op op);
@@ -53,8 +53,9 @@ bool isValidHeaderName(const char *name);
 bool isValidHeaderValue(const char *value);
 
 // Headers the firmware owns because they frame the request (Host, Content-Length,
-// Transfer-Encoding, Connection, ...). Case-insensitive. Letting the cloud set
-// them would allow request smuggling against lenient LAN servers.
+// Transfer-Encoding, Connection, ...) and method-override headers, which would
+// let the server run another method than the one classed. Case-insensitive.
+// Letting the cloud set them would allow request smuggling against lenient LAN servers.
 bool isReservedHeaderName(const char *name);
 
 // ---------------------------------------------------------------------------

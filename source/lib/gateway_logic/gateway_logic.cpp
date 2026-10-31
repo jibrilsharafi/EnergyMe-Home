@@ -23,6 +23,9 @@ constexpr OpEntry OPS[] = {
     {"udp_send", Op::UDP_SEND},
     {"tunnel_open", Op::TUNNEL_OPEN},
     {"tunnel_close", Op::TUNNEL_CLOSE},
+    {"tcp_request", Op::TCP_REQUEST},
+    {"https_request", Op::HTTPS_REQUEST},
+    {"tls_probe", Op::TLS_PROBE},
 };
 
 void putU16(uint8_t *p, uint16_t v) {
@@ -195,7 +198,8 @@ int hexValue(char c) {
 bool isReservedHeaderName(const char *name) {
     if (name == nullptr) return true;
     static const char *const RESERVED[] = {"host", "content-length", "transfer-encoding", "connection", "expect",
-                                           "te", "upgrade", "keep-alive", "proxy-connection", "trailer"};
+                                           "te", "upgrade", "keep-alive", "proxy-connection", "trailer",
+                                           "x-http-method-override", "x-http-method", "x-method-override"};
     for (const char *r : RESERVED) {
         if (equalsIgnoreCase(name, r)) return true;
     }
