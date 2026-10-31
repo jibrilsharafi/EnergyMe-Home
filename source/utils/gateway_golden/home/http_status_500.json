@@ -1,0 +1,14 @@
+{
+  "result": {
+    "body": {
+      "S": "boom\n"
+    },
+    "status_code": {
+      "S": "500"
+    },
+    "truncated": {
+      "B": false
+    }
+  },
+  "status": "SUCCEEDED"
+}

@@ -1,0 +1,7 @@
+{
+  "status": "REJECTED",
+  "statusReason": {
+    "reasonCode": "BAD_ARGS",
+    "reasonDescription": "method must be GET, POST, PUT, PATCH or DELETE"
+  }
+}

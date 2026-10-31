@@ -1,0 +1,14 @@
+{
+  "result": {
+    "body": {
+      "S": "POST 14 name=value&x=1"
+    },
+    "status_code": {
+      "S": "200"
+    },
+    "truncated": {
+      "B": false
+    }
+  },
+  "status": "SUCCEEDED"
+}

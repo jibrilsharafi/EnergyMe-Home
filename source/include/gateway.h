@@ -9,9 +9,10 @@
 #include "gateway_logic.h"
 
 // LAN gateway (openspec capability: lan-gateway). The cloud sends one generic
-// primitive per IoT Command (ping, net_scan, http_request, modbus_read/write,
-// udp_send) and the device runs it against private IPv4 targets. All device
-// knowledge lives in the cloud.
+// primitive per IoT Command (ping, net_scan, http_request, https_request,
+// tls_probe, modbus_read/write, udp_send, tcp_request) and the device runs it
+// against private IPv4 targets through the executor (gateway_executor.h). All
+// device knowledge lives in the cloud.
 //
 // Threading: submit() and takeResult() are called only by the MQTT task, which
 // owns every publish. The primitives run in the gateway task, one at a time.
@@ -48,6 +49,7 @@ namespace Gateway
     enum class TargetCheck { OK, NOT_PRIVATE, NOT_ALLOWED };
     TargetCheck validateTarget(const char* ip, uint8_t octets[4]);
     const char* targetCheckDescription(TargetCheck check);
+    const char* targetCheckReasonCode(TargetCheck check); // nullptr for OK
 
     // Decodes `args` (a JSON object, or a string holding its base64 encoding) into
     // `out`. False when neither form parses or the decoded JSON exceeds GATEWAY_ARGS_MAX_BYTES.

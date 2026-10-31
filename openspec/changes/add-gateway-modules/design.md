@@ -140,6 +140,9 @@ Pass sets the runtime pre-handshake threshold to the measured internal-heap peak
 - [`return_headers` puts session cookies or tokens into `command_events`, which is archived] → off by default; add-lan-collector keeps captured session values on the device and never publishes the header block of a login step it captured from.
 - [HTTPS plaintext at the 5760 B limit needs several TCP sends once TLS framing is added] → allowed inside the deadline; the one-send rule protected naive HTTP parsers, and TLS reassembles records anyway.
 - [128 KiB PSRAM allocations fragment PSRAM] → per-request alloc and free, ceiling only reached by collector jobs that ask for it.
+- [A query-string method override (`?_method=DELETE`, honoured by Rails, Laravel, Express) on a declared-read POST] → the query is outside the read-declaration match by design (D3), so this is the same cloud-side residual as an operation-in-body endpoint: the infra jobs tool must not declare read a path whose server honours `_method`. Header overrides are refused on the device, also in their `X_HTTP_Method_Override` spelling (CGI servers map `_` and `-` to one variable), found by the adversarial review.
+- [Dot segments with matrix parameters (`/..;/`), normalized by servers that strip `;params`] → `isSafeGrantPath` tests each segment up to its first `;`, found by the adversarial review.
+- [A corrupted grant blob widening an entry] → deserialization re-validates every entry through its text form and refuses a wildcard flag whose slots are not exactly `*`; a flipped `kind` byte on a `tcp`/`udp` entry would re-validate, and is left to the NVS entry CRC (the 208 B layout has no spare byte for a checksum).
 
 ## Migration Plan
 

@@ -1,0 +1,7 @@
+{
+  "status": "FAILED",
+  "statusReason": {
+    "reasonCode": "MODBUS_EXCEPTION",
+    "reasonDescription": "Modbus exception code 2"
+  }
+}

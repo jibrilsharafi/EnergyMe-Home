@@ -1,0 +1,7 @@
+{
+  "status": "FAILED",
+  "statusReason": {
+    "reasonCode": "NO_REPLY",
+    "reasonDescription": "No datagram from the target within wait_ms"
+  }
+}

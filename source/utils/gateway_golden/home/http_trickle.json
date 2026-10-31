@@ -1,0 +1,14 @@
+{
+  "result": {
+    "body": {
+      "S": "slow but complete\n"
+    },
+    "status_code": {
+      "S": "200"
+    },
+    "truncated": {
+      "B": false
+    }
+  },
+  "status": "SUCCEEDED"
+}

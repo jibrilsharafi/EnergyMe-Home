@@ -1,0 +1,7 @@
+{
+  "status": "REJECTED",
+  "statusReason": {
+    "reasonCode": "UNKNOWN_OP",
+    "reasonDescription": "op must be ping, net_scan, http_request, https_request, tls_probe, modbus_read, modbus_write, udp_send, tcp_request, tunnel_open or tunnel_close"
+  }
+}

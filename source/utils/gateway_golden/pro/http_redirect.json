@@ -1,0 +1,14 @@
+{
+  "result": {
+    "body": {
+      "S": "moved\n"
+    },
+    "status_code": {
+      "S": "302"
+    },
+    "truncated": {
+      "B": false
+    }
+  },
+  "status": "SUCCEEDED"
+}

@@ -1,0 +1,7 @@
+{
+  "status": "REJECTED",
+  "statusReason": {
+    "reasonCode": "TARGET_NOT_PRIVATE",
+    "reasonDescription": "Target must be a private IPv4 literal"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "result": {
+    "body": {
+      "S": "x-test=golden"
+    },
+    "status_code": {
+      "S": "200"
+    },
+    "truncated": {
+      "B": false
+    }
+  },
+  "status": "SUCCEEDED"
+}

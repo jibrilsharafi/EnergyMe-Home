@@ -1,0 +1,7 @@
+{
+  "status": "REJECTED",
+  "statusReason": {
+    "reasonCode": "BAD_ARGS",
+    "reasonDescription": "values must be 0/1 for coils or 0-65535 for registers"
+  }
+}

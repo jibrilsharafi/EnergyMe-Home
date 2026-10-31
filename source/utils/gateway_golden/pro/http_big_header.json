@@ -1,0 +1,7 @@
+{
+  "status": "FAILED",
+  "statusReason": {
+    "reasonCode": "BAD_RESPONSE",
+    "reasonDescription": "Missing, oversized or malformed HTTP header"
+  }
+}

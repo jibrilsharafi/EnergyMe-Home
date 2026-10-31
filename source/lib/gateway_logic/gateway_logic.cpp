@@ -23,6 +23,9 @@ constexpr OpEntry OPS[] = {
     {"udp_send", Op::UDP_SEND},
     {"tunnel_open", Op::TUNNEL_OPEN},
     {"tunnel_close", Op::TUNNEL_CLOSE},
+    {"tcp_request", Op::TCP_REQUEST},
+    {"https_request", Op::HTTPS_REQUEST},
+    {"tls_probe", Op::TLS_PROBE},
 };
 
 void putU16(uint8_t *p, uint16_t v) {
@@ -195,9 +198,15 @@ int hexValue(char c) {
 bool isReservedHeaderName(const char *name) {
     if (name == nullptr) return true;
     static const char *const RESERVED[] = {"host", "content-length", "transfer-encoding", "connection", "expect",
-                                           "te", "upgrade", "keep-alive", "proxy-connection", "trailer"};
+                                           "te", "upgrade", "keep-alive", "proxy-connection", "trailer",
+                                           "x-http-method-override", "x-http-method", "x-method-override"};
+    // CGI servers map '_' and '-' to the same HTTP_* variable: compare with '_' as '-'.
+    char normalized[32];
+    size_t length = strlen(name);
+    if (length >= sizeof(normalized)) return false;
+    for (size_t i = 0; i <= length; i++) normalized[i] = name[i] == '_' ? '-' : name[i];
     for (const char *r : RESERVED) {
-        if (equalsIgnoreCase(name, r)) return true;
+        if (equalsIgnoreCase(normalized, r)) return true;
     }
     return false;
 }
