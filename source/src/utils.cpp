@@ -1158,6 +1158,15 @@ static void _factoryReset() { // No logger here it is likely destroyed already
         Serial.println("[ERROR] Failed to clear the web password");
     }
 
+    // Excluded from clearAllPreferences() so backups never carry it; cleared here explicitly.
+    Preferences secretsPreferences;
+    if (secretsPreferences.begin(PREFERENCES_NAMESPACE_SECRETS, false)) {
+        secretsPreferences.clear();
+        secretsPreferences.end();
+    } else {
+        Serial.println("[ERROR] Failed to clear the gateway secrets");
+    }
+
     // clearAllPreferences() deliberately skips every "nvs.*" namespace (see its own
     // comment), which includes the WiFi driver's own persisted association
     // (nvs.net80211 - the same store CustomWifi::_hasStoredCredentials() reads and
