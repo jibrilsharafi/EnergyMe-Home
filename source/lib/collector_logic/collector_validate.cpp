@@ -2,7 +2,7 @@
 // Copyright (C) 2026 Jibril Sharafi
 
 // Job set validation (spec "Job schema and quotas", "Jobs are read-only",
-// "Placeholders and encodings", "Captures") and the binding hash. Stages run
+// "Placeholders and encodings", "Captures"). Stages run
 // over the whole set in the spec order, so the first failure reported is the
 // first failure of the earliest stage. Iterative: no recursion over steps.
 
