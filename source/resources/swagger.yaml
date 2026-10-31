@@ -2689,7 +2689,7 @@ paths:
                         rev: {type: integer}
                         st: {type: string, enum: [ok, err, wait, off]}
                         code: {type: string, nullable: true}
-                        last_ok: {type: integer, description: Unix seconds, 0 when never}
+                        last_ok: {type: integer, description: 'Unix seconds, 0 when never'}
                         last_err: {type: string, nullable: true}
                         last_err_detail: {type: string, nullable: true}
                         last_err_ts: {type: integer}
