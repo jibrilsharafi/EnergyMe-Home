@@ -132,6 +132,11 @@ class HttpHandler(socketserver.BaseRequestHandler):
             send(_response("200 OK", f"{method} {len(body)} ".encode() + body))
         elif route == "/headers":
             send(_response("200 OK", f"x-test={headers.get('x-test', '')}".encode()))
+        elif route == "/drip":  # one byte every 40 ms for 15 s, close-delimited: the deadline must still end the read
+            send(b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n")
+            for _ in range(375):
+                send(b"d")
+                time.sleep(0.04)
         elif route == "/status500":
             send(_response("500 Internal Server Error", b"boom\n"))
         else:
