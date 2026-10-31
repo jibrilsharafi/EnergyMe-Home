@@ -2639,6 +2639,102 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /api/v1/collector:
+    get:
+      summary: Get the LAN collector switch and status
+      description: Switch and health of the LAN collector (openspec lan-collector), which runs cloud-defined read-only polling jobs through the LAN gateway and publishes the raw replies. Jobs run only while both this switch and the gateway switch are on. Jobs are defined by the cloud only (collector shadow); no captured value, secret, var value or expanded request is ever returned. Not available in community mode.
+      tags:
+        - MQTT
+      responses:
+        '200':
+          description: Collector switch and status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                    example: false
+                  gateway_enabled:
+                    type: boolean
+                    example: true
+                  active:
+                    type: boolean
+                    description: A job run is in progress
+                  rev:
+                    type: integer
+                    description: Applied job set revision (0 when none)
+                  boot:
+                    type: string
+                    description: Boot id carried by every published part
+                  queue:
+                    type: object
+                    properties:
+                      bytes: {type: integer}
+                      parts: {type: integer}
+                      dropped_parts: {type: integer}
+                      dropped_bytes: {type: integer}
+                  budget:
+                    type: object
+                    properties:
+                      limit_h: {type: integer, description: Hourly publish budget in bytes}
+                      tokens: {type: integer}
+                  jobs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        rev: {type: integer}
+                        st: {type: string, enum: [ok, err, wait, off]}
+                        code: {type: string, nullable: true}
+                        last_ok: {type: integer, description: Unix seconds, 0 when never}
+                        last_err: {type: string, nullable: true}
+                        last_err_detail: {type: string, nullable: true}
+                        last_err_ts: {type: integer}
+                        runs: {type: integer}
+                        fails: {type: integer}
+                        consec_fails: {type: integer}
+                        next_run: {type: integer, description: Seconds until the next run}
+                        last_dur_ms: {type: integer}
+                        last_bytes: {type: integer}
+                        cursor: {type: integer, nullable: true, description: Device UTC seconds}
+        '403':
+          description: Not available in community mode
+        '503':
+          description: Status snapshot busy, retry
+    put:
+      summary: Set the LAN collector switch
+      description: Same setter as the collector shadow's enabled field. Turning it off stops the active run before its next step and keeps the stored job set.
+      tags:
+        - MQTT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - enabled
+              properties:
+                enabled:
+                  type: boolean
+                  example: true
+      responses:
+        '200':
+          description: LAN collector settings updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          description: Not available in community mode
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /api/v1/secrets:
     get:
       summary: List gateway secrets (metadata only)
