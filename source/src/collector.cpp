@@ -953,13 +953,19 @@ namespace Collector
             js.stats.lastErrS = nowUtc;
             snprintf(js.stats.lastErr, sizeof(js.stats.lastErr), "%s", code ? code : "");
             snprintf(js.stats.lastErrDetail, sizeof(js.stats.lastErrDetail), "%s", _run.detail);
-            LOG_WARNING("Collector job %s run %u failed: %s", job.id, (unsigned)_run.seq, code ? code : "NO_DATA");
         } else {
             js.stats.lastOkS = nowUtc;
+        }
+        bool changed = healthOnRun(&js.stats.health, failed, failed ? (code ? code : "NO_DATA") : code, _run.detail[0] ? _run.detail : nullptr, nowUtc);
+        _noteHealth(changed);
+        // A failing job runs again every interval: warn when its health changes, not on every run.
+        if (failed && changed) {
+            LOG_WARNING("Collector job %s run %u failed: %s", job.id, (unsigned)_run.seq, code ? code : "NO_DATA");
+        } else if (failed) {
+            LOG_DEBUG("Collector job %s run %u failed: %s", job.id, (unsigned)_run.seq, code ? code : "NO_DATA");
+        } else {
             LOG_DEBUG("Collector job %s run %u ok, %u bytes", job.id, (unsigned)_run.seq, (unsigned)_run.bytes);
         }
-        _noteHealth(healthOnRun(&js.stats.health, failed, failed ? (code ? code : "NO_DATA") : code, _run.detail[0] ? _run.detail : nullptr,
-                                nowUtc));
         if (job.usesCursor) {
             if (_run.truncated) js.windowS = halveWindow(js.windowS);
             if (!failed && !_run.failedStep) {
