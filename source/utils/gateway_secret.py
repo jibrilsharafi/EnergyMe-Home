@@ -197,6 +197,7 @@ def cmd_set(args: argparse.Namespace) -> int:
         raise ToolError("the device reports no secrets kid in its system shadow")
     cert = device.certificate(state["kid"])
     issued_at = next_issued_at(int(time.time()), int(state.get("hwm", 0)))
+    stale_retried = skew_waited = False
     for attempt in range(MAX_ENVELOPES):
         envelope = build_envelope(cert, args.device, args.name, ip, port, mac, issued_at, value)
         status = device.run("secret_set", envelope)
@@ -208,9 +209,11 @@ def cmd_set(args: argparse.Namespace) -> int:
         if attempt + 1 >= MAX_ENVELOPES or hwm is None:
             return 1
         now = int(time.time())
-        if code == "SECRET_STALE":
+        if code == "SECRET_STALE" and not stale_retried:
+            stale_retried = True
             issued_at = next_issued_at(now, hwm)
-        elif code == "SECRET_CLOCK_SKEW":
+        elif code == "SECRET_CLOCK_SKEW" and not skew_waited:
+            skew_waited = True
             wait = skew_wait_seconds(now, hwm)
             if wait is None:
                 raise ToolError(f"device hwm={hwm} is {hwm + 1 - now} s from this clock; fix the clocks and retry")

@@ -170,8 +170,8 @@ def test_skew_too_far_ahead_exits(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(device.sent) == 1
 
 
-def test_at_most_three_envelopes(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_stale_retried_once(monkeypatch: pytest.MonkeyPatch) -> None:
     kid = CERT.fingerprint(hashes.SHA256()).hex()
     device = FakeDevice([reply("REJECTED", "SECRET_STALE", f"hwm={20_000 + i}") for i in range(5)], kid)
     assert _set(monkeypatch, device, [20_000]) == 1
-    assert len(device.sent) == 3
+    assert len(device.sent) == 2
