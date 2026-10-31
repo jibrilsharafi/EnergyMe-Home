@@ -11,7 +11,7 @@ open, and sent with the `gateway` IoT Command op `secret_set`.
   cd source
   AWS_PROFILE=admin-dev uv run python utils/gateway_secret.py list --device 907069875394
   AWS_PROFILE=admin-dev uv run python utils/gateway_secret.py set --device 907069875394 \\
-      --name xweb_admin --target 192.168.1.50:80 --mac 00:11:22:33:44:55   # value from the prompt or stdin
+      --name xweb_admin --target 192.168.1.50:80   # value from the prompt or stdin
   AWS_PROFILE=admin-dev uv run python utils/gateway_secret.py delete --device 907069875394 --name xweb_admin
   uv run python utils/gateway_secret.py encrypt --cert device.pem --device 907069875394 \\
       --name xweb_admin --target 192.168.1.50:80 --issued-at 1793450000 < value.txt
@@ -41,9 +41,6 @@ ALG = "RSA-OAEP-256+A256GCM"
 PLAINTEXT_BYTES = 258  # u16 length + up to 256 value bytes, zero padded
 VALUE_MAX = 256
 NAME_RE = re.compile(r"^[a-z][a-z0-9_-]{0,23}$")
-MAC_RE = re.compile(r"^[0-9a-f]{2}(:[0-9a-f]{2}){5}$")
-SKEW_WAIT_MAX_S = 310
-MAX_ENVELOPES = 3
 TERMINAL = ("SUCCEEDED", "FAILED", "REJECTED", "TIMED_OUT")
 
 
@@ -62,14 +59,6 @@ def validate_value(value: bytes) -> None:
         raise ToolError("value must be valid UTF-8") from error
 
 
-def validate_mac(mac: str) -> str:
-    if not MAC_RE.match(mac):
-        raise ToolError("mac must be six lowercase hex pairs separated by ':'")
-    if mac == "00:00:00:00:00:00" or int(mac[:2], 16) & 1:
-        raise ToolError("mac must be unicast and non-zero")
-    return mac
-
-
 def parse_target(text: str) -> tuple[str, int]:
     ip, _, port = text.rpartition(":")
     try:
@@ -81,15 +70,16 @@ def parse_target(text: str) -> tuple[str, int]:
     return str(address), int(port)
 
 
-def aad(device: str, name: str, ip: str, port: int, mac: str, issued_at: int) -> bytes:
-    return f"energyme-secret-v1|{device}|{name}|{ip}:{port}|{mac}|{issued_at}".encode("ascii")
+def aad(device: str, name: str, ip: str, port: int, issued_at: int) -> bytes:
+    """Envelope v1 AAD; its MAC field stays and is always empty (the MAC travels on each gateway request)."""
+    return f"energyme-secret-v1|{device}|{name}|{ip}:{port}||{issued_at}".encode("ascii")
 
 
 def kid_of(cert: x509.Certificate) -> str:
     return cert.fingerprint(hashes.SHA256()).hex()
 
 
-def build_envelope(cert: x509.Certificate, device: str, name: str, ip: str, port: int, mac: str, issued_at: int,
+def build_envelope(cert: x509.Certificate, device: str, name: str, ip: str, port: int, issued_at: int,
                    value: bytes, key: bytes | None = None, iv: bytes | None = None) -> dict:
     """Args of `secret_set`. `key` and `iv` only for golden vectors; fresh random otherwise."""
     validate_value(value)
@@ -99,14 +89,11 @@ def build_envelope(cert: x509.Certificate, device: str, name: str, ip: str, port
     key = key or os.urandom(32)
     iv = iv or os.urandom(12)
     plaintext = len(value).to_bytes(2, "little") + value + bytes(PLAINTEXT_BYTES - 2 - len(value))
-    sealed = AESGCM(key).encrypt(iv, plaintext, aad(device, name, ip, port, mac, issued_at))
+    sealed = AESGCM(key).encrypt(iv, plaintext, aad(device, name, ip, port, issued_at))
     wrapped = public.encrypt(key, padding.OAEP(mgf=padding.MGF1(hashes.SHA256()), algorithm=hashes.SHA256(), label=None))
     b64 = lambda data: base64.b64encode(data).decode()  # noqa: E731
-    args = {"name": name, "ip": ip, "port": port, "issued_at": issued_at,
+    return {"name": name, "ip": ip, "port": port, "issued_at": issued_at,
             "env": {"v": 1, "alg": ALG, "kid": kid_of(cert), "ek": b64(wrapped), "iv": b64(iv), "ct": b64(sealed[:-16]), "tag": b64(sealed[-16:])}}
-    if mac:
-        args["mac"] = mac
-    return args
 
 
 def read_value(stdin_is_tty: bool) -> bytes:
@@ -116,21 +103,6 @@ def read_value(stdin_is_tty: bool) -> bytes:
         value = sys.stdin.buffer.read().rstrip(b"\r\n")
     validate_value(value)
     return value
-
-
-def hwm_from(description: str) -> int | None:
-    match = re.search(r"hwm=(\d+)", description or "")
-    return int(match.group(1)) if match else None
-
-
-def next_issued_at(now: int, hwm: int) -> int:
-    return max(now, hwm + 1)
-
-
-def skew_wait_seconds(now: int, hwm: int) -> int | None:
-    """Seconds to wait until the tool clock reaches hwm + 1, or None when out of reach."""
-    ahead = hwm + 1 - now
-    return ahead if 0 < ahead <= SKEW_WAIT_MAX_S else None
 
 
 class Device:
@@ -186,43 +158,16 @@ def describe(status: dict) -> str:
 
 def cmd_set(args: argparse.Namespace) -> int:
     ip, port = parse_target(args.target)
-    mac = validate_mac(args.mac) if args.mac else ""
-    if not mac:
-        print("warning: no --mac; an on-link target refuses every use of this secret with MAC_REQUIRED", file=sys.stderr)
     value = read_value(sys.stdin.isatty())
     device = Device(args.device, args.env, args.region)
     state = device.secrets_state()
     if not state.get("kid"):
         raise ToolError("the device reports no secrets kid in its system shadow")
     cert = device.certificate(state["kid"])
-    issued_at = next_issued_at(int(time.time()), int(state.get("hwm", 0)))
-    stale_retried = skew_waited = False
-    for attempt in range(MAX_ENVELOPES):
-        envelope = build_envelope(cert, args.device, args.name, ip, port, mac, issued_at, value)
-        status = device.run("secret_set", envelope)
-        print(f"secret_set {args.name} issued_at={issued_at}: {describe(status)}")
-        reason = status.get("statusReason") or {}
-        code = reason.get("reasonCode", "")
-        hwm = hwm_from(reason.get("reasonDescription", ""))
-        if status["status"] == "SUCCEEDED":
-            return 0
-        if attempt + 1 >= MAX_ENVELOPES or hwm is None:
-            return 1
-        now = int(time.time())
-        if code == "SECRET_STALE" and not stale_retried:
-            stale_retried = True
-            issued_at = next_issued_at(now, hwm)
-        elif code == "SECRET_CLOCK_SKEW" and not skew_waited:
-            skew_waited = True
-            wait = skew_wait_seconds(now, hwm)
-            if wait is None:
-                raise ToolError(f"device hwm={hwm} is {hwm + 1 - now} s from this clock; fix the clocks and retry")
-            print(f"waiting {wait} s for this clock to reach hwm + 1")
-            time.sleep(wait)
-            issued_at = hwm + 1
-        else:
-            return 1
-    return 1
+    issued_at = int(time.time())
+    status = device.run("secret_set", build_envelope(cert, args.device, args.name, ip, port, issued_at, value))
+    print(f"secret_set {args.name} issued_at={issued_at}: {describe(status)}")
+    return 0 if status["status"] == "SUCCEEDED" else 1
 
 
 def cmd_delete(args: argparse.Namespace) -> int:
@@ -240,9 +185,8 @@ def cmd_list(args: argparse.Namespace) -> int:
 
 def cmd_encrypt(args: argparse.Namespace) -> int:
     ip, port = parse_target(args.target)
-    mac = validate_mac(args.mac) if args.mac else ""
     cert = x509.load_pem_x509_certificate(open(args.cert, "rb").read())
-    print(json.dumps(build_envelope(cert, args.device, args.name, ip, port, mac, args.issued_at, read_value(sys.stdin.isatty()))))
+    print(json.dumps(build_envelope(cert, args.device, args.name, ip, port, args.issued_at, read_value(sys.stdin.isatty()))))
     return 0
 
 
@@ -261,7 +205,6 @@ def main(argv: list[str] | None = None) -> int:
     common(p)
     p.add_argument("--name", required=True)
     p.add_argument("--target", required=True, help="<private IPv4>:<port> the secret is bound to")
-    p.add_argument("--mac", help="target MAC (lowercase, from net_scan); required for on-link targets")
     p.set_defaults(func=cmd_set)
     p = sub.add_parser("delete")
     common(p)
@@ -275,7 +218,6 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--cert", required=True)
     p.add_argument("--name", required=True)
     p.add_argument("--target", required=True)
-    p.add_argument("--mac")
     p.add_argument("--issued-at", type=int, required=True)
     p.set_defaults(func=cmd_encrypt)
 
