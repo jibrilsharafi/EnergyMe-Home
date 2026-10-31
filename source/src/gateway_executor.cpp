@@ -36,6 +36,8 @@ namespace GatewayExec
     static bool _lockGrants();
     static void _unlockGrants();
 
+    static ResultScrub _resultScrub = nullptr;
+
     static constexpr uint32_t ARP_POLL_MS = 20;
     static constexpr uint32_t ARP_WAIT_MAX_MS = 500;
 
@@ -539,19 +541,22 @@ namespace GatewayExec
         result.reasonDetail[0] = '\0';
         result.protoStatus = 0;
         result.written = 0;
-        result.truncated = result.connected = result.hasCert = false;
+        result.truncated = result.connected = result.hasCert = result.redacted = false;
         result.bytesTx = result.bytesRx = 0;
         result.address[0] = '\0';
         result.connectMs = result.firstByteMs = 0;
 
         uint32_t start = millis();
         _runChecked(rq, result, start);
+        if (result.status == Status::OK && _resultScrub != nullptr && rq.resolverCount > 0) _resultScrub(rq, result);
         result.totalMs = elapsedSince(start);
         if (result.status != Status::OK) {
             LOG_WARNING("Gateway %s: %s %s %s %s", rq.callerId, moduleName(rq.module), result.status == Status::REJECTED ? "REJECTED" : "FAILED",
                         result.reasonCode, result.reasonDetail);
         }
     }
+
+    void setResultScrub(ResultScrub scrub) { _resultScrub = scrub; }
 
     // Grant storage
     // =============
