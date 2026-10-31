@@ -2,7 +2,7 @@
 
 - Status: accepted
 - Date: 2026-10-31
-- Twin: energyme-infra ADR (same title), which links back here
+- Twin: energyme-infra [ADR-036](https://github.com/EnergyMe-Srl/energyme-infra/blob/development/docs/ADR/ADR-036-solve-at-the-source.md) (same decision for the cloud), which links back here
 
 ## Context
 
