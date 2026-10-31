@@ -1325,7 +1325,7 @@ namespace Collector
             } else if (body != nullptr) {
                 bool truncated = result.truncated;
                 bool redacted = result.redacted;
-                size_t cap = result.bodyCapacity < step.maxBytes ? result.bodyCapacity : step.maxBytes;
+                size_t cap = step.maxBytes;
                 length = _scrubBody(job, js, ctx, body, length, cap, &truncated, &redacted);
                 result.truncated = truncated;
                 h.rd = redacted;

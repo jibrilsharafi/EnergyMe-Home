@@ -73,6 +73,6 @@ namespace Secrets
     // Resolver for one request's chain (never registered globally).
     GatewayLogic::Resolver resolver(RequestState* state);
 
-    // Echo scrub of every token in `state` over `buffer` (never past `cap`).
-    size_t scrub(const RequestState& state, uint8_t* buffer, size_t length, size_t cap, bool* truncated, bool* redacted);
+    // In-place echo scrub of every token in `state` over `buffer` (never grows it).
+    size_t scrub(const RequestState& state, uint8_t* buffer, size_t length, bool truncated, bool* redacted);
 }

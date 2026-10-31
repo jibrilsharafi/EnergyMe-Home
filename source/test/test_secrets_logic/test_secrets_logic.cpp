@@ -723,89 +723,125 @@ void test_expand_exceeds_send_limit(void) {
 static const uint8_t GUARD = 0xA5;
 static const size_t GUARD_BYTES = 32;
 
-struct ScrubBuffers {
-    uint8_t buffer[4096 + GUARD_BYTES];
-    uint8_t scratch[4096 + GUARD_BYTES];
-};
-static ScrubBuffers g_sb;
+static uint8_t g_sb[4096 + GUARD_BYTES];
 
-static void armGuards(size_t cap) {
-    memset(g_sb.buffer, 0, sizeof(g_sb.buffer));
-    memset(g_sb.scratch, 0, sizeof(g_sb.scratch));
-    memset(g_sb.buffer + cap, GUARD, GUARD_BYTES);
-    memset(g_sb.scratch + cap, GUARD, GUARD_BYTES);
+static void armGuards(size_t length) {
+    memset(g_sb, 0, sizeof(g_sb));
+    memset(g_sb + length, GUARD, GUARD_BYTES);
 }
 
-static void assertGuards(size_t cap) {
-    for (size_t i = 0; i < GUARD_BYTES; i++) {
-        TEST_ASSERT_EQUAL_HEX8(GUARD, g_sb.buffer[cap + i]);
-        TEST_ASSERT_EQUAL_HEX8(GUARD, g_sb.scratch[cap + i]);
-    }
+static void assertGuards(size_t length) {
+    for (size_t i = 0; i < GUARD_BYTES; i++) TEST_ASSERT_EQUAL_HEX8(GUARD, g_sb[length + i]);
 }
 
-static size_t runScrub(const char *input, size_t cap, const ScrubForm *forms, size_t count, bool *truncated, bool *redacted) {
-    armGuards(cap);
+static size_t runScrub(const char *input, const ScrubForm *forms, size_t count, bool truncated, bool *redacted) {
     size_t n = strlen(input);
-    memcpy(g_sb.buffer, input, n);
-    return scrub(g_sb.buffer, n, cap, g_sb.scratch, forms, count, truncated, redacted);
+    armGuards(n);
+    memcpy(g_sb, input, n);
+    size_t out = scrub(g_sb, n, forms, count, truncated, redacted);
+    TEST_ASSERT_TRUE(out <= n);
+    assertGuards(n);
+    return out;
 }
 
 static void assertBuffer(const char *expected, size_t length) {
     TEST_ASSERT_EQUAL_size_t(strlen(expected), length);
-    TEST_ASSERT_EQUAL_MEMORY(expected, g_sb.buffer, length);
+    TEST_ASSERT_EQUAL_MEMORY(expected, g_sb, length);
 }
 
 void test_scrub_raw_and_encoded_forms(void) {
     ScrubForm forms[] = {{u8("a&b c"), 5, "xweb_admin"}, {u8("a%26b%20c"), 9, "xweb_admin"}};
-    bool truncated = false, redacted = false;
-    size_t n = runScrub("Bad password a%26b%20c (a&b c)", 1024, forms, 2, &truncated, &redacted);
-    assertBuffer("Bad password ${secret:xweb_admin} (${secret:xweb_admin})", n);
+    bool redacted = false;
+    size_t n = runScrub("Bad password a%26b%20c (a&b c)", forms, 2, false, &redacted);
+    assertBuffer("Bad password **** (****)", n);
     TEST_ASSERT_TRUE(redacted);
-    TEST_ASSERT_FALSE(truncated);
 }
 
 void test_scrub_nothing_to_replace(void) {
     ScrubForm forms[] = {{u8("s3cret"), 6, "xweb_admin"}};
-    bool truncated = false, redacted = false;
-    size_t n = runScrub("all good", 1024, forms, 1, &truncated, &redacted);
+    bool redacted = false;
+    size_t n = runScrub("all good", forms, 1, false, &redacted);
     assertBuffer("all good", n);
     TEST_ASSERT_FALSE(redacted);
-    TEST_ASSERT_FALSE(truncated);
 }
 
 void test_scrub_four_byte_floor(void) {
     ScrubForm forms[] = {{u8("a b"), 3, "xweb_admin"}, {u8("YSUyMGI="), 8, "xweb_admin"}};
-    bool truncated = false, redacted = false;
-    size_t n = runScrub("a b and YSUyMGI=", 1024, forms, 2, &truncated, &redacted);
-    assertBuffer("a b and ${secret:xweb_admin}", n);
+    bool redacted = false;
+    size_t n = runScrub("a b and YSUyMGI=", forms, 2, false, &redacted);
+    assertBuffer("a b and ****", n);
     TEST_ASSERT_TRUE(redacted);
 
     ScrubForm shortOnly[] = {{u8("pin"), 3, "pin"}};
-    truncated = redacted = false;
-    n = runScrub("pin pin", 1024, shortOnly, 1, &truncated, &redacted);
+    redacted = false;
+    n = runScrub("pin pin", shortOnly, 1, false, &redacted);
     assertBuffer("pin pin", n);
     TEST_ASSERT_FALSE(redacted);
 
     ScrubForm four[] = {{u8("1234"), 4, "pin"}};
-    truncated = redacted = false;
-    n = runScrub("x1234y", 1024, four, 1, &truncated, &redacted);
-    assertBuffer("x${secret:pin}y", n);
+    redacted = false;
+    n = runScrub("x1234y", four, 1, false, &redacted);
+    assertBuffer("x****y", n);
     TEST_ASSERT_TRUE(redacted);
 }
 
 void test_scrub_longest_match_first(void) {
     ScrubForm forms[] = {{u8("abcd"), 4, "short"}, {u8("abcdefgh"), 8, "long"}};
-    bool truncated = false, redacted = false;
-    size_t n = runScrub("[abcdefgh][abcdxx]", 1024, forms, 2, &truncated, &redacted);
-    assertBuffer("[${secret:long}][${secret:short}xx]", n);
+    bool redacted = false;
+    size_t n = runScrub("[abcdefgh][abcdxx]", forms, 2, false, &redacted);
+    assertBuffer("[****][****xx]", n);
+}
+
+void test_scrub_marker_hides_the_length(void) {
+    ScrubForm forms[] = {{u8("1234"), 4, "pin"}, {u8("Pa55word!xyz"), 12, "xweb_admin"}};
+    bool redacted = false;
+    size_t n = runScrub("12341234|Pa55word!xyz|", forms, 2, false, &redacted);
+    assertBuffer("********|****|", n);
+    TEST_ASSERT_TRUE(redacted);
+}
+
+void test_scrub_in_place_never_grows(void) {
+    // A full 4096-byte body of back-to-back 4-byte echoes keeps its length.
+    ScrubForm forms[] = {{u8("1234"), 4, "pin"}};
+    armGuards(4096);
+    for (size_t i = 0; i < 4096; i += 4) memcpy(g_sb + i, "1234", 4);
+    bool redacted = false;
+    size_t n = scrub(g_sb, 4096, forms, 1, false, &redacted);
+    TEST_ASSERT_EQUAL_size_t(4096, n);
+    for (size_t i = 0; i < n; i++) TEST_ASSERT_EQUAL_UINT8('*', g_sb[i]);
+    TEST_ASSERT_TRUE(redacted);
+    assertGuards(4096);
+
+    // Longer forms shrink the output; the write index never overtakes the reads.
+    ScrubForm nine[] = {{u8("a%26b%20c"), 9, "xweb_admin"}};
+    armGuards(4095);
+    for (size_t i = 0; i < 4095; i += 9) memcpy(g_sb + i, "a%26b%20c", 9);
+    redacted = false;
+    n = scrub(g_sb, 4095, nine, 1, false, &redacted);
+    TEST_ASSERT_EQUAL_size_t(4095 / 9 * 4, n);
+    for (size_t i = 0; i < n; i++) TEST_ASSERT_EQUAL_UINT8('*', g_sb[i]);
+    assertGuards(4095);
 }
 
 void test_scrub_trailing_prefix_kept_when_not_truncated(void) {
     ScrubForm forms[] = {{u8("Pa55word!xyz"), 12, "xweb_admin"}};
-    bool truncated = false, redacted = false;
-    size_t n = runScrub("end Pa55wo", 1024, forms, 1, &truncated, &redacted);
+    bool redacted = false;
+    size_t n = runScrub("end Pa55wo", forms, 1, false, &redacted);
     assertBuffer("end Pa55wo", n);
-    TEST_ASSERT_FALSE(truncated);
+    TEST_ASSERT_FALSE(redacted);
+}
+
+void test_scrub_cut_prefix_dropped_when_truncated(void) {
+    ScrubForm forms[] = {{u8("Pa55word!xyz"), 12, "xweb_admin"}, {u8("1234"), 4, "pin"}};
+    bool redacted = false;
+    size_t n = runScrub("1234 end Pa55wo", forms, 2, true, &redacted);
+    assertBuffer("**** end ", n);
+    TEST_ASSERT_TRUE(redacted);
+
+    // Prefixes under 4 bytes stay: too many false hits.
+    redacted = false;
+    n = runScrub("end Pa5", forms, 2, true, &redacted);
+    assertBuffer("end Pa5", n);
     TEST_ASSERT_FALSE(redacted);
 }
 
@@ -814,64 +850,15 @@ void test_scrub_echo_split_by_response_cap(void) {
     const char *pw = "Pa55word!xyz";
     ScrubForm forms[] = {{u8(pw), 12, "xweb_admin"}};
     armGuards(4096);
-    memset(g_sb.buffer, 'x', 4090);
-    memcpy(g_sb.buffer + 4090, pw, 6);
-    bool truncated = true, redacted = false;
-    size_t n = scrub(g_sb.buffer, 4096, 4096, g_sb.scratch, forms, 1, &truncated, &redacted);
-    TEST_ASSERT_TRUE(n <= 4090);
+    memset(g_sb, 'x', 4090);
+    memcpy(g_sb + 4090, pw, 6);
+    bool redacted = false;
+    size_t n = scrub(g_sb, 4096, forms, 1, true, &redacted);
     TEST_ASSERT_EQUAL_size_t(4090, n); // only the partial echo goes, the 'x' bytes stay
-    for (size_t i = 0; i < n; i++) TEST_ASSERT_EQUAL_UINT8('x', g_sb.buffer[i]);
-    TEST_ASSERT_TRUE(truncated);
+    for (size_t i = 0; i < n; i++) TEST_ASSERT_EQUAL_UINT8('x', g_sb[i]);
     TEST_ASSERT_TRUE(redacted);
     assertGuards(4096);
 }
-
-void test_scrub_placeholder_straddling_cap_dropped_whole(void) {
-    ScrubForm forms[] = {{u8("1234"), 4, "pin"}}; // placeholder 13 bytes
-    bool truncated = false, redacted = false;
-    size_t n = runScrub("aaaaaaaaaa1234bbbb", 20, forms, 1, &truncated, &redacted);
-    assertBuffer("aaaaaaaaaa", n);
-    TEST_ASSERT_TRUE(truncated);
-    TEST_ASSERT_TRUE(redacted);
-    assertGuards(20);
-}
-
-void test_scrub_growth_cuts_plain_tail(void) {
-    // One early echo grows the body; the plain tail is cut at the cap.
-    ScrubForm forms[] = {{u8("1234"), 4, "pin"}};
-    armGuards(4096);
-    memcpy(g_sb.buffer, "1234", 4);
-    memset(g_sb.buffer + 4, 'x', 4092);
-    bool truncated = false, redacted = false;
-    size_t n = scrub(g_sb.buffer, 4096, 4096, g_sb.scratch, forms, 1, &truncated, &redacted);
-    TEST_ASSERT_EQUAL_size_t(4096, n);
-    TEST_ASSERT_EQUAL_MEMORY("${secret:pin}", g_sb.buffer, 13);
-    for (size_t i = 13; i < n; i++) TEST_ASSERT_EQUAL_UINT8('x', g_sb.buffer[i]);
-    TEST_ASSERT_TRUE(truncated);
-    TEST_ASSERT_TRUE(redacted);
-    assertGuards(4096);
-}
-
-static void repeatedEchoes(size_t cap) {
-    ScrubForm forms[] = {{u8("1234"), 4, "pin"}};
-    armGuards(cap);
-    for (size_t i = 0; i < cap; i += 4) memcpy(g_sb.buffer + i, "1234", 4);
-    bool truncated = false, redacted = false;
-    size_t n = scrub(g_sb.buffer, cap, cap, g_sb.scratch, forms, 1, &truncated, &redacted);
-    const char *ph = "${secret:pin}";
-    size_t pl = strlen(ph);
-    TEST_ASSERT_TRUE(n <= cap);
-    TEST_ASSERT_TRUE(n >= pl);
-    TEST_ASSERT_EQUAL_size_t(0, n % pl); // only whole placeholders, no partial value
-    TEST_ASSERT_EQUAL_size_t(cap / pl * pl, n);
-    for (size_t i = 0; i < n; i += pl) TEST_ASSERT_EQUAL_MEMORY(ph, g_sb.buffer + i, pl);
-    TEST_ASSERT_TRUE(truncated);
-    TEST_ASSERT_TRUE(redacted);
-    assertGuards(cap);
-}
-
-void test_scrub_growth_4096_body(void) { repeatedEchoes(4096); }
-void test_scrub_growth_2048_header_block(void) { repeatedEchoes(2048); }
 
 int main(int argc, char **argv) {
     (void)argc;
@@ -928,12 +915,11 @@ int main(int argc, char **argv) {
     RUN_TEST(test_scrub_nothing_to_replace);
     RUN_TEST(test_scrub_four_byte_floor);
     RUN_TEST(test_scrub_longest_match_first);
+    RUN_TEST(test_scrub_marker_hides_the_length);
+    RUN_TEST(test_scrub_in_place_never_grows);
     RUN_TEST(test_scrub_trailing_prefix_kept_when_not_truncated);
+    RUN_TEST(test_scrub_cut_prefix_dropped_when_truncated);
     RUN_TEST(test_scrub_echo_split_by_response_cap);
-    RUN_TEST(test_scrub_placeholder_straddling_cap_dropped_whole);
-    RUN_TEST(test_scrub_growth_cuts_plain_tail);
-    RUN_TEST(test_scrub_growth_4096_body);
-    RUN_TEST(test_scrub_growth_2048_header_block);
 
     return UNITY_END();
 }

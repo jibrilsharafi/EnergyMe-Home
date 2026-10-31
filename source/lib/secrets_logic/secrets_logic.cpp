@@ -187,17 +187,10 @@ Decision decide(const GatewayLogic::ResolveContext &context, const char *arg, co
     return d;
 }
 
-size_t scrub(uint8_t *buffer, size_t length, size_t cap, uint8_t *scratch, const ScrubForm *forms, size_t formCount, bool *truncated,
-             bool *redacted) {
-    return scrubAs("secret", buffer, length, cap, scratch, forms, formCount, truncated, redacted);
-}
-
-size_t scrubAs(const char *kind, uint8_t *buffer, size_t length, size_t cap, uint8_t *scratch, const ScrubForm *forms, size_t formCount,
-               bool *truncated, bool *redacted) {
-    size_t out = 0;
+size_t scrub(uint8_t *buffer, size_t length, const ScrubForm *forms, size_t formCount, bool truncated, bool *redacted) {
+    static_assert(sizeof(SCRUB_MARKER) - 1 == SCRUB_MIN_BYTES, "a marker longer than the shortest form would grow the output");
+    size_t out = 0; // never passes i: the matcher only reads bytes not yet overwritten
     size_t i = 0;
-    size_t protectedEnd = 0; // end of the last placeholder written: never cut into it
-    bool cut = false;
     while (i < length) {
         const ScrubForm *match = nullptr;
         for (size_t f = 0; f < formCount; f++) {
@@ -206,36 +199,23 @@ size_t scrubAs(const char *kind, uint8_t *buffer, size_t length, size_t cap, uin
             if ((match == nullptr || form.length > match->length) && memcmp(buffer + i, form.bytes, form.length) == 0) match = &form;
         }
         if (match == nullptr) {
-            if (out >= cap) {
-                cut = true;
-                break;
-            }
-            scratch[out++] = buffer[i++];
+            buffer[out++] = buffer[i++];
             continue;
         }
-        char placeholder[SCRUB_PLACEHOLDER_MAX + 1];
-        int n = snprintf(placeholder, sizeof(placeholder), "${%s:%s}", kind, match->name);
-        size_t placeholderLength = n > 0 ? static_cast<size_t>(n) : 0;
-        *redacted = true;
-        if (placeholderLength == 0 || placeholderLength >= sizeof(placeholder) || out + placeholderLength > cap) {
-            cut = true; // the placeholder would straddle the cap: dropped whole
-            break;
-        }
-        memcpy(scratch + out, placeholder, placeholderLength);
-        out += placeholderLength;
-        protectedEnd = out;
+        memcpy(buffer + out, SCRUB_MARKER, SCRUB_MIN_BYTES);
+        out += SCRUB_MIN_BYTES;
         i += match->length;
+        *redacted = true;
     }
-    if (cut) *truncated = true;
 
-    // A cut reply may end inside a value: drop the longest trailing prefix of any form.
-    if (*truncated) {
+    // A reply cut on receive may end inside a value: drop the longest trailing prefix of any form.
+    if (truncated) {
         size_t drop = 0;
         for (size_t f = 0; f < formCount; f++) {
             const ScrubForm &form = forms[f];
             if (form.length < SCRUB_MIN_BYTES) continue;
             for (size_t p = form.length - 1; p > drop && p >= SCRUB_MIN_BYTES; p--) {
-                if (p <= out - protectedEnd && memcmp(scratch + out - p, form.bytes, p) == 0) {
+                if (p <= out && memcmp(buffer + out - p, form.bytes, p) == 0) {
                     drop = p;
                     break;
                 }
@@ -246,7 +226,6 @@ size_t scrubAs(const char *kind, uint8_t *buffer, size_t length, size_t cap, uin
             *redacted = true;
         }
     }
-    memcpy(buffer, scratch, out);
     return out;
 }
 

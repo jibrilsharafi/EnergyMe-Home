@@ -342,9 +342,9 @@ bool isExpired(const Job &job, int protoStatus, const uint8_t *body, size_t body
     return job.expiryMarker != nullptr && body != nullptr && find(body, bodyLength, job.expiryMarker) < bodyLength;
 }
 
-size_t scrubCaptures(uint8_t *buffer, size_t length, size_t cap, uint8_t *scratch, const SecretsLogic::ScrubForm *forms, size_t formCount,
-                     bool *truncated, bool *redacted) {
-    return SecretsLogic::scrubAs("cap", buffer, length, cap, scratch, forms, formCount, truncated, redacted);
+size_t scrubCaptures(uint8_t *buffer, size_t length, size_t, uint8_t *, const SecretsLogic::ScrubForm *forms, size_t formCount, bool *truncated,
+                     bool *redacted) {
+    return SecretsLogic::scrub(buffer, length, forms, formCount, *truncated, redacted);
 }
 
 } // namespace CollectorLogic

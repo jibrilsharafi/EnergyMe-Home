@@ -812,7 +812,7 @@ static void test_scrub_captures(void) {
     memcpy(buffer, body, static_cast<size_t>(n));
     bool truncated = false, redacted = false;
     size_t length = scrubCaptures(buffer, static_cast<size_t>(n), sizeof(buffer), scratch, forms, 2, &truncated, &redacted);
-    TEST_ASSERT_EQUAL_STRING_LEN("x=${cap:sses};y=${cap:sses};z", buffer, length);
+    TEST_ASSERT_EQUAL_STRING_LEN("x=****;y=****;z", buffer, length);
     TEST_ASSERT_TRUE(redacted);
     TEST_ASSERT_FALSE(truncated);
 
@@ -821,23 +821,6 @@ static void test_scrub_captures(void) {
     memcpy(buffer, "nothing here", 12);
     TEST_ASSERT_EQUAL_size_t(12, scrubCaptures(buffer, 12, sizeof(buffer), scratch, forms, 2, &truncated, &redacted));
     TEST_ASSERT_FALSE(redacted);
-}
-
-static void test_scrub_grows_body_at_cap(void) {
-    // max_bytes 4096 filled with copies of a 4-byte capture.
-    static uint8_t buffer[4096], scratch[4096];
-    for (size_t i = 0; i < sizeof(buffer); i += 4) memcpy(buffer + i, "k9Zq", 4);
-    SecretsLogic::ScrubForm form{reinterpret_cast<const uint8_t *>("k9Zq"), 4, "tok"};
-    bool truncated = false, redacted = false;
-    size_t length = scrubCaptures(buffer, sizeof(buffer), sizeof(buffer), scratch, &form, 1, &truncated, &redacted);
-    TEST_ASSERT_TRUE(length <= 4096);
-    TEST_ASSERT_TRUE(truncated);
-    TEST_ASSERT_TRUE(redacted);
-    const char *placeholder = "${cap:tok}";
-    size_t p = strlen(placeholder);
-    TEST_ASSERT_EQUAL_size_t(0, length % p); // ends on a whole placeholder
-    TEST_ASSERT_EQUAL_MEMORY(placeholder, buffer + length - p, p);
-    for (size_t i = 0; i + 4 <= length; i++) TEST_ASSERT_FALSE(memcmp(buffer + i, "k9Zq", 4) == 0);
 }
 
 void run_collector_runtime_tests(void);
@@ -882,7 +865,6 @@ int main(int, char **) {
     RUN_TEST(test_expiry_rule);
     RUN_TEST(test_apply_chain);
     RUN_TEST(test_scrub_captures);
-    RUN_TEST(test_scrub_grows_body_at_cap);
     run_collector_runtime_tests();
     return UNITY_END();
 }

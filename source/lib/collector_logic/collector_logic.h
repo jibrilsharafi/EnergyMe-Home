@@ -216,10 +216,9 @@ size_t applyChain(const EncodingChain& chain, const uint8_t* value, size_t lengt
 bool isExpired(const Job& job, int protoStatus, const uint8_t* body, size_t bodyLength);
 
 // Capture echo scrub (spec "Raw publish topic and part format"): the shared
-// scrub of add-gateway-secrets with `${cap:<name>}` placeholders. `forms` holds
-// the raw and encoded forms of every capture the step expanded or captured
-// (ScrubForm::name = capture name); `scratch` at least `cap` bytes. Sets
-// `truncated` when the output was cut at `cap`, `redacted` when anything changed.
+// in-place `****` scrub of add-gateway-secrets. `forms` holds the raw and encoded
+// forms of every capture the step expanded or captured; `cap` and `scratch` are
+// unused. Reads `truncated`, sets `redacted` when anything changed.
 size_t scrubCaptures(uint8_t* buffer, size_t length, size_t cap, uint8_t* scratch, const SecretsLogic::ScrubForm* forms, size_t formCount,
                      bool* truncated, bool* redacted);
 

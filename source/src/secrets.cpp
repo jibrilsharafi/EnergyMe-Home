@@ -611,25 +611,15 @@ namespace Secrets
 
     GatewayLogic::Resolver resolver(RequestState* state) { return {_resolve, state, _expanded}; }
 
-    size_t scrub(const RequestState& state, uint8_t* buffer, size_t length, size_t cap, bool* truncated, bool* redacted) {
-        if (state.count == 0 || buffer == nullptr || cap == 0) return length;
+    size_t scrub(const RequestState& state, uint8_t* buffer, size_t length, bool truncated, bool* redacted) {
+        if (state.count == 0 || buffer == nullptr) return length;
         ScrubForm forms[RequestState::TOKENS_MAX * 2];
         size_t formCount = 0;
         for (size_t i = 0; i < state.count; i++) {
             forms[formCount++] = {state.tokens[i].raw, state.tokens[i].rawLength, state.tokens[i].name};
             if (state.tokens[i].encoded != nullptr) forms[formCount++] = {state.tokens[i].encoded, state.tokens[i].encodedLength, state.tokens[i].name};
         }
-        uint8_t* scratch = (uint8_t*)ps_malloc(cap);
-        if (scratch == nullptr) {
-            // Fail closed: publish nothing rather than a possible echo.
-            *truncated = true;
-            *redacted = true;
-            return 0;
-        }
-        size_t out = SecretsLogic::scrub(buffer, length, cap, scratch, forms, formCount, truncated, redacted);
-        mbedtls_platform_zeroize(scratch, cap);
-        free(scratch);
-        return out;
+        return SecretsLogic::scrub(buffer, length, forms, formCount, truncated, redacted);
     }
 
     // Runs in the executor for every caller: finds this request's secret state in its chain.
@@ -641,13 +631,10 @@ namespace Secrets
         if (state == nullptr || state->count == 0) return;
         bool redacted = false;
         if (result.headers != nullptr && result.headersLength > 0) {
-            result.headersLength = scrub(*state, (uint8_t*)result.headers, result.headersLength, GatewayExec::HEADER_BLOCK_MAX, &result.truncated, &redacted);
+            result.headersLength = scrub(*state, (uint8_t*)result.headers, result.headersLength, result.truncated, &redacted);
             result.headers[result.headersLength] = '\0';
         }
-        if (result.body != nullptr && result.bodyLength > 0) {
-            size_t cap = result.bodyCapacity < request.maxBytes ? result.bodyCapacity : request.maxBytes;
-            result.bodyLength = scrub(*state, result.body, result.bodyLength, cap, &result.truncated, &redacted);
-        }
+        if (result.body != nullptr && result.bodyLength > 0) result.bodyLength = scrub(*state, result.body, result.bodyLength, result.truncated, &redacted);
         result.redacted = redacted;
     }
 }

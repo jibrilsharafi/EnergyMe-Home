@@ -27,7 +27,7 @@ inline constexpr size_t PLAINTEXT_BYTES = 258; // u16 length + value + zero padd
 inline constexpr size_t AAD_MAX = 160;
 inline constexpr size_t PLACEHOLDERS_MAX = 8;
 inline constexpr size_t SCRUB_MIN_BYTES = 4;
-inline constexpr size_t PLACEHOLDER_MAX = 34; // "${secret:" + 24 + "}"
+inline constexpr char SCRUB_MARKER[] = "****"; // SCRUB_MIN_BYTES long: the output never grows
 
 struct SlotMeta {
     char name[SECRET_NAME_MAX + 1];
@@ -79,21 +79,13 @@ Decision decide(const GatewayLogic::ResolveContext &context, const char *arg, co
 struct ScrubForm {
     const uint8_t *bytes; // raw value or the token's final encoded form
     size_t length;
-    const char *name;     // secret name for the placeholder
+    const char *name;     // owner of the form, unused by the scrub
 };
 
-// Replaces every form (at least 4 bytes, longest match first) in `buffer`
-// with `${secret:<name>}`, writing through `scratch` (at least `cap` bytes) and
-// never past `cap`. A placeholder that would cross `cap` is dropped whole and
-// the output cut there. When the result is truncated (on input or by the cut),
-// a trailing prefix of any form is removed too. Returns the new length.
-size_t scrub(uint8_t *buffer, size_t length, size_t cap, uint8_t *scratch, const ScrubForm *forms, size_t formCount, bool *truncated,
-             bool *redacted);
-
-inline constexpr size_t SCRUB_PLACEHOLDER_MAX = 48; // "${" + kind + ":" + name + "}"
-
-// The same scrub with `${<kind>:<name>}` placeholders (the collector uses "cap").
-size_t scrubAs(const char *kind, uint8_t *buffer, size_t length, size_t cap, uint8_t *scratch, const ScrubForm *forms, size_t formCount,
-               bool *truncated, bool *redacted);
+// Replaces every form of at least 4 bytes (longest match first, forward scan) in
+// `buffer` with SCRUB_MARKER, in place. When `truncated` (the reply was cut on
+// receive), a trailing prefix of at least 4 bytes of any form is dropped too.
+// Sets `redacted` when anything changed. Returns the new length, never above `length`.
+size_t scrub(uint8_t *buffer, size_t length, const ScrubForm *forms, size_t formCount, bool truncated, bool *redacted);
 
 } // namespace SecretsLogic
