@@ -1213,8 +1213,10 @@ namespace Collector
 
         uint8_t octets[4];
         Gateway::TargetCheck target = Gateway::validateTarget(job.ip, octets);
+        // Step-scoped, but static: the gateway task runs one step at a time and its 8 KB
+        // stack also carries the executor and TLS frames below this one.
+        static PartHeader h;
         if (target != Gateway::TargetCheck::OK) {
-            PartHeader h;
             _baseHeader(job, step, login, &h);
             h.st = "REJECTED";
             h.rc = Gateway::targetCheckReasonCode(target);
@@ -1225,22 +1227,23 @@ namespace Collector
             return;
         }
 
-        StepContext ctx = {};
+        static StepContext ctx;
+        ctx = StepContext{};
         ctx.job = &job;
         ctx.state = &js;
         ctx.nowSource = job.usesTime ? toSourceClock(_run.window.to, job.clockOffsetS) : 0;
         ctx.cursorSource = job.usesTime ? toSourceClock(_run.window.from, job.clockOffsetS) : 0;
         Secrets::RequestState secretState;
         GatewayLogic::Resolver chain[] = {{_resolve, &ctx, _expanded}, Secrets::resolver(&secretState)};
-        GatewayExec::Header headers[STEP_HEADERS_MAX];
-        GatewayExec::Request rq;
+        static GatewayExec::Header headers[STEP_HEADERS_MAX];
+        static GatewayExec::Request rq;
+        rq = GatewayExec::Request{};
         _buildRequest(job, step, rq, headers);
         rq.resolvers = chain;
         rq.resolverCount = 2;
         GatewayExec::Result result;
         GatewayExec::run(rq, result);
 
-        PartHeader h;
         _baseHeader(job, step, login, &h);
         h.hasDur = true;
         h.durMs = result.totalMs;
