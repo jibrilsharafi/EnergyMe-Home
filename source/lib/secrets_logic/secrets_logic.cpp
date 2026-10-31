@@ -222,6 +222,11 @@ Decision decide(const GatewayLogic::ResolveContext &context, const char *arg, co
 
 size_t scrub(uint8_t *buffer, size_t length, size_t cap, uint8_t *scratch, const ScrubForm *forms, size_t formCount, bool *truncated,
              bool *redacted) {
+    return scrubAs("secret", buffer, length, cap, scratch, forms, formCount, truncated, redacted);
+}
+
+size_t scrubAs(const char *kind, uint8_t *buffer, size_t length, size_t cap, uint8_t *scratch, const ScrubForm *forms, size_t formCount,
+               bool *truncated, bool *redacted) {
     size_t out = 0;
     size_t i = 0;
     size_t protectedEnd = 0; // end of the last placeholder written: never cut into it
@@ -241,8 +246,8 @@ size_t scrub(uint8_t *buffer, size_t length, size_t cap, uint8_t *scratch, const
             scratch[out++] = buffer[i++];
             continue;
         }
-        char placeholder[PLACEHOLDER_MAX + 1];
-        int n = snprintf(placeholder, sizeof(placeholder), "${secret:%s}", match->name);
+        char placeholder[SCRUB_PLACEHOLDER_MAX + 1];
+        int n = snprintf(placeholder, sizeof(placeholder), "${%s:%s}", kind, match->name);
         size_t placeholderLength = n > 0 ? static_cast<size_t>(n) : 0;
         *redacted = true;
         if (placeholderLength == 0 || placeholderLength >= sizeof(placeholder) || out + placeholderLength > cap) {
