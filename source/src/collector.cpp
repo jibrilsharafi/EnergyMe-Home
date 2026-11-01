@@ -449,16 +449,18 @@ namespace Collector
         }
         _reportError(reported);
 
-        // Health changes are coalesced to one report per 300 s; apply results and switches go at once.
+        // Health changes are coalesced to one report per 300 s; apply results, switches and err onsets go at once.
         uint64_t nowS = _uptimeS();
         bool urgent = _urgentReport.exchange(false);
         if (reportDue(_healthChanged, urgent, _lastHealthReportS, nowS)) {
             if (_take(_snapshotMutex(), 50)) {
                 _reportedJobs = _snapshot;
                 _give(_snapshotMutex());
+                _healthChanged = false;
+                _lastHealthReportS = nowS;
+            } else if (urgent) {
+                _urgentReport = true; // retried by the next drift check, never dropped
             }
-            _healthChanged = false;
-            _lastHealthReportS = nowS;
         }
         JsonArray jobs = reported["jobs"].to<JsonArray>();
         for (uint8_t i = 0; i < _reportedJobs.count; i++) {
@@ -920,7 +922,8 @@ namespace Collector
         } else {
             js.stats.lastOkS = nowUtc;
         }
-        bool changed = healthOnRun(&js.stats.health, failed, failed ? (code ? code : "NO_DATA") : code, _run.detail[0] ? _run.detail : nullptr, nowUtc);
+        HealthChange change = healthOnRun(&js.stats.health, failed, failed ? (code ? code : "NO_DATA") : code, _run.detail[0] ? _run.detail : nullptr, nowUtc);
+        bool changed = change != HealthChange::NONE;
         _noteHealth(changed);
         // A failing job runs again every interval: warn when its health changes, not on every run.
         if (failed && changed) {
@@ -941,6 +944,8 @@ namespace Collector
         _scheduleNext(jobIndex, failed);
         _run.active = false;
         _publishSnapshot();
+        // After the snapshot, so the MQTT task cannot consume the flag with the old health.
+        if (change == HealthChange::URGENT) _urgentReport = true;
     }
 
     // The cursor of a successful run advances once all its parts were published.
@@ -1292,8 +1297,9 @@ namespace Collector
             snprintf(next.stats.id, sizeof(next.stats.id), "%s", job.id);
             next.stats.rev = job.rev;
             next.stats.nextRunS = next.nextS;
-            next.stats.health.st = job.enabled ? HealthState::OK : HealthState::OFF;
-            next.stats.health.since = CustomTime::isTimeSynched() ? CustomTime::getUnixTime() : 0;
+            uint64_t nowUtc = CustomTime::isTimeSynched() ? CustomTime::getUnixTime() : 0;
+            if (job.enabled) healthOnPending(&next.stats.health, nowUtc);
+            else healthOnOff(&next.stats.health, nullptr, nowUtc);
             for (uint8_t o = 0; _active.table != nullptr && o < _active.table->jobCount; o++) {
                 const Job& old = _active.table->jobs[o];
                 if (strcmp(old.id, job.id) != 0) continue;
@@ -1322,8 +1328,8 @@ namespace Collector
         }
         _freeTable(_active);
         _active = incoming;
-        _urgentReport = true;
         _publishSnapshot();
+        _urgentReport = true;
     }
 
     // Gateway task entry points
