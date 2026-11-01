@@ -188,13 +188,18 @@ namespace Collector
         bool runActive;
         uint32_t budgetLimitH;
         uint32_t budgetTokens;
+        // Bumped with the health they describe, under the same mutex, so a report can never
+        // consume a change while copying the health from before it.
+        uint32_t healthGen;
+        uint32_t urgentGen; // err onsets and adoptions
         JobSnapshot jobs[JOBS_MAX];
     };
 
     static Snapshot _snapshot = {};       // live, under the snapshot mutex
     static Snapshot _reportedJobs = {};   // what the shadow last reported (MQTT task)
-    static std::atomic<bool> _healthChanged{false};
-    static std::atomic<bool> _urgentReport{false};
+    static bool _pendingHealth = false;   // gateway task: carried by the next successful _publishSnapshot
+    static bool _pendingUrgent = false;
+    static std::atomic<bool> _urgentReport{false}; // apply results and switches (MQTT task)
     static uint64_t _lastHealthReportS = 0;
 
     // Run state (gateway task)
@@ -279,19 +284,24 @@ namespace Collector
             tokens = _bucket.tokens > 0 ? (uint32_t)_bucket.tokens : 0;
             _give(_queueMutex());
         }
-        if (!_take(_snapshotMutex(), 50)) return;
+        if (!_take(_snapshotMutex(), 50)) return; // pending health flags wait for the next publish
         uint8_t count = _active.table != nullptr ? _active.table->jobCount : 0;
         _snapshot.count = count;
         _snapshot.runActive = _run.active;
         _snapshot.budgetLimitH = limitH;
         _snapshot.budgetTokens = tokens;
         for (uint8_t i = 0; i < count; i++) _snapshot.jobs[i] = _states[i].stats;
+        if (_pendingHealth) _snapshot.healthGen++;
+        if (_pendingUrgent) _snapshot.urgentGen++;
+        _pendingHealth = false;
+        _pendingUrgent = false;
         _give(_snapshotMutex());
     }
 
-    // Health transitions; `changed` marks a report as due within 300 s.
-    static void _noteHealth(bool changed) {
-        if (changed) _healthChanged = true;
+    // Health transitions: `changed` is reported within 300 s, `urgent` at once.
+    static void _noteHealth(bool changed, bool urgent = false) {
+        if (changed) _pendingHealth = true;
+        if (urgent) _pendingUrgent = true;
     }
 
     // Persistence
@@ -449,16 +459,19 @@ namespace Collector
         }
         _reportError(reported);
 
-        // Health changes are coalesced to one report per 300 s; apply results and switches go at once.
+        // Health changes are coalesced to one report per 300 s; apply results, switches and err onsets go at once.
         uint64_t nowS = _uptimeS();
         bool urgent = _urgentReport.exchange(false);
-        if (reportDue(_healthChanged, urgent, _lastHealthReportS, nowS)) {
-            if (_take(_snapshotMutex(), 50)) {
+        if (_take(_snapshotMutex(), 50)) {
+            bool changed = _snapshot.healthGen != _reportedJobs.healthGen;
+            urgent = urgent || _snapshot.urgentGen != _reportedJobs.urgentGen;
+            if (reportDue(changed, urgent, _lastHealthReportS, nowS)) {
                 _reportedJobs = _snapshot;
-                _give(_snapshotMutex());
+                _lastHealthReportS = nowS;
             }
-            _healthChanged = false;
-            _lastHealthReportS = nowS;
+            _give(_snapshotMutex());
+        } else if (urgent) {
+            _urgentReport = true; // retried by the next drift check, never dropped
         }
         JsonArray jobs = reported["jobs"].to<JsonArray>();
         for (uint8_t i = 0; i < _reportedJobs.count; i++) {
@@ -920,8 +933,9 @@ namespace Collector
         } else {
             js.stats.lastOkS = nowUtc;
         }
-        bool changed = healthOnRun(&js.stats.health, failed, failed ? (code ? code : "NO_DATA") : code, _run.detail[0] ? _run.detail : nullptr, nowUtc);
-        _noteHealth(changed);
+        HealthChange change = healthOnRun(&js.stats.health, failed, failed ? (code ? code : "NO_DATA") : code, _run.detail[0] ? _run.detail : nullptr, nowUtc);
+        bool changed = change != HealthChange::NONE;
+        _noteHealth(changed, change == HealthChange::URGENT);
         // A failing job runs again every interval: warn when its health changes, not on every run.
         if (failed && changed) {
             LOG_WARNING("Collector job %s run %u failed: %s", job.id, (unsigned)_run.seq, code ? code : "NO_DATA");
@@ -1292,8 +1306,9 @@ namespace Collector
             snprintf(next.stats.id, sizeof(next.stats.id), "%s", job.id);
             next.stats.rev = job.rev;
             next.stats.nextRunS = next.nextS;
-            next.stats.health.st = job.enabled ? HealthState::OK : HealthState::OFF;
-            next.stats.health.since = CustomTime::isTimeSynched() ? CustomTime::getUnixTime() : 0;
+            uint64_t nowUtc = CustomTime::isTimeSynched() ? CustomTime::getUnixTime() : 0;
+            if (job.enabled) healthOnWait(&next.stats.health, "PENDING", nowUtc);
+            else healthOnOff(&next.stats.health, nullptr, nowUtc);
             for (uint8_t o = 0; _active.table != nullptr && o < _active.table->jobCount; o++) {
                 const Job& old = _active.table->jobs[o];
                 if (strcmp(old.id, job.id) != 0) continue;
@@ -1322,7 +1337,7 @@ namespace Collector
         }
         _freeTable(_active);
         _active = incoming;
-        _urgentReport = true;
+        _noteHealth(true, true);
         _publishSnapshot();
     }
 

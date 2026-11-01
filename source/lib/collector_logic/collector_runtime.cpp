@@ -490,15 +490,15 @@ bool setHealth(Health *health, HealthState st, const char *code, const char *det
 
 } // namespace
 
-bool healthOnRun(Health *health, bool failed, const char *code, const char *detail, uint64_t nowS) {
-    HealthState st = HealthState::OK;
+HealthChange healthOnRun(Health *health, bool failed, const char *code, const char *detail, uint64_t nowS) {
     if (failed) {
         if (health->consecutiveFailures < UINT32_MAX) health->consecutiveFailures++;
-        if (health->consecutiveFailures >= ERR_AFTER_FAILURES) st = HealthState::ERR;
     } else {
         health->consecutiveFailures = 0;
     }
-    return setHealth(health, st, code, detail, nowS);
+    bool wasErr = health->st == HealthState::ERR;
+    if (!setHealth(health, failed ? HealthState::ERR : HealthState::OK, code, detail, nowS)) return HealthChange::NONE;
+    return failed && !wasErr ? HealthChange::URGENT : HealthChange::COALESCED;
 }
 
 bool healthOnWait(Health *health, const char *code, uint64_t nowS) { return setHealth(health, HealthState::WAIT, code, nullptr, nowS); }

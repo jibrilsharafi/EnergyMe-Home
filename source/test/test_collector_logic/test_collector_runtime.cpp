@@ -900,44 +900,60 @@ static void test_token_bucket(void) {
 // Health
 // ---------------------------------------------------------------------------
 
-static void test_health_err_after_three_failures(void) {
+static void test_health_err_on_first_failure(void) {
     Health h{};
-    TEST_ASSERT_TRUE(healthOnRun(&h, true, "CONNECT_FAILED", nullptr, 100));
-    TEST_ASSERT_EQUAL_STRING("ok", healthStateName(h.st));
-    TEST_ASSERT_EQUAL_STRING("CONNECT_FAILED", h.code);
-    TEST_ASSERT_EQUAL_UINT64(100, h.since);
-    TEST_ASSERT_FALSE(healthOnRun(&h, true, "CONNECT_FAILED", nullptr, 200));
-    TEST_ASSERT_TRUE(healthOnRun(&h, true, "CONNECT_FAILED", nullptr, 300));
+    TEST_ASSERT_TRUE(HealthChange::URGENT == healthOnRun(&h, true, "LOGIN_FAILED", nullptr, 100));
     TEST_ASSERT_EQUAL_STRING("err", healthStateName(h.st));
+    TEST_ASSERT_EQUAL_STRING("LOGIN_FAILED", h.code);
+    TEST_ASSERT_EQUAL_UINT64(100, h.since);
+    TEST_ASSERT_TRUE(HealthChange::NONE == healthOnRun(&h, true, "LOGIN_FAILED", nullptr, 200));
+    // A new code while already failing is a change, not a new onset.
+    TEST_ASSERT_TRUE(HealthChange::COALESCED == healthOnRun(&h, true, "CONNECT_FAILED", nullptr, 300));
     TEST_ASSERT_EQUAL_UINT64(300, h.since);
     TEST_ASSERT_EQUAL_UINT32(3, h.consecutiveFailures);
 }
 
 static void test_health_ok_after_one_success_clears(void) {
     Health h{};
-    for (int i = 0; i < 3; i++) healthOnRun(&h, true, "WRITE_NOT_ALLOWED", "WRITES_DENIED", 10);
+    healthOnRun(&h, true, "WRITE_NOT_ALLOWED", "WRITES_DENIED", 10);
     TEST_ASSERT_TRUE(h.st == HealthState::ERR);
     TEST_ASSERT_EQUAL_STRING("WRITES_DENIED", h.detail);
-    TEST_ASSERT_TRUE(healthOnRun(&h, false, nullptr, nullptr, 500));
+    TEST_ASSERT_TRUE(HealthChange::COALESCED == healthOnRun(&h, false, nullptr, nullptr, 500));
     TEST_ASSERT_TRUE(h.st == HealthState::OK);
     TEST_ASSERT_EQUAL_STRING("", h.code);
     TEST_ASSERT_EQUAL_STRING("", h.detail);
     TEST_ASSERT_EQUAL_UINT32(0, h.consecutiveFailures);
     TEST_ASSERT_EQUAL_UINT64(500, h.since);
+    // Flapping: every failure after a success is a new onset.
+    TEST_ASSERT_TRUE(HealthChange::URGENT == healthOnRun(&h, true, "TIMEOUT", nullptr, 560));
 }
 
 static void test_health_partial_run_and_detail(void) {
     Health h{};
     // Successful run with one silent Modbus unit: st ok, code TIMEOUT.
-    TEST_ASSERT_TRUE(healthOnRun(&h, false, "TIMEOUT", nullptr, 50));
+    TEST_ASSERT_TRUE(HealthChange::COALESCED == healthOnRun(&h, false, "TIMEOUT", nullptr, 50));
     TEST_ASSERT_TRUE(h.st == HealthState::OK);
     TEST_ASSERT_EQUAL_STRING("TIMEOUT", h.code);
     // detail only for a code token.
     healthOnRun(&h, true, "SECRET_TARGET_MISMATCH", "The secret is bound to another target", 60);
     TEST_ASSERT_EQUAL_STRING("", h.detail);
-    TEST_ASSERT_TRUE(healthOnRun(&h, true, "SECRET_TARGET_MISMATCH", "MAC_REQUIRED", 70)); // detail change is a change
+    TEST_ASSERT_TRUE(HealthChange::COALESCED == healthOnRun(&h, true, "SECRET_TARGET_MISMATCH", "MAC_REQUIRED", 70)); // detail change is a change
     TEST_ASSERT_EQUAL_STRING("MAC_REQUIRED", h.detail);
     TEST_ASSERT_EQUAL_UINT64(60, h.since); // since tracks st and code only
+}
+
+static void test_health_pending_until_first_run(void) {
+    Health h{};
+    healthOnRun(&h, true, "LOGIN_FAILED", nullptr, 10);
+    // Re-applied job: no clean ok before a run has succeeded.
+    TEST_ASSERT_TRUE(healthOnWait(&h, "PENDING", 20));
+    TEST_ASSERT_EQUAL_STRING("wait", healthStateName(h.st));
+    TEST_ASSERT_EQUAL_STRING("PENDING", h.code);
+    TEST_ASSERT_TRUE(HealthChange::URGENT == healthOnRun(&h, true, "LOGIN_FAILED", nullptr, 30));
+    healthOnWait(&h, "PENDING", 40);
+    TEST_ASSERT_TRUE(HealthChange::COALESCED == healthOnRun(&h, false, nullptr, nullptr, 50));
+    TEST_ASSERT_TRUE(h.st == HealthState::OK);
+    TEST_ASSERT_EQUAL_STRING("", h.code);
 }
 
 static void test_health_wait_and_off(void) {
@@ -950,11 +966,8 @@ static void test_health_wait_and_off(void) {
     TEST_ASSERT_EQUAL_STRING("off", healthStateName(h.st));
     TEST_ASSERT_TRUE(healthOnOff(&h, nullptr, 8));
     TEST_ASSERT_EQUAL_STRING("", h.code);
-    // A failed run after a wait leaves wait: ok with the code until the third failure.
-    TEST_ASSERT_TRUE(healthOnRun(&h, true, "TIMEOUT", nullptr, 9));
-    TEST_ASSERT_TRUE(h.st == HealthState::OK);
-    TEST_ASSERT_EQUAL_STRING("ok", healthStateName(HealthState::OK));
-    TEST_ASSERT_EQUAL_STRING("err", healthStateName(HealthState::ERR));
+    TEST_ASSERT_TRUE(HealthChange::URGENT == healthOnRun(&h, true, "TIMEOUT", nullptr, 9));
+    TEST_ASSERT_TRUE(h.st == HealthState::ERR);
 }
 
 static void test_report_coalescing(void) {
@@ -994,9 +1007,10 @@ void run_collector_runtime_tests(void) {
     RUN_TEST(test_queue_chunk_travels_alone);
     RUN_TEST(test_queue_generation_separates_bodies);
     RUN_TEST(test_token_bucket);
-    RUN_TEST(test_health_err_after_three_failures);
+    RUN_TEST(test_health_err_on_first_failure);
     RUN_TEST(test_health_ok_after_one_success_clears);
     RUN_TEST(test_health_partial_run_and_detail);
+    RUN_TEST(test_health_pending_until_first_run);
     RUN_TEST(test_health_wait_and_off);
     RUN_TEST(test_report_coalescing);
 }

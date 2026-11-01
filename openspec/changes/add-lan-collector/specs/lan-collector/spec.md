@@ -436,15 +436,19 @@ Each part SHALL be identified by `(boot, job, seq, step, i)`: `boot` a random 16
 - **THEN** new parts carry a new `boot` id, so `seq` restarting at 1 never collides with parts from the previous boot
 
 ### Requirement: Job health in the shadow
-`reported` SHALL carry `enabled`, `rev`, `sha256`, `apply_error` and `jobs`, an array with one entry `{id, rev, st, since, code, detail}` per job of the applied set, in job list order, with `st` one of `ok`, `err`, `wait`, `off`, `since` the Unix second of the last change of `st` or `code`, `code` the last error or wait reason (`null` when there is none), and `detail` the executor reason_detail that came with `code` when it is a code token `[A-Z_]{1,24}` (`null` otherwise). Every entry SHALL carry all six keys. Every report that carries `jobs` SHALL carry the whole array: AWS merges nested objects key by key but replaces an array whole, so a job that left the set and a cleared `code` or `detail` disappear from the stored shadow with no id list to keep across reboots. The empty set reports `jobs: []`. `st` SHALL become `err` after 3 consecutive failed runs and `ok` after one successful run. Health-only changes SHALL be reflected in the reported state at most once per 300 s; apply results and switch changes SHALL be reported at once. Counters and timestamps that change on every run SHALL NOT be in the shadow.
+`reported` SHALL carry `enabled`, `rev`, `sha256`, `apply_error` and `jobs`, an array with one entry `{id, rev, st, since, code, detail}` per job of the applied set, in job list order, with `st` one of `ok`, `err`, `wait`, `off`, `since` the Unix second of the last change of `st` or `code`, `code` the last error or wait reason (`null` when there is none), and `detail` the executor reason_detail that came with `code` when it is a code token `[A-Z_]{1,24}` (`null` otherwise). Every entry SHALL carry all six keys. Every report that carries `jobs` SHALL carry the whole array: AWS merges nested objects key by key but replaces an array whole, so a job that left the set and a cleared `code` or `detail` disappear from the stored shadow with no id list to keep across reboots. The empty set reports `jobs: []`. `st` SHALL become `err` after any failed run and `ok` after one successful run, so a failing job never reports `ok`. An enabled job adopted without carried state (new, or a changed job `rev`) SHALL report `st: "wait"`, `code: "PENDING"` until its first run ends, never a clean `ok` before a run succeeded. Apply results, switch changes and a job entering `err` SHALL be reported at once; other health-only changes (recovery, a new code while already failing, wait reasons) SHALL be reflected in the reported state at most once per 300 s. Counters and timestamps that change on every run SHALL NOT be in the shadow.
 
 #### Scenario: Flapping target
 - **WHEN** a job alternates between failing and succeeding every minute
-- **THEN** the `collector` shadow is published at most once per 300 s for health changes
+- **THEN** each failure is reported at once as `st: "err"`, and the recoveries in between are coalesced to at most one report per 300 s
 
-#### Scenario: Persistent failure surfaces
-- **WHEN** a job fails 3 runs in a row with `CONNECT_FAILED`
-- **THEN** within 300 s the shadow reports `st: "err"`, `code: "CONNECT_FAILED"`
+#### Scenario: First failure surfaces at once
+- **WHEN** a job that reported `st: "ok"` fails one run with `LOGIN_FAILED`
+- **THEN** the shadow reports `st: "err"`, `code: "LOGIN_FAILED"` right after that run, not after the 300 s coalescing window
+
+#### Scenario: Re-applied job does not look healthy
+- **WHEN** a job in `st: "err"` with `code: "LOGIN_FAILED"` is re-applied with a new job `rev`
+- **THEN** the shadow reports `st: "wait"`, `code: "PENDING"` at once, and `st: "err"` again at once if the next run fails
 
 #### Scenario: Job removed from the set
 - **WHEN** job `mb_old` reported `st: "err"`, `code: "CONNECT_FAILED"`, and a set without `mb_old` is applied (or the device reboots and loads that set)
