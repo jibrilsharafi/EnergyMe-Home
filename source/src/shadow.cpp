@@ -354,12 +354,16 @@ static void _applyDelta(uint8_t idx, const char* payload) {
         LOG_INFO("Applied delta for shadow '%s' (version %lu)", _shadows[idx].desc.name, (unsigned long)version);
         // Refresh the drift baseline so the 3 s drift check does not see this
         // cloud-applied change as a fresh local edit and republish it. The ack
-        // above carries only the changed fields (partial), so rebuild the full
-        // report here rather than reusing outDoc.
+        // may carry only the changed fields, so start from a full report, then
+        // take the ack's own values: that is what the cloud now holds, even if
+        // the state moved while the ack was in flight (the drift check then
+        // republishes the newer state instead of losing it).
         SpiRamAllocator repAllocator;
         JsonDocument repDoc(&repAllocator);
         _shadows[idx].desc.report(repDoc);
-        _storeBaseline(idx, repDoc["state"]["reported"].as<JsonObjectConst>());
+        JsonObject base = repDoc["state"]["reported"].as<JsonObject>();
+        for (JsonPair kv : reported) base[kv.key()] = kv.value();
+        _storeBaseline(idx, base);
     } else {
         LOG_WARNING("Failed to publish delta ack for shadow '%s'", _shadows[idx].desc.name);
     }
