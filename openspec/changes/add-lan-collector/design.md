@@ -117,10 +117,10 @@ Source `src_7f3a`, XWEB at 192.168.1.50:80 (placeholder IP), 25 controllers on R
  "interval_s":300,"jitter_s":30,"step_timeout_ms":8000,"deadline_s":60,"max_bytes":131072,
  "vars":{"overlap_s":900,"backfill_s":21600,"window_max_s":3600,"user":"energyme",
    "req":"{\"13\":[1,4],\"14\":[1,4],\"15\":[1,4]}"},
- "session":{"ttl_s":1800,"expiry":{"status":[401,403],"marker":"login-screen"},
+ "session":{"ttl_s":1800,"expiry":{"status":[400,401,403],"marker":"login-screen"},
    "login":[{"id":"login","args":{"method":"POST","path":"/cgi-bin/login.lua",
      "headers":{"Content-Type":"application/x-www-form-urlencoded"},
-     "body":"user=${var:user|url}&pass=${secret:xweb_pw|url}"},
+     "body":"action=login&auth_mode=standard&username=${var:user|url}&password=${secret:xweb_pw|url}&initparam=-1"},
      "captures":[{"name":"sses","from":"body","after":"\"sses\":\"","before":"\""}]}]},
  "steps":[{"id":"chart","args":{"method":"POST","path":"/cgi-bin/datachart.cgi",
    "headers":{"Content-Type":"application/x-www-form-urlencoded"},
@@ -128,7 +128,7 @@ Source `src_7f3a`, XWEB at 192.168.1.50:80 (placeholder IP), 25 controllers on R
  "publish":"per_step"}]}
 ```
 
-A run: if no session (or 30 minutes since login) the login step runs, its part is header-only (`ph:"login"`, `total`, `len:0`). The chart step expands `startTS` (window start) and `stopTS` (window end) as device UTC seconds; the pilot XWEB clock, measured about 1 h 24 min ahead, is corrected at the source (ideally NTP) before the job runs. In steady state the window is the last 5 minutes plus 15 minutes of overlap; after a reboot or outage it walks the 6-hour backlog one hour per run. If the XWEB answers with its login page (an expired session gets HTTP 200 with the web UI login page, which contains `login-screen`, not `login.lua`) or 401/403, the device logs in once and retries. The chart reply (text or binary, up to 128 KB) is published on `.../collector/src_7f3a` with `win`, `sha`, chunked above 48 KB. The cloud `dixell-xweb` driver decodes it into points `home/9070698753dc/src/src_7f3a/<address>/<var>` (e.g. `.../13/1` case air temperature, `.../13/4` setpoint) using the source device maps; overlap duplicates collapse on the point key. With `req` covering 25 controllers (variables 1 and 4 each), this job plus the Modbus job of example 2 measure about 1675 bytes as compact `doc` and about 1995 bytes once escaped into the shadow string, well inside the 5120 / 5632-byte budgets; task 4.1 measures the real delta on the device.
+A run: if no session (or 30 minutes since login) the login step runs, its part is header-only (`ph:"login"`, `total`, `len:0`). The chart step expands `startTS` (window start) and `stopTS` (window end) as device UTC seconds; the pilot XWEB clock, measured about 1 h 24 min ahead, is corrected at the source (ideally NTP) before the job runs. In steady state the window is the last 5 minutes plus 15 minutes of overlap; after a reboot or outage it walks the 6-hour backlog one hour per run. If the XWEB answers with its login page (an expired session gets HTTP 200 with the web UI login page, which contains `login-screen`, not `login.lua`) or 400/401/403, the device logs in once and retries. The XWEB keeps one session per user, so a login from the web UI with the same user invalidates the job's session and the next chart request gets HTTP 400 (seen on the pilot, 2026-11-01); a dedicated XWEB user for EnergyMe avoids it. The chart reply (text or binary, up to 128 KB) is published on `.../collector/src_7f3a` with `win`, `sha`, chunked above 48 KB. The cloud `dixell-xweb` driver decodes it into points `home/9070698753dc/src/src_7f3a/<address>/<var>` (e.g. `.../13/1` case air temperature, `.../13/4` setpoint) using the source device maps; overlap duplicates collapse on the point key. With `req` covering 25 controllers (variables 1 and 4 each), this job plus the Modbus job of example 2 measure about 1675 bytes as compact `doc` and about 1995 bytes once escaped into the shadow string, well inside the 5120 / 5632-byte budgets; task 4.1 measures the real delta on the device.
 
 Commands during the run (support `http_request` to the XWEB UI) wait at most 8 s. If the tunnel is opened for the XWEB web UI, the job pauses and resumes after; the next window covers the gap.
 
@@ -176,7 +176,6 @@ Rollback: set `enabled: false` (shadow or REST) or `gateway_enabled: false`; an 
 
 ## Open Questions
 
-- Exact XWEB login form field names, the `sses` delimiters and the hourly reply size (task 1.3); they change only the example job JSON and its `window_max_s` / `max_bytes`.
 - Decision for Jibril: whether to add a collector-only device rule for GET steps (D9 residual), for example "a GET step must match a device-side list too". It closes the state-changing GET gap on the device but changes the agreed path model (GET read by method) and brings back a stored copy of the job's reads. Until decided, the infra jobs tool's `READ_REQUESTS` check is the only control.
 - Decided 2026-10-31 (revised): no source clock offset anywhere, on the device or in the cloud. Source timestamps are taken as sent and a wrong source clock is fixed at the source (the pilot XWEB by the customer or EnergyMe, ideally with NTP) before its job is enabled; see ADR-0001 (`docs/adr/0001-solve-at-the-source.md`).
 - Whether the AWS 8 KB named-shadow limit applies to `desired` and `reported` together or to each; the budget assumes together (conservative), so a looser reading needs no change.
