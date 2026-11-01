@@ -381,14 +381,12 @@ struct Health {
     uint32_t consecutiveFailures;
 };
 
-// NONE: nothing changed. COALESCED: st, code or detail changed (a report is due within 300 s).
-// URGENT: the job entered err (report at once).
+// NONE: unchanged; COALESCED: reported within 300 s; URGENT: entered err, report at once.
 enum class HealthChange : uint8_t { NONE, COALESCED, URGENT };
 // Any failed run sets err; a successful run sets ok (code kept for a failed data step).
 HealthChange healthOnRun(Health* health, bool failed, const char* code, const char* detail, uint64_t nowS);
-// A job adopted without a carried state has not run yet: wait with code PENDING, never a clean ok.
-bool healthOnPending(Health* health, uint64_t nowS);
-bool healthOnWait(Health* health, const char* code, uint64_t nowS); // WAIT_CLOCK, PAUSED_*, LOW_HEAP, OFFLINE, BUDGET, NO_MEMORY
+// PENDING (adopted, not run yet), WAIT_CLOCK, PAUSED_*, LOW_HEAP, OFFLINE, BUDGET, NO_MEMORY
+bool healthOnWait(Health* health, const char* code, uint64_t nowS);
 bool healthOnOff(Health* health, const char* code, uint64_t nowS); // code nullptr or GATEWAY_DISABLED
 // Health-only changes are reported at most once per 300 s; apply results, switches and err onsets at once.
 bool reportDue(bool healthChanged, bool urgent, uint64_t lastReportS, uint64_t nowS);

@@ -501,11 +501,6 @@ HealthChange healthOnRun(Health *health, bool failed, const char *code, const ch
     return failed && !wasErr ? HealthChange::URGENT : HealthChange::COALESCED;
 }
 
-bool healthOnPending(Health *health, uint64_t nowS) {
-    health->consecutiveFailures = 0;
-    return setHealth(health, HealthState::WAIT, "PENDING", nullptr, nowS);
-}
-
 bool healthOnWait(Health *health, const char *code, uint64_t nowS) { return setHealth(health, HealthState::WAIT, code, nullptr, nowS); }
 
 bool healthOnOff(Health *health, const char *code, uint64_t nowS) { return setHealth(health, HealthState::OFF, code, nullptr, nowS); }

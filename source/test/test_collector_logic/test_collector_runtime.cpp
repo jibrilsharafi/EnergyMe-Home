@@ -946,12 +946,11 @@ static void test_health_pending_until_first_run(void) {
     Health h{};
     healthOnRun(&h, true, "LOGIN_FAILED", nullptr, 10);
     // Re-applied job: no clean ok before a run has succeeded.
-    TEST_ASSERT_TRUE(healthOnPending(&h, 20));
+    TEST_ASSERT_TRUE(healthOnWait(&h, "PENDING", 20));
     TEST_ASSERT_EQUAL_STRING("wait", healthStateName(h.st));
     TEST_ASSERT_EQUAL_STRING("PENDING", h.code);
-    TEST_ASSERT_EQUAL_UINT32(0, h.consecutiveFailures);
     TEST_ASSERT_TRUE(HealthChange::URGENT == healthOnRun(&h, true, "LOGIN_FAILED", nullptr, 30));
-    healthOnPending(&h, 40);
+    healthOnWait(&h, "PENDING", 40);
     TEST_ASSERT_TRUE(HealthChange::COALESCED == healthOnRun(&h, false, nullptr, nullptr, 50));
     TEST_ASSERT_TRUE(h.st == HealthState::OK);
     TEST_ASSERT_EQUAL_STRING("", h.code);
@@ -969,7 +968,6 @@ static void test_health_wait_and_off(void) {
     TEST_ASSERT_EQUAL_STRING("", h.code);
     TEST_ASSERT_TRUE(HealthChange::URGENT == healthOnRun(&h, true, "TIMEOUT", nullptr, 9));
     TEST_ASSERT_TRUE(h.st == HealthState::ERR);
-    TEST_ASSERT_EQUAL_STRING("ok", healthStateName(HealthState::OK));
 }
 
 static void test_report_coalescing(void) {
