@@ -131,18 +131,18 @@
         <h1>Channels</h1>
         <div style="margin-bottom: 1em;">
             <label>
-                Device L wire (voltage phase):
+                Supply phase:
                 <select id="voltagePhaseSelect" disabled onchange="changeVoltagePhase()">
-                    <option value="" disabled selected>unavailable</option>
+                    <option value="" disabled selected hidden>-</option>
                     <option value="1">1</option>
                     <option value="2">2</option>
                     <option value="3">3</option>
                 </select>
             </label>
             <span class="info-tooltip">
-                <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about the voltage input">ⓘ</button>
+                <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about the supply phase">ⓘ</button>
                 <div class="info-tooltip-popover" role="tooltip">
-                    The device measures voltage once, on the line its own L wire is connected to: the voltage phase. Set it to that line, then set each channel's phase to the line its CT is on, channel 0 included. On a single-phase home leave it at 1. It is 1 on a new device and channel 0's former phase on a device upgraded from an older firmware.
+                    The phase the device's power supply is connected to. Number each channel's phase the same way, channel 0 included. On a single-phase installation leave it at 1.
                 </div>
             </span>
         </div>
@@ -205,9 +205,7 @@
         const next = parseInt(select.value, 10);
         if (voltagePhase === null || next === voltagePhase) return;
         voltagePhaseEditing = true;
-        // A change turns every non-split channel and re-runs the reversed-CT check,
-        // which reads a channel exporting at that moment as a reversed CT
-        if (!confirm(`Set the voltage phase to ${next}?\n\nEvery channel reading is turned to the new base and the reversed-CT detection runs again on every active channel. Do it only while every grid, battery and inverter channel is importing (no PV surplus or battery export), then check every channel's Reverse flag.`)) {
+        if (!confirm(`Change the supply phase to ${next}? Every channel reading will be recalculated.`)) {
             voltagePhaseEditing = false;
             select.value = String(voltagePhase);
             return;
@@ -224,15 +222,15 @@
         await refreshVoltagePhase(true);
         voltagePhaseEditing = false;
         if (!sent) return;
-        showStatus(`Voltage phase set to ${voltagePhase}`, 'success');
-        // The re-armed polarity check may flip reverse on the next readings: say which
+        showStatus(`Supply phase set to ${voltagePhase}`, 'success');
+        // The change re-runs the reversed-CT check, which may flip reverse: say where
         const reverseBefore = Object.fromEntries(Object.entries(channelData).map(([i, ch]) => [i, ch.reverse]));
         setTimeout(async () => {
             await refreshChannelConfig();
             const flipped = Object.entries(channelData)
                 .filter(([i, ch]) => ch.reverse !== reverseBefore[i])
                 .map(([i, ch]) => ch.label || `Channel ${i}`);
-            if (flipped.length) showStatus(`Reverse flipped on: ${flipped.join(', ')}`, 'info');
+            if (flipped.length) showStatus(`Reverse set automatically on: ${flipped.join(', ')}`, 'info');
         }, RECONCILE_DELAY_MS);
     }
 
@@ -306,7 +304,7 @@
                         <div class="info-tooltip-popover" role="tooltip">
                             The AC phase this CT is measuring.<br><br>
                             <strong>Single-phase</strong>: leave everything on Phase 1.<br><br>
-                            <strong>3-phase</strong>: phases are labelled relative to the voltage phase shown at the top of this page. Assign each CT to its physical phase; channel 0 is set like any other channel. While the load is drawing power, the live preview below shows what each choice would read &ndash; the right one has PF close to 1 (the power sign is irrelevant, it just flips with the CT orientation).<br><br>
+                            <strong>3-phase</strong>: phases are numbered from the supply phase at the top of this page. Assign each CT to its physical phase; channel 0 is set like any other channel. While the load is drawing power, the live preview below shows what each choice would read &ndash; the right one has PF close to 1 (the power sign is irrelevant, it just flips with the CT orientation).<br><br>
                             <strong>240V (Split Phase)</strong>: North American 240V circuits spanning both legs. A ×2 voltage multiplier is applied automatically, since the reference voltage is measured line-to-neutral (about 120&nbsp;V).
                         </div>
                     </span>
