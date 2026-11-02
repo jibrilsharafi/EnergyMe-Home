@@ -11,7 +11,7 @@ Task-based energy monitoring system built on FreeRTOS. ESP32-S3 interfaces with 
 
 - **Channels per product line**: Home 16 (1 direct + 15 multiplexed), Home Pro 12 (W5500 Ethernet)
 - **Measurements**: Voltage, current, active/reactive/apparent power, power factor, energy accumulation
-- Single voltage reference (channel 0): channels on other lines of a three-phase supply rotate the measured energies by ±120°, assuming a balanced voltage (see `ade7953.cpp`)
+- Single voltage input on the configurable voltage phase (`/api/v1/ade7953/voltage-phase`): channels on other lines of a three-phase supply, channel 0 included, rotate the measured energies by ±120°, assuming a balanced voltage (see `ade7953.cpp`)
 - Channel roles (load, grid, PV, battery, inverter, bidirectional) with automatic CT reversal detection
 - Calibration with no-load threshold detection
 

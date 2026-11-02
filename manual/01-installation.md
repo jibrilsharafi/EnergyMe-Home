@@ -103,7 +103,7 @@ The CT on **Channel 0** is the most accurate channel and should be used to measu
 > If you're choosing between the main grid line and something else (e.g., a solar inverter) for your one non-multiplexed channel, prefer the grid line. It's the channel whose fast, accurate readings matter most (import/export, billing, dynamic pricing), while a PV inverter's output changes slowly enough that a multiplexed branch channel keeps up fine. Any load can still go on Channel 0 electrically, this is purely about getting the most value out of its higher sample rate.
 
 > **ⓘ NOTE: Channel 0 doesn't need a CT clamped on it, but it can't be switched off**  
-> Clamping a CT here is optional: if you'd rather not track your whole-home total, you can leave Channel 0 unclamped and it will simply read ~0 W. What you can't do is disable it in the software; unlike every other channel, its **Active** toggle in [§4.5](02-setup.md#45-configure-each-channel) can't be unticked. This is because Channel 0 isn't routed through the channel multiplexer like Channels 1-15: it's wired directly to the ADE7953's one voltage input, which doubles as the voltage reference every other channel's power calculation depends on, so it's always read regardless of whether anything is clamped to it.
+> Clamping a CT here is optional: if you'd rather not track your whole-home total, you can leave Channel 0 unclamped and it will simply read ~0 W. What you can't do is disable it in the software; unlike every other channel, its **Active** toggle in [§4.5](02-setup.md#45-configure-each-channel) can't be unticked. This is because Channel 0 isn't routed through the channel multiplexer like Channels 1-15: it's read on the ADE7953's own input together with the device's single voltage measurement, which supplies the voltage and frequency every other channel's power calculation depends on, so it's always read regardless of whether anything is clamped to it.
 
 1. Take **one** of the CT clamps from the kit (any of them, they're all identical).
 2. Identify the **main line conductor** downstream of the main breaker (typically the brown/black wire coming from the kWh meter into the panel).
@@ -118,8 +118,8 @@ The CT on **Channel 0** is the most accurate channel and should be used to measu
 > **⚠ Three-phase main supply**  
 > If your main supply is three-phase, the CT on Channel 0 goes on **one of the three phases**, and you'll need additional CTs on the other two phases (on free branch channels). See **[Appendix B](appendices.md#appendix-b-three-phase-configuration)**.
 
-> **⚠ WARNING: Channel 0 must be on the same phase as the device's own power feed**  
-> The device measures voltage only once, from its own **L/N power connection** ([§3.2](#32-connect-the-power-supply-l-and-n)), and uses that single reading as the voltage reference for every channel's power calculation. On a single-phase home there is only one phase, so this is automatic. On a **three-phase supply**, the phase that powers the device (its brown L wire) and the phase that Channel 0's CT is clamped on **must be the same physical conductor**. If Channel 0 ends up on a different phase than the device's own power feed, its power and power factor readings will be wrong, since the voltage and current being multiplied together come from two conductors that are ~120° apart. See **[Appendix B.1](appendices.md#b1-three-phase-main-supply)**.
+> **ⓘ NOTE: Phases are labelled relative to the device's own power feed**  
+> The device measures voltage only once, from its own **L/N power connection** ([§3.2](#32-connect-the-power-supply-l-and-n)), and uses that single reading for every channel's power calculation. The line its brown L wire is connected to is the **voltage phase**: phase 1 on a new device, Channel 0's former phase on a device upgraded from a firmware older than 2.8.0, and shown at the top of the **Channels** page. On a single-phase home everything is phase 1, so there is nothing to do. On a **three-phase supply**, Channel 0's CT can go on any phase: set each channel's `Phase`, Channel 0's included, to the line its CT is on relative to the voltage phase. A channel set to the wrong phase reads plausible but wrong power and power factor, since its voltage and current would come from two conductors ~120° apart. See **[Appendix B.1](appendices.md#b1-three-phase-main-supply)**.
 
 ### 3.4 Install the CTs on the branch channels (1 to 15): Critical step ⚠
 
@@ -180,7 +180,7 @@ Before turning the main breaker back ON:
 | --- | --- |
 | All CT jacks are **pushed in firmly until they click**, not just resting in the socket (1 on Channel 0, the others on Channels 1-15) | ☐ |
 | Brown (L) and Blue (N) wires from the device are tightly connected, no copper visible | ☐ |
-| Channel 0 CT is on the main Line conductor | ☐ |
+| Channel 0 CT is on the main Line conductor (on three-phase, any phase, noted relative to the phase of the device's own L wire) | ☐ |
 | Each branch CT is on the OUTPUT side of its breaker (not on the comb bar) | ☐ |
 | No tools or screws left inside the panel | ☐ |
 | Channel map ([Appendix A](appendices.md#appendix-a-channel-map)) filled in (where known) and photographed | ☐ |

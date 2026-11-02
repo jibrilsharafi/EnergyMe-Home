@@ -27,7 +27,7 @@ Fill in during installation (where known), take a photo before closing the panel
 1. Take **3 CTs** from the kit (or expansion kit).
 2. Clamp each CT around **one of the three phase conductors** (L1, L2, L3), never around the neutral.
 3. Plug them into the device:
-   - **The same phase that powers the device** (the panel conductor the device's own brown L wire is connected to, [§3.2](01-installation.md#32-connect-the-power-supply-l-and-n)) → Channel `0`. Call this "L1" for labelling purposes; it does not need to be your panel's actual L1 busbar, just whichever phase the device itself draws power from.
+   - **The same phase that powers the device** (the panel conductor the device's own brown L wire is connected to, [§3.2](01-installation.md#32-connect-the-power-supply-l-and-n)) → Channel `0`, the simplest layout. Call this "L1" for labelling purposes; it does not need to be your panel's actual L1 busbar, just whichever phase the device itself draws power from (the voltage phase, phase 1 on a new device).
    - The second phase → any free branch channel (e.g., Channel `1`), labelled "L2"
    - The third phase → any free branch channel (e.g., Channel `2`), labelled "L3"
 4. **Write down which physical phase is on which channel;** you'll need it for the software step.
@@ -35,7 +35,10 @@ Fill in during installation (where known), take a photo before closing the panel
 > **✅ TIP: Identifying which conductor is which phase**  
 > If the panel isn't labelled, a multimeter tells you in seconds: measure the voltage **between two candidate phase conductors**. The same phase reads close to 0 V; two different phases read the full phase-to-phase voltage (roughly 400 V on a 230 V three-phase system; the exact figure depends on your grid). Repeat across all conductors you're considering to map out which is which before you start clamping.
 
-> **⚠ Channel 0 is not just "any" phase.** The device has a single voltage input, wired to its own L/N power terminal. Every channel's power is computed against that one voltage reading, so Channel 0's CT **must** be on the same conductor that feeds the device, not an arbitrary phase. Getting this wrong produces plausible-looking but incorrect power and power factor readings on every channel, since the reference voltage and the measured current would be ~120° out of phase with each other. See the warning in [§3.3](01-installation.md#33-install-the-ct-on-channel-0-main-line).
+> **ⓘ Phases are labelled relative to the voltage phase.** The device has a single voltage input, wired to its own L/N power terminal, and every channel's power is computed against that one voltage reading. The line of that L wire is the **voltage phase**: phase 1 on a new device, Channel 0's former phase on a device upgraded from a firmware older than 2.8.0, shown at the top of the **Channels** page. Each channel's `Phase`, Channel 0's included, names the line its CT is on relative to it, so Channel 0's CT can sit on any phase as long as its `Phase` says which. A wrong `Phase` produces plausible-looking but incorrect power and power factor readings on that channel, since its voltage and current would come from conductors ~120° apart. See the note in [§3.3](01-installation.md#33-install-the-ct-on-channel-0-main-line).
+
+> **⚠ Changing the voltage phase**  
+> The voltage phase is not set on the **Channels** page but through the REST API (`PUT /api/v1/ade7953/voltage-phase`) or the cloud `meter` shadow. A change turns every channel except `240V (Split Phase)` ones by the same angle, and re-runs the reversed-CT detection on every active one. That detection only looks at the sign of active power, whatever the channel's Role, so change the voltage phase only while every bidirectional channel (grid, battery, inverter, bidirectional) is importing, with no PV surplus or battery export, and read back every channel's **Reverse** flag afterwards.
 
 #### Software
 
@@ -55,7 +58,7 @@ The three channels share the same **Grouping** value (`Grid`), so the dashboard 
 > A channel with the wrong `Phase` setting still shows plausible-looking numbers, just wrong ones, so it's easy to miss. The fast check: put a purely resistive load on the circuit (a kettle, a resistive heater) and look at its power factor. A resistive load should read **close to 100% PF**. If it instead reads **close to 50% PF**, that channel is very likely on the wrong phase (each phase is 120° apart, and being 120° off collapses a 100% PF load to almost exactly 50%). Try the other phase settings and watch the power factor climb back towards 100%.
 
 > **ⓘ NOTE: Accuracy on L2 and L3**  
-> The device only measures the voltage of the phase it is powered from. Channels on the other two phases are computed assuming the three voltages have the same amplitude and are exactly 120° apart, so expect them to be slightly less accurate than Channel 0's phase (typically within 1-2%, depending on how balanced your supply is).
+> The device only measures the voltage of the phase it is powered from. Channels on the other two phases are computed assuming the three voltages have the same amplitude and are exactly 120° apart, so expect them to be slightly less accurate than the channels on the device's own phase (typically within 1-2%, depending on how balanced your supply is).
 
 ### B.2 Three-phase branch load (e.g., EV charger, heat pump, oven)
 
