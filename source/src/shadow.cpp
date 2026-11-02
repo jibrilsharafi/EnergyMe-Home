@@ -865,7 +865,10 @@ static void _reportMeter(JsonDocument& doc) {
     Ade7953::getConfigurationAsJson(cfg);
     for (JsonPairConst kv : cfg.as<JsonObjectConst>()) rep[kv.key()] = kv.value();
     rep["sample_time"] = Ade7953::getSampleTime();
-    rep["voltage_phase"] = static_cast<uint8_t>(Ade7953::getVoltagePhase());
+    // Only the stored value: null (removed from reported) before the boot load or after a failed
+    // migration write, so a default never reaches the shadow and a fresh value proves the key is in NVS.
+    if (Ade7953::isVoltagePhaseStored()) rep["voltage_phase"] = static_cast<uint8_t>(Ade7953::getVoltagePhase());
+    else rep["voltage_phase"] = nullptr;
 }
 
 static bool _applyMeter(JsonObjectConst delta, JsonObject reported) {
