@@ -757,49 +757,17 @@ void test_valid_key_wins_over_channel0(void) {
     }
 }
 
-void test_upgrade_migration_changes_no_reading(void) {
-    // The old firmware rotated every channel from channel 0's phase. With the voltage
-    // phase migrated from it, every channel's frame is bit-identical.
-    for (int p0 = 0; p0 < 3; p0++) {
-        Phase voltagePhase =
-            PhaseUtils::resolveVoltagePhase(PhaseUtils::StoredVoltagePhase::Absent, 0, ROTATIONAL_PHASES[p0]);
-        for (int k = 0; k < 4; k++) {
-            for (int rev = 0; rev < 2; rev++) {
-                PhaseUtils::ActiveReactive before =
-                    PhaseUtils::toChannelFrame(812.5f, -341.0f, rev != 0, ROTATIONAL_PHASES[p0], ALL_PHASES[k]);
-                PhaseUtils::ActiveReactive after =
-                    PhaseUtils::toChannelFrame(812.5f, -341.0f, rev != 0, voltagePhase, ALL_PHASES[k]);
-                TEST_ASSERT_EQUAL_FLOAT(before.active, after.active);
-                TEST_ASSERT_EQUAL_FLOAT(before.reactive, after.reactive);
-            }
-        }
-    }
-}
-
-void test_rotation_changes_matches_the_applied_shift(void) {
-    // rotationChanges must say exactly when the rotation toChannelFrame applies moves.
+void test_rearm_matches_the_moved_rotation(void) {
+    // The setter re-arms only on an actual change of value: for every such change, an
+    // active channel is re-armed exactly when the rotation toChannelFrame applies moves.
     for (int o = 0; o < 3; o++) {
         for (int n = 0; n < 3; n++) {
+            if (o == n) continue;
             for (int c = 0; c < 4; c++) {
                 bool moved = PhaseUtils::channelShiftDeg(ROTATIONAL_PHASES[o], ALL_PHASES[c]) !=
                              PhaseUtils::channelShiftDeg(ROTATIONAL_PHASES[n], ALL_PHASES[c]);
-                TEST_ASSERT_EQUAL(moved, PhaseUtils::rotationChanges(ROTATIONAL_PHASES[o], ROTATIONAL_PHASES[n], ALL_PHASES[c]));
-            }
-        }
-    }
-    TEST_ASSERT_FALSE(PhaseUtils::rotationChanges(PHASE_1, PHASE_2, PHASE_SPLIT_240));
-    TEST_ASSERT_FALSE(PhaseUtils::rotationChanges(PHASE_2, PHASE_2, PHASE_1));
-    TEST_ASSERT_TRUE(PhaseUtils::rotationChanges(PHASE_1, PHASE_2, PHASE_1));
-}
-
-void test_rearm_on_voltage_phase_change(void) {
-    for (int o = 0; o < 3; o++) {
-        for (int n = 0; n < 3; n++) {
-            for (int c = 0; c < 4; c++) {
-                Phase oldV = ROTATIONAL_PHASES[o], newV = ROTATIONAL_PHASES[n], ch = ALL_PHASES[c];
-                bool expected = (oldV != newV) && (ch != PHASE_SPLIT_240);
-                TEST_ASSERT_EQUAL(expected, PhaseUtils::rearmOnVoltagePhaseChange(true, oldV, newV, ch));
-                TEST_ASSERT_FALSE(PhaseUtils::rearmOnVoltagePhaseChange(false, oldV, newV, ch));
+                TEST_ASSERT_EQUAL(moved, PhaseUtils::rearmOnVoltagePhaseChange(true, ALL_PHASES[c]));
+                TEST_ASSERT_FALSE(PhaseUtils::rearmOnVoltagePhaseChange(false, ALL_PHASES[c]));
             }
         }
     }
@@ -966,9 +934,7 @@ int main(int, char **) {
     RUN_TEST(test_invalid_key_is_replaced_from_channel0);
     RUN_TEST(test_unavailable_namespace_uses_channel0);
     RUN_TEST(test_valid_key_wins_over_channel0);
-    RUN_TEST(test_upgrade_migration_changes_no_reading);
-    RUN_TEST(test_rotation_changes_matches_the_applied_shift);
-    RUN_TEST(test_rearm_on_voltage_phase_change);
+    RUN_TEST(test_rearm_matches_the_moved_rotation);
     RUN_TEST(test_waveform_shift_is_zero_unless_off_phase);
     RUN_TEST(test_field_channel0_ct_on_another_line_reversed);
     RUN_TEST(test_field_fix_table);

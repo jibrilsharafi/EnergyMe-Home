@@ -219,18 +219,11 @@ inline float channelShiftDeg(Phase voltagePhase, Phase channelPhase) {
     return isOffPhase(voltagePhase, channelPhase) ? calculatePhaseShiftDeg(voltagePhase, channelPhase) : 0.0f;
 }
 
-// Whether a voltage phase change moves a channel's rotation: every channel but
-// split-phase 240 V, whenever the value actually changes.
-inline bool rotationChanges(Phase oldVoltagePhase, Phase newVoltagePhase, Phase channelPhase) {
-    return oldVoltagePhase != newVoltagePhase && channelPhase != PHASE_SPLIT_240;
-}
-
 // CT polarity detection votes on the rotated active power, so a voltage phase change
-// re-arms every active channel whose rotation it moved, as a per-channel phase change
-// does (issue #174).
-inline bool rearmOnVoltagePhaseChange(bool active, Phase oldVoltagePhase, Phase newVoltagePhase,
-                                      Phase channelPhase) {
-    return active && rotationChanges(oldVoltagePhase, newVoltagePhase, channelPhase);
+// re-arms every active channel whose rotation it moves, as a per-channel phase change
+// does (issue #174): every channel but split-phase 240 V, which is never rotated.
+inline bool rearmOnVoltagePhaseChange(bool active, Phase channelPhase) {
+    return active && channelPhase != PHASE_SPLIT_240;
 }
 
 } // namespace PhaseUtils
