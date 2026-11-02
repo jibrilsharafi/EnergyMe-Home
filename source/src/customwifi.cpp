@@ -172,6 +172,8 @@ namespace CustomWifi
   // Outage log state (see _countFailedAttempt()). WiFi task only.
   static uint64_t _outageStartedMs = 0; // Link lost or first failed attempt, 0 while online
   static uint64_t _lastOutageSummaryMs = 0;
+  static uint64_t _outageSummaryIntervalMs = WIFI_OUTAGE_SUMMARY_INTERVAL_MS; // Doubles per summary
+  static void _resetOutageLog();
   static uint32_t _outageFailedAttempts = 0;
   static bool _attemptRefused = false; // The attempt in flight was refused to start
   static bool _hasStoredCredentials();
@@ -843,8 +845,7 @@ namespace CustomWifi
             LOG_WARNING("WiFi back online after %llu s, %lu failed attempts",
                         (unsigned long long)((millis64() - _outageStartedMs) / 1000ULL),
                         (unsigned long)_outageFailedAttempts);
-            _outageStartedMs = 0;
-            _outageFailedAttempts = 0;
+            _resetOutageLog();
           }
           _lastWifiConnectedMillis = millis64(); // Track connection time for lwIP stabilization
           // Handle successful connection operations safely in task context
@@ -885,6 +886,7 @@ namespace CustomWifi
           _connectDeadlineMs = 0;
           _disconnectDeadlineMs = 0;
           _reconnectAttempts = 0;
+          _resetOutageLog();
           WiFi.disconnect(false);
           _feedProvisioning(WifiProvisioning::Event::CREDENTIALS_CLEARED);
         }
@@ -894,6 +896,7 @@ namespace CustomWifi
           if (_hasPendingCredentials)
           {
             LOG_INFO("Processing new WiFi credentials for SSID: %s", _pendingSSID);
+            _resetOutageLog();
 
             // Save new credentials to NVS using esp_wifi_set_config() directly
             // This stores credentials WITHOUT triggering a connection attempt,
@@ -1835,7 +1838,9 @@ namespace CustomWifi
   // Also the outage log. An unreachable AP fails an attempt every 10 s, and a WARNING per
   // attempt is what the saved log keeps: a 4 h outage filled the 1000-line LittleFS log
   // and trimmed away the crash history it was needed for (#295). So the first failure and
-  // a summary every WIFI_OUTAGE_SUMMARY_INTERVAL_MS are WARNINGs, the rest DEBUG.
+  // a summary at a doubling interval (10 min up to a day) are WARNINGs, the rest DEBUG, so
+  // even an AP gone for good, or a Pro on Ethernet with stale WiFi credentials, cannot
+  // turn the saved log over.
   static void _countFailedAttempt(const char *what)
   {
     _reconnectAttempts++;
@@ -1848,8 +1853,9 @@ namespace CustomWifi
       _lastOutageSummaryMs = nowMs;
       LOG_WARNING("WiFi offline: %s - retrying every %d s, details at DEBUG",
                   what, WIFI_CONNECT_TIMEOUT_SECONDS);
-    } else if (nowMs - _lastOutageSummaryMs >= WIFI_OUTAGE_SUMMARY_INTERVAL_MS) {
+    } else if (nowMs - _lastOutageSummaryMs >= _outageSummaryIntervalMs) {
       _lastOutageSummaryMs = nowMs;
+      if (_outageSummaryIntervalMs < WIFI_OUTAGE_SUMMARY_MAX_INTERVAL_MS) _outageSummaryIntervalMs *= 2;
       LOG_WARNING("WiFi still offline after %llu s, %lu failed attempts (last: %s)",
                   (unsigned long long)((nowMs - _outageStartedMs) / 1000ULL),
                   (unsigned long)_outageFailedAttempts, what);
@@ -1858,6 +1864,17 @@ namespace CustomWifi
     }
 
     _feedProvisioning(WifiProvisioning::Event::STA_ATTEMPT_FAILED);
+  }
+
+  // Ends the outage log, on reconnecting and on a credential change (the outage before it
+  // is not this network's). The credential paths drop the link themselves next, and that
+  // disconnect is not a lost link; GOT_IP sets the connection time again right after.
+  static void _resetOutageLog()
+  {
+    _outageStartedMs = 0;
+    _outageFailedAttempts = 0;
+    _outageSummaryIntervalMs = WIFI_OUTAGE_SUMMARY_INTERVAL_MS;
+    _lastWifiConnectedMillis = 0;
   }
 
   static bool _isPowerReset()
