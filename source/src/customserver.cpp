@@ -3123,7 +3123,22 @@ namespace CustomServer
             _crashTestStackOverflow(0);
         });
 
-        LOG_DEBUG("Registered dev-only crash test endpoints: null-deref, abort, stack-overflow");
+        // Spins with interrupts masked up to XCHAL_EXCM_LEVEL, as a FreeRTOS call made inside a
+        // portMUX critical section does: the tick stops on this core and the Interrupt watchdog fires
+        server.on("/api/v1/debug/crash/int-wdt", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
+            if (!_validateRequest(request, "POST")) return;
+
+            LOG_WARNING("Debug endpoint: spinning with interrupts masked to trip the Interrupt watchdog");
+            // Never cleared: the watchdog resets the chip first. The EXIT is there so the section
+            // is well formed for utils/tests/test_critical_sections.py.
+            volatile bool spinning = true;
+            portDISABLE_INTERRUPTS();
+            while (spinning) {}
+            portENABLE_INTERRUPTS();
+        });
+
+        LOG_DEBUG("Registered dev-only crash test endpoints: null-deref, abort, stack-overflow, int-wdt");
 
         // Bench aid for the offline energy buffer: drops the cloud session and keeps it down
         // for `seconds` (0 ends it), without touching the LAN the web UI and tunnel use
