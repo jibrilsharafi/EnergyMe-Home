@@ -294,7 +294,6 @@ namespace Ade7953
     static void _recalculateWeights();
     static void _updateVariability(uint8_t channelIndex, float newActivePower);
     static uint8_t _findNextActiveChannel(uint8_t currentChannel);
-    float _calculatePhaseShift(Phase voltagePhase, Phase currentPhase);
     // Returns the string name of the IRQSTATA bit, or UNKNOWN if the bit is not recognized.
     static const char *_irqstataBitName(uint32_t bit);
     void _printMeterValues(uint8_t channelIndex);
@@ -5045,10 +5044,6 @@ namespace Ade7953
         return MeterLogic::wdrrPick(_channelDeficit, active, count, 1, &_wdrrCursor);
     }
 
-    float _calculatePhaseShift(Phase voltagePhase, Phase currentPhase) {
-        return PhaseUtils::calculatePhaseShiftDeg(voltagePhase, currentPhase);
-    }
-
     const char* _irqstataBitName(uint32_t bit) {
         switch (bit) {
             case IRQSTATA_AEHFA_BIT:       return "AEHFA";
@@ -5206,11 +5201,12 @@ namespace Ade7953
         jsonDocument["captureStartUnixMillis"] = _captureStartUnixMillis;
         jsonDocument["captureStartMicros"] = _captureStartMicros;
         
-        // Add phase information
-        Phase voltagePhase = _channelData[0].phase;  // Voltage reference is always channel 0
+        // Add phase information. The shift is the rotation the meter applies (reverse
+        // excluded): 0 unless the channel is off-phase, so split-phase 240 V never shows one.
+        const Phase voltagePhase = getVoltagePhase();
         Phase currentPhase = _channelData[_captureChannel].phase;
-        float phaseShift = _calculatePhaseShift(voltagePhase, currentPhase);
-        
+        const float phaseShift = PhaseUtils::channelShiftDeg(voltagePhase, currentPhase);
+
         jsonDocument["voltagePhase"] = static_cast<uint32_t>(voltagePhase);
         jsonDocument["currentPhase"] = static_cast<uint32_t>(currentPhase);
         jsonDocument["phaseShiftDegrees"] = roundToDecimals(phaseShift, 0);
