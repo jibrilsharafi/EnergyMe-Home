@@ -3352,6 +3352,8 @@ paths:
                 properties:
                   voltagePhase:
                     $ref: '#/components/schemas/VoltagePhase'
+        '503':
+          description: The voltage phase is not stored yet (the meter did not initialize, or the boot could not write it). Writing it with PUT stores it once the meter is initialized.
     put:
       summary: Set the voltage phase
       description: |

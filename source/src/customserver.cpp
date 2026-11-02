@@ -3255,6 +3255,12 @@ namespace CustomServer
         // Get voltage phase (the line the voltage input is wired to)
         server.on("/api/v1/ade7953/voltage-phase", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
+            // Only a stored value is authoritative: before the boot load it is a default
+            if (!Ade7953::isVoltagePhaseStored()) {
+                _sendErrorResponse(request, HTTP_CODE_SERVICE_UNAVAILABLE, "Voltage phase not stored (meter not initialized or NVS write failed)");
+                return;
+            }
+
             SpiRamAllocator allocator;
             JsonDocument doc(&allocator);
 
@@ -3281,7 +3287,7 @@ namespace CustomServer
 
                 Phase voltagePhase = static_cast<Phase>(doc["voltagePhase"].as<uint8_t>());
 
-                // Validated above, so a failure means the value could not be stored and nothing changed
+                // Validated above, so a failure means the meter is not initialized or the value could not be stored; nothing changed
                 if (Ade7953::setVoltagePhase(voltagePhase))
                 {
                     LOG_INFO("ADE7953 voltage phase set to %u via API", static_cast<unsigned>(voltagePhase));
