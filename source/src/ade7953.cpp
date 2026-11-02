@@ -33,6 +33,10 @@ namespace Ade7953
     static volatile Phase _voltagePhase = DEFAULT_VOLTAGE_PHASE;
     // NVS holds _voltagePhase. False only after a boot that could not store the value it derived. Guarded by _configMutex after boot.
     static bool _voltagePhasePersisted = false;
+    // Set when setVoltagePhase stored and applied a change but could not take _channelDataMutex:
+    // the next reading re-arms CT polarity detection from _voltagePhaseRearmFrom to the current value.
+    static volatile bool _voltagePhaseRearmPending = false;
+    static volatile Phase _voltagePhaseRearmFrom = DEFAULT_VOLTAGE_PHASE;
     static uint8_t _currentChannel = INVALID_CHANNEL; // By default, no channel is selected (except for channel 0 which is always active)
     // Dynamic channel scheduling state (Weighted Deficit Round-Robin)
     static float _channelWeight[MAX_CHANNEL_COUNT] = {};     // Computed dynamic weight per channel
@@ -226,6 +230,8 @@ namespace Ade7953
 
     // Voltage phase management
     static void _setVoltagePhaseFromPreferences();
+    static bool _saveVoltagePhaseToPreferences(Phase voltagePhase);
+    static uint8_t _rearmPolarityOnVoltagePhaseChangeLocked(Phase oldVoltagePhase, Phase newVoltagePhase);
 
     // ADE7953 register reading functions
     /*
@@ -713,6 +719,60 @@ namespace Ade7953
 
     Phase getVoltagePhase() {
         return _voltagePhase;
+    }
+
+    bool setVoltagePhase(Phase voltagePhase) {
+        if (!PhaseUtils::isValidVoltagePhase(voltagePhase)) {
+            LOG_WARNING("Invalid voltage phase %lu (valid: 1-3)", static_cast<unsigned long>(voltagePhase));
+            return false;
+        }
+
+        // Serializes the REST handler and the shadow apply, so two writes can never
+        // persist in one order and apply in the other.
+        if (!acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
+            LOG_ERROR("Failed to acquire config mutex for setVoltagePhase");
+            return false;
+        }
+
+        const Phase oldVoltagePhase = _voltagePhase;
+        if (voltagePhase == oldVoltagePhase) {
+            // Same rotation, so nothing to re-arm. Store it only if the boot could not.
+            const bool stored = _voltagePhasePersisted || _saveVoltagePhaseToPreferences(voltagePhase);
+            releaseMutex(&_configMutex);
+            LOG_DEBUG("Voltage phase already %u", static_cast<unsigned>(voltagePhase));
+            return stored;
+        }
+
+        // Persist before applying: a failed write leaves NVS and RAM both on the old value
+        if (!_saveVoltagePhaseToPreferences(voltagePhase)) {
+            releaseMutex(&_configMutex);
+            return false;
+        }
+        _voltagePhase = voltagePhase;
+
+        uint8_t rearmed = 0;
+        bool deferred = false;
+        if (acquireMutex(&_channelDataMutex)) {
+            rearmed = _rearmPolarityOnVoltagePhaseChangeLocked(oldVoltagePhase, voltagePhase);
+            _voltagePhaseRearmPending = false;
+            releaseMutex(&_channelDataMutex);
+        } else {
+            // Already stored and applied: re-arm at the next reading rather than write the old value back
+            _voltagePhaseRearmFrom = oldVoltagePhase;
+            _voltagePhaseRearmPending = true;
+            deferred = true;
+        }
+        releaseMutex(&_configMutex);
+
+        if (deferred) {
+            LOG_ERROR("Voltage phase %u applied, CT polarity re-arm deferred to the next reading", static_cast<unsigned>(voltagePhase));
+        } else {
+            LOG_INFO(
+                "Voltage phase changed from %u to %u, CT polarity detection re-armed on %u channels",
+                static_cast<unsigned>(oldVoltagePhase), static_cast<unsigned>(voltagePhase), static_cast<unsigned>(rearmed)
+            );
+        }
+        return true;
     }
 
     // Channel data management
@@ -3889,6 +3949,20 @@ namespace Ade7953
             return false;
         }
 
+        // A setVoltagePhase that could not take the channel lock left its CT polarity
+        // re-arm to this reading. The unsynced flag is a fast path, re-tested under the mutex.
+        if (_voltagePhaseRearmPending && acquireMutex(&_channelDataMutex)) {
+            bool rearmedNow = false;
+            uint8_t rearmed = 0;
+            if (_voltagePhaseRearmPending) {
+                rearmed = _rearmPolarityOnVoltagePhaseChangeLocked(_voltagePhaseRearmFrom, _voltagePhase);
+                _voltagePhaseRearmPending = false;
+                rearmedNow = true;
+            }
+            releaseMutex(&_channelDataMutex);
+            if (rearmedNow) LOG_INFO("Deferred CT polarity re-arm after the voltage phase change done on %u channels", static_cast<unsigned>(rearmed));
+        }
+
         // We cannot put an higher limit here because if the channel happened to be disabled, then
         // enabled again, this would result in an infinite error.
         if (lastMillis != 0 && deltaMillis == 0) {
@@ -4542,6 +4616,44 @@ namespace Ade7953
         }
 
         if (opened) preferences.end();
+    }
+
+    // Persists the value and records that NVS holds it. The caller holds _configMutex.
+    bool _saveVoltagePhaseToPreferences(Phase voltagePhase) {
+        Preferences preferences;
+        if (!preferences.begin(PREFERENCES_NAMESPACE_ADE7953, false)) {
+            LOG_ERROR("Failed to open Preferences for saving the voltage phase");
+            return false;
+        }
+        bool stored = preferences.putUChar(CONFIG_VOLTAGE_PHASE_KEY, static_cast<uint8_t>(voltagePhase)) == sizeof(uint8_t);
+        preferences.end();
+
+        if (!stored) {
+            LOG_ERROR("Failed to store the voltage phase %u", static_cast<unsigned>(voltagePhase));
+            return false;
+        }
+        _voltagePhasePersisted = true;
+        LOG_DEBUG("Saved voltage phase %u to preferences", static_cast<unsigned>(voltagePhase));
+        return true;
+    }
+
+    // Re-arms CT polarity detection on every channel whose rotation the voltage phase change
+    // moved, with the same fields setChannelData sets for a per-channel phase change. The
+    // detector votes on the rotated active power, so a frame change invalidates its premise
+    // (issue #174). The caller holds _channelDataMutex. Returns the number of channels re-armed.
+    uint8_t _rearmPolarityOnVoltagePhaseChangeLocked(Phase oldVoltagePhase, Phase newVoltagePhase) {
+        uint8_t rearmed = 0;
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
+            if (!PhaseUtils::rearmOnVoltagePhaseChange(_channelData[i].active, oldVoltagePhase, newVoltagePhase, _channelData[i].phase)) continue;
+
+            _channelData[i]._pendingPolarityCheck = true;
+            _polarityVoteCount[i] = 0;
+            _polarityConductingReads[i] = 0;
+            if (i > 0) _channelData[i]._pendingPriorityRead = true;
+            rearmed++;
+        }
+        if (rearmed > 0) _recalculateWeights(); // the armed boost feeds the WDRR weights
+        return rearmed;
     }
 
     void _updateSampleTime() {
