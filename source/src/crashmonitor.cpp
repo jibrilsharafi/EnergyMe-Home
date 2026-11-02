@@ -17,6 +17,9 @@
 #include "mbedtls/sha256.h"
 #include "miniz.h"
 
+#include "hal/mwdt_ll.h"
+#include "soc/timer_group_struct.h"
+
 namespace CrashMonitor
 {
     // Static state variables
@@ -248,7 +251,13 @@ namespace CrashMonitor
             // some later boot, so freeze it before anything can defer the read
             _crashResetReason = (uint32_t)esp_reset_reason();
             _crashResetReasonValid = true;
-            if (coreDumpPending) _logCompleteCrashData();
+            if (coreDumpPending) {
+                _logCompleteCrashData();
+            } else {
+                LOG_WARNING("Crash: Reason=%s(%d) | Crashes=%lu (consecutive=%lu) | no core dump",
+                            getResetReasonString((esp_reset_reason_t)_crashResetReason), (int32_t)_crashResetReason,
+                            _crashCount, _consecutiveCrashCount);
+            }
         }
 
         // Increment reset count (always)
@@ -1223,4 +1232,16 @@ namespace CrashMonitor
     {
         return getTaskInfoSafely(_crashResetTaskHandle, CRASH_RESET_TASK_STACK_SIZE);
     }
+}
+
+// Linked in place of esp_core_dump_write() by -Wl,--wrap in platformio.ini.
+// An Interrupt watchdog panic runs from the watchdog's level-4 interrupt, which the panic
+// handler stops at the timer but leaves pending. The core dump's xthal_window_spill() briefly
+// drops PS.INTLEVEL to 3, so the pending interrupt re-enters the panic handler, which skips
+// the dump as a re-entry and reboots (#295, no Interrupt watchdog dump in 107 fleet records).
+// The timer is already disabled, so clearing the status keeps it from firing again.
+extern "C" void __real_esp_core_dump_write(panic_info_t *info);
+extern "C" void __wrap_esp_core_dump_write(panic_info_t *info) {
+    mwdt_ll_clear_intr_status(&TIMERG1);
+    __real_esp_core_dump_write(info);
 }
