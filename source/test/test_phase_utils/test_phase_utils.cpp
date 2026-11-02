@@ -721,72 +721,40 @@ void test_stored_voltage_phase_classification(void) {
 
 void test_absent_key_migrates_channel0_phase(void) {
     for (int p = 0; p < 3; p++) {
-        PhaseUtils::VoltagePhaseResolution r =
-            PhaseUtils::resolveVoltagePhase(PhaseUtils::StoredVoltagePhase::Absent, 0, ROTATIONAL_PHASES[p]);
-        TEST_ASSERT_EQUAL(ROTATIONAL_PHASES[p], r.phase);
-        TEST_ASSERT_TRUE(r.persist);
-        TEST_ASSERT_EQUAL(PhaseUtils::VoltagePhaseLog::Info, r.log);
+        TEST_ASSERT_EQUAL(ROTATIONAL_PHASES[p],
+                          PhaseUtils::resolveVoltagePhase(PhaseUtils::StoredVoltagePhase::Absent, 0, ROTATIONAL_PHASES[p]));
     }
 }
 
 void test_absent_key_with_unusable_channel0_phase_gives_phase1(void) {
     // Channel 0 is coerced off split-phase at load; this is the defence behind that.
-    PhaseUtils::VoltagePhaseResolution r =
-        PhaseUtils::resolveVoltagePhase(PhaseUtils::StoredVoltagePhase::Absent, 0, PHASE_SPLIT_240);
-    TEST_ASSERT_EQUAL(PHASE_1, r.phase);
-    TEST_ASSERT_TRUE(r.persist);
-
-    r = PhaseUtils::resolveVoltagePhase(PhaseUtils::StoredVoltagePhase::Absent, 0, static_cast<Phase>(0));
-    TEST_ASSERT_EQUAL(PHASE_1, r.phase);
+    TEST_ASSERT_EQUAL(PHASE_1, PhaseUtils::resolveVoltagePhase(PhaseUtils::StoredVoltagePhase::Absent, 0, PHASE_SPLIT_240));
+    TEST_ASSERT_EQUAL(PHASE_1, PhaseUtils::resolveVoltagePhase(PhaseUtils::StoredVoltagePhase::Absent, 0, static_cast<Phase>(0)));
 }
 
-void test_invalid_key_is_replaced_from_channel0_with_a_warning(void) {
-    // Stored 7 with channel 0 at phase 3, and stored 0 with channel 0 at phase 2 (a
-    // warning, not an informational migration).
-    PhaseUtils::VoltagePhaseResolution r =
-        PhaseUtils::resolveVoltagePhase(PhaseUtils::StoredVoltagePhase::Invalid, 7, PHASE_3);
-    TEST_ASSERT_EQUAL(PHASE_3, r.phase);
-    TEST_ASSERT_TRUE(r.persist);
-    TEST_ASSERT_EQUAL(PhaseUtils::VoltagePhaseLog::Warning, r.log);
-
-    r = PhaseUtils::resolveVoltagePhase(
-        PhaseUtils::classifyStoredVoltagePhase(true, true, true, 0), 0, PHASE_2);
-    TEST_ASSERT_EQUAL(PHASE_2, r.phase);
-    TEST_ASSERT_TRUE(r.persist);
-    TEST_ASSERT_EQUAL(PhaseUtils::VoltagePhaseLog::Warning, r.log);
-
-    r = PhaseUtils::resolveVoltagePhase(
-        PhaseUtils::classifyStoredVoltagePhase(true, true, true, 7), 7, PHASE_SPLIT_240);
-    TEST_ASSERT_EQUAL(PHASE_1, r.phase);
-    TEST_ASSERT_EQUAL(PhaseUtils::VoltagePhaseLog::Warning, r.log);
+void test_invalid_key_is_replaced_from_channel0(void) {
+    // Stored 7 with channel 0 at phase 3, and stored 0 with channel 0 at phase 2: both
+    // classify as invalid (a warning at boot, not an informational migration).
+    TEST_ASSERT_EQUAL(PHASE_3, PhaseUtils::resolveVoltagePhase(
+        PhaseUtils::classifyStoredVoltagePhase(true, true, true, 7), 7, PHASE_3));
+    TEST_ASSERT_EQUAL(PHASE_2, PhaseUtils::resolveVoltagePhase(
+        PhaseUtils::classifyStoredVoltagePhase(true, true, true, 0), 0, PHASE_2));
+    TEST_ASSERT_EQUAL(PHASE_1, PhaseUtils::resolveVoltagePhase(
+        PhaseUtils::classifyStoredVoltagePhase(true, true, true, 7), 7, PHASE_SPLIT_240));
 }
 
-void test_unavailable_namespace_uses_channel0_in_ram_only(void) {
-    PhaseUtils::VoltagePhaseResolution r =
-        PhaseUtils::resolveVoltagePhase(PhaseUtils::StoredVoltagePhase::Unavailable, 0, PHASE_3);
-    TEST_ASSERT_EQUAL(PHASE_3, r.phase);
-    TEST_ASSERT_FALSE(r.persist);
-    TEST_ASSERT_EQUAL(PhaseUtils::VoltagePhaseLog::Error, r.log);
+void test_unavailable_namespace_uses_channel0(void) {
+    TEST_ASSERT_EQUAL(PHASE_3, PhaseUtils::resolveVoltagePhase(PhaseUtils::StoredVoltagePhase::Unavailable, 0, PHASE_3));
 }
 
 void test_valid_key_wins_over_channel0(void) {
     // Downgrade, channel 0 edited on the old firmware, re-upgrade: the stored key wins.
     for (uint32_t stored = 1; stored <= 3; stored++) {
         for (int c = 0; c < 4; c++) {
-            PhaseUtils::VoltagePhaseResolution r =
-                PhaseUtils::resolveVoltagePhase(PhaseUtils::StoredVoltagePhase::Valid, stored, ALL_PHASES[c]);
-            TEST_ASSERT_EQUAL(stored, r.phase);
-            TEST_ASSERT_FALSE(r.persist);
-            TEST_ASSERT_EQUAL(PhaseUtils::VoltagePhaseLog::Debug, r.log);
+            TEST_ASSERT_EQUAL(stored, PhaseUtils::resolveVoltagePhase(
+                PhaseUtils::classifyStoredVoltagePhase(true, true, true, stored), stored, ALL_PHASES[c]));
         }
     }
-}
-
-void test_valid_state_with_out_of_range_value_is_not_trusted(void) {
-    PhaseUtils::VoltagePhaseResolution r =
-        PhaseUtils::resolveVoltagePhase(PhaseUtils::StoredVoltagePhase::Valid, 9, PHASE_2);
-    TEST_ASSERT_EQUAL(PHASE_2, r.phase);
-    TEST_ASSERT_TRUE(r.persist);
 }
 
 void test_upgrade_migration_changes_no_reading(void) {
@@ -794,7 +762,7 @@ void test_upgrade_migration_changes_no_reading(void) {
     // phase migrated from it, every channel's frame is bit-identical.
     for (int p0 = 0; p0 < 3; p0++) {
         Phase voltagePhase =
-            PhaseUtils::resolveVoltagePhase(PhaseUtils::StoredVoltagePhase::Absent, 0, ROTATIONAL_PHASES[p0]).phase;
+            PhaseUtils::resolveVoltagePhase(PhaseUtils::StoredVoltagePhase::Absent, 0, ROTATIONAL_PHASES[p0]);
         for (int k = 0; k < 4; k++) {
             for (int rev = 0; rev < 2; rev++) {
                 PhaseUtils::ActiveReactive before =
@@ -995,10 +963,9 @@ int main(int, char **) {
     RUN_TEST(test_stored_voltage_phase_classification);
     RUN_TEST(test_absent_key_migrates_channel0_phase);
     RUN_TEST(test_absent_key_with_unusable_channel0_phase_gives_phase1);
-    RUN_TEST(test_invalid_key_is_replaced_from_channel0_with_a_warning);
-    RUN_TEST(test_unavailable_namespace_uses_channel0_in_ram_only);
+    RUN_TEST(test_invalid_key_is_replaced_from_channel0);
+    RUN_TEST(test_unavailable_namespace_uses_channel0);
     RUN_TEST(test_valid_key_wins_over_channel0);
-    RUN_TEST(test_valid_state_with_out_of_range_value_is_not_trusted);
     RUN_TEST(test_upgrade_migration_changes_no_reading);
     RUN_TEST(test_rotation_changes_matches_the_applied_shift);
     RUN_TEST(test_rearm_on_voltage_phase_change);

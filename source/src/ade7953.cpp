@@ -4575,9 +4575,10 @@ namespace Ade7953
     (first boot on this firmware, or after a factory reset) is written once with
     channel 0's phase as loaded, the base older firmware took from channel 0, so the
     upgrade changes no reading. A valid stored key always wins afterwards: it is never
-    re-derived from channel 0, also after a downgrade and re-upgrade or after restoring
-    a backup without it. The value is assigned directly, never through setVoltagePhase,
-    so a boot never re-arms CT polarity detection (as armTransients=false for channels).
+    re-derived from channel 0, also after a downgrade and re-upgrade (a restore of a
+    backup without it removes it first, see restoreNvsFromJson). The value is assigned
+    directly, never through setVoltagePhase, so a boot never re-arms CT polarity
+    detection (as armTransients=false for channels).
     */
     void _setVoltagePhaseFromPreferences() {
         const Phase channel0Phase = _channelData[0].phase; // already coerced off split-phase 240 V by setChannelData; meter task not started yet
@@ -4590,49 +4591,37 @@ namespace Ade7953
         const PhaseUtils::StoredVoltagePhase state = PhaseUtils::classifyStoredVoltagePhase(
             opened, storedType != PT_INVALID, storedType == PT_U8, storedValue
         );
-        const PhaseUtils::VoltagePhaseResolution resolution = PhaseUtils::resolveVoltagePhase(state, storedValue, channel0Phase);
-        _voltagePhase = resolution.phase;
+        _voltagePhase = PhaseUtils::resolveVoltagePhase(state, storedValue, channel0Phase);
         _voltagePhasePersisted = (state == PhaseUtils::StoredVoltagePhase::Valid);
+        const unsigned voltagePhase = static_cast<unsigned>(_voltagePhase);
 
-        switch (resolution.log) {
-            case PhaseUtils::VoltagePhaseLog::Info:
-                LOG_INFO("Voltage phase migrated from channel 0: %u", static_cast<unsigned>(resolution.phase));
+        switch (state) {
+            case PhaseUtils::StoredVoltagePhase::Valid:
+                LOG_DEBUG("Loaded voltage phase %u from preferences", voltagePhase);
                 break;
-            case PhaseUtils::VoltagePhaseLog::Warning:
+            case PhaseUtils::StoredVoltagePhase::Absent:
+                LOG_INFO("Voltage phase migrated from channel 0: %u", voltagePhase);
+                break;
+            case PhaseUtils::StoredVoltagePhase::Invalid:
                 LOG_WARNING(
                     "Stored voltage phase is not a u8 in 1-3 (type %d, value %lu), replacing it with %u from channel 0",
-                    static_cast<int>(storedType), static_cast<unsigned long>(storedValue), static_cast<unsigned>(resolution.phase)
+                    static_cast<int>(storedType), static_cast<unsigned long>(storedValue), voltagePhase
                 );
+                preferences.remove(CONFIG_VOLTAGE_PHASE_KEY); // putUChar would leave a key of another NVS type in place
                 break;
-            case PhaseUtils::VoltagePhaseLog::Error:
-                LOG_ERROR(
-                    "Failed to open Preferences for the voltage phase, using %u from channel 0 for this boot without storing it",
-                    static_cast<unsigned>(resolution.phase)
-                );
-                break;
-            default:
-                LOG_DEBUG("Loaded voltage phase %u from preferences", static_cast<unsigned>(resolution.phase));
+            case PhaseUtils::StoredVoltagePhase::Unavailable:
+                LOG_ERROR("Failed to open Preferences for the voltage phase, using %u from channel 0 for this boot without storing it", voltagePhase);
                 break;
         }
-
-        if (resolution.persist) {
-            // Remove first: putUChar would leave a key of another NVS type in place
-            if (state == PhaseUtils::StoredVoltagePhase::Invalid) preferences.remove(CONFIG_VOLTAGE_PHASE_KEY);
-            if (preferences.putUChar(CONFIG_VOLTAGE_PHASE_KEY, static_cast<uint8_t>(resolution.phase)) == sizeof(uint8_t)) {
-                _voltagePhasePersisted = true;
-            } else {
-                LOG_ERROR(
-                    "Failed to store the voltage phase %u, using it until a later setter call or boot stores it",
-                    static_cast<unsigned>(resolution.phase)
-                );
-            }
-        }
-
         if (opened) preferences.end();
+
+        if (state == PhaseUtils::StoredVoltagePhase::Absent || state == PhaseUtils::StoredVoltagePhase::Invalid) {
+            _saveVoltagePhaseToPreferences(_voltagePhase);
+        }
         _voltagePhaseLoaded = true;
     }
 
-    // Persists the value and records that NVS holds it. The caller holds _configMutex.
+    // Persists the value and records that NVS holds it. The caller holds _configMutex, or is the boot load.
     bool _saveVoltagePhaseToPreferences(Phase voltagePhase) {
         Preferences preferences;
         if (!preferences.begin(PREFERENCES_NAMESPACE_ADE7953, false)) {

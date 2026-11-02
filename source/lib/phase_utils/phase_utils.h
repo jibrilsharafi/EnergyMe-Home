@@ -206,31 +206,10 @@ inline StoredVoltagePhase classifyStoredVoltagePhase(bool namespaceOpened, bool 
                                                             : StoredVoltagePhase::Invalid;
 }
 
-enum class VoltagePhaseLog : uint8_t {
-    Debug,   // valid key loaded
-    Info,    // absent key migrated from channel 0
-    Warning, // invalid key replaced
-    Error,   // namespace unavailable: derived value used in RAM only
-};
-
-struct VoltagePhaseResolution {
-    Phase phase;
-    bool persist; // store `phase` (replacing an invalid key)
-    VoltagePhaseLog log;
-};
-
-// A valid stored key always wins. Otherwise the value comes from channel 0's phase,
-// which is the base the firmware took before the setting existed, so the first boot
-// changes no reading; after that, channel 0's phase is never read for it again.
-inline VoltagePhaseResolution resolveVoltagePhase(StoredVoltagePhase state, uint32_t storedValue,
-                                                  Phase channel0Phase) {
-    if (state == StoredVoltagePhase::Valid && isValidVoltagePhase(storedValue)) {
-        return {static_cast<Phase>(storedValue), false, VoltagePhaseLog::Debug};
-    }
-    const Phase derived = isValidVoltagePhase(channel0Phase) ? channel0Phase : PHASE_1;
-    if (state == StoredVoltagePhase::Unavailable) return {derived, false, VoltagePhaseLog::Error};
-    if (state == StoredVoltagePhase::Absent) return {derived, true, VoltagePhaseLog::Info};
-    return {derived, true, VoltagePhaseLog::Warning};
+// A valid stored key wins; otherwise channel 0's phase, the base older firmware used.
+inline Phase resolveVoltagePhase(StoredVoltagePhase state, uint32_t storedValue, Phase channel0Phase) {
+    if (state == StoredVoltagePhase::Valid) return static_cast<Phase>(storedValue);
+    return isValidVoltagePhase(channel0Phase) ? channel0Phase : PHASE_1;
 }
 
 // The rotation toChannelFrame applies to a channel, reverse excluded: its line's shift
