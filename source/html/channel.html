@@ -129,6 +129,15 @@
         <a class="buttonNavigation" type="outer" href="/configuration">⚙️ Configuration</a>
     </div>    <div id="channelContainer" class="section-box" style="text-align: center;">
         <h1>Channels</h1>
+        <div style="margin-bottom: 1em;">
+            <span id="voltagePhaseText">Voltage input (device L wire): loading...</span>
+            <span class="info-tooltip">
+                <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about the voltage input">ⓘ</button>
+                <div class="info-tooltip-popover" role="tooltip">
+                    The device measures voltage once, on the line its own L wire is connected to: the voltage phase. Channel phases are labelled relative to it. It is phase 1 on a new device and channel 0's former phase on a device upgraded from an older firmware. It is set through the REST API or the meter shadow, not on this page.
+                </div>
+            </span>
+        </div>
         <div class="channel-columns"></div>
     </div>
 </body>
@@ -160,17 +169,44 @@
     var configRefreshInterval = null;
     const RECONCILED_FIELDS = ['active', 'reverse', 'role', 'phase', 'label', 'groupLabel'];
 
+    // Line of the device's own L wire, the base every channel is rotated from. Not part
+    // of the channel config (its ETag does not cover it), so fetched on its own. null
+    // while unknown: the phase previews stay hidden rather than guess a base.
+    var voltagePhase = null;
+
+    async function refreshVoltagePhase() {
+        try {
+            const response = await energyApi.getAde7953VoltagePhase();
+            voltagePhase = (response && response.voltagePhase in PHASE_ANGLES_DEG) ? response.voltagePhase : null;
+        } catch (error) {
+            console.error('Voltage phase fetch failed', error);
+            voltagePhase = null;
+        }
+        const text = document.getElementById('voltagePhaseText');
+        if (text) {
+            text.textContent = 'Voltage input (device L wire): ' +
+                (voltagePhase !== null ? `phase ${voltagePhase}` : 'unavailable');
+        }
+    }
+
+    function refreshDeviceConfig() {
+        refreshVoltagePhase();
+        refreshChannelConfig();
+    }
+
     // Initialize the page
     async function initializePage() {
+        // Separate from the channel load, so a failure only hides the previews
+        await refreshVoltagePhase();
+
         try {
-            // Load channel config only
             const channelResponse = await energyApi.getChannelConfig();
             channelData = channelResponse;
 
             createChannelBoxes();
 
             if (configRefreshInterval) clearInterval(configRefreshInterval);
-            configRefreshInterval = setInterval(refreshChannelConfig, CONFIG_REFRESH_MS);
+            configRefreshInterval = setInterval(refreshDeviceConfig, CONFIG_REFRESH_MS);
         } catch (error) {
             console.error('Error initializing page:', error);
             showStatus('Error loading data: ' + error.message, 'error');
@@ -194,17 +230,18 @@
             box.className = 'section-box';
             box.style.textAlign = 'center';
 
+            // Channel 0 supplies the voltage reading of every channel, so it cannot be split-phase
+            const isChannel0 = index == 0;
             const phaseOptions = [
                 { value: 1, label: '1' },
                 { value: 2, label: '2' },
                 { value: 3, label: '3' },
                 { value: 4, label: '240V (Split Phase)' }
             ]
+                .filter(p => !(isChannel0 && p.value === 4))
                 .map(p => `<option value="${p.value}" ${p.value === channel.phase ? 'selected' : ''}>${p.label}</option>`)
                 .join('');
 
-            // Check if this is channel 0 (main voltage channel)
-            const isChannel0 = index == 0;
             const activeCheckboxDisabled = isChannel0 ? 'disabled' : '';
             const activeChecked = isChannel0 ? 'checked' : (channel.active ? 'checked' : '');
 
@@ -222,7 +259,7 @@
                         <div class="info-tooltip-popover" role="tooltip">
                             The AC phase this CT is measuring.<br><br>
                             <strong>Single-phase</strong>: leave everything on Phase 1.<br><br>
-                            <strong>3-phase</strong>: assign each CT to its physical phase. While the load is drawing power, the live preview below shows what each choice would read &ndash; the right one has PF close to 1 (the power sign is irrelevant, it just flips with the CT orientation). Channel 0 carries the voltage reference, so its phase is correct by definition.<br><br>
+                            <strong>3-phase</strong>: phases are labelled relative to the voltage phase, the line of the device's own L wire (phase 1 on a new device, channel 0's former phase on an upgraded one, shown at the top of this page). Assign each CT to its physical phase; channel 0 is set like any other channel. While the load is drawing power, the live preview below shows what each choice would read &ndash; the right one has PF close to 1 (the power sign is irrelevant, it just flips with the CT orientation).<br><br>
                             <strong>240V (Split Phase)</strong>: North American 240V circuits spanning both legs. A ×2 voltage multiplier is applied automatically, since the reference voltage is measured line-to-neutral (about 120&nbsp;V).
                         </div>
                     </span>
@@ -310,24 +347,25 @@
 
     // Live "what would each phase read" preview for 3-phase installs.
     //
-    // The single voltage reference (L1) means a channel's phase assignment is pure
-    // math on the measured angle between voltage and current: the firmware rotates
-    // (P, Q) by calculatePhaseShiftDeg(basePhase, phase), i.e. 0/-120/+120 degrees for
-    // phase 1/2/3 against L1 (PhaseUtils::toChannelFrame in lib/phase_utils). So one
-    // published reading (P, Q, S) can be re-rotated into every other phase choice to
-    // show what |active power| and PF it would yield - the installer picks the one
-    // that looks like a real load (PF near 1) instead of guessing from the breaker
-    // panel. The power sign is omitted: it is always flippable via the reverse flag,
-    // so it says nothing about the right phase.
+    // The single voltage input (on the voltage phase) means a channel's phase
+    // assignment, channel 0's included, is pure math on the measured angle between
+    // voltage and current: the firmware rotates (P, Q) by
+    // calculatePhaseShiftDeg(voltagePhase, phase), i.e. 0/-120/+120 degrees apart for
+    // phases 1/2/3 (PhaseUtils::toChannelFrame in lib/phase_utils). So one published
+    // reading (P, Q, S) can be re-rotated into every other phase choice to show what
+    // |active power| and PF it would yield - the installer picks the one that looks
+    // like a real load (PF near 1) instead of guessing from the breaker panel. The
+    // power sign is omitted: it is always flippable via the reverse flag, so it says
+    // nothing about the right phase.
     const PHASE_ANGLES_DEG = { 1: 0, 2: -120, 3: 120 }; // IEC: PHASE_1=L1(0°), PHASE_2=L2(-120°), PHASE_3=L3(+120°)
 
     function isThreePhaseInstall() {
-        const basePhase = channelData[0] ? channelData[0].phase : 1;
+        if (voltagePhase === null) return false;
         return Object.values(channelData).some(ch => ch && ch.active &&
-            (ch.phase in PHASE_ANGLES_DEG) && ch.phase !== basePhase);
+            (ch.phase in PHASE_ANGLES_DEG) && ch.phase !== voltagePhase);
     }
 
-    function computePhaseCandidates(channel, basePhase, data) {
+    function computePhaseCandidates(channel, data) {
         const p = data.activePower, q = data.reactivePower, s = data.apparentPower;
         if (!(s > 0)) return { state: 'noload' };
         // Negative reading clamped to zero this cycle (load/PV): angle not recoverable
@@ -352,22 +390,16 @@
         const el = document.getElementById(`phasePreview${index}`);
         if (!el) return;
 
+        // isThreePhaseInstall is false while the voltage phase is unknown, so no
+        // preview is ever drawn against a guessed base
         const channel = channelData[index];
-        const basePhase = channelData[0] ? channelData[0].phase : 1;
         if (!channel || !channel.active || !isThreePhaseInstall() ||
-            !(channel.phase in PHASE_ANGLES_DEG) || !(basePhase in PHASE_ANGLES_DEG)) {
+            !(channel.phase in PHASE_ANGLES_DEG)) {
             el.innerHTML = '';
             return;
         }
 
-        // Channel 0 carries the voltage reference: its phase defines the frame the
-        // other channels are measured in, so candidates for it are meaningless.
-        if (index == 0) {
-            el.innerHTML = 'Voltage reference &ndash; defines the phases of all other channels';
-            return;
-        }
-
-        const res = computePhaseCandidates(channel, basePhase, data);
+        const res = computePhaseCandidates(channel, data);
         if (res.state === 'noload') {
             el.innerHTML = 'No load &ndash; phase preview unavailable';
             return;
@@ -473,7 +505,7 @@
             const activeCheckbox = document.getElementById(`active${index}`);
             if (activeCheckbox && !activeCheckbox.checked) {
                 activeCheckbox.checked = true;
-                showStatus('Channel 0 is the main voltage channel and cannot be disabled', 'error');
+                showStatus('Channel 0 stays active: it supplies the voltage and frequency reading', 'error');
                 return;
             }
         }
