@@ -891,6 +891,123 @@ void test_scan_hold_survives_a_clock_behind_the_start(void) {
     TEST_ASSERT_TRUE(isScanHoldActive(100000, 99000, false));
 }
 
+// ============================================================================
+// One report per association attempt (field logs 02/11, #295)
+//
+// The harness replays customwifi.cpp's bookkeeping: every attempt, refused or not, arms
+// a 10 s connect deadline that reports and retries it; a disconnect opens the 15 s grace
+// window only when opensDisconnectGrace() allows it; the periodic check starts an attempt
+// when nothing is armed. Reporting a refusal at once left no attempt in flight, so the
+// disconnect that followed opened the grace window and fed a second failure per attempt.
+// ============================================================================
+
+namespace {
+
+constexpr uint64_t kConnectTimeoutMs = 10000;
+constexpr uint64_t kGraceMs = 15000;
+constexpr uint64_t kPeriodicMs = 30000;
+
+struct AttemptHarness {
+    Context context = provisionedContext();
+    uint64_t connectDeadlineMs = 0;
+    uint64_t graceDeadlineMs = 0;
+    uint64_t lastPeriodicMs = 0;
+    uint32_t failuresFed = 0;
+    uint32_t attemptsStarted = 0;
+
+    void fail(uint64_t nowMs) {
+        failuresFed++;
+        onEvent(context, Event::STA_ATTEMPT_FAILED, nowMs);
+    }
+
+    void startAttempt(uint64_t nowMs) {
+        attemptsStarted++;
+        connectDeadlineMs = nowMs + kConnectTimeoutMs;  // Refused or not
+    }
+
+    void disconnected(uint64_t nowMs) {
+        onEvent(context, Event::STA_LOST, nowMs);
+        if (opensDisconnectGrace(connectDeadlineMs != 0, graceDeadlineMs != 0, false)) {
+            graceDeadlineMs = nowMs + kGraceMs;
+        }
+    }
+
+    // One loop pass: the deadline services, then the periodic check.
+    void tick(uint64_t nowMs) {
+        if (graceDeadlineMs != 0 && nowMs >= graceDeadlineMs) {
+            graceDeadlineMs = 0;
+            fail(nowMs);
+        }
+        if (connectDeadlineMs != 0 && nowMs >= connectDeadlineMs) {
+            connectDeadlineMs = 0;
+            fail(nowMs);
+            startAttempt(nowMs);
+        }
+        if (nowMs - lastPeriodicMs >= kPeriodicMs) {
+            lastPeriodicMs = nowMs;
+            if (connectDeadlineMs == 0 && graceDeadlineMs == 0) startAttempt(nowMs);
+        }
+    }
+
+    // Runs to `untilMs` in 1 s steps with the AP gone: every attempt's disconnect (NO_AP_FOUND,
+    // or the one a refused start still causes) lands 1 s after it starts.
+    void runOutage(uint64_t fromMs, uint64_t untilMs) {
+        uint32_t answered = attemptsStarted;
+        for (uint64_t t = fromMs; t <= untilMs; t += 1000) {
+            if (answered != attemptsStarted) {
+                answered = attemptsStarted;
+                disconnected(t);
+            }
+            tick(t);
+        }
+    }
+};
+
+}  // namespace
+
+void test_disconnect_opens_grace_only_for_a_lost_link(void) {
+    TEST_ASSERT_TRUE(opensDisconnectGrace(false, false, false));
+    TEST_ASSERT_FALSE(opensDisconnectGrace(true, false, false));   // The attempt's deadline reports it
+    TEST_ASSERT_FALSE(opensDisconnectGrace(false, true, false));   // A flapping link never pushes it out
+    TEST_ASSERT_FALSE(opensDisconnectGrace(false, false, true));   // A scan pause cancelled, not lost
+}
+
+void test_link_loss_counts_the_loss_then_one_failure_per_attempt(void) {
+    AttemptHarness harness;
+    harness.disconnected(0);  // The established link drops: the grace window opens
+    harness.runOutage(1000, 10 * kMinute);
+
+    // Grace expiry at 15 s, periodic start at 30 s, then a 10 s cycle. The loss itself plus
+    // every attempt but the one still in flight, each reported exactly once.
+    TEST_ASSERT_GREATER_THAN_UINT32(40, harness.attemptsStarted);
+    TEST_ASSERT_EQUAL_UINT32(harness.attemptsStarted, harness.failuresFed);
+    TEST_ASSERT_EQUAL_UINT32(harness.failuresFed, harness.context.apRaiseTriggers);
+}
+
+void test_disconnect_of_an_attempt_never_counts_it_twice(void) {
+    // A refused start is timed exactly like a started one, so the disconnect it can still
+    // cause lands inside its own deadline. Reported at once instead, it would find nothing
+    // armed, open the grace window and be counted again 15 s later.
+    AttemptHarness harness;
+    harness.startAttempt(0);
+    harness.runOutage(0, 10 * kMinute);
+
+    TEST_ASSERT_EQUAL_UINT32(harness.attemptsStarted - 1, harness.failuresFed);  // Last one in flight
+    TEST_ASSERT_EQUAL_UINT64(0, harness.graceDeadlineMs);
+}
+
+void test_ap_raises_on_the_threshold_attempt_not_before(void) {
+    AttemptHarness harness;
+    harness.startAttempt(0);
+    for (int attempt = 1; attempt <= WIFI_PROVISIONING_AP_RAISE_THRESHOLD; attempt++) {
+        uint64_t startedMs = static_cast<uint64_t>(attempt - 1) * kConnectTimeoutMs;
+        harness.disconnected(startedMs + 1000);
+        harness.tick(startedMs + kConnectTimeoutMs);
+        TEST_ASSERT_EQUAL_UINT32(static_cast<uint32_t>(attempt), harness.failuresFed);
+        TEST_ASSERT_EQUAL(attempt == WIFI_PROVISIONING_AP_RAISE_THRESHOLD, harness.context.apRaised);
+    }
+}
+
 void test_cidr_zero_does_not_shift_by_the_operand_width(void) {
     // 0xFFFFFFFF << 32 is undefined behaviour, and on x86 the shift count is taken mod 32,
     // so a naive implementation returns 0xFFFFFFFF here instead of 0.
@@ -1015,6 +1132,11 @@ int main(int, char **) {
     RUN_TEST(test_scan_hold_waits_for_the_scan_to_start);
     RUN_TEST(test_scan_hold_lasts_while_the_scan_runs_up_to_the_cap);
     RUN_TEST(test_scan_hold_survives_a_clock_behind_the_start);
+
+    RUN_TEST(test_disconnect_opens_grace_only_for_a_lost_link);
+    RUN_TEST(test_link_loss_counts_the_loss_then_one_failure_per_attempt);
+    RUN_TEST(test_disconnect_of_an_attempt_never_counts_it_twice);
+    RUN_TEST(test_ap_raises_on_the_threshold_attempt_not_before);
 
     RUN_TEST(test_every_state_has_a_distinct_wire_name);
     RUN_TEST(test_out_of_range_state_falls_back_to_unprovisioned);
