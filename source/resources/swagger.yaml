@@ -3333,6 +3333,57 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
 
+  /api/v1/ade7953/voltage-phase:
+    get:
+      summary: Get the voltage phase
+      description: |
+        Get the voltage phase: the line the device's single voltage input (its own L wire) is wired to.
+        Every channel, channel 0 included, is rotated from it into its own line, so channel phases are relative to it.
+        A new device starts at 1; a device upgraded from firmware before 2.8.0 keeps channel 0's phase at the upgrade, so no reading changes.
+      tags:
+        - ADE7953
+      responses:
+        '200':
+          description: Current voltage phase
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  voltagePhase:
+                    $ref: '#/components/schemas/VoltagePhase'
+    put:
+      summary: Set the voltage phase
+      description: |
+        Set the line the device's voltage input is wired to (1-3; split-phase 240V is not a valid voltage phase).
+        A change turns every channel that is not split-phase 240V by the same angle and re-arms CT polarity detection on every active one.
+        The detector votes on the sign of active power regardless of the channel role, so change it only while every bidirectional channel (grid, battery, inverter, bidirectional) imports, and read back every channel's `reverse` flag afterwards.
+        Writing the current value changes nothing.
+      tags:
+        - ADE7953
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - voltagePhase
+              properties:
+                voltagePhase:
+                  $ref: '#/components/schemas/VoltagePhase'
+      responses:
+        '200':
+          description: Voltage phase updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /api/v1/ade7953/channel:
     get:
       summary: Get channel configuration
@@ -3754,7 +3805,7 @@ paths:
                           description: Channel label
                         phase:
                           type: integer
-                          description: Channel phase (1, 2, 3, or 4 for 240V split-phase)
+                          description: Channel phase (1, 2, 3, or 4 for 240V split-phase), relative to the voltage phase
                         groupLabel:
                           type: string
                           description: Channel group label (if configured)
@@ -4587,7 +4638,13 @@ components:
     Phase:
       type: integer
       enum: [1, 2, 3, 4]
-      description: Electrical phase assignment (1=Phase A, 2=Phase B, 3=Phase C, 4=240V Split Phase)
+      description: Electrical phase assignment (1=Phase A, 2=Phase B, 3=Phase C, 4=240V Split Phase), labelled relative to the voltage phase (`/api/v1/ade7953/voltage-phase`). A channel's phase rotates that channel only, channel 0 included. Channel 0 cannot be 4, since its reading supplies the voltage to every channel.
+      example: 1
+
+    VoltagePhase:
+      type: integer
+      enum: [1, 2, 3]
+      description: Line the device's voltage input (its own L wire) is wired to (1=Phase A, 2=Phase B, 3=Phase C). Split-phase 240V is not a valid voltage phase.
       example: 1
 
     CtSpecification:
