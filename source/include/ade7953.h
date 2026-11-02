@@ -635,7 +635,8 @@ namespace Ade7953
     // Voltage phase management: the line the single voltage input V1 is wired to, the
     // base every channel (channel 0 included) is rotated from into its own line
     Phase getVoltagePhase();
-    bool setVoltagePhase(Phase voltagePhase); // PHASE_1..PHASE_3; false (nothing changed) when invalid or not stored
+    bool setVoltagePhase(Phase voltagePhase); // PHASE_1..PHASE_3; false (nothing changed) when invalid, before the boot load, or not stored
+    bool isVoltagePhaseStored(); // NVS holds getVoltagePhase(): false before the boot load or after a failed migration write
 
     // Channel data management
     bool isChannelActive(uint8_t channelIndex);

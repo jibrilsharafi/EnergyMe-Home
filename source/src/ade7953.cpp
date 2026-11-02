@@ -31,8 +31,11 @@ namespace Ade7953
     static uint64_t _sampleTime; // in milliseconds, time between linecycles readings
     // Line V1 is wired to. Written at boot and under _configMutex, read lock-free (aligned 32-bit enum).
     static volatile Phase _voltagePhase = DEFAULT_VOLTAGE_PHASE;
-    // NVS holds _voltagePhase. False only after a boot that could not store the value it derived. Guarded by _configMutex after boot.
-    static bool _voltagePhasePersisted = false;
+    // NVS holds _voltagePhase. False before the boot load and after a boot that could not store the value it derived.
+    // Written at boot and under _configMutex, read lock-free by isVoltagePhaseStored.
+    static volatile bool _voltagePhasePersisted = false;
+    // Set once at the end of the boot load. begin() can fail before it, leaving the default in _voltagePhase.
+    static bool _voltagePhaseLoaded = false;
     // Set when setVoltagePhase stored and applied a change but could not take _channelDataMutex:
     // the next reading re-arms CT polarity detection from _voltagePhaseRearmFrom to the current value.
     static volatile bool _voltagePhaseRearmPending = false;
@@ -720,9 +723,18 @@ namespace Ade7953
         return _voltagePhase;
     }
 
+    bool isVoltagePhaseStored() {
+        return _voltagePhasePersisted;
+    }
+
     bool setVoltagePhase(Phase voltagePhase) {
         if (!PhaseUtils::isValidVoltagePhase(voltagePhase)) {
             LOG_WARNING("Invalid voltage phase %lu (valid: 1-3)", static_cast<unsigned long>(voltagePhase));
+            return false;
+        }
+        // A write before the boot load would replace the stored value from the default
+        if (!_voltagePhaseLoaded) {
+            LOG_WARNING("Voltage phase not loaded yet (meter not initialized), refusing %u", static_cast<unsigned>(voltagePhase));
             return false;
         }
 
@@ -4622,6 +4634,7 @@ namespace Ade7953
         }
 
         if (opened) preferences.end();
+        _voltagePhaseLoaded = true;
     }
 
     // Persists the value and records that NVS holds it. The caller holds _configMutex.
