@@ -3896,23 +3896,26 @@ namespace Ade7953
     chip's no-load feature zeroes idle energies, and every value is validated
     against the limits of the hardware.
 
-    The only voltage input sits on channel 0's line (V1). A channel whose CT is on
-    another line of a three-phase supply is integrated against V1, which gives
-    P1 + jQ1 = V1 * I^*. Assuming V_k = V1 * e^{j*alpha}, its own powers are
-        S_k = e^{j*alpha} * (P1 + jQ1),  alpha = calculatePhaseShiftDeg(basePhase, phase)
+    The only voltage input (V1) sits on the configured voltage phase
+    (getVoltagePhase), the line of the device's own L wire. Every channel,
+    channel 0 included, is integrated against V1; one whose CT is on another
+    line of a three-phase supply gives P1 + jQ1 = V1 * I^*. Assuming
+    V_k = V1 * e^{j*alpha}, its own powers are
+        S_k = e^{j*alpha} * (P1 + jQ1),  alpha = calculatePhaseShiftDeg(voltagePhase, phase)
     i.e. PhaseUtils::toChannelFrame applied to the latched energy pair, with S and
     current unchanged. Assumptions:
     - |V2| = |V3| = |V1| and exact 120 deg spacing (a magnitude error shows up
       1:1 in P, an angle error grows as the PF drops),
     - a correct phase setting (a wrong one stays as visible as before: a
       resistive load reads |PF| ~ 0.5),
-    - BVARGAIN == BWGAIN, since Q1 now feeds P: a Q-path gain error e shows up as
-      ~0.75 * e on a resistive L2/L3 load.
+    - BVARGAIN == BWGAIN, and for an off-phase channel 0 AVARGAIN == AWGAIN and a
+      right PHCALA, since Q1 now feeds P: a Q-path gain error e shows up as
+      ~0.75 * e on a resistive off-phase load.
     Compared with the ANGLE method it replaces (V1 * IRMS * cos of the live,
     single zero-crossing ANGLE register), off-phase channels get the same latched
-    window, the RMS witness and the per-window energy direction as channel 0, a
-    true PF (P/S) instead of a displacement cosine, and harmonic current no longer
-    inflates P (against a sine V1 it carries no active power, while
+    window, the RMS witness and the per-window energy direction as an on-phase
+    one, a true PF (P/S) instead of a displacement cosine, and harmonic current no
+    longer inflates P (against a sine V1 it carries no active power, while
     Irms * cos(displacement) counted it).
 
     Split-phase 240V channels are 180 deg from V1: only a sign (reverse) plus a 2x
@@ -3986,7 +3989,9 @@ namespace Ade7953
         float reactiveEnergy = 0.0f;
         float apparentEnergy = 0.0f;
 
-        Phase basePhase = _channelData[0].phase; // Not using channelData since it is only accessed here and it is an integer so very low probability of race condition
+        // Loaded once, lock-free (aligned 32-bit enum), so one reading never mixes two
+        // values. A change landing mid-reading books at most this window in the old frame.
+        const Phase voltagePhase = _voltagePhase;
 
         // Noise floors scale with the CT: a fixed threshold suited to a 30 A clamp is far
         // below the offset noise of a 100 A one (and too strict for a small one), so both
@@ -3995,7 +4000,7 @@ namespace Ade7953
         float minCurrentValidation = channelData.ctSpecification.currentRating * MINIMUM_CURRENT_RATIO_VALIDATION;   // validation discard: a reading invalid at this current is a real failure
         float minCurrentConducting  = channelData.ctSpecification.currentRating * MINIMUM_CURRENT_RATIO_CONDUCTING;  // polarity-vote / WDRR-boost gate: lower, catches small real loads
 
-        bool isOffPhase = PhaseUtils::isOffPhase(basePhase, channelData.phase); // channel 0 defines basePhase, so never off-phase itself
+        const bool isOffPhase = PhaseUtils::isOffPhase(voltagePhase, channelData.phase); // channel 0 included, when its CT is on another line
         float voltageMultiplier = (channelData.phase == PHASE_SPLIT_240) ? 2.0f : 1.0f; // the ADE7953 measures a single 120V leg
 
         // No double-read guard needed anymore: with read-with-reset disabled (LCYCMODE
@@ -4011,7 +4016,7 @@ namespace Ade7953
         // the energy pair itself (the rotation is linear): the powers derived below follow,
         // and the import/export accumulators take their direction from this window.
         PhaseUtils::ActiveReactive energies = PhaseUtils::toChannelFrame(
-            rawActiveEnergy, rawReactiveEnergy, channelData.reverse, basePhase, channelData.phase
+            rawActiveEnergy, rawReactiveEnergy, channelData.reverse, voltagePhase, channelData.phase
         );
         activeEnergy = energies.active;
         reactiveEnergy = energies.reactive;

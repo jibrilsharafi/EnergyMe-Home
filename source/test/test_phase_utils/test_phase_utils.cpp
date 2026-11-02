@@ -409,7 +409,7 @@ void test_off_phase_only_for_another_rotational_line(void) {
 }
 
 void test_frame_same_phase_is_not_rotated(void) {
-    // Channel 0 and every channel on its line take this path: exact, not merely close.
+    // Every channel on the voltage phase takes this path: exact, not merely close.
     for (int v = 0; v < 3; v++) {
         PhaseUtils::ActiveReactive r =
             PhaseUtils::toChannelFrame(800.0f, 300.0f, false, ROTATIONAL_PHASES[v], ROTATIONAL_PHASES[v]);
