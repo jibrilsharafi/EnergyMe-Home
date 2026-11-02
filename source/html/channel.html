@@ -133,12 +133,12 @@
             <label>
                 Device L wire (voltage phase):
                 <select id="voltagePhaseSelect" disabled onchange="changeVoltagePhase()">
+                    <option value="" disabled selected>unavailable</option>
                     <option value="1">1</option>
                     <option value="2">2</option>
                     <option value="3">3</option>
                 </select>
             </label>
-            <span id="voltagePhaseText">loading...</span>
             <span class="info-tooltip">
                 <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about the voltage input">ⓘ</button>
                 <div class="info-tooltip-popover" role="tooltip">
@@ -181,8 +181,12 @@
     // of the channel config (its ETag does not cover it), so fetched on its own. null
     // while unknown: the phase previews stay hidden rather than guess a base.
     var voltagePhase = null;
+    // Set while a change is being confirmed or sent: the periodic refresh would
+    // otherwise put the old value back mid-PUT
+    var voltagePhaseEditing = false;
 
-    async function refreshVoltagePhase() {
+    async function refreshVoltagePhase(force = false) {
+        if (voltagePhaseEditing && !force) return;
         try {
             const response = await energyApi.getAde7953VoltagePhase();
             voltagePhase = (response && response.voltagePhase in PHASE_ANGLES_DEG) ? response.voltagePhase : null;
@@ -190,37 +194,46 @@
             console.error('Voltage phase fetch failed', error);
             voltagePhase = null;
         }
+        if (voltagePhaseEditing && !force) return; // a change started while this GET was in flight
         const select = document.getElementById('voltagePhaseSelect');
-        // Leave an open dropdown alone, the periodic refresh would close it
-        if (select && document.activeElement !== select) {
-            if (voltagePhase !== null) select.value = String(voltagePhase);
-            select.disabled = voltagePhase === null;
-        }
-        const text = document.getElementById('voltagePhaseText');
-        if (text) text.textContent = voltagePhase !== null ? '' : 'unavailable';
+        select.value = voltagePhase !== null ? String(voltagePhase) : '';
+        select.disabled = voltagePhase === null;
     }
 
     async function changeVoltagePhase() {
         const select = document.getElementById('voltagePhaseSelect');
         const next = parseInt(select.value, 10);
-        if (next === voltagePhase) return;
+        if (voltagePhase === null || next === voltagePhase) return;
+        voltagePhaseEditing = true;
         // A change turns every non-split channel and re-runs the reversed-CT check,
         // which reads a channel exporting at that moment as a reversed CT
         if (!confirm(`Set the voltage phase to ${next}?\n\nEvery channel reading is turned to the new base and the reversed-CT detection runs again on every active channel. Do it only while every grid, battery and inverter channel is importing (no PV surplus or battery export), then check every channel's Reverse flag.`)) {
+            voltagePhaseEditing = false;
             select.value = String(voltagePhase);
             return;
         }
         select.disabled = true;
+        let sent = false;
         try {
             await energyApi.setAde7953VoltagePhase(next);
-            showStatus(`Voltage phase set to ${next}`, 'success');
+            sent = true;
         } catch (error) {
             console.error('Voltage phase update failed', error);
             showStatus('Error: ' + error.message, 'error');
         }
-        await refreshVoltagePhase();
-        // The re-armed polarity check may flip reverse on the next readings
-        setTimeout(refreshChannelConfig, RECONCILE_DELAY_MS);
+        await refreshVoltagePhase(true);
+        voltagePhaseEditing = false;
+        if (!sent) return;
+        showStatus(`Voltage phase set to ${voltagePhase}`, 'success');
+        // The re-armed polarity check may flip reverse on the next readings: say which
+        const reverseBefore = Object.fromEntries(Object.entries(channelData).map(([i, ch]) => [i, ch.reverse]));
+        setTimeout(async () => {
+            await refreshChannelConfig();
+            const flipped = Object.entries(channelData)
+                .filter(([i, ch]) => ch.reverse !== reverseBefore[i])
+                .map(([i, ch]) => ch.label || `Channel ${i}`);
+            if (flipped.length) showStatus(`Reverse flipped on: ${flipped.join(', ')}`, 'info');
+        }, RECONCILE_DELAY_MS);
     }
 
     function refreshDeviceConfig() {
