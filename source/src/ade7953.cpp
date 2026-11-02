@@ -203,6 +203,7 @@ namespace Ade7953
     static void _setChannelDataFromPreferences(uint8_t channelIndex);
     static bool _saveChannelDataToPreferences(uint8_t channelIndex);
     static void _updateChannelData(uint8_t channelIndex);
+    static void _armPolarityLocked(uint8_t channelIndex, bool pending);
     static bool _validateChannelDataJson(const JsonDocument &jsonDocument, bool partial = false);
     static void _calculateLsbValues(CtSpecification &ctSpec);
 
@@ -908,10 +909,7 @@ namespace Ade7953
                 // detection so it can never override the user's explicit choice, and
                 // (issue #149) read once now so the corrected sign lands immediately
                 // instead of up to 15 s away on a heavily loaded scheduler.
-                _channelData[channelIndex]._pendingPolarityCheck = false;
-                _polarityVoteCount[channelIndex] = 0;
-                _polarityConductingReads[channelIndex] = 0;
-                if (channelIndex > 0) _channelData[channelIndex]._pendingPriorityRead = true;
+                _armPolarityLocked(channelIndex, false);
             } else if (activated || roleChangedActive || phaseChangedActive) {
                 // Fresh activation / role / phase change with no explicit polarity
                 // choice: arm auto-detection from a clean vote count. The sign
@@ -922,10 +920,7 @@ namespace Ade7953
                 // wrong phase made a correctly-wired CT read steady-negative and the
                 // detector flipped reverse: once the user fixes the phase, the next
                 // votes flip it back within seconds (issue #174).
-                _channelData[channelIndex]._pendingPolarityCheck = true;
-                _polarityVoteCount[channelIndex] = 0;
-                _polarityConductingReads[channelIndex] = 0;
-                if (channelIndex > 0) _channelData[channelIndex]._pendingPriorityRead = true;
+                _armPolarityLocked(channelIndex, true);
             }
         }
 
@@ -4656,19 +4651,23 @@ namespace Ade7953
         return true;
     }
 
+    // Arms (or disarms) CT polarity detection from a clean vote count and asks for a priority
+    // read of a multiplexed channel. The caller holds _channelDataMutex.
+    void _armPolarityLocked(uint8_t channelIndex, bool pending) {
+        _channelData[channelIndex]._pendingPolarityCheck = pending;
+        _polarityVoteCount[channelIndex] = 0;
+        _polarityConductingReads[channelIndex] = 0;
+        if (channelIndex > 0) _channelData[channelIndex]._pendingPriorityRead = true;
+    }
+
     // Re-arms CT polarity detection on every channel whose rotation the voltage phase change
-    // moved, with the same fields setChannelData sets for a per-channel phase change. The
-    // detector votes on the rotated active power, so a frame change invalidates its premise
-    // (issue #174). The caller holds _channelDataMutex. Returns the number of channels re-armed.
+    // moved. The detector votes on the rotated active power, so a frame change invalidates its
+    // premise (issue #174). The caller holds _channelDataMutex. Returns the number of channels re-armed.
     uint8_t _rearmPolarityOnVoltagePhaseChangeLocked(Phase oldVoltagePhase, Phase newVoltagePhase) {
         uint8_t rearmed = 0;
         for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
             if (!PhaseUtils::rearmOnVoltagePhaseChange(_channelData[i].active, oldVoltagePhase, newVoltagePhase, _channelData[i].phase)) continue;
-
-            _channelData[i]._pendingPolarityCheck = true;
-            _polarityVoteCount[i] = 0;
-            _polarityConductingReads[i] = 0;
-            if (i > 0) _channelData[i]._pendingPriorityRead = true;
+            _armPolarityLocked(i, true);
             rearmed++;
         }
         if (rearmed > 0) _recalculateWeights(); // the armed boost feeds the WDRR weights
