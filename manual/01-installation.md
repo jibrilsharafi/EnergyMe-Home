@@ -79,6 +79,7 @@ The device comes with **two wires already connected** to the internal power term
 1. Connect the **brown wire (Line)** to a protected Line reference: the **output (bottom) side of a breaker**, so the device is protected by that breaker. **Do not** tap the unprotected input bus on top.
 2. Connect the **blue wire (Neutral)** to the **Neutral bar** of the panel (the common neutral terminal block).
 3. Tighten the screws firmly.
+4. On a **three-phase supply**, write down which line (L1, L2 or L3) the brown wire is connected to: this is the device's **voltage phase**, set at the top of the **Channels** page in [§4.5](02-setup.md#45-configure-each-channel). On a single-phase home there is nothing to write down.
 
 > **ⓘ NOTE: Upstream breaker (recommended)**  
 > The device has an internal 500 mA fuse, so a dedicated breaker is **not mandatory**. As best practice, you can fit a **1-2 A breaker** upstream of the device.
@@ -118,8 +119,10 @@ The CT on **Channel 0** is the most accurate channel and should be used to measu
 > **⚠ Three-phase main supply**  
 > If your main supply is three-phase, the CT on Channel 0 goes on **one of the three phases**, and you'll need additional CTs on the other two phases (on free branch channels). See **[Appendix B](appendices.md#appendix-b-three-phase-configuration)**.
 
-> **ⓘ NOTE: Phases are labelled relative to the device's own power feed**  
-> The device measures voltage only once, from its own **L/N power connection** ([§3.2](#32-connect-the-power-supply-l-and-n)), and uses that single reading for every channel's power calculation. The line its brown L wire is connected to is the **voltage phase**: phase 1 on a new device, Channel 0's former phase on a device upgraded from a firmware older than 2.8.0, and shown at the top of the **Channels** page. On a single-phase home everything is phase 1, so there is nothing to do. On a **three-phase supply**, Channel 0's CT can go on any phase: set each channel's `Phase`, Channel 0's included, to the line its CT is on relative to the voltage phase. A channel set to the wrong phase reads plausible but wrong power and power factor, since its voltage and current would come from two conductors ~120° apart. See **[Appendix B.1](appendices.md#b1-three-phase-main-supply)**.
+> **ⓘ NOTE: Channel 0 can go on any phase**  
+> The device measures voltage only once, from its own **L/N power connection** ([§3.2](#32-connect-the-power-supply-l-and-n)), and uses that single reading for every channel's power calculation. The line its brown L wire is connected to is the **voltage phase**, set at the top of the **Channels** page (1 on a new device). On a single-phase home everything is phase 1, so there is nothing to do. On a **three-phase supply**, set the voltage phase to the line of the device's L wire, then set each channel's `Phase`, Channel 0's included, to the line its CT is on: Channel 0's CT can go on any phase. A channel set to the wrong phase reads plausible but wrong power and power factor, since its voltage and current would come from two conductors ~120° apart. See **[Appendix B.1](appendices.md#b1-three-phase-main-supply)**.
+>
+> On a firmware older than 2.8.0 there is no voltage phase setting: the line of Channel 0's CT is the reference, so Channel 0's CT **must** be on the same line as the device's brown L wire, and every other channel's `Phase` is counted from it. Update the firmware before installing on a three-phase supply where Channel 0 cannot sit on the device's own line.
 
 ### 3.4 Install the CTs on the branch channels (1 to 15): Critical step ⚠
 
