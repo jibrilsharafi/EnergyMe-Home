@@ -5,7 +5,7 @@ A device-level voltage phase: the line the meter's single voltage input V1 is wi
 ## ADDED Requirements
 
 ### Requirement: Device voltage phase setting
-The device SHALL keep a voltage phase with the values `PHASE_1`, `PHASE_2` and `PHASE_3` only, persisted as NVS key `voltage_phase` (u8) in `ade7953_ns` with default `PHASE_1`, separate from the ADE7953 calibration configuration. Any other value (0, `PHASE_SPLIT_240`, anything above 3, a non-integer) SHALL be refused and leave the stored and applied value unchanged. Setting the current value SHALL be a no-op with no NVS write and no CT polarity re-arm when that value is already stored; when the boot could not store it, setting the current value SHALL store it without re-arming any channel. A new value SHALL be persisted before it is applied; if persisting fails, the stored and applied value SHALL stay unchanged and the setter SHALL report failure. Once persisted, the new value SHALL be applied even if the CT polarity re-arm cannot take the channel lock; the re-arm SHALL then run at the next reading, the device SHALL log an error, and the setter SHALL report success. Concurrent writers SHALL be serialized so that after every setter call the stored and applied value are equal. Resetting the ADE7953 calibration or a channel SHALL NOT change the voltage phase; a factory reset SHALL remove it.
+The device SHALL keep a voltage phase with the values `PHASE_1`, `PHASE_2` and `PHASE_3` only, persisted as NVS key `voltage_phase` (u8) in `ade7953_ns` with default `PHASE_1`, separate from the ADE7953 calibration configuration. Any other value (0, `PHASE_SPLIT_240`, anything above 3, a non-integer) SHALL be refused and leave the stored and applied value unchanged. Until the boot load has run (`begin()` can fail before it while the web server and MQTT keep running), every value SHALL be refused and nothing SHALL be written. Setting the current value SHALL be a no-op with no NVS write and no CT polarity re-arm when that value is already stored; when the boot could not store it, setting the current value SHALL store it without re-arming any channel. A new value SHALL be persisted before it is applied; if persisting fails, the stored and applied value SHALL stay unchanged and the setter SHALL report failure. Once persisted, the new value SHALL be applied even if the CT polarity re-arm cannot take the channel lock; the re-arm SHALL then run at the next reading, the device SHALL log an error, and the setter SHALL report success. Concurrent writers SHALL be serialized so that after every setter call the stored and applied value are equal. Resetting the ADE7953 calibration or a channel SHALL NOT change the voltage phase; a factory reset SHALL remove it, and so SHALL a restore of a backup without it that restores channel 0's phase (backup requirement below).
 
 #### Scenario: Valid value persisted and applied
 - **WHEN** the voltage phase is set to 2 on a device at 1
@@ -14,6 +14,10 @@ The device SHALL keep a voltage phase with the values `PHASE_1`, `PHASE_2` and `
 #### Scenario: Split-phase refused
 - **WHEN** the voltage phase is set to 4 (`PHASE_SPLIT_240`)
 - **THEN** the device refuses it with a warning and the stored and applied value stay unchanged
+
+#### Scenario: Write before the boot load refused
+- **WHEN** `begin()` failed before the voltage phase load, NVS holds 3, and the voltage phase is set to 1
+- **THEN** the setter refuses it with a warning and NVS still holds 3
 
 #### Scenario: Same value is a no-op
 - **WHEN** the voltage phase is set to the value it already has and that value is stored in NVS
@@ -67,7 +71,7 @@ At boot, after the channel configuration is loaded and before the meter reading 
 - **THEN** no channel has CT polarity detection armed by the voltage phase load
 
 ### Requirement: Configuration backup and restore carry the voltage phase
-The configuration backup SHALL include `ade7953_ns.voltage_phase` with its type and value. Restoring a backup that contains the key SHALL restore that value; a restored value outside 1..3 (0 included) or of another type SHALL be handled at the next boot like any invalid stored value. Restoring a backup that does not contain the key SHALL leave the stored voltage phase unchanged and SHALL NOT re-derive it from the restored channel 0 phase, also on a factory-reset device, whose first boot after the reset has already stored the migrated value.
+The configuration backup SHALL include `ade7953_ns.voltage_phase` with its type and value. Restoring a backup that contains the key SHALL restore that value; a restored value outside 1..3 (0 included) or of another type SHALL be handled at the next boot like any invalid stored value. A backup that does not contain the key was taken before the setting existed, when channel 0's phase was the rotation base: when restoring it writes channel 0's phase, the restore SHALL remove the stored voltage phase, so the boot that follows migrates it from the restored channel 0 and the backup reads as it did when it was taken, also on a factory-reset device. A backup with neither the key nor channel 0's phase SHALL leave the stored voltage phase unchanged.
 
 #### Scenario: Backup contains the key
 - **WHEN** a configuration backup is downloaded from a 2.8.0 device with voltage phase 2
@@ -77,20 +81,24 @@ The configuration backup SHALL include `ade7953_ns.voltage_phase` with its type 
 - **WHEN** that backup is restored on the same device after the voltage phase was changed to 1
 - **THEN** after the restore reboot the voltage phase is 2
 
-#### Scenario: Restore without the key keeps the stored value
+#### Scenario: Restore without the key migrates from the backup's channel 0
 - **WHEN** a 2.7.x backup with channel 0 at phase 1 is restored on a 2.8.0 device whose voltage phase is 2
-- **THEN** after the restore reboot the voltage phase is still 2 and channel 0 is at phase 1
+- **THEN** after the restore reboot the voltage phase is 1, migrated from the restored channel 0 with an informational log, and every channel reads as it did on 2.7.x
 
 #### Scenario: Old backup on a factory-reset device
-- **WHEN** a 2.8.0 device is factory reset, boots, and then a 2.7.x backup with channel 0 at phase 3 is restored
-- **THEN** after the restore reboot channel 0 is at phase 3 and the voltage phase is still 1, the value the first boot after the reset stored
+- **WHEN** a 2.8.0 device is factory reset, boots (storing voltage phase 1), and then a 2.7.x backup with channel 0 at phase 3 is restored
+- **THEN** after the restore reboot channel 0 is at phase 3 and the voltage phase is 3
+
+#### Scenario: Restore without the key nor channel 0's phase
+- **WHEN** a backup with neither `ade7953_ns.voltage_phase` nor `channels_ns.phase_0` is restored on a device whose voltage phase is 2
+- **THEN** after the restore reboot the voltage phase is still 2
 
 #### Scenario: Hand-edited backup with an invalid value
 - **WHEN** a backup whose `nvs.ade7953_ns.voltage_phase` is `{"type": "u8", "value": 7}` and whose channel 0 is at phase 2 is restored
 - **THEN** the restore boot logs a warning and the voltage phase is 2, derived from the restored channel 0 and persisted
 
 ### Requirement: Local REST interface for the voltage phase
-The authenticated local REST API SHALL expose `GET /api/v1/ade7953/voltage-phase`, returning `{"voltagePhase": n}`, and `PUT /api/v1/ade7953/voltage-phase` with body `{"voltagePhase": n}`. A PUT whose `voltagePhase` is not an integer 1..3, or is missing, SHALL get HTTP 400 and change nothing. HTTP 500 SHALL be returned only when the setter cannot persist the value, and then nothing has changed. A local change SHALL reach the `meter` shadow's reported state through the existing drift detection.
+The authenticated local REST API SHALL expose `GET /api/v1/ade7953/voltage-phase`, returning `{"voltagePhase": n}` once the value is stored in NVS and HTTP 503 before that (boot load not run, or a failed migration write), and `PUT /api/v1/ade7953/voltage-phase` with body `{"voltagePhase": n}`. A PUT whose `voltagePhase` is not an integer 1..3, or is missing, SHALL get HTTP 400 and change nothing. HTTP 500 SHALL be returned only when the setter refuses a valid value (before the boot load) or cannot persist it, and then nothing has changed. A local change SHALL reach the `meter` shadow's reported state through the existing drift detection.
 
 #### Scenario: Read the voltage phase
 - **WHEN** an authenticated client sends `GET /api/v1/ade7953/voltage-phase` on a device at voltage phase 3
