@@ -865,12 +865,13 @@ namespace Ade7953
             _channelData[channelIndex] = channelData;
         }
 
-        // Last line of defence for the voltage reference (see _isValidReferencePhase).
-        // The JSON validators reject this at the API, but a device that already stored
-        // it in NVS restores through here with armTransients=false, so coerce rather
-        // than reject: the alternative is a boot loop on a config the user cannot see.
+        // Last line of defence for channel 0, which supplies V1 to every channel (see
+        // _isValidChannel0Phase). The JSON validators reject this at the API, but a device
+        // that already stored it in NVS restores through here with armTransients=false, so
+        // coerce rather than reject: the alternative is a boot loop on a config the user
+        // cannot see.
         if (channelIndex == 0 && _channelData[0].phase == PHASE_SPLIT_240) {
-            LOG_WARNING("Channel 0 cannot use split-phase 240V as reference, coercing to phase 1");
+            LOG_WARNING("Channel 0 supplies V1 to every channel and cannot be split-phase 240V, coercing to phase 1");
             _channelData[0].phase = PHASE_1;
         }
 
@@ -3234,15 +3235,16 @@ namespace Ade7953
     }
 
     /*
-    Channel 0 carries the single voltage reference, so its phase defines the frame every
-    other channel is measured in. Split-phase 240 V is not a rotation but a 2x voltage
-    multiplier, so using it here would make every other channel inherit the doubled
-    voltage from _meterValues[0] and would leave the rotation of the L1/L2/L3 channels
-    defined against a reference that does not rotate.
+    Channel 0's reading supplies V1 to every channel: its voltage, stored in
+    _meterValues[0], is what every other channel reuses and what MQTT, Modbus and
+    the issue registry report as the device voltage. Split-phase 240 V is not a
+    rotation but a 2x voltage multiplier, so on channel 0 it would double the voltage
+    every channel and integration reads. (The rotation base is the voltage phase
+    setting, not channel 0's phase.)
     */
-    bool _isValidReferencePhase(uint8_t channelIndex, uint8_t phase) {
+    bool _isValidChannel0Phase(uint8_t channelIndex, uint8_t phase) {
         if (channelIndex == 0 && phase == PHASE_SPLIT_240) {
-            LOG_WARNING("Channel 0 carries the voltage reference and cannot be split-phase 240V");
+            LOG_WARNING("Channel 0 supplies V1 to every channel and cannot be split-phase 240V");
             return false;
         }
         return true;
@@ -3364,7 +3366,7 @@ namespace Ade7953
                     LOG_WARNING("Invalid phase value: %u (valid: 1-4)", phase);
                     return false;
                 }
-                if (!_isValidReferencePhase(channelIndex, phase)) return false;
+                if (!_isValidChannel0Phase(channelIndex, phase)) return false;
                 hasValidField = true;
             }
 
@@ -3477,7 +3479,7 @@ namespace Ade7953
                 LOG_WARNING("Invalid phase value: %u (valid: 1-4)", phase);
                 return false;
             }
-            if (!_isValidReferencePhase(jsonDocument["index"].as<uint8_t>(), phase)) return false;
+            if (!_isValidChannel0Phase(jsonDocument["index"].as<uint8_t>(), phase)) return false;
 
             // CT Specification validation with ranges
             if (!jsonDocument["ctSpecification"].is<JsonObjectConst>()) {
