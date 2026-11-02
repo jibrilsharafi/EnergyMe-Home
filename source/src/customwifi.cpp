@@ -168,7 +168,12 @@ namespace CustomWifi
   static bool _testConnectivity();
   static void _forceReconnectInternal();
   static void _serviceDisconnectDeadline();
-  static void _countFailedAttempt();
+  static void _countFailedAttempt(const char *what);
+  // Outage log state (see _countFailedAttempt()). WiFi task only.
+  static uint64_t _outageStartedMs = 0; // Link lost or first failed attempt, 0 while online
+  static uint64_t _lastOutageSummaryMs = 0;
+  static uint32_t _outageFailedAttempts = 0;
+  static bool _attemptRefused = false; // The attempt in flight was refused to start
   static bool _hasStoredCredentials();
   static bool _hasCredentialsWorthRetrying();
   static void _feedProvisioning(WifiProvisioning::Event event);
@@ -836,6 +841,13 @@ namespace CustomWifi
           _feedProvisioning(WifiProvisioning::Event::STA_CONNECTED);
           CustomEth::notifyStaState(true); // Interface arbitration (no-op on products without Ethernet)
           statistics.wifiConnection++; // It is here we know the wifi connection went through (and the one which is called on reconnections)
+          if (_outageStartedMs != 0) {
+            LOG_WARNING("WiFi back online after %llu s, %lu failed attempts",
+                        (unsigned long long)((millis64() - _outageStartedMs) / 1000ULL),
+                        (unsigned long)_outageFailedAttempts);
+            _outageStartedMs = 0;
+            _outageFailedAttempts = 0;
+          }
           _lastWifiConnectedMillis = millis64(); // Track connection time for lwIP stabilization
           // Handle successful connection operations safely in task context
           _handleSuccessfulConnection();
@@ -962,7 +974,15 @@ namespace CustomWifi
           // Nor while the wire serves the device: a Pro with failing WiFi credentials fires
           // this on every attempt and would mask the healthy status layer forever.
           if (!_apRaised && !CustomEth::isServiceable()) Led::pulseBlue(Led::PRIO_MEDIUM);
-          LOG_WARNING("WiFi disconnected - auto-reconnect will handle");
+          // Only a link that was up is news; a failing attempt disconnects every 10 s and
+          // its deadline logs it (see _countFailedAttempt()).
+          if (_lastWifiConnectedMillis != 0 && _outageStartedMs == 0) {
+            LOG_WARNING("WiFi link lost - retrying, details at DEBUG");
+            _outageStartedMs = millis64();
+            _lastOutageSummaryMs = _outageStartedMs;
+          } else {
+            LOG_DEBUG("WiFi disconnected");
+          }
           _lastWifiConnectedMillis = 0; // Reset stabilization timer on disconnect
           _feedProvisioning(WifiProvisioning::Event::STA_LOST);
           CustomEth::notifyStaState(false); // Interface arbitration (no-op on products without Ethernet)
@@ -1073,7 +1093,7 @@ namespace CustomWifi
             // no LAN address, no AP, retrying every 30 s forever.
             // Nothing is counted here: the deadline that expired already counted its failure,
             // and this attempt's own deadline counts it if it fails too.
-            LOG_WARNING("Periodic check: WiFi not fully connected - starting a fresh attempt");
+            LOG_DEBUG("Periodic check: WiFi not fully connected - starting a fresh attempt");
             _startStaAttempt();
           }
           else
@@ -1484,7 +1504,8 @@ namespace CustomWifi
     // it left no attempt in flight, so the DISCONNECTED it can still trigger (our own
     // disconnect above, or a start that ran after all) opened the grace window and counted
     // it a second time.
-    if (!started) LOG_WARNING("WiFi association refused to start - retrying when its deadline expires");
+    _attemptRefused = !started;
+    if (!started) LOG_DEBUG("WiFi association refused to start - retrying when its deadline expires");
     _connectDeadlineMs = millis64() + _connectTimeoutMs;
   }
 
@@ -1516,9 +1537,7 @@ namespace CustomWifi
 
     if (isFullyConnected()) return; // Raced with a successful association
 
-    _countFailedAttempt();
-    LOG_WARNING("Association attempt %d timed out after %lu s", _reconnectAttempts,
-                (unsigned long)(_connectTimeoutMs / 1000UL));
+    _countFailedAttempt(_attemptRefused ? "association refused to start" : "association timed out");
 
     // Keep trying for as long as there is something to try. Raising the AP is no longer a
     // reason to stop: under APSTA both interfaces run at once, so the device can host the
@@ -1642,7 +1661,13 @@ namespace CustomWifi
     // for you to configure me". PRIO_MEDIUM per D14, so genuine faults still win.
     Led::blinkBlueFast(Led::PRIO_MEDIUM);
 
-    LOG_INFO("SoftAP raised: %s on %s/%u", apSsid, apIp.toString().c_str(), chosen.cidr);
+    // WARNING for a device that lost its network, so the saved log keeps the outage's state
+    // changes. A device being set up raises it as a matter of course.
+    if (_provisioning.state == WifiProvisioning::State::AP_ASSIST) {
+      LOG_WARNING("SoftAP raised for recovery: %s on %s/%u", apSsid, apIp.toString().c_str(), chosen.cidr);
+    } else {
+      LOG_INFO("SoftAP raised: %s on %s/%u", apSsid, apIp.toString().c_str(), chosen.cidr);
+    }
     return true;
   }
 
@@ -1792,8 +1817,7 @@ namespace CustomWifi
     // Auto-reconnect may have restored the link during the window
     if (isFullyConnected()) return;
 
-    _countFailedAttempt();
-    LOG_WARNING("Auto-reconnect failed, attempt %d", _reconnectAttempts);
+    _countFailedAttempt("link lost and not restored");
 
     // No portal fallback any more. Repeated failures now feed the AP-raise predicate,
     // and _serviceApLifecycle() raises the SoftAP so the device can be re-provisioned
@@ -1802,10 +1826,32 @@ namespace CustomWifi
 
   // Counts one failed attempt in the state machine, the retry counter and the
   // stable-connection clock. Only the connect and grace deadlines call it.
-  static void _countFailedAttempt()
+  //
+  // Also the outage log. An unreachable AP fails an attempt every 10 s, and a WARNING per
+  // attempt is what the saved log keeps: a 4 h outage filled the 1000-line LittleFS log
+  // and trimmed away the crash history it was needed for (#295). So the first failure and
+  // a summary every WIFI_OUTAGE_SUMMARY_INTERVAL_MS are WARNINGs, the rest DEBUG.
+  static void _countFailedAttempt(const char *what)
   {
     _reconnectAttempts++;
-    _lastReconnectAttempt = millis64();
+    uint64_t nowMs = millis64();
+    _lastReconnectAttempt = nowMs;
+    _outageFailedAttempts++;
+
+    if (_outageStartedMs == 0) {
+      _outageStartedMs = nowMs;
+      _lastOutageSummaryMs = nowMs;
+      LOG_WARNING("WiFi offline: %s - retrying every %d s, details at DEBUG",
+                  what, WIFI_CONNECT_TIMEOUT_SECONDS);
+    } else if (nowMs - _lastOutageSummaryMs >= WIFI_OUTAGE_SUMMARY_INTERVAL_MS) {
+      _lastOutageSummaryMs = nowMs;
+      LOG_WARNING("WiFi still offline after %llu s, %lu failed attempts (last: %s)",
+                  (unsigned long long)((nowMs - _outageStartedMs) / 1000ULL),
+                  (unsigned long)_outageFailedAttempts, what);
+    } else {
+      LOG_DEBUG("WiFi attempt %lu failed: %s", (unsigned long)_outageFailedAttempts, what);
+    }
+
     _feedProvisioning(WifiProvisioning::Event::STA_ATTEMPT_FAILED);
   }
 
