@@ -3290,7 +3290,6 @@ namespace CustomServer
                 // Validated above, so a failure means the meter is not initialized or the value could not be stored; nothing changed
                 if (Ade7953::setVoltagePhase(voltagePhase))
                 {
-                    LOG_INFO("ADE7953 voltage phase set to %u via API", static_cast<unsigned>(voltagePhase));
                     _sendSuccessResponse(request, "ADE7953 voltage phase updated successfully");
                 }
                 else
