@@ -273,6 +273,10 @@ bool isScanHoldActive(uint64_t holdStartedAtMs, uint64_t nowMs, bool scanRunning
     return scanRunning || elapsed < WIFI_PROVISIONING_SCAN_HOLD_MIN_MS;
 }
 
+bool opensDisconnectGrace(bool attemptTimed, bool graceArmed, bool scanHoldActive) {
+    return !attemptTimed && !graceArmed && !scanHoldActive;
+}
+
 bool isNetworkServiceable(bool staConnected, bool apServing) {
     return staConnected || apServing;
 }
