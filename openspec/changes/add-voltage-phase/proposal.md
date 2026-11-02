@@ -15,7 +15,7 @@ This happened in the field. On both a field site meters (meter A, meter B) chann
 - Until the boot load has run (`begin()` can fail before it while the web server and MQTT keep running) the setter refuses every value, and the REST GET and the `meter` shadow expose the voltage phase only once it is stored in NVS.
 - Changing the voltage phase re-arms CT polarity detection on every active channel whose rotation changes (every active non-split channel), as a per-channel phase change already does. The vote ignores the channel role, so a bidirectional channel that exports during the change can flip; the release notes say to change it only while those channels import.
 - Waveform capture reports the voltage phase from the setting, and `phaseShiftDegrees` is 0 whenever the channel is not off-phase (today a split-phase channel shows +-120 against an L2/L3 base although the meter never rotates it).
-- Web UI channel page takes its base from the voltage phase instead of channel 0, shows the voltage phase read-only, and gives channel 0 the same phase preview as every other channel.
+- Web UI channel page takes its base from the voltage phase instead of channel 0, shows and sets the voltage phase (with a confirmation warning about the reversed-CT re-check), and gives channel 0 the same phase preview as every other channel.
 - Channel 0 still cannot be split-phase 240 V. The reason changes: its reading supplies V1 (and the 2x multiplier would double the voltage every channel and integration reads), not that it defines the frame. Comments and log text are reworded.
 - `swagger.yaml`, the manual and the dev tools follow. Firmware version 2.8.0.
 

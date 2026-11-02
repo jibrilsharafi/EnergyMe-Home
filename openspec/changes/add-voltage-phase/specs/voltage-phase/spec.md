@@ -154,11 +154,19 @@ The waveform capture JSON SHALL report `voltagePhase` from the device voltage ph
 - **THEN** `phaseShiftDegrees` is 0
 
 ### Requirement: Web UI channel page uses the voltage phase as its base
-The channel configuration page SHALL read the voltage phase from the device and use it, not channel 0's phase, as the base for deciding whether the install is three-phase and for the live phase preview. The page SHALL show the voltage phase read-only, as the phase of the device's own L wire, without offering a control to change it. Channel 0 SHALL get the same phase preview as every other channel. If the voltage phase cannot be read, the page SHALL show it as unavailable and hide the phase previews instead of assuming a base. Channel 0's phase selector SHALL offer phases 1 to 3 only.
+The channel configuration page SHALL read the voltage phase from the device and use it, not channel 0's phase, as the base for deciding whether the install is three-phase and for the live phase preview. The page SHALL show the voltage phase as the phase of the device's own L wire in a selector that sets it, asking for confirmation with a warning that the change re-runs the reversed-CT detection on every active channel. Channel 0 SHALL get the same phase preview as every other channel. If the voltage phase cannot be read, the page SHALL show it as unavailable and hide the phase previews instead of assuming a base. Channel 0's phase selector SHALL offer phases 1 to 3 only.
 
 #### Scenario: Voltage phase shown
 - **WHEN** the channel page loads on a device with voltage phase 3
-- **THEN** the page shows "Voltage input (device L wire): phase 3" above the channel columns, with no control to change it
+- **THEN** the voltage phase selector above the channel columns shows 3
+
+#### Scenario: Voltage phase set from the page
+- **WHEN** the user picks 2 in the voltage phase selector and confirms the warning
+- **THEN** the page PUTs voltage phase 2, shows the stored value, and re-reads the channel configuration
+
+#### Scenario: Voltage phase change cancelled
+- **WHEN** the user picks another value and cancels the warning
+- **THEN** nothing is sent and the selector returns to the stored value
 
 #### Scenario: Channel 0 preview on an off-line CT
 - **WHEN** channel 0 is at phase 1 under load on a device with voltage phase 2
