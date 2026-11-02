@@ -1819,6 +1819,13 @@ namespace CustomWifi
 
     _countFailedAttempt("link lost and not restored");
 
+    // Retry now, as the connect deadline does. Auto-reconnect is off, so nothing else
+    // associates, and leaving it to the periodic check delayed the first attempt by up to
+    // 30 s - indefinitely while other notifications kept that check's wait from timing out.
+    if (_hasCredentialsWorthRetrying()) {
+      _startStaAttempt();
+    }
+
     // No portal fallback any more. Repeated failures now feed the AP-raise predicate,
     // and _serviceApLifecycle() raises the SoftAP so the device can be re-provisioned
     // from its own web interface. It no longer restarts itself out of a bad network.

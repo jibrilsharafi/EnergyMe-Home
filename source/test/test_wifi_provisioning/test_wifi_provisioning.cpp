@@ -896,8 +896,8 @@ void test_scan_hold_survives_a_clock_behind_the_start(void) {
 //
 // The harness replays customwifi.cpp's bookkeeping: every attempt, refused or not, arms
 // a 10 s connect deadline that reports and retries it; a disconnect opens the 15 s grace
-// window only when opensDisconnectGrace() allows it; the periodic check starts an attempt
-// when nothing is armed.
+// window only when opensDisconnectGrace() allows it, and its expiry reports and retries
+// too; the periodic check starts an attempt when nothing is armed.
 // ============================================================================
 
 namespace {
@@ -936,6 +936,7 @@ struct AttemptHarness {
         if (graceDeadlineMs != 0 && nowMs >= graceDeadlineMs) {
             graceDeadlineMs = 0;
             fail(nowMs);
+            startAttempt(nowMs);
         }
         if (connectDeadlineMs != 0 && nowMs >= connectDeadlineMs) {
             connectDeadlineMs = 0;
@@ -974,10 +975,12 @@ void test_disconnect_opens_grace_only_for_a_lost_link(void) {
 void test_link_loss_counts_the_loss_then_one_failure_per_attempt(void) {
     AttemptHarness harness;
     harness.disconnected(0);  // The established link drops: the grace window opens
-    harness.runOutage(1000, 10 * kMinute);
+    harness.runOutage(1000, kGraceMs);
+    TEST_ASSERT_EQUAL_UINT32(1, harness.attemptsStarted);  // Retried as the window expires
+    harness.runOutage(kGraceMs + 1000, 10 * kMinute);
 
-    // Grace expiry at 15 s, periodic start at 30 s, then a 10 s cycle. The loss itself plus
-    // every attempt but the one still in flight, each reported exactly once.
+    // Then a 10 s cycle. The loss itself plus every attempt but the one still in flight,
+    // each reported exactly once.
     TEST_ASSERT_GREATER_THAN_UINT32(40, harness.attemptsStarted);
     TEST_ASSERT_EQUAL_UINT32(harness.attemptsStarted, harness.failuresFed);
     TEST_ASSERT_EQUAL_UINT32(harness.failuresFed, harness.context.apRaiseTriggers);
