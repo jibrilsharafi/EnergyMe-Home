@@ -251,7 +251,13 @@ namespace CrashMonitor
             // some later boot, so freeze it before anything can defer the read
             _crashResetReason = (uint32_t)esp_reset_reason();
             _crashResetReasonValid = true;
-            if (coreDumpPending) _logCompleteCrashData();
+            if (coreDumpPending) {
+                _logCompleteCrashData();
+            } else {
+                LOG_WARNING("Crash: Reason=%s(%d) | Crashes=%lu (consecutive=%lu) | no core dump",
+                            getResetReasonString((esp_reset_reason_t)_crashResetReason), (int32_t)_crashResetReason,
+                            _crashCount, _consecutiveCrashCount);
+            }
         }
 
         // Increment reset count (always)
