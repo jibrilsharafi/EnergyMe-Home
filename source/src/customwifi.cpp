@@ -82,8 +82,9 @@ namespace CustomWifi
   // _lastDisconnectReason/SSID/BSSID/RSSI are written from the arduino_events task inside
   // _onWiFiEventWithInfo, which forbids logging or anything else that might block - so a
   // spinlock, not a semaphore, guards the char buffers here. Both are read from whichever
-  // task serves the diagnostics endpoint. Unguarded, a reader landing mid-snprintf on
-  // either buffer could see a torn mix of the old and new string.
+  // task serves the diagnostics endpoint. Unguarded, a reader landing mid-write on
+  // either buffer could see a torn mix of the old and new string. Only copies run under it:
+  // never an esp_wifi_* call, which can block on the driver's API mutex (#295).
   static portMUX_TYPE _disconnectDiagMux = portMUX_INITIALIZER_UNLOCKED;
   static char _lastAttemptedSSID[WIFI_SSID_BUFFER_SIZE] = {0};
   static uint8_t _lastDisconnectReason = 0;
@@ -1457,12 +1458,16 @@ namespace CustomWifi
                (unsigned long)(_connectTimeoutMs / 1000UL));
     }
 
-    // Guarded so a concurrent diagnostics read can never see a torn buffer; see the
-    // declaration comment on _disconnectDiagMux.
+    // Read first, then only copy under the spinlock. esp_wifi_get_config() takes the driver's
+    // API mutex, and waiting on it with interrupts masked spun this core into the Interrupt
+    // watchdog whenever another task held that mutex (#295). The copy is guarded so a
+    // concurrent diagnostics read can never see a torn buffer.
+    char attemptedSsid[WIFI_SSID_BUFFER_SIZE] = {0};
+    _readStoredSsid(attemptedSsid, sizeof(attemptedSsid));
     taskENTER_CRITICAL(&_disconnectDiagMux);
-    _readStoredSsid(_lastAttemptedSSID, sizeof(_lastAttemptedSSID));
+    memcpy(_lastAttemptedSSID, attemptedSsid, sizeof(_lastAttemptedSSID));
     taskEXIT_CRITICAL(&_disconnectDiagMux);
-    LOG_INFO("Starting WiFi association attempt to '%s'", _lastAttemptedSSID);
+    LOG_INFO("Starting WiFi association attempt to '%s'", attemptedSsid);
 
     // WiFi.begin() calls esp_wifi_set_config() internally, which ESP-IDF refuses while a
     // previous association is still in flight. Clearing it first keeps every attempt real:
