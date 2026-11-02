@@ -909,8 +909,7 @@ static bool _applyMeter(JsonObjectConst delta, JsonObject reported) {
     // voltage_phase is a device setting outside the calibration struct, same path as the REST API.
     JsonVariantConst vp = delta["voltage_phase"];
     if (!vp.isNull()) {
-        if (vp.is<uint8_t>() && PhaseUtils::isValidVoltagePhase(vp.as<uint8_t>()) &&
-            Ade7953::setVoltagePhase(static_cast<Phase>(vp.as<uint8_t>()))) {
+        if (vp.is<uint8_t>() && Ade7953::setVoltagePhase(static_cast<Phase>(vp.as<uint8_t>()))) {
             reported["voltage_phase"] = static_cast<uint8_t>(Ade7953::getVoltagePhase());
             applied = true;
         } else {
