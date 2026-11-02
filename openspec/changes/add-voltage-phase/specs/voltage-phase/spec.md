@@ -5,7 +5,7 @@ A device-level voltage phase: the line the meter's single voltage input V1 is wi
 ## ADDED Requirements
 
 ### Requirement: Device voltage phase setting
-The device SHALL keep a voltage phase with the values `PHASE_1`, `PHASE_2` and `PHASE_3` only, persisted as NVS key `voltage_phase` (u8) in `ade7953_ns` with default `PHASE_1`, separate from the ADE7953 calibration configuration. Any other value (0, `PHASE_SPLIT_240`, anything above 3, a non-integer) SHALL be refused and leave the stored and applied value unchanged. Setting the current value SHALL be a no-op with no NVS write and no CT polarity re-arm. A new value SHALL be persisted before it is applied; if persisting fails, the stored and applied value SHALL stay unchanged and the setter SHALL report failure. Concurrent writers SHALL be serialized so the stored and applied value always end equal. Resetting the ADE7953 calibration or a channel SHALL NOT change the voltage phase; a factory reset SHALL remove it.
+The device SHALL keep a voltage phase with the values `PHASE_1`, `PHASE_2` and `PHASE_3` only, persisted as NVS key `voltage_phase` (u8) in `ade7953_ns` with default `PHASE_1`, separate from the ADE7953 calibration configuration. Any other value (0, `PHASE_SPLIT_240`, anything above 3, a non-integer) SHALL be refused and leave the stored and applied value unchanged. Setting the current value SHALL be a no-op with no NVS write and no CT polarity re-arm when that value is already stored; when the boot could not store it, setting the current value SHALL store it without re-arming any channel. A new value SHALL be persisted before it is applied; if persisting fails, the stored and applied value SHALL stay unchanged and the setter SHALL report failure. Once persisted, the new value SHALL be applied even if the CT polarity re-arm cannot take the channel lock; the re-arm SHALL then run at the next reading, the device SHALL log an error, and the setter SHALL report success. Concurrent writers SHALL be serialized so that after every setter call the stored and applied value are equal. Resetting the ADE7953 calibration or a channel SHALL NOT change the voltage phase; a factory reset SHALL remove it.
 
 #### Scenario: Valid value persisted and applied
 - **WHEN** the voltage phase is set to 2 on a device at 1
@@ -16,15 +16,27 @@ The device SHALL keep a voltage phase with the values `PHASE_1`, `PHASE_2` and `
 - **THEN** the device refuses it with a warning and the stored and applied value stay unchanged
 
 #### Scenario: Same value is a no-op
-- **WHEN** the voltage phase is set to the value it already has
+- **WHEN** the voltage phase is set to the value it already has and that value is stored in NVS
 - **THEN** the device writes nothing to NVS and re-arms no channel
+
+#### Scenario: Unstored value stored by an equal write
+- **WHEN** the boot could not write the migrated voltage phase 3 to NVS and the voltage phase is then set to 3
+- **THEN** the device writes 3 to NVS, re-arms no channel and reports success
+
+#### Scenario: Persist failure changes nothing
+- **WHEN** the voltage phase is set to 2 on a device at 1 and the NVS write fails
+- **THEN** the setter reports failure with an error log, and the stored and applied value stay 1
+
+#### Scenario: Channel lock timeout after the persist
+- **WHEN** the voltage phase is set to 2 on a device at 1, the NVS write succeeds and the channel lock cannot be taken within its timeout
+- **THEN** the device stores and applies 2, logs an error, reports success, and the next reading re-arms every active non-split channel
 
 #### Scenario: Calibration and channel resets keep it
 - **WHEN** the ADE7953 calibration is reset to defaults, or channel 0 is reset to its default configuration
 - **THEN** the voltage phase keeps its value
 
 ### Requirement: One-time migration from channel 0
-At boot, after the channel configuration is loaded and before the meter reading task starts, the device SHALL load the voltage phase. When the key is absent or holds a value outside 1..3, the device SHALL set the voltage phase to channel 0's phase as loaded (after the split-phase coercion of channel 0), or to `PHASE_1` if that is not 1..3, and persist it, logging the migration (at WARNING when an out-of-range value was replaced). When a valid key is present the device SHALL use it and SHALL NOT re-derive it from channel 0. If the migration write fails, the device SHALL log an error and use the derived value until the next boot. Neither the load nor the migration SHALL re-arm CT polarity detection.
+At boot, after the channel configuration is loaded and before the meter reading task starts, the device SHALL load the voltage phase, telling an absent key from a stored one by the key's presence, not by a read default. When the key is absent, the device SHALL set the voltage phase to channel 0's phase as loaded (after the split-phase coercion of channel 0), or to `PHASE_1` if that is not 1..3, persist it and log the migration. When the key is present but does not hold a u8 in 1..3 (0 included, or a key of another type), the device SHALL log a warning with the stored value, derive the voltage phase the same way and replace the key with it as a u8. When a valid key is present the device SHALL use it and SHALL NOT re-derive it from channel 0. If the NVS namespace cannot be opened, the device SHALL log an error, use the derived value in RAM only and write nothing. If the migration write fails, the device SHALL log an error and use the derived value until it is stored by a later setter call or boot. Neither the load nor the migration SHALL re-arm CT polarity detection.
 
 #### Scenario: Upgrade changes no reading
 - **WHEN** a meter on 2.7.x with channel 0 at phase 2 and other channels at phases 1, 2 and 3 boots 2.8.0 for the first time
@@ -38,6 +50,14 @@ At boot, after the channel configuration is loaded and before the meter reading 
 - **WHEN** the stored `voltage_phase` holds 7 at boot and channel 0 is at phase 3
 - **THEN** the device logs a warning, sets and persists the voltage phase 3, and uses it from the first reading
 
+#### Scenario: Stored zero is not absent
+- **WHEN** the stored `voltage_phase` holds 0 at boot and channel 0 is at phase 2
+- **THEN** the device logs a warning with the value 0 (not an informational migration), sets and persists the voltage phase 2
+
+#### Scenario: Namespace cannot be opened
+- **WHEN** the NVS namespace holding a valid `voltage_phase` of 2 cannot be opened at boot and channel 0 is at phase 3
+- **THEN** the device logs an error, uses 3 in RAM for that boot and leaves the stored 2 untouched
+
 #### Scenario: Fresh device and factory reset
 - **WHEN** a device boots with no `voltage_phase` key and channel 0 at its default phase
 - **THEN** the voltage phase is `PHASE_1` and is persisted
@@ -47,7 +67,7 @@ At boot, after the channel configuration is loaded and before the meter reading 
 - **THEN** no channel has CT polarity detection armed by the voltage phase load
 
 ### Requirement: Configuration backup and restore carry the voltage phase
-The configuration backup SHALL include `ade7953_ns.voltage_phase` with its type and value. Restoring a backup that contains the key SHALL restore that value; a restored value outside 1..3 SHALL be handled at the next boot like any out-of-range stored value. Restoring a backup that does not contain the key SHALL leave the stored voltage phase unchanged and SHALL NOT re-derive it from the restored channel 0 phase, also on a factory-reset device, whose first boot after the reset has already stored the migrated value.
+The configuration backup SHALL include `ade7953_ns.voltage_phase` with its type and value. Restoring a backup that contains the key SHALL restore that value; a restored value outside 1..3 (0 included) or of another type SHALL be handled at the next boot like any invalid stored value. Restoring a backup that does not contain the key SHALL leave the stored voltage phase unchanged and SHALL NOT re-derive it from the restored channel 0 phase, also on a factory-reset device, whose first boot after the reset has already stored the migrated value.
 
 #### Scenario: Backup contains the key
 - **WHEN** a configuration backup is downloaded from a 2.8.0 device with voltage phase 2
@@ -70,7 +90,7 @@ The configuration backup SHALL include `ade7953_ns.voltage_phase` with its type 
 - **THEN** the restore boot logs a warning and the voltage phase is 2, derived from the restored channel 0 and persisted
 
 ### Requirement: Local REST interface for the voltage phase
-The authenticated local REST API SHALL expose `GET /api/v1/ade7953/voltage-phase`, returning `{"voltagePhase": n}`, and `PUT /api/v1/ade7953/voltage-phase` with body `{"voltagePhase": n}`. A PUT whose `voltagePhase` is not an integer 1..3, or is missing, SHALL get HTTP 400 and change nothing. A PUT the setter cannot persist SHALL get HTTP 500 and change nothing. A local change SHALL reach the `meter` shadow's reported state through the existing drift detection.
+The authenticated local REST API SHALL expose `GET /api/v1/ade7953/voltage-phase`, returning `{"voltagePhase": n}`, and `PUT /api/v1/ade7953/voltage-phase` with body `{"voltagePhase": n}`. A PUT whose `voltagePhase` is not an integer 1..3, or is missing, SHALL get HTTP 400 and change nothing. HTTP 500 SHALL be returned only when the setter cannot persist the value, and then nothing has changed. A local change SHALL reach the `meter` shadow's reported state through the existing drift detection.
 
 #### Scenario: Read the voltage phase
 - **WHEN** an authenticated client sends `GET /api/v1/ade7953/voltage-phase` on a device at voltage phase 3
@@ -85,7 +105,7 @@ The authenticated local REST API SHALL expose `GET /api/v1/ade7953/voltage-phase
 - **THEN** the response is HTTP 400 and the voltage phase and every reading stay unchanged
 
 ### Requirement: Changing the voltage phase re-arms CT polarity detection
-When the voltage phase changes, the device SHALL, in the same critical section that applies the new value, re-arm CT polarity detection on every active channel whose rotation changes, which is every active channel that is not split-phase 240 V, channel 0 included: detection armed, vote and conducting-read counters zeroed, and a priority read requested for multiplexed channels. Inactive and split-phase channels SHALL NOT be armed. The device SHALL log the old and new value and the number of channels re-armed.
+When the voltage phase changes, the device SHALL, once the new value is persisted and applied and under the channel lock, re-arm CT polarity detection on every active channel whose rotation changes, which is every active channel that is not split-phase 240 V, channel 0 included: detection armed, vote and conducting-read counters zeroed, and a priority read requested for multiplexed channels. If the channel lock cannot be taken within its timeout, the next reading SHALL perform the same re-arm. Inactive and split-phase channels SHALL NOT be armed. The re-arm SHALL NOT depend on the channel role: the vote sees the rotated active power before any load or PV clamp, so a bidirectional channel that exports while the voltage phase changes can flip its `reverse` (design D4). The device SHALL log the old and new value and the number of channels re-armed.
 
 #### Scenario: Active non-split channels re-armed
 - **WHEN** the voltage phase changes from 1 to 2 on a meter with channels 0 and 5 active at phase 1, channel 6 active at split-phase 240 V and channel 7 inactive
@@ -96,7 +116,7 @@ When the voltage phase changes, the device SHALL, in the same critical section t
 - **THEN** no `reverse` flag changes
 
 #### Scenario: Wrong frame flips and recovers
-- **WHEN** a wrong voltage phase makes an armed load channel read negative active power for the vote threshold, and the right value is set afterwards
+- **WHEN** a wrong voltage phase makes an armed channel that conducts in the import direction read negative active power for the vote threshold, and the right value is set afterwards while it still imports
 - **THEN** the channel's `reverse` flips and is persisted, and after the right value is set the channel is re-armed and flips back
 
 ### Requirement: Channel 0 cannot be split-phase 240 V
@@ -126,7 +146,11 @@ The waveform capture JSON SHALL report `voltagePhase` from the device voltage ph
 - **THEN** `phaseShiftDegrees` is 0
 
 ### Requirement: Web UI channel page uses the voltage phase as its base
-The channel configuration page SHALL read the voltage phase from the device and use it, not channel 0's phase, as the base for deciding whether the install is three-phase and for the live phase preview. Channel 0 SHALL get the same phase preview as every other channel. If the voltage phase cannot be read, the page SHALL hide the phase previews instead of assuming a base. Channel 0's phase selector SHALL offer phases 1 to 3 only.
+The channel configuration page SHALL read the voltage phase from the device and use it, not channel 0's phase, as the base for deciding whether the install is three-phase and for the live phase preview. The page SHALL show the voltage phase read-only, as the phase of the device's own L wire, without offering a control to change it. Channel 0 SHALL get the same phase preview as every other channel. If the voltage phase cannot be read, the page SHALL show it as unavailable and hide the phase previews instead of assuming a base. Channel 0's phase selector SHALL offer phases 1 to 3 only.
+
+#### Scenario: Voltage phase shown
+- **WHEN** the channel page loads on a device with voltage phase 3
+- **THEN** the page shows "Voltage input (device L wire): phase 3" above the channel columns, with no control to change it
 
 #### Scenario: Channel 0 preview on an off-line CT
 - **WHEN** channel 0 is at phase 1 under load on a device with voltage phase 2
@@ -134,4 +158,4 @@ The channel configuration page SHALL read the voltage phase from the device and 
 
 #### Scenario: Voltage phase unavailable
 - **WHEN** the voltage phase request fails
-- **THEN** no phase preview is shown and the rest of the page works
+- **THEN** the voltage phase is shown as unavailable, no phase preview is shown and the rest of the page works
