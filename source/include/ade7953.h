@@ -164,6 +164,7 @@
 
 // Configuration Preferences Keys
 #define CONFIG_SAMPLE_TIME_KEY "sample_time"
+#define CONFIG_VOLTAGE_PHASE_KEY "voltage_phase" // u8, PHASE_1..PHASE_3 (13 chars)
 #define CONFIG_AV_GAIN_KEY "av_gain"
 #define CONFIG_AI_GAIN_KEY "ai_gain"
 #define CONFIG_BI_GAIN_KEY "bi_gain"
@@ -193,6 +194,7 @@
 
 // Default configuration values
 #define DEFAULT_SAMPLE_TIME 200ULL // Will be converted to integer line cycles (so at 50Hz, 200ms = 10 cycles)
+#define DEFAULT_VOLTAGE_PHASE PHASE_1 // Line the voltage input V1 is wired to, until the boot load sets it
 #define DEFAULT_CONFIG_AV_GAIN 4050000 // Actual "calibrated" value (compared to default 0x400000)
 #define DEFAULT_CONFIG_AI_GAIN 4300000 // Actual "calibrated" value (compared to default 0x400000)
 #define DEFAULT_CONFIG_BI_GAIN 4300000 // Actual "calibrated" value (compared to default 0x400000)
@@ -629,6 +631,10 @@ namespace Ade7953
     // Sample time management
     uint64_t getSampleTime();
     bool setSampleTime(uint64_t sampleTime);
+
+    // Voltage phase management: the line the single voltage input V1 is wired to, the
+    // base every channel (channel 0 included) is rotated from into its own line
+    Phase getVoltagePhase();
 
     // Channel data management
     bool isChannelActive(uint8_t channelIndex);

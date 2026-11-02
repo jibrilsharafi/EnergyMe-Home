@@ -29,6 +29,10 @@ namespace Ade7953
 
     // Timing and measurement variables
     static uint64_t _sampleTime; // in milliseconds, time between linecycles readings
+    // Line V1 is wired to. Written at boot and under _configMutex, read lock-free (aligned 32-bit enum).
+    static volatile Phase _voltagePhase = DEFAULT_VOLTAGE_PHASE;
+    // NVS holds _voltagePhase. False only after a boot that could not store the value it derived. Guarded by _configMutex after boot.
+    static bool _voltagePhasePersisted = false;
     static uint8_t _currentChannel = INVALID_CHANNEL; // By default, no channel is selected (except for channel 0 which is always active)
     // Dynamic channel scheduling state (Weighted Deficit Round-Robin)
     static float _channelWeight[MAX_CHANNEL_COUNT] = {};     // Computed dynamic weight per channel
@@ -220,6 +224,9 @@ namespace Ade7953
     static void _setSampleTimeFromPreferences();
     static void _saveSampleTimeToPreferences();
 
+    // Voltage phase management
+    static void _setVoltagePhaseFromPreferences();
+
     // ADE7953 register reading functions
     /*
     This allows you see the actual sinusoidal waveform, so both positive and 
@@ -352,6 +359,10 @@ namespace Ade7953
             _setChannelDataFromPreferences(i);
         }
         LOG_DEBUG("Done setting channel data from Preferences");
+
+        // After the channels (a missing key migrates from channel 0's loaded phase) and
+        // before the meter task, so no reading ever uses the default by mistake.
+        _setVoltagePhaseFromPreferences();
 
         for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
             _setEnergyFromPreferences(i);
@@ -695,6 +706,13 @@ namespace Ade7953
         _saveSampleTimeToPreferences();
 
         return true;
+    }
+
+    // Voltage phase management
+    // ========================
+
+    Phase getVoltagePhase() {
+        return _voltagePhase;
     }
 
     // Channel data management
@@ -4460,6 +4478,70 @@ namespace Ade7953
         char sampleTimeHuman[DURATION_FORMAT_BUFFER_SIZE];
         DurationFormat::humanizeDuration(_sampleTime, sampleTimeHuman, sizeof(sampleTimeHuman));
         LOG_DEBUG("Saved sample time %s to preferences", sampleTimeHuman);
+    }
+
+    // Voltage phase management
+    // ========================
+
+    /*
+    Boot load, run once after the channels and before the meter task. A missing key
+    (first boot on this firmware, or after a factory reset) is written once with
+    channel 0's phase as loaded, the base older firmware took from channel 0, so the
+    upgrade changes no reading. A valid stored key always wins afterwards: it is never
+    re-derived from channel 0, also after a downgrade and re-upgrade or after restoring
+    a backup without it. The value is assigned directly, never through setVoltagePhase,
+    so a boot never re-arms CT polarity detection (as armTransients=false for channels).
+    */
+    void _setVoltagePhaseFromPreferences() {
+        const Phase channel0Phase = _channelData[0].phase; // already coerced off split-phase 240 V by setChannelData; meter task not started yet
+
+        Preferences preferences;
+        const bool opened = preferences.begin(PREFERENCES_NAMESPACE_ADE7953, false);
+        const PreferenceType storedType = opened ? preferences.getType(CONFIG_VOLTAGE_PHASE_KEY) : PT_INVALID;
+        const uint32_t storedValue = (storedType == PT_U8) ? preferences.getUChar(CONFIG_VOLTAGE_PHASE_KEY, 0) : 0;
+
+        const PhaseUtils::StoredVoltagePhase state = PhaseUtils::classifyStoredVoltagePhase(
+            opened, storedType != PT_INVALID, storedType == PT_U8, storedValue
+        );
+        const PhaseUtils::VoltagePhaseResolution resolution = PhaseUtils::resolveVoltagePhase(state, storedValue, channel0Phase);
+        _voltagePhase = resolution.phase;
+        _voltagePhasePersisted = (state == PhaseUtils::StoredVoltagePhase::Valid);
+
+        switch (resolution.log) {
+            case PhaseUtils::VoltagePhaseLog::Info:
+                LOG_INFO("Voltage phase migrated from channel 0: %u", static_cast<unsigned>(resolution.phase));
+                break;
+            case PhaseUtils::VoltagePhaseLog::Warning:
+                LOG_WARNING(
+                    "Stored voltage phase is not a u8 in 1-3 (type %d, value %lu), replacing it with %u from channel 0",
+                    static_cast<int>(storedType), static_cast<unsigned long>(storedValue), static_cast<unsigned>(resolution.phase)
+                );
+                break;
+            case PhaseUtils::VoltagePhaseLog::Error:
+                LOG_ERROR(
+                    "Failed to open Preferences for the voltage phase, using %u from channel 0 for this boot without storing it",
+                    static_cast<unsigned>(resolution.phase)
+                );
+                break;
+            default:
+                LOG_DEBUG("Loaded voltage phase %u from preferences", static_cast<unsigned>(resolution.phase));
+                break;
+        }
+
+        if (resolution.persist) {
+            // Remove first: putUChar would leave a key of another NVS type in place
+            if (state == PhaseUtils::StoredVoltagePhase::Invalid) preferences.remove(CONFIG_VOLTAGE_PHASE_KEY);
+            if (preferences.putUChar(CONFIG_VOLTAGE_PHASE_KEY, static_cast<uint8_t>(resolution.phase)) == sizeof(uint8_t)) {
+                _voltagePhasePersisted = true;
+            } else {
+                LOG_ERROR(
+                    "Failed to store the voltage phase %u, using it until a later setter call or boot stores it",
+                    static_cast<unsigned>(resolution.phase)
+                );
+            }
+        }
+
+        if (opened) preferences.end();
     }
 
     void _updateSampleTime() {
