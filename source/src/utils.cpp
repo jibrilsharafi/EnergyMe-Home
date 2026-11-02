@@ -2457,6 +2457,15 @@ bool restoreNvsFromJson(JsonDocument &doc) {
     uint32_t successKeys = 0;
     uint32_t failedKeys = 0;
 
+    // A backup without the voltage phase was taken before the setting existed, when channel 0's
+    // phase was the rotation base. If it restores channel 0's phase, the stored voltage phase is
+    // removed after the loop, so Ade7953::begin later in this boot migrates it again from the
+    // restored channel 0 and the backup reads as it did when it was taken.
+    const bool backupHasVoltagePhase = !doc["nvs"][PREFERENCES_NAMESPACE_ADE7953][CONFIG_VOLTAGE_PHASE_KEY].isNull();
+    char channel0PhaseKey[PREFERENCES_KEY_BUFFER_SIZE];
+    snprintf(channel0PhaseKey, sizeof(channel0PhaseKey), CHANNEL_PHASE_KEY, 0u);
+    bool channel0PhaseRestored = false;
+
     // Iterate namespaces
     for (JsonPair nsPair : doc["nvs"].as<JsonObject>()) {
         const char* ns = nsPair.key().c_str();
@@ -2541,6 +2550,7 @@ bool restoreNvsFromJson(JsonDocument &doc) {
 
             if (success) {
                 successKeys++;
+                if (strcmp(ns, PREFERENCES_NAMESPACE_CHANNELS) == 0 && strcmp(key, channel0PhaseKey) == 0) channel0PhaseRestored = true;
             } else {
                 failedKeys++;
                 LOG_WARNING("Failed to restore key: %s/%s (type: %s)", ns, key, typeStr);
@@ -2548,6 +2558,15 @@ bool restoreNvsFromJson(JsonDocument &doc) {
         }
 
         prefs.end();
+    }
+
+    if (channel0PhaseRestored && !backupHasVoltagePhase) {
+        Preferences adePrefs;
+        const bool cleared = adePrefs.begin(PREFERENCES_NAMESPACE_ADE7953, false) &&
+                             (!adePrefs.isKey(CONFIG_VOLTAGE_PHASE_KEY) || adePrefs.remove(CONFIG_VOLTAGE_PHASE_KEY));
+        adePrefs.end();
+        if (cleared) LOG_INFO("Backup has no voltage phase: it is migrated again from the restored channel 0 at this boot");
+        else LOG_ERROR("Failed to clear the stored voltage phase: the restored channels keep it and may read rotated");
     }
 
     LOG_INFO("NVS restore complete: %lu/%lu keys succeeded, %lu failed",

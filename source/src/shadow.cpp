@@ -841,14 +841,15 @@ static bool _applySystem(JsonObjectConst delta, JsonObject reported) {
 }
 
 // ============================================================================
-// meter shadow (writable): ADE7953 calibration + sample time
+// meter shadow (writable): ADE7953 calibration + sample time + voltage phase
 // ============================================================================
 
 // The 19 calibration keys (camelCase) as serialized by getConfigurationAsJson and
 // accepted by Ade7953::configurationFromJson - keep this list in sync with that
 // setter's key set. Kept as an explicit allow-list (rather than handing the raw
-// delta to setConfigurationFromJson) so the meter delta's sample_time - applied
-// separately below - is filtered out before it reaches _validateJsonConfiguration.
+// delta to setConfigurationFromJson) so the meter delta's sample_time and
+// voltage_phase - applied separately below - are filtered out before they reach
+// _validateJsonConfiguration, and a delta with only those never rewrites the calibration.
 static const char* const METER_CAL_KEYS[] = {
     "aVGain", "aIGain", "bIGain", "aIRmsOs", "bIRmsOs",
     "aWGain", "bWGain", "aWattOs", "bWattOs",
@@ -864,6 +865,10 @@ static void _reportMeter(JsonDocument& doc) {
     Ade7953::getConfigurationAsJson(cfg);
     for (JsonPairConst kv : cfg.as<JsonObjectConst>()) rep[kv.key()] = kv.value();
     rep["sample_time"] = Ade7953::getSampleTime();
+    // Only the stored value: null (removed from reported) before the boot load or after a failed
+    // migration write, so a default never reaches the shadow and a fresh value proves the key is in NVS.
+    if (Ade7953::isVoltagePhaseStored()) rep["voltage_phase"] = static_cast<uint8_t>(Ade7953::getVoltagePhase());
+    else rep["voltage_phase"] = nullptr;
 }
 
 static bool _applyMeter(JsonObjectConst delta, JsonObject reported) {
@@ -898,6 +903,17 @@ static bool _applyMeter(JsonObjectConst delta, JsonObject reported) {
             applied = true;
         } else {
             LOG_WARNING("Rejected sample_time (not a positive integer >= minimum)");
+        }
+    }
+
+    // voltage_phase is a device setting outside the calibration struct, same path as the REST API.
+    JsonVariantConst vp = delta["voltage_phase"];
+    if (!vp.isNull()) {
+        if (vp.is<uint8_t>() && Ade7953::setVoltagePhase(static_cast<Phase>(vp.as<uint8_t>()))) {
+            reported["voltage_phase"] = static_cast<uint8_t>(Ade7953::getVoltagePhase());
+            applied = true;
+        } else {
+            LOG_WARNING("Rejected voltage_phase (not an integer 1-3, or not stored)");
         }
     }
 

@@ -409,7 +409,7 @@ void test_off_phase_only_for_another_rotational_line(void) {
 }
 
 void test_frame_same_phase_is_not_rotated(void) {
-    // Channel 0 and every channel on its line take this path: exact, not merely close.
+    // Every channel on the voltage phase takes this path: exact, not merely close.
     for (int v = 0; v < 3; v++) {
         PhaseUtils::ActiveReactive r =
             PhaseUtils::toChannelFrame(800.0f, 300.0f, false, ROTATIONAL_PHASES[v], ROTATIONAL_PHASES[v]);
@@ -687,6 +687,185 @@ void test_rotate_misconfiguration_stays_detectable(void) {
 }
 
 // ============================================================================
+// Device voltage phase - validation, boot migration, re-arm and waveform shift
+// ============================================================================
+
+static const Phase ALL_PHASES[4] = {PHASE_1, PHASE_2, PHASE_3, PHASE_SPLIT_240};
+
+void test_voltage_phase_accepts_only_1_to_3(void) {
+    TEST_ASSERT_TRUE(PhaseUtils::isValidVoltagePhase(PHASE_1));
+    TEST_ASSERT_TRUE(PhaseUtils::isValidVoltagePhase(PHASE_2));
+    TEST_ASSERT_TRUE(PhaseUtils::isValidVoltagePhase(PHASE_3));
+    TEST_ASSERT_FALSE(PhaseUtils::isValidVoltagePhase(0));
+    TEST_ASSERT_FALSE(PhaseUtils::isValidVoltagePhase(PHASE_SPLIT_240));
+    TEST_ASSERT_FALSE(PhaseUtils::isValidVoltagePhase(5));
+    TEST_ASSERT_FALSE(PhaseUtils::isValidVoltagePhase(255));
+}
+
+void test_stored_voltage_phase_classification(void) {
+    using PhaseUtils::StoredVoltagePhase;
+    // An unopened namespace hides whatever is stored.
+    TEST_ASSERT_EQUAL(StoredVoltagePhase::Unavailable, PhaseUtils::classifyStoredVoltagePhase(false, false, false, 0));
+    TEST_ASSERT_EQUAL(StoredVoltagePhase::Unavailable, PhaseUtils::classifyStoredVoltagePhase(false, true, true, 2));
+    TEST_ASSERT_EQUAL(StoredVoltagePhase::Absent, PhaseUtils::classifyStoredVoltagePhase(true, false, false, 0));
+    for (uint32_t v = 1; v <= 3; v++) {
+        TEST_ASSERT_EQUAL(StoredVoltagePhase::Valid, PhaseUtils::classifyStoredVoltagePhase(true, true, true, v));
+    }
+    // A stored 0 is a present key, not an absent one.
+    TEST_ASSERT_EQUAL(StoredVoltagePhase::Invalid, PhaseUtils::classifyStoredVoltagePhase(true, true, true, 0));
+    TEST_ASSERT_EQUAL(StoredVoltagePhase::Invalid, PhaseUtils::classifyStoredVoltagePhase(true, true, true, 4));
+    TEST_ASSERT_EQUAL(StoredVoltagePhase::Invalid, PhaseUtils::classifyStoredVoltagePhase(true, true, true, 7));
+    // A key of another NVS type is invalid even when its value would be in range.
+    TEST_ASSERT_EQUAL(StoredVoltagePhase::Invalid, PhaseUtils::classifyStoredVoltagePhase(true, true, false, 2));
+}
+
+void test_absent_key_migrates_channel0_phase(void) {
+    for (int p = 0; p < 3; p++) {
+        TEST_ASSERT_EQUAL(ROTATIONAL_PHASES[p],
+                          PhaseUtils::resolveVoltagePhase(PhaseUtils::StoredVoltagePhase::Absent, 0, ROTATIONAL_PHASES[p]));
+    }
+}
+
+void test_absent_key_with_unusable_channel0_phase_gives_phase1(void) {
+    // Channel 0 is coerced off split-phase at load; this is the defence behind that.
+    TEST_ASSERT_EQUAL(PHASE_1, PhaseUtils::resolveVoltagePhase(PhaseUtils::StoredVoltagePhase::Absent, 0, PHASE_SPLIT_240));
+    TEST_ASSERT_EQUAL(PHASE_1, PhaseUtils::resolveVoltagePhase(PhaseUtils::StoredVoltagePhase::Absent, 0, static_cast<Phase>(0)));
+}
+
+void test_invalid_key_is_replaced_from_channel0(void) {
+    // Stored 7 with channel 0 at phase 3, and stored 0 with channel 0 at phase 2: both
+    // classify as invalid (a warning at boot, not an informational migration).
+    TEST_ASSERT_EQUAL(PHASE_3, PhaseUtils::resolveVoltagePhase(
+        PhaseUtils::classifyStoredVoltagePhase(true, true, true, 7), 7, PHASE_3));
+    TEST_ASSERT_EQUAL(PHASE_2, PhaseUtils::resolveVoltagePhase(
+        PhaseUtils::classifyStoredVoltagePhase(true, true, true, 0), 0, PHASE_2));
+    TEST_ASSERT_EQUAL(PHASE_1, PhaseUtils::resolveVoltagePhase(
+        PhaseUtils::classifyStoredVoltagePhase(true, true, true, 7), 7, PHASE_SPLIT_240));
+}
+
+void test_unavailable_namespace_uses_channel0(void) {
+    TEST_ASSERT_EQUAL(PHASE_3, PhaseUtils::resolveVoltagePhase(PhaseUtils::StoredVoltagePhase::Unavailable, 0, PHASE_3));
+}
+
+void test_valid_key_wins_over_channel0(void) {
+    // Downgrade, channel 0 edited on the old firmware, re-upgrade: the stored key wins.
+    for (uint32_t stored = 1; stored <= 3; stored++) {
+        for (int c = 0; c < 4; c++) {
+            TEST_ASSERT_EQUAL(stored, PhaseUtils::resolveVoltagePhase(
+                PhaseUtils::classifyStoredVoltagePhase(true, true, true, stored), stored, ALL_PHASES[c]));
+        }
+    }
+}
+
+void test_rearm_matches_the_moved_rotation(void) {
+    // The setter re-arms only on an actual change of value: for every such change, an
+    // active channel is re-armed exactly when the rotation toChannelFrame applies moves.
+    for (int o = 0; o < 3; o++) {
+        for (int n = 0; n < 3; n++) {
+            if (o == n) continue;
+            for (int c = 0; c < 4; c++) {
+                bool moved = PhaseUtils::channelShiftDeg(ROTATIONAL_PHASES[o], ALL_PHASES[c]) !=
+                             PhaseUtils::channelShiftDeg(ROTATIONAL_PHASES[n], ALL_PHASES[c]);
+                TEST_ASSERT_EQUAL(moved, PhaseUtils::rearmOnVoltagePhaseChange(true, ALL_PHASES[c]));
+                TEST_ASSERT_FALSE(PhaseUtils::rearmOnVoltagePhaseChange(false, ALL_PHASES[c]));
+            }
+        }
+    }
+}
+
+void test_waveform_shift_is_zero_unless_off_phase(void) {
+    for (int v = 0; v < 3; v++) {
+        // Split-phase 240 V is never rotated, so it never shows a shift.
+        TEST_ASSERT_EQUAL_FLOAT(0.0f, PhaseUtils::channelShiftDeg(ROTATIONAL_PHASES[v], PHASE_SPLIT_240));
+        TEST_ASSERT_EQUAL_FLOAT(0.0f, PhaseUtils::channelShiftDeg(ROTATIONAL_PHASES[v], ROTATIONAL_PHASES[v]));
+        for (int c = 0; c < 3; c++) {
+            if (c == v) continue;
+            TEST_ASSERT_EQUAL_FLOAT(PhaseUtils::calculatePhaseShiftDeg(ROTATIONAL_PHASES[v], ROTATIONAL_PHASES[c]),
+                                    PhaseUtils::channelShiftDeg(ROTATIONAL_PHASES[v], ROTATIONAL_PHASES[c]));
+        }
+    }
+    // Channel 0 at phase 1 against voltage phase 2.
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 120.0f, PhaseUtils::channelShiftDeg(PHASE_2, PHASE_1));
+}
+
+// Rotation of a channel in degrees, as toChannelFrame applies it (reverse included).
+static float appliedRotationDeg(Phase voltagePhase, Phase channelPhase, bool reverse) {
+    PhaseUtils::ActiveReactive r = PhaseUtils::toChannelFrame(1.0f, 0.0f, reverse, voltagePhase, channelPhase);
+    return atan2f(r.reactive, r.active) * 180.0f / (float)M_PI;
+}
+
+static void assertTurnDeg(float expected, float fromDeg, float toDeg, const char *what) {
+    float turn = PhaseUtils::wrapDeg180(toDeg - fromDeg);
+    if (fabsf(expected) == 180.0f) {
+        TEST_ASSERT_FLOAT_WITHIN_MESSAGE(0.01f, 180.0f, fabsf(turn), what);
+    } else {
+        TEST_ASSERT_FLOAT_WITHIN_MESSAGE(0.01f, expected, turn, what);
+    }
+}
+
+void test_field_channel0_ct_on_another_line_reversed(void) {
+    // V1 on L1, channel 0's CT on L2 with reversed leads, resistive load: the raw pair
+    // reads -60 deg (|PF| 0.5). Voltage phase 1, channel 0 at phase 2 with reverse turns
+    // it by -120 + 180 = +60 into a positive, unity-PF reading.
+    SimLoad load = sineLoad(PHASE_2, 0.0f);
+    load.ctBackwards = true;
+    SimWindow w = simulateWindow(PHASE_1, load);
+
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, -60.0f, atan2f(w.q1, w.p1) * 180.0f / (float)M_PI);
+    TEST_ASSERT_FLOAT_WITHIN(0.005f, 0.5f, fabsf(w.p1) / w.apparent);
+
+    TEST_ASSERT_TRUE(PhaseUtils::isOffPhase(PHASE_1, PHASE_2)); // so the off-phase no-load gate applies
+    PhaseUtils::ActiveReactive r = PhaseUtils::toChannelFrame(w.p1, w.q1, true, PHASE_1, PHASE_2);
+    TEST_ASSERT_TRUE(r.active > 0.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, r.active / w.apparent);
+    assertMatchesTruth(w, r, "channel 0 on L2 reversed");
+}
+
+void test_field_fix_table(void) {
+    // design D8: with the voltage phase fixed, a channel's own phase step and reverse
+    // flip give every correction a 60 deg multiple needs, on every line and base.
+    char what[96];
+    for (int v = 0; v < 3; v++) {
+        for (int k = 0; k < 3; k++) {
+            for (int rev = 0; rev < 2; rev++) {
+                Phase V = ROTATIONAL_PHASES[v], ph = ROTATIONAL_PHASES[k];
+                Phase next = PhaseUtils::getLaggingPhase(ph);  // k -> k+1, cyclic
+                Phase prev = PhaseUtils::getLeadingPhase(ph);  // k -> k-1, cyclic
+                bool r = rev != 0;
+                float now = appliedRotationDeg(V, ph, r);
+                snprintf(what, sizeof(what), "voltage L%d, channel L%d, reverse %d", v + 1, k + 1, rev);
+
+                assertTurnDeg(60.0f, now, appliedRotationDeg(V, next, !r), what);
+                assertTurnDeg(-60.0f, now, appliedRotationDeg(V, prev, !r), what);
+                assertTurnDeg(120.0f, now, appliedRotationDeg(V, prev, r), what);
+                assertTurnDeg(-120.0f, now, appliedRotationDeg(V, next, r), what);
+                assertTurnDeg(180.0f, now, appliedRotationDeg(V, ph, !r), what);
+            }
+        }
+    }
+}
+
+void test_voltage_phase_change_turns_every_non_split_channel_alike(void) {
+    // A voltage phase change only adds angle(old) - angle(new) to every channel with a
+    // phase in 1..3 (so it can never fix a 60 deg error) and leaves split-phase alone.
+    char what[96];
+    for (int o = 0; o < 3; o++) {
+        for (int n = 0; n < 3; n++) {
+            Phase oldV = ROTATIONAL_PHASES[o], newV = ROTATIONAL_PHASES[n];
+            float expected = PhaseUtils::wrapDeg180(PhaseUtils::phaseAngleDeg(oldV) - PhaseUtils::phaseAngleDeg(newV));
+            for (int k = 0; k < 4; k++) {
+                for (int rev = 0; rev < 2; rev++) {
+                    snprintf(what, sizeof(what), "voltage L%d -> L%d, channel %d, reverse %d", o + 1, n + 1, k + 1, rev);
+                    float turn = ALL_PHASES[k] == PHASE_SPLIT_240 ? 0.0f : expected;
+                    assertTurnDeg(turn, appliedRotationDeg(oldV, ALL_PHASES[k], rev != 0),
+                                  appliedRotationDeg(newV, ALL_PHASES[k], rev != 0), what);
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
 // runner
 // ============================================================================
 
@@ -747,6 +926,19 @@ int main(int, char **) {
     RUN_TEST(test_rotate_ignores_harmonic_current);
     RUN_TEST(test_rotate_agrees_with_angle_method_on_sine);
     RUN_TEST(test_rotate_misconfiguration_stays_detectable);
+
+    RUN_TEST(test_voltage_phase_accepts_only_1_to_3);
+    RUN_TEST(test_stored_voltage_phase_classification);
+    RUN_TEST(test_absent_key_migrates_channel0_phase);
+    RUN_TEST(test_absent_key_with_unusable_channel0_phase_gives_phase1);
+    RUN_TEST(test_invalid_key_is_replaced_from_channel0);
+    RUN_TEST(test_unavailable_namespace_uses_channel0);
+    RUN_TEST(test_valid_key_wins_over_channel0);
+    RUN_TEST(test_rearm_matches_the_moved_rotation);
+    RUN_TEST(test_waveform_shift_is_zero_unless_off_phase);
+    RUN_TEST(test_field_channel0_ct_on_another_line_reversed);
+    RUN_TEST(test_field_fix_table);
+    RUN_TEST(test_voltage_phase_change_turns_every_non_split_channel_alike);
 
     return UNITY_END();
 }

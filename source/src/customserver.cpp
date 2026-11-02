@@ -3250,6 +3250,55 @@ namespace CustomServer
             });
         server.addHandler(setSampleTimeHandler);
 
+        // === VOLTAGE PHASE ENDPOINTS ===
+
+        // Get voltage phase (the line the voltage input is wired to)
+        server.on("/api/v1/ade7953/voltage-phase", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            // Only a stored value is authoritative: before the boot load it is a default
+            if (!Ade7953::isVoltagePhaseStored()) {
+                _sendErrorResponse(request, HTTP_CODE_SERVICE_UNAVAILABLE, "Voltage phase not stored (meter not initialized or NVS write failed)");
+                return;
+            }
+
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+
+            doc["voltagePhase"] = static_cast<uint8_t>(Ade7953::getVoltagePhase());
+
+            _sendJsonResponse(request, doc);
+        });
+
+        // Set voltage phase
+        static AsyncCallbackJsonWebHandler *setVoltagePhaseHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/ade7953/voltage-phase",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_ADE7953_VOLTAGE_PHASE)) return;
+
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
+                doc.set(json);
+
+                if (!doc["voltagePhase"].is<uint8_t>() || !PhaseUtils::isValidVoltagePhase(doc["voltagePhase"].as<uint8_t>())) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "voltagePhase field must be an integer 1-3");
+                    return;
+                }
+
+                Phase voltagePhase = static_cast<Phase>(doc["voltagePhase"].as<uint8_t>());
+
+                // Validated above, so a failure means the meter is not initialized or the value could not be stored; nothing changed
+                if (Ade7953::setVoltagePhase(voltagePhase))
+                {
+                    _sendSuccessResponse(request, "ADE7953 voltage phase updated successfully");
+                }
+                else
+                {
+                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to store the voltage phase");
+                }
+            });
+        server.addHandler(setVoltagePhaseHandler);
+
         // === CHANNEL DATA ENDPOINTS ===
         
         // Get single channel data

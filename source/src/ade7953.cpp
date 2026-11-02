@@ -29,6 +29,16 @@ namespace Ade7953
 
     // Timing and measurement variables
     static uint64_t _sampleTime; // in milliseconds, time between linecycles readings
+    // Line V1 is wired to. Written at boot and under _configMutex, read lock-free (aligned 32-bit enum).
+    static volatile Phase _voltagePhase = DEFAULT_VOLTAGE_PHASE;
+    // NVS holds _voltagePhase. False before the boot load and after a boot that could not store the value it derived.
+    // Written at boot and under _configMutex, read lock-free by isVoltagePhaseStored.
+    static volatile bool _voltagePhasePersisted = false;
+    // Set once at the end of the boot load. begin() can fail before it, leaving the default in _voltagePhase.
+    static bool _voltagePhaseLoaded = false;
+    // Set when setVoltagePhase stored and applied a change but could not take _channelDataMutex:
+    // the next reading re-arms CT polarity detection, rather than the setter writing the old value back.
+    static volatile bool _voltagePhaseRearmPending = false;
     static uint8_t _currentChannel = INVALID_CHANNEL; // By default, no channel is selected (except for channel 0 which is always active)
     // Dynamic channel scheduling state (Weighted Deficit Round-Robin)
     static float _channelWeight[MAX_CHANNEL_COUNT] = {};     // Computed dynamic weight per channel
@@ -192,6 +202,7 @@ namespace Ade7953
     static void _setChannelDataFromPreferences(uint8_t channelIndex);
     static bool _saveChannelDataToPreferences(uint8_t channelIndex);
     static void _updateChannelData(uint8_t channelIndex);
+    static void _armPolarityLocked(uint8_t channelIndex, bool pending);
     static bool _validateChannelDataJson(const JsonDocument &jsonDocument, bool partial = false);
     static void _calculateLsbValues(CtSpecification &ctSpec);
 
@@ -219,6 +230,11 @@ namespace Ade7953
     static void _updateSampleTime();
     static void _setSampleTimeFromPreferences();
     static void _saveSampleTimeToPreferences();
+
+    // Voltage phase management
+    static void _setVoltagePhaseFromPreferences();
+    static bool _saveVoltagePhaseToPreferences(Phase voltagePhase);
+    static uint8_t _rearmPolarityOnVoltagePhaseChangeLocked();
 
     // ADE7953 register reading functions
     /*
@@ -281,7 +297,6 @@ namespace Ade7953
     static void _recalculateWeights();
     static void _updateVariability(uint8_t channelIndex, float newActivePower);
     static uint8_t _findNextActiveChannel(uint8_t currentChannel);
-    float _calculatePhaseShift(Phase voltagePhase, Phase currentPhase);
     // Returns the string name of the IRQSTATA bit, or UNKNOWN if the bit is not recognized.
     static const char *_irqstataBitName(uint32_t bit);
     void _printMeterValues(uint8_t channelIndex);
@@ -352,6 +367,9 @@ namespace Ade7953
             _setChannelDataFromPreferences(i);
         }
         LOG_DEBUG("Done setting channel data from Preferences");
+
+        // After the channels, before the meter task
+        _setVoltagePhaseFromPreferences();
 
         for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
             _setEnergyFromPreferences(i);
@@ -697,6 +715,74 @@ namespace Ade7953
         return true;
     }
 
+    // Voltage phase management
+    // ========================
+
+    Phase getVoltagePhase() {
+        return _voltagePhase;
+    }
+
+    bool isVoltagePhaseStored() {
+        return _voltagePhasePersisted;
+    }
+
+    bool setVoltagePhase(Phase voltagePhase) {
+        if (!PhaseUtils::isValidVoltagePhase(voltagePhase)) {
+            LOG_WARNING("Invalid voltage phase %lu (valid: 1-3)", static_cast<unsigned long>(voltagePhase));
+            return false;
+        }
+        // A write before the boot load would replace the stored value from the default
+        if (!_voltagePhaseLoaded) {
+            LOG_WARNING("Voltage phase not loaded yet (meter not initialized), refusing %u", static_cast<unsigned>(voltagePhase));
+            return false;
+        }
+
+        // Serializes the REST handler and the shadow apply, so two writes can never
+        // persist in one order and apply in the other.
+        if (!acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
+            LOG_ERROR("Failed to acquire config mutex for setVoltagePhase");
+            return false;
+        }
+
+        const Phase oldVoltagePhase = _voltagePhase;
+        if (voltagePhase == oldVoltagePhase) {
+            // Same rotation, so nothing to re-arm. Store it only if the boot could not.
+            const bool stored = _voltagePhasePersisted || _saveVoltagePhaseToPreferences(voltagePhase);
+            releaseMutex(&_configMutex);
+            LOG_DEBUG("Voltage phase already %u", static_cast<unsigned>(voltagePhase));
+            return stored;
+        }
+
+        // Persist before applying: a failed write leaves NVS and RAM both on the old value
+        if (!_saveVoltagePhaseToPreferences(voltagePhase)) {
+            releaseMutex(&_configMutex);
+            return false;
+        }
+        _voltagePhase = voltagePhase;
+
+        uint8_t rearmed = 0;
+        bool deferred = false;
+        if (acquireMutex(&_channelDataMutex)) {
+            rearmed = _rearmPolarityOnVoltagePhaseChangeLocked();
+            _voltagePhaseRearmPending = false;
+            releaseMutex(&_channelDataMutex);
+        } else {
+            _voltagePhaseRearmPending = true;
+            deferred = true;
+        }
+        releaseMutex(&_configMutex);
+
+        if (deferred) {
+            LOG_ERROR("Voltage phase %u applied, CT polarity re-arm deferred to the next reading", static_cast<unsigned>(voltagePhase));
+        } else {
+            LOG_INFO(
+                "Voltage phase changed from %u to %u, CT polarity detection re-armed on %u channels",
+                static_cast<unsigned>(oldVoltagePhase), static_cast<unsigned>(voltagePhase), static_cast<unsigned>(rearmed)
+            );
+        }
+        return true;
+    }
+
     // Channel data management
     // =======================
 
@@ -788,12 +874,13 @@ namespace Ade7953
             _channelData[channelIndex] = channelData;
         }
 
-        // Last line of defence for the voltage reference (see _isValidReferencePhase).
-        // The JSON validators reject this at the API, but a device that already stored
-        // it in NVS restores through here with armTransients=false, so coerce rather
-        // than reject: the alternative is a boot loop on a config the user cannot see.
+        // Last line of defence for channel 0, which supplies V1 to every channel (see
+        // _isValidChannel0Phase). The JSON validators reject this at the API, but a device
+        // that already stored it in NVS restores through here with armTransients=false, so
+        // coerce rather than reject: the alternative is a boot loop on a config the user
+        // cannot see.
         if (channelIndex == 0 && _channelData[0].phase == PHASE_SPLIT_240) {
-            LOG_WARNING("Channel 0 cannot use split-phase 240V as reference, coercing to phase 1");
+            LOG_WARNING("Channel 0 supplies V1 to every channel and cannot be split-phase 240V, coercing to phase 1");
             _channelData[0].phase = PHASE_1;
         }
 
@@ -818,10 +905,7 @@ namespace Ade7953
                 // detection so it can never override the user's explicit choice, and
                 // (issue #149) read once now so the corrected sign lands immediately
                 // instead of up to 15 s away on a heavily loaded scheduler.
-                _channelData[channelIndex]._pendingPolarityCheck = false;
-                _polarityVoteCount[channelIndex] = 0;
-                _polarityConductingReads[channelIndex] = 0;
-                if (channelIndex > 0) _channelData[channelIndex]._pendingPriorityRead = true;
+                _armPolarityLocked(channelIndex, false);
             } else if (activated || roleChangedActive || phaseChangedActive) {
                 // Fresh activation / role / phase change with no explicit polarity
                 // choice: arm auto-detection from a clean vote count. The sign
@@ -832,10 +916,7 @@ namespace Ade7953
                 // wrong phase made a correctly-wired CT read steady-negative and the
                 // detector flipped reverse: once the user fixes the phase, the next
                 // votes flip it back within seconds (issue #174).
-                _channelData[channelIndex]._pendingPolarityCheck = true;
-                _polarityVoteCount[channelIndex] = 0;
-                _polarityConductingReads[channelIndex] = 0;
-                if (channelIndex > 0) _channelData[channelIndex]._pendingPriorityRead = true;
+                _armPolarityLocked(channelIndex, true);
             }
         }
 
@@ -3157,15 +3238,16 @@ namespace Ade7953
     }
 
     /*
-    Channel 0 carries the single voltage reference, so its phase defines the frame every
-    other channel is measured in. Split-phase 240 V is not a rotation but a 2x voltage
-    multiplier, so using it here would make every other channel inherit the doubled
-    voltage from _meterValues[0] and would leave the rotation of the L1/L2/L3 channels
-    defined against a reference that does not rotate.
+    Channel 0's reading supplies V1 to every channel: its voltage, stored in
+    _meterValues[0], is what every other channel reuses and what MQTT, Modbus and
+    the issue registry report as the device voltage. Split-phase 240 V is not a
+    rotation but a 2x voltage multiplier, so on channel 0 it would double the voltage
+    every channel and integration reads. (The rotation base is the voltage phase
+    setting, not channel 0's phase.)
     */
-    bool _isValidReferencePhase(uint8_t channelIndex, uint8_t phase) {
+    bool _isValidChannel0Phase(uint8_t channelIndex, uint8_t phase) {
         if (channelIndex == 0 && phase == PHASE_SPLIT_240) {
-            LOG_WARNING("Channel 0 carries the voltage reference and cannot be split-phase 240V");
+            LOG_WARNING("Channel 0 supplies V1 to every channel and cannot be split-phase 240V");
             return false;
         }
         return true;
@@ -3287,7 +3369,7 @@ namespace Ade7953
                     LOG_WARNING("Invalid phase value: %u (valid: 1-4)", phase);
                     return false;
                 }
-                if (!_isValidReferencePhase(channelIndex, phase)) return false;
+                if (!_isValidChannel0Phase(channelIndex, phase)) return false;
                 hasValidField = true;
             }
 
@@ -3400,7 +3482,7 @@ namespace Ade7953
                 LOG_WARNING("Invalid phase value: %u (valid: 1-4)", phase);
                 return false;
             }
-            if (!_isValidReferencePhase(jsonDocument["index"].as<uint8_t>(), phase)) return false;
+            if (!_isValidChannel0Phase(jsonDocument["index"].as<uint8_t>(), phase)) return false;
 
             // CT Specification validation with ranges
             if (!jsonDocument["ctSpecification"].is<JsonObjectConst>()) {
@@ -3818,23 +3900,26 @@ namespace Ade7953
     chip's no-load feature zeroes idle energies, and every value is validated
     against the limits of the hardware.
 
-    The only voltage input sits on channel 0's line (V1). A channel whose CT is on
-    another line of a three-phase supply is integrated against V1, which gives
-    P1 + jQ1 = V1 * I^*. Assuming V_k = V1 * e^{j*alpha}, its own powers are
-        S_k = e^{j*alpha} * (P1 + jQ1),  alpha = calculatePhaseShiftDeg(basePhase, phase)
+    The only voltage input (V1) sits on the configured voltage phase
+    (getVoltagePhase), the line of the device's own L wire. Every channel,
+    channel 0 included, is integrated against V1; one whose CT is on another
+    line of a three-phase supply gives P1 + jQ1 = V1 * I^*. Assuming
+    V_k = V1 * e^{j*alpha}, its own powers are
+        S_k = e^{j*alpha} * (P1 + jQ1),  alpha = calculatePhaseShiftDeg(voltagePhase, phase)
     i.e. PhaseUtils::toChannelFrame applied to the latched energy pair, with S and
     current unchanged. Assumptions:
     - |V2| = |V3| = |V1| and exact 120 deg spacing (a magnitude error shows up
       1:1 in P, an angle error grows as the PF drops),
     - a correct phase setting (a wrong one stays as visible as before: a
       resistive load reads |PF| ~ 0.5),
-    - BVARGAIN == BWGAIN, since Q1 now feeds P: a Q-path gain error e shows up as
-      ~0.75 * e on a resistive L2/L3 load.
+    - BVARGAIN == BWGAIN, and for an off-phase channel 0 AVARGAIN == AWGAIN and a
+      right PHCALA, since Q1 now feeds P: a Q-path gain error e shows up as
+      ~0.75 * e on a resistive off-phase load.
     Compared with the ANGLE method it replaces (V1 * IRMS * cos of the live,
     single zero-crossing ANGLE register), off-phase channels get the same latched
-    window, the RMS witness and the per-window energy direction as channel 0, a
-    true PF (P/S) instead of a displacement cosine, and harmonic current no longer
-    inflates P (against a sine V1 it carries no active power, while
+    window, the RMS witness and the per-window energy direction as an on-phase
+    one, a true PF (P/S) instead of a displacement cosine, and harmonic current no
+    longer inflates P (against a sine V1 it carries no active power, while
     Irms * cos(displacement) counted it).
 
     Split-phase 240V channels are 180 deg from V1: only a sign (reverse) plus a 2x
@@ -3871,6 +3956,19 @@ namespace Ade7953
             return false;
         }
 
+        // Deferred voltage phase re-arm: the unsynced flag is a fast path, re-tested under the mutex
+        if (_voltagePhaseRearmPending && acquireMutex(&_channelDataMutex)) {
+            bool rearmedNow = false;
+            uint8_t rearmed = 0;
+            if (_voltagePhaseRearmPending) {
+                rearmed = _rearmPolarityOnVoltagePhaseChangeLocked();
+                _voltagePhaseRearmPending = false;
+                rearmedNow = true;
+            }
+            releaseMutex(&_channelDataMutex);
+            if (rearmedNow) LOG_INFO("Deferred CT polarity re-arm after the voltage phase change done on %u channels", static_cast<unsigned>(rearmed));
+        }
+
         // We cannot put an higher limit here because if the channel happened to be disabled, then
         // enabled again, this would result in an infinite error.
         if (lastMillis != 0 && deltaMillis == 0) {
@@ -3894,7 +3992,8 @@ namespace Ade7953
         float reactiveEnergy = 0.0f;
         float apparentEnergy = 0.0f;
 
-        Phase basePhase = _channelData[0].phase; // Not using channelData since it is only accessed here and it is an integer so very low probability of race condition
+        // Loaded once so one reading never mixes two values
+        const Phase voltagePhase = _voltagePhase;
 
         // Noise floors scale with the CT: a fixed threshold suited to a 30 A clamp is far
         // below the offset noise of a 100 A one (and too strict for a small one), so both
@@ -3903,7 +4002,7 @@ namespace Ade7953
         float minCurrentValidation = channelData.ctSpecification.currentRating * MINIMUM_CURRENT_RATIO_VALIDATION;   // validation discard: a reading invalid at this current is a real failure
         float minCurrentConducting  = channelData.ctSpecification.currentRating * MINIMUM_CURRENT_RATIO_CONDUCTING;  // polarity-vote / WDRR-boost gate: lower, catches small real loads
 
-        bool isOffPhase = PhaseUtils::isOffPhase(basePhase, channelData.phase); // channel 0 defines basePhase, so never off-phase itself
+        const bool isOffPhase = PhaseUtils::isOffPhase(voltagePhase, channelData.phase); // channel 0 included, when its CT is on another line
         float voltageMultiplier = (channelData.phase == PHASE_SPLIT_240) ? 2.0f : 1.0f; // the ADE7953 measures a single 120V leg
 
         // No double-read guard needed anymore: with read-with-reset disabled (LCYCMODE
@@ -3919,7 +4018,7 @@ namespace Ade7953
         // the energy pair itself (the rotation is linear): the powers derived below follow,
         // and the import/export accumulators take their direction from this window.
         PhaseUtils::ActiveReactive energies = PhaseUtils::toChannelFrame(
-            rawActiveEnergy, rawReactiveEnergy, channelData.reverse, basePhase, channelData.phase
+            rawActiveEnergy, rawReactiveEnergy, channelData.reverse, voltagePhase, channelData.phase
         );
         activeEnergy = energies.active;
         reactiveEnergy = energies.reactive;
@@ -4462,6 +4561,102 @@ namespace Ade7953
         LOG_DEBUG("Saved sample time %s to preferences", sampleTimeHuman);
     }
 
+    // Voltage phase management
+    // ========================
+
+    /*
+    Boot load, run once after the channels and before the meter task. A missing key
+    (first boot on this firmware, or after a factory reset) is written once with
+    channel 0's phase as loaded, the base older firmware took from channel 0, so the
+    upgrade changes no reading. A valid stored key always wins afterwards: it is never
+    re-derived from channel 0, also after a downgrade and re-upgrade (a restore of a
+    backup without it removes it first, see restoreNvsFromJson). The value is assigned
+    directly, never through setVoltagePhase, so a boot never re-arms CT polarity
+    detection (as armTransients=false for channels).
+    */
+    void _setVoltagePhaseFromPreferences() {
+        const Phase channel0Phase = _channelData[0].phase; // already coerced off split-phase 240 V by setChannelData; meter task not started yet
+
+        Preferences preferences;
+        const bool opened = preferences.begin(PREFERENCES_NAMESPACE_ADE7953, false);
+        const PreferenceType storedType = opened ? preferences.getType(CONFIG_VOLTAGE_PHASE_KEY) : PT_INVALID;
+        const uint32_t storedValue = (storedType == PT_U8) ? preferences.getUChar(CONFIG_VOLTAGE_PHASE_KEY, 0) : 0;
+
+        const PhaseUtils::StoredVoltagePhase state = PhaseUtils::classifyStoredVoltagePhase(
+            opened, storedType != PT_INVALID, storedType == PT_U8, storedValue
+        );
+        _voltagePhase = PhaseUtils::resolveVoltagePhase(state, storedValue, channel0Phase);
+        _voltagePhasePersisted = (state == PhaseUtils::StoredVoltagePhase::Valid);
+        const unsigned voltagePhase = static_cast<unsigned>(_voltagePhase);
+
+        switch (state) {
+            case PhaseUtils::StoredVoltagePhase::Valid:
+                LOG_DEBUG("Loaded voltage phase %u from preferences", voltagePhase);
+                break;
+            case PhaseUtils::StoredVoltagePhase::Absent:
+                LOG_INFO("Voltage phase migrated from channel 0: %u", voltagePhase);
+                break;
+            case PhaseUtils::StoredVoltagePhase::Invalid:
+                LOG_WARNING(
+                    "Stored voltage phase is not a u8 in 1-3 (type %d, value %lu), replacing it with %u from channel 0",
+                    static_cast<int>(storedType), static_cast<unsigned long>(storedValue), voltagePhase
+                );
+                preferences.remove(CONFIG_VOLTAGE_PHASE_KEY); // putUChar would leave a key of another NVS type in place
+                break;
+            case PhaseUtils::StoredVoltagePhase::Unavailable:
+                LOG_ERROR("Failed to open Preferences for the voltage phase, using %u from channel 0 for this boot without storing it", voltagePhase);
+                break;
+        }
+        if (opened) preferences.end();
+
+        if (state == PhaseUtils::StoredVoltagePhase::Absent || state == PhaseUtils::StoredVoltagePhase::Invalid) {
+            _saveVoltagePhaseToPreferences(_voltagePhase);
+        }
+        _voltagePhaseLoaded = true;
+    }
+
+    // Persists the value and records that NVS holds it. The caller holds _configMutex, or is the boot load.
+    bool _saveVoltagePhaseToPreferences(Phase voltagePhase) {
+        Preferences preferences;
+        if (!preferences.begin(PREFERENCES_NAMESPACE_ADE7953, false)) {
+            LOG_ERROR("Failed to open Preferences for saving the voltage phase");
+            return false;
+        }
+        bool stored = preferences.putUChar(CONFIG_VOLTAGE_PHASE_KEY, static_cast<uint8_t>(voltagePhase)) == sizeof(uint8_t);
+        preferences.end();
+
+        if (!stored) {
+            LOG_ERROR("Failed to store the voltage phase %u", static_cast<unsigned>(voltagePhase));
+            return false;
+        }
+        _voltagePhasePersisted = true;
+        LOG_DEBUG("Saved voltage phase %u to preferences", static_cast<unsigned>(voltagePhase));
+        return true;
+    }
+
+    // Arms (or disarms) CT polarity detection from a clean vote count and asks for a priority
+    // read of a multiplexed channel. The caller holds _channelDataMutex.
+    void _armPolarityLocked(uint8_t channelIndex, bool pending) {
+        _channelData[channelIndex]._pendingPolarityCheck = pending;
+        _polarityVoteCount[channelIndex] = 0;
+        _polarityConductingReads[channelIndex] = 0;
+        if (channelIndex > 0) _channelData[channelIndex]._pendingPriorityRead = true;
+    }
+
+    // Re-arms CT polarity detection on every channel a voltage phase change rotates (see
+    // PhaseUtils::rearmOnVoltagePhaseChange). The caller holds _channelDataMutex. Returns the
+    // number of channels re-armed.
+    uint8_t _rearmPolarityOnVoltagePhaseChangeLocked() {
+        uint8_t rearmed = 0;
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
+            if (!PhaseUtils::rearmOnVoltagePhaseChange(_channelData[i].active, _channelData[i].phase)) continue;
+            _armPolarityLocked(i, true);
+            rearmed++;
+        }
+        if (rearmed > 0) _recalculateWeights(); // the armed boost feeds the WDRR weights
+        return rearmed;
+    }
+
     void _updateSampleTime() {
         float gridFrequency = _readGridFrequency();
         _lineFrequency = DEFAULT_FALLBACK_FREQUENCY;
@@ -4846,10 +5041,6 @@ namespace Ade7953
         return MeterLogic::wdrrPick(_channelDeficit, active, count, 1, &_wdrrCursor);
     }
 
-    float _calculatePhaseShift(Phase voltagePhase, Phase currentPhase) {
-        return PhaseUtils::calculatePhaseShiftDeg(voltagePhase, currentPhase);
-    }
-
     const char* _irqstataBitName(uint32_t bit) {
         switch (bit) {
             case IRQSTATA_AEHFA_BIT:       return "AEHFA";
@@ -5008,10 +5199,10 @@ namespace Ade7953
         jsonDocument["captureStartMicros"] = _captureStartMicros;
         
         // Add phase information
-        Phase voltagePhase = _channelData[0].phase;  // Voltage reference is always channel 0
+        const Phase voltagePhase = getVoltagePhase();
         Phase currentPhase = _channelData[_captureChannel].phase;
-        float phaseShift = _calculatePhaseShift(voltagePhase, currentPhase);
-        
+        const float phaseShift = PhaseUtils::channelShiftDeg(voltagePhase, currentPhase);
+
         jsonDocument["voltagePhase"] = static_cast<uint32_t>(voltagePhase);
         jsonDocument["currentPhase"] = static_cast<uint32_t>(currentPhase);
         jsonDocument["phaseShiftDegrees"] = roundToDecimals(phaseShift, 0);

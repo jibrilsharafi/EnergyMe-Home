@@ -665,7 +665,21 @@ class EnergyMeAPI {
     async setAde7953SampleTime(sampleTime) {
         return this.put('ade7953/sample-time', { sampleTime });
     }
-    
+
+    /**
+     * Get the ADE7953 voltage phase (the line the voltage input is wired to)
+     */
+    async getAde7953VoltagePhase() {
+        return this.get('ade7953/voltage-phase');
+    }
+
+    /**
+     * Set the ADE7953 voltage phase (1-3)
+     */
+    async setAde7953VoltagePhase(voltagePhase) {
+        return this.put('ade7953/voltage-phase', { voltagePhase });
+    }
+
     /**
      * Read ADE7953 register
      */

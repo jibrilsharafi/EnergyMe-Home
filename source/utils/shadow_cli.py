@@ -289,6 +289,7 @@ def cmd_get(args):
     elif args.what == "meter":
         print("calibration + config:", client.get_json("/api/v1/ade7953/config"))
         print("sample_time:", client.get_json("/api/v1/ade7953/sample-time"))
+        print("voltage_phase:", client.get_json("/api/v1/ade7953/voltage-phase"))
     elif args.what == "channels":
         print(client.get_json("/api/v1/ade7953/channel"))
     elif args.what == "channel":
