@@ -66,6 +66,7 @@ Cloud certs and device serials live in `factory_ns` NVS partition, written at ma
 - Branch off `development`; `main` is release-only.
 - Conventional Commits: `type(scope): description` - lowercase, imperative, no trailing period.
 - One concern per commit. No mega-commits. Test before committing.
+- **Never bump the firmware version on a feature branch** (`FIRMWARE_BUILD_VERSION_*` in `include/constants.h`). The bump is made only when a release to prod is decided, as its own `chore(constants): bump up version to X.Y.Z` commit.
 
 ## PR review before merge to `development`
 
