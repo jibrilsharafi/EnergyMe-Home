@@ -690,8 +690,6 @@ namespace CustomWifi
 
   static void _handleSuccessfulConnection()
   {
-    _lastReconnectAttempt = 0;
-
     _setupMdns();
     // Note: printDeviceStatusDynamic() removed to avoid flash I/O from this task
 
