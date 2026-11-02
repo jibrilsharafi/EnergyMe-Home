@@ -178,4 +178,80 @@ inline ActiveReactive toChannelFrame(float active, float reactive, bool reverse,
     return ActiveReactive{out.active * c - out.reactive * s, out.reactive * c + out.active * s};
 }
 
+// ============================================================================
+// Device voltage phase: the line the single voltage input V1 is wired to. It is the
+// basePhase of toChannelFrame for every channel, channel 0 included, so channel 0's CT
+// can sit on any line. Split-phase 240 V is a 2x multiplier on a channel, not a line,
+// so it is never a voltage phase.
+// ============================================================================
+
+inline bool isValidVoltagePhase(uint32_t phase) {
+    return phase == PHASE_1 || phase == PHASE_2 || phase == PHASE_3;
+}
+
+// What the boot load found in NVS.
+enum class StoredVoltagePhase : uint8_t {
+    Unavailable, // the namespace could not be opened, so a stored key cannot be read
+    Absent,      // no key: first boot on a firmware with the setting, or after a factory reset
+    Invalid,     // a key that is not a u8 in 1..3 (0 and keys of another NVS type included)
+    Valid,
+};
+
+// The key's presence, never a read default, tells an absent key from a stored 0.
+inline StoredVoltagePhase classifyStoredVoltagePhase(bool namespaceOpened, bool keyPresent,
+                                                     bool storedAsU8, uint32_t storedValue) {
+    if (!namespaceOpened) return StoredVoltagePhase::Unavailable;
+    if (!keyPresent) return StoredVoltagePhase::Absent;
+    return (storedAsU8 && isValidVoltagePhase(storedValue)) ? StoredVoltagePhase::Valid
+                                                            : StoredVoltagePhase::Invalid;
+}
+
+enum class VoltagePhaseLog : uint8_t {
+    Debug,   // valid key loaded
+    Info,    // absent key migrated from channel 0
+    Warning, // invalid key replaced
+    Error,   // namespace unavailable: derived value used in RAM only
+};
+
+struct VoltagePhaseResolution {
+    Phase phase;
+    bool persist; // store `phase` (replacing an invalid key)
+    VoltagePhaseLog log;
+};
+
+// A valid stored key always wins. Otherwise the value comes from channel 0's phase,
+// which is the base the firmware took before the setting existed, so the first boot
+// changes no reading; after that, channel 0's phase is never read for it again.
+inline VoltagePhaseResolution resolveVoltagePhase(StoredVoltagePhase state, uint32_t storedValue,
+                                                  Phase channel0Phase) {
+    if (state == StoredVoltagePhase::Valid && isValidVoltagePhase(storedValue)) {
+        return {static_cast<Phase>(storedValue), false, VoltagePhaseLog::Debug};
+    }
+    const Phase derived = isValidVoltagePhase(channel0Phase) ? channel0Phase : PHASE_1;
+    if (state == StoredVoltagePhase::Unavailable) return {derived, false, VoltagePhaseLog::Error};
+    if (state == StoredVoltagePhase::Absent) return {derived, true, VoltagePhaseLog::Info};
+    return {derived, true, VoltagePhaseLog::Warning};
+}
+
+// The rotation toChannelFrame applies to a channel, reverse excluded: its line's shift
+// against the voltage phase when off-phase, 0 for split-phase 240 V and for a channel on
+// the voltage phase. The waveform capture reports it as phaseShiftDegrees.
+inline float channelShiftDeg(Phase voltagePhase, Phase channelPhase) {
+    return isOffPhase(voltagePhase, channelPhase) ? calculatePhaseShiftDeg(voltagePhase, channelPhase) : 0.0f;
+}
+
+// Whether a voltage phase change moves a channel's rotation: every channel but
+// split-phase 240 V, whenever the value actually changes.
+inline bool rotationChanges(Phase oldVoltagePhase, Phase newVoltagePhase, Phase channelPhase) {
+    return oldVoltagePhase != newVoltagePhase && channelPhase != PHASE_SPLIT_240;
+}
+
+// CT polarity detection votes on the rotated active power, so a voltage phase change
+// re-arms every active channel whose rotation it moved, as a per-channel phase change
+// does (issue #174).
+inline bool rearmOnVoltagePhaseChange(bool active, Phase oldVoltagePhase, Phase newVoltagePhase,
+                                      Phase channelPhase) {
+    return active && rotationChanges(oldVoltagePhase, newVoltagePhase, channelPhase);
+}
+
 } // namespace PhaseUtils
