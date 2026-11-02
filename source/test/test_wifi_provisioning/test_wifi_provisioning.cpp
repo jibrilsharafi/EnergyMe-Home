@@ -951,8 +951,10 @@ struct AttemptHarness {
 
     // Runs to `untilMs` in 1 s steps with the AP gone: every attempt's disconnect (NO_AP_FOUND,
     // or the one a refused start still causes) lands 1 s after it starts.
+    uint32_t attemptsAnswered = 0;  // Attempts whose disconnect has been delivered
+
     void runOutage(uint64_t fromMs, uint64_t untilMs) {
-        uint32_t answered = attemptsStarted;
+        uint32_t &answered = attemptsAnswered;
         for (uint64_t t = fromMs; t <= untilMs; t += 1000) {
             if (answered != attemptsStarted) {
                 answered = attemptsStarted;

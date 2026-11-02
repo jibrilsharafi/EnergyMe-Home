@@ -1823,7 +1823,9 @@ namespace CustomWifi
     // Retry now, as the connect deadline does. Auto-reconnect is off, so nothing else
     // associates, and leaving it to the periodic check delayed the first attempt by up to
     // 30 s - indefinitely while other notifications kept that check's wait from timing out.
-    if (_hasCredentialsWorthRetrying()) {
+    // Not over an attempt already in flight (a failed credential write starts one), which
+    // its own deadline reports.
+    if (_connectDeadlineMs == 0 && _hasCredentialsWorthRetrying()) {
       _startStaAttempt();
     }
 
