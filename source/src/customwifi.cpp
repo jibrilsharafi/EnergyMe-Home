@@ -168,6 +168,7 @@ namespace CustomWifi
   static bool _testConnectivity();
   static void _forceReconnectInternal();
   static void _serviceDisconnectDeadline();
+  static void _countFailedAttempt();
   static bool _hasStoredCredentials();
   static bool _hasCredentialsWorthRetrying();
   static void _feedProvisioning(WifiProvisioning::Event event);
@@ -966,20 +967,11 @@ namespace CustomWifi
           _feedProvisioning(WifiProvisioning::Event::STA_LOST);
           CustomEth::notifyStaState(false); // Interface arbitration (no-op on products without Ethernet)
 
-          // Give auto-reconnect (enabled by default) a grace window, then evaluate.
-          // Arm only when not already armed: re-arming on every disconnect would let a
-          // link flapping faster than the window push the deadline out indefinitely, so
-          // the evaluation below - and with it the portal fallback - would never run.
-          // The old blocking delay() always completed and always evaluated exactly once
-          // per window; this preserves that while keeping the task responsive.
-          // Not while a connect attempt is in flight: that attempt already has its own
-          // deadline, and the driver reports a failed FIRST association through this same
-          // DISCONNECTED event (NO_AP_FOUND, AUTH_FAIL, HANDSHAKE_TIMEOUT). Arming both
-          // would feed STA_ATTEMPT_FAILED twice for one failure, so apRaiseTriggers would
-          // reach its threshold in roughly half the intended time and stop meaning
-          // "consecutive genuine association failures".
-          // Nor for the disconnect a scan pause causes: that attempt was cancelled, not lost.
-          if (_disconnectDeadlineMs == 0 && _connectDeadlineMs == 0 && _scanHoldStartedAtMs == 0)
+          // A grace window, then evaluate - the non-blocking form of the old delay(), which
+          // evaluated exactly once per window. Only for a link lost with no attempt in
+          // flight: see WifiProvisioning::opensDisconnectGrace().
+          if (WifiProvisioning::opensDisconnectGrace(_connectDeadlineMs != 0, _disconnectDeadlineMs != 0,
+                                                     _scanHoldStartedAtMs != 0))
           {
             _disconnectDeadlineMs = millis64() + WIFI_DISCONNECT_DELAY;
           }
@@ -1080,10 +1072,9 @@ namespace CustomWifi
             // here accumulated zero apRaiseTriggers and never raised its SoftAP. On the
             // bench that left a meter with a wrong password unreachable indefinitely -
             // no LAN address, no AP, retrying every 30 s forever.
+            // Nothing is counted here: the failure that left no attempt in flight already
+            // was, and this attempt's own deadline counts it if it fails too.
             LOG_WARNING("Periodic check: WiFi not fully connected - starting a fresh attempt");
-            _reconnectAttempts++;
-            _lastReconnectAttempt = millis64();
-            statistics.wifiConnectionError++;
             _startStaAttempt();
           }
           else
@@ -1358,8 +1349,8 @@ namespace CustomWifi
   }
 
   // Reads the credentials the WiFi driver persists in its own NVS namespace. This is the
-  // same store WiFi.begin() with no arguments connects from, so "provisioned" here means
-  // exactly "WiFi.begin() has something to try".
+  // same store WiFi.STA.begin(true) connects from, so "provisioned" here means
+  // exactly "an attempt has something to try".
   static bool _hasStoredCredentials()
   {
     wifi_config_t conf = {};
@@ -1441,22 +1432,7 @@ namespace CustomWifi
   // failure, restarted the device instead of letting it fall back to provisioning.
   static void _startStaAttempt()
   {
-    // The extended timeout is a one-shot for the first attempt after a power cut, to let
-    // a router that lost power at the same time finish booting. esp_reset_reason() is
-    // fixed for the whole boot, so testing it per attempt kept every later retry at 5
-    // minutes too - and since a mains-wired meter powers on from POWERON every time, that
-    // made WIFI_CONNECT_TIMEOUT_SECONDS unreachable in the field and pushed AP_ASSIST out
-    // to ~25 minutes instead of ~50 seconds.
-    bool powerReset = _isPowerReset() && !_powerResetGraceUsed;
-    _powerResetGraceUsed = true;
     _scanHoldStartedAtMs = 0; // Any deliberate attempt (new credentials, end of a hold) ends a scan pause
-
-    _connectTimeoutMs = (powerReset ? WIFI_CONNECT_TIMEOUT_POWER_RESET_SECONDS
-                                    : WIFI_CONNECT_TIMEOUT_SECONDS) * 1000UL;
-    if (powerReset) {
-      LOG_INFO("Power reset detected - extended WiFi timeout (%lu s) for the first attempt",
-               (unsigned long)(_connectTimeoutMs / 1000UL));
-    }
 
     // Read first, then only copy under the spinlock. esp_wifi_get_config() takes the driver's
     // API mutex, and waiting on it with interrupts masked spun this core into the Interrupt
@@ -1469,38 +1445,47 @@ namespace CustomWifi
     taskEXIT_CRITICAL(&_disconnectDiagMux);
     LOG_INFO("Starting WiFi association attempt to '%s'", attemptedSsid);
 
-    // WiFi.begin() calls esp_wifi_set_config() internally, which ESP-IDF refuses while a
+    // WiFi.STA.begin(true) calls esp_wifi_set_config() internally, which ESP-IDF refuses while a
     // previous association is still in flight. Clearing it first keeps every attempt real:
     // without this the call silently no-ops and the deadline below times out an attempt
     // that never started, which is what produced the phantom failures seen on hardware.
     esp_wifi_disconnect();
 
-    bool started;
-    if (globalHwProfile->hasEthernet) {
-      // WiFi.begin() returns the station STATUS, and that reads WL_IDLE_STATUS (0) for a
-      // station the wire kept released: every takeover would be reported as refused. Judge
-      // by the connect result instead. The disconnect above is asynchronous and connect()
-      // answers "already connected" without connecting while the association bit is still
-      // set, so wait for it to clear first.
-      uint32_t settledMs = 0;
-      while (WiFi.STA.connected() && settledMs < WIFI_STA_DISCONNECT_SETTLE_MAX_MS) {
-        vTaskDelay(pdMS_TO_TICKS(WIFI_STA_DISCONNECT_SETTLE_POLL_MS));
-        settledMs += WIFI_STA_DISCONNECT_SETTLE_POLL_MS;
-      }
-      started = WiFi.STA.begin(true);
-    } else {
-      started = WiFi.begin(); // No arguments: uses the credentials the driver has stored
+    // Judge the attempt by the connect result, never by WiFi.begin(). That returns the
+    // station STATUS the last event left behind, not this call's outcome: WL_IDLE_STATUS (0)
+    // after STA_LOST_IP or on a station the wire kept released reads as a refusal although
+    // the attempt runs, and a real refusal returns WL_CONNECT_FAILED (4), which reads as
+    // started. The disconnect above is asynchronous and connect() answers "already
+    // connected" without connecting while the association bit is still set, so wait for it
+    // to clear first.
+    uint32_t settledMs = 0;
+    while (WiFi.STA.connected() && settledMs < WIFI_STA_DISCONNECT_SETTLE_MAX_MS) {
+      vTaskDelay(pdMS_TO_TICKS(WIFI_STA_DISCONNECT_SETTLE_POLL_MS));
+      settledMs += WIFI_STA_DISCONNECT_SETTLE_POLL_MS;
+    }
+    bool started = WiFi.STA.begin(true); // Connects from the credentials the driver has stored
+
+    // The extended timeout is a one-shot for the first attempt after a power cut, to let
+    // a router that lost power at the same time finish booting. esp_reset_reason() is
+    // fixed for the whole boot, so testing it per attempt kept every later retry at 5
+    // minutes too - and since a mains-wired meter powers on from POWERON every time, that
+    // made WIFI_CONNECT_TIMEOUT_SECONDS unreachable in the field and pushed AP_ASSIST out
+    // to ~25 minutes instead of ~50 seconds. A refused start does not use it up: nothing
+    // was tried, and its retry must not wait minutes.
+    bool powerReset = started && _isPowerReset() && !_powerResetGraceUsed;
+    if (started) _powerResetGraceUsed = true;
+    _connectTimeoutMs = (powerReset ? WIFI_CONNECT_TIMEOUT_POWER_RESET_SECONDS
+                                    : WIFI_CONNECT_TIMEOUT_SECONDS) * 1000UL;
+    if (powerReset) {
+      LOG_INFO("Power reset detected - extended WiFi timeout (%lu s) for the first attempt",
+               (unsigned long)(_connectTimeoutMs / 1000UL));
     }
 
-    if (!started) {
-      // Do not arm a deadline for an attempt that did not start; report it now so the
-      // state machine counts a real failure rather than waiting out a fictional one.
-      LOG_WARNING("WiFi.begin() refused - treating as an immediate association failure");
-      _connectDeadlineMs = 0;
-      _feedProvisioning(WifiProvisioning::Event::STA_ATTEMPT_FAILED);
-      return;
-    }
-
+    // A refused start is timed like any other attempt, so its deadline is the one place
+    // that reports it and retries it. Reported at once instead, it left no attempt in
+    // flight, and the DISCONNECTED it can still trigger (our own disconnect above, or a
+    // start that ran after all) armed the grace window, which counted it a second time.
+    if (!started) LOG_WARNING("WiFi association refused to start - retrying when its deadline expires");
     _connectDeadlineMs = millis64() + _connectTimeoutMs;
   }
 
@@ -1532,13 +1517,14 @@ namespace CustomWifi
 
     if (isFullyConnected()) return; // Raced with a successful association
 
-    LOG_WARNING("Association attempt timed out after %lu s", (unsigned long)(_connectTimeoutMs / 1000UL));
-    _feedProvisioning(WifiProvisioning::Event::STA_ATTEMPT_FAILED);
+    _countFailedAttempt();
+    LOG_WARNING("Association attempt %d timed out after %lu s", _reconnectAttempts,
+                (unsigned long)(_connectTimeoutMs / 1000UL));
 
     // Keep trying for as long as there is something to try. Raising the AP is no longer a
     // reason to stop: under APSTA both interfaces run at once, so the device can host the
     // portal and still rejoin by itself the moment the router comes back. Without
-    // credentials there is nothing to attempt, and WiFi.begin() would just churn the radio.
+    // credentials there is nothing to attempt, and an attempt would just churn the radio.
     if (_hasCredentialsWorthRetrying()) {
       _startStaAttempt();
     }
@@ -1807,15 +1793,21 @@ namespace CustomWifi
     // Auto-reconnect may have restored the link during the window
     if (isFullyConnected()) return;
 
-    _reconnectAttempts++;
-    _lastReconnectAttempt = millis64();
-    _feedProvisioning(WifiProvisioning::Event::STA_ATTEMPT_FAILED);
-
+    _countFailedAttempt();
     LOG_WARNING("Auto-reconnect failed, attempt %d", _reconnectAttempts);
 
     // No portal fallback any more. Repeated failures now feed the AP-raise predicate,
     // and _serviceApLifecycle() raises the SoftAP so the device can be re-provisioned
     // from its own web interface. It no longer restarts itself out of a bad network.
+  }
+
+  // The one place a failed attempt is counted, called only by the two deadlines that report
+  // one: the state machine, retryAttempts, and the clock the stable-connection reset uses.
+  static void _countFailedAttempt()
+  {
+    _reconnectAttempts++;
+    _lastReconnectAttempt = millis64();
+    _feedProvisioning(WifiProvisioning::Event::STA_ATTEMPT_FAILED);
   }
 
   static bool _isPowerReset()
