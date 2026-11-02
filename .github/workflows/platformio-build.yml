@@ -49,6 +49,13 @@ jobs:
         pio test -e native
         echo "✅ Unit tests passed!"
 
+    - name: Set up uv
+      uses: astral-sh/setup-uv@v7
+
+    - name: Run utils tests
+      working-directory: source
+      run: uv run --locked pytest utils/tests # uv fetches the Python 3.13 pyproject.toml asks for
+
   # Job 1: Validation build on PRs (quick feedback)
   build-check:
     needs: unit-test
