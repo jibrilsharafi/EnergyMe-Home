@@ -59,6 +59,7 @@ GET_ENDPOINTS = [
     '/api/v1/led/brightness',
     '/api/v1/ade7953/config',
     '/api/v1/ade7953/sample-time',
+    '/api/v1/ade7953/voltage-phase',
     '/api/v1/ade7953/channel',
     '/api/v1/ade7953/meter-values',
     '/api/v1/ade7953/grid-frequency',

@@ -107,6 +107,7 @@ class ApiBenchmark:
         "/api/v1/led/brightness",
         "/api/v1/ade7953/config",
         "/api/v1/ade7953/sample-time",
+        "/api/v1/ade7953/voltage-phase",
         "/api/v1/ade7953/channel",
         "/api/v1/ade7953/register?address=0x031E&bits=32",
         "/api/v1/ade7953/meter-values",
