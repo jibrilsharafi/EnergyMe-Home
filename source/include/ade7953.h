@@ -632,8 +632,7 @@ namespace Ade7953
     uint64_t getSampleTime();
     bool setSampleTime(uint64_t sampleTime);
 
-    // Voltage phase management: the line the single voltage input V1 is wired to, the
-    // base every channel (channel 0 included) is rotated from into its own line
+    // Voltage phase management
     Phase getVoltagePhase();
     bool setVoltagePhase(Phase voltagePhase); // PHASE_1..PHASE_3; false (nothing changed) when invalid, before the boot load, or not stored
     bool isVoltagePhaseStored(); // NVS holds getVoltagePhase(): false before the boot load or after a failed migration write

@@ -368,8 +368,7 @@ namespace Ade7953
         }
         LOG_DEBUG("Done setting channel data from Preferences");
 
-        // After the channels (a missing key migrates from channel 0's loaded phase) and
-        // before the meter task, so no reading ever uses the default by mistake.
+        // After the channels, before the meter task
         _setVoltagePhaseFromPreferences();
 
         for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
@@ -768,7 +767,6 @@ namespace Ade7953
             _voltagePhaseRearmPending = false;
             releaseMutex(&_channelDataMutex);
         } else {
-            // Already stored and applied: re-arm at the next reading rather than write the old value back
             _voltagePhaseRearmPending = true;
             deferred = true;
         }
@@ -3958,8 +3956,7 @@ namespace Ade7953
             return false;
         }
 
-        // A setVoltagePhase that could not take the channel lock left its CT polarity
-        // re-arm to this reading. The unsynced flag is a fast path, re-tested under the mutex.
+        // Deferred voltage phase re-arm: the unsynced flag is a fast path, re-tested under the mutex
         if (_voltagePhaseRearmPending && acquireMutex(&_channelDataMutex)) {
             bool rearmedNow = false;
             uint8_t rearmed = 0;
@@ -3995,8 +3992,7 @@ namespace Ade7953
         float reactiveEnergy = 0.0f;
         float apparentEnergy = 0.0f;
 
-        // Loaded once, lock-free (aligned 32-bit enum), so one reading never mixes two
-        // values. A change landing mid-reading books at most this window in the old frame.
+        // Loaded once so one reading never mixes two values
         const Phase voltagePhase = _voltagePhase;
 
         // Noise floors scale with the CT: a fixed threshold suited to a 30 A clamp is far
@@ -5202,8 +5198,7 @@ namespace Ade7953
         jsonDocument["captureStartUnixMillis"] = _captureStartUnixMillis;
         jsonDocument["captureStartMicros"] = _captureStartMicros;
         
-        // Add phase information. The shift is the rotation the meter applies (reverse
-        // excluded): 0 unless the channel is off-phase, so split-phase 240 V never shows one.
+        // Add phase information
         const Phase voltagePhase = getVoltagePhase();
         Phase currentPhase = _channelData[_captureChannel].phase;
         const float phaseShift = PhaseUtils::channelShiftDeg(voltagePhase, currentPhase);
