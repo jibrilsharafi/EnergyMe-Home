@@ -157,12 +157,11 @@ bool insideWiredBootWindows(const Context &context, uint64_t nowMs);
 bool isScanHoldActive(uint64_t holdStartedAtMs, uint64_t nowMs, bool scanRunning);
 
 // Whether a STA disconnect opens the grace window whose expiry reports a failed attempt.
-// Every attempt the caller starts, refused or not, is timed by its own connect deadline,
-// which is the one reporter of that attempt: the driver reports a failed association
-// through the same disconnect, and counting it here too would feed STA_ATTEMPT_FAILED
-// twice for one failure and raise the AP in half the intended attempts. A window already
-// open is never pushed out (a flapping link would never be evaluated), and the disconnect
-// a scan pause causes is a cancelled attempt, not a lost link.
+// Not while an attempt is timed: its connect deadline is the one reporter of it, and the
+// driver reports a failed association through this same disconnect, so counting it here
+// too would feed STA_ATTEMPT_FAILED twice and raise the AP in half the intended attempts.
+// An open window is never pushed out (a flapping link would never be evaluated), and a
+// scan pause's disconnect is a cancelled attempt, not a lost link.
 bool opensDisconnectGrace(bool attemptTimed, bool graceArmed, bool scanHoldActive);
 
 // Applies the teardown, including the settle to STA_ONLY when a grace window ends.

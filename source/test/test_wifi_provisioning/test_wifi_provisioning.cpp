@@ -897,8 +897,7 @@ void test_scan_hold_survives_a_clock_behind_the_start(void) {
 // The harness replays customwifi.cpp's bookkeeping: every attempt, refused or not, arms
 // a 10 s connect deadline that reports and retries it; a disconnect opens the 15 s grace
 // window only when opensDisconnectGrace() allows it; the periodic check starts an attempt
-// when nothing is armed. Reporting a refusal at once left no attempt in flight, so the
-// disconnect that followed opened the grace window and fed a second failure per attempt.
+// when nothing is armed.
 // ============================================================================
 
 namespace {
@@ -985,9 +984,8 @@ void test_link_loss_counts_the_loss_then_one_failure_per_attempt(void) {
 }
 
 void test_disconnect_of_an_attempt_never_counts_it_twice(void) {
-    // A refused start is timed exactly like a started one, so the disconnect it can still
-    // cause lands inside its own deadline. Reported at once instead, it would find nothing
-    // armed, open the grace window and be counted again 15 s later.
+    // Reporting a refusal at once left nothing armed, so the disconnect that followed opened
+    // the grace window and counted the same attempt again 15 s later.
     AttemptHarness harness;
     harness.startAttempt(0);
     harness.runOutage(0, 10 * kMinute);

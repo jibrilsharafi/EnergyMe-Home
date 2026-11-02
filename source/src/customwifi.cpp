@@ -967,9 +967,8 @@ namespace CustomWifi
           _feedProvisioning(WifiProvisioning::Event::STA_LOST);
           CustomEth::notifyStaState(false); // Interface arbitration (no-op on products without Ethernet)
 
-          // A grace window, then evaluate - the non-blocking form of the old delay(), which
-          // evaluated exactly once per window. Only for a link lost with no attempt in
-          // flight: see WifiProvisioning::opensDisconnectGrace().
+          // Grace window for auto-reconnect, evaluated once on expiry (the non-blocking form of
+          // the old delay()). See WifiProvisioning::opensDisconnectGrace() for when it opens.
           if (WifiProvisioning::opensDisconnectGrace(_connectDeadlineMs != 0, _disconnectDeadlineMs != 0,
                                                      _scanHoldStartedAtMs != 0))
           {
@@ -1072,8 +1071,8 @@ namespace CustomWifi
             // here accumulated zero apRaiseTriggers and never raised its SoftAP. On the
             // bench that left a meter with a wrong password unreachable indefinitely -
             // no LAN address, no AP, retrying every 30 s forever.
-            // Nothing is counted here: the failure that left no attempt in flight already
-            // was, and this attempt's own deadline counts it if it fails too.
+            // Nothing is counted here: the deadline that expired already counted its failure,
+            // and this attempt's own deadline counts it if it fails too.
             LOG_WARNING("Periodic check: WiFi not fully connected - starting a fresh attempt");
             _startStaAttempt();
           }
@@ -1481,10 +1480,10 @@ namespace CustomWifi
                (unsigned long)(_connectTimeoutMs / 1000UL));
     }
 
-    // A refused start is timed like any other attempt, so its deadline is the one place
-    // that reports it and retries it. Reported at once instead, it left no attempt in
-    // flight, and the DISCONNECTED it can still trigger (our own disconnect above, or a
-    // start that ran after all) armed the grace window, which counted it a second time.
+    // A refused start still arms a deadline, which reports and retries it. Reported at once,
+    // it left no attempt in flight, so the DISCONNECTED it can still trigger (our own
+    // disconnect above, or a start that ran after all) opened the grace window and counted
+    // it a second time.
     if (!started) LOG_WARNING("WiFi association refused to start - retrying when its deadline expires");
     _connectDeadlineMs = millis64() + _connectTimeoutMs;
   }
@@ -1801,8 +1800,8 @@ namespace CustomWifi
     // from its own web interface. It no longer restarts itself out of a bad network.
   }
 
-  // The one place a failed attempt is counted, called only by the two deadlines that report
-  // one: the state machine, retryAttempts, and the clock the stable-connection reset uses.
+  // Counts one failed attempt in the state machine, the retry counter and the
+  // stable-connection clock. Only the connect and grace deadlines call it.
   static void _countFailedAttempt()
   {
     _reconnectAttempts++;
