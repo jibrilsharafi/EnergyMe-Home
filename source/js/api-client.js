@@ -674,6 +674,13 @@ class EnergyMeAPI {
     }
 
     /**
+     * Set the ADE7953 voltage phase (1-3)
+     */
+    async setAde7953VoltagePhase(voltagePhase) {
+        return this.put('ade7953/voltage-phase', { voltagePhase });
+    }
+
+    /**
      * Read ADE7953 register
      */
     async readAde7953Register(address, bits = 32, signed = false) {

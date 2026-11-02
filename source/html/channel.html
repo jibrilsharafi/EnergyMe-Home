@@ -130,11 +130,19 @@
     </div>    <div id="channelContainer" class="section-box" style="text-align: center;">
         <h1>Channels</h1>
         <div style="margin-bottom: 1em;">
-            <span id="voltagePhaseText">Voltage input (device L wire): loading...</span>
+            <label>
+                Device L wire (voltage phase):
+                <select id="voltagePhaseSelect" disabled onchange="changeVoltagePhase()">
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                </select>
+            </label>
+            <span id="voltagePhaseText">loading...</span>
             <span class="info-tooltip">
                 <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about the voltage input">ⓘ</button>
                 <div class="info-tooltip-popover" role="tooltip">
-                    The device measures voltage once, on the line its own L wire is connected to: the voltage phase. Channel phases are labelled relative to it. It is phase 1 on a new device and channel 0's former phase on a device upgraded from an older firmware. It is set through the REST API or the meter shadow, not on this page.
+                    The device measures voltage once, on the line its own L wire is connected to: the voltage phase. Set it to that line, then set each channel's phase to the line its CT is on, channel 0 included. On a single-phase home leave it at 1. It is 1 on a new device and channel 0's former phase on a device upgraded from an older firmware.
                 </div>
             </span>
         </div>
@@ -182,11 +190,37 @@
             console.error('Voltage phase fetch failed', error);
             voltagePhase = null;
         }
-        const text = document.getElementById('voltagePhaseText');
-        if (text) {
-            text.textContent = 'Voltage input (device L wire): ' +
-                (voltagePhase !== null ? `phase ${voltagePhase}` : 'unavailable');
+        const select = document.getElementById('voltagePhaseSelect');
+        // Leave an open dropdown alone, the periodic refresh would close it
+        if (select && document.activeElement !== select) {
+            if (voltagePhase !== null) select.value = String(voltagePhase);
+            select.disabled = voltagePhase === null;
         }
+        const text = document.getElementById('voltagePhaseText');
+        if (text) text.textContent = voltagePhase !== null ? '' : 'unavailable';
+    }
+
+    async function changeVoltagePhase() {
+        const select = document.getElementById('voltagePhaseSelect');
+        const next = parseInt(select.value, 10);
+        if (next === voltagePhase) return;
+        // A change turns every non-split channel and re-runs the reversed-CT check,
+        // which reads a channel exporting at that moment as a reversed CT
+        if (!confirm(`Set the voltage phase to ${next}?\n\nEvery channel reading is turned to the new base and the reversed-CT detection runs again on every active channel. Do it only while every grid, battery and inverter channel is importing (no PV surplus or battery export), then check every channel's Reverse flag.`)) {
+            select.value = String(voltagePhase);
+            return;
+        }
+        select.disabled = true;
+        try {
+            await energyApi.setAde7953VoltagePhase(next);
+            showStatus(`Voltage phase set to ${next}`, 'success');
+        } catch (error) {
+            console.error('Voltage phase update failed', error);
+            showStatus('Error: ' + error.message, 'error');
+        }
+        await refreshVoltagePhase();
+        // The re-armed polarity check may flip reverse on the next readings
+        setTimeout(refreshChannelConfig, RECONCILE_DELAY_MS);
     }
 
     function refreshDeviceConfig() {
