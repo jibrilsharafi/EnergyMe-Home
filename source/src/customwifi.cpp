@@ -2,6 +2,8 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "customwifi.h"
+
+#include <atomic>
 #include "custometh.h"
 #include "customnet.h"
 #include "taskprofiler.h"
@@ -349,9 +351,14 @@ namespace CustomWifi
   // is single threaded. That is what makes the buffer safe to touch without a mutex, and it
   // is why the buffer is NOT freed from the WiFi task on AP teardown: that would race a
   // getScanResultsAsJson() mid-iteration over results the driver had just freed.
+  // Set around the gateway's raw scan: a provisioning scan started meanwhile could
+  // have Arduino's SCAN_DONE handler take (and free) the gateway's records.
+  static std::atomic<bool> _gatewayScanActive{false};
+
   bool startScan()
   {
     if (WiFi.scanComplete() == WIFI_SCAN_RUNNING) return true; // Already in flight
+    if (_gatewayScanActive) return false;                      // Radio busy for a gateway scan; the client polls again
 
     // Never scan while an association attempt is in flight: esp_wifi_scan_start returns
     // ESP_ERR_WIFI_STATE during connect, and on some paths it aborts the attempt.
@@ -497,7 +504,9 @@ namespace CustomWifi
     config.scan_time.active.min = WIFI_GATEWAY_SCAN_MIN_MS_PER_CHANNEL;
     config.scan_time.active.max = WIFI_SCAN_MS_PER_CHANNEL;
     config.home_chan_dwell_time = WIFI_GATEWAY_SCAN_HOME_DWELL_MS;
+    _gatewayScanActive = true;
     esp_err_t err = esp_wifi_scan_start(&config, true);
+    _gatewayScanActive = false;
     if (err == ESP_ERR_WIFI_NOT_INIT || err == ESP_ERR_WIFI_NOT_STARTED) return GatewayScanResult::UNAVAILABLE;
     if (err == ESP_ERR_WIFI_STATE) return GatewayScanResult::BUSY;
     if (err != ESP_OK) {
