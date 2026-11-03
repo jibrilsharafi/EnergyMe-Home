@@ -16,14 +16,23 @@
 //   in async_tcp until the watchdog reset the device. Any LAN client can send it.
 // - onData() validates the header only once 8 bytes are buffered. Upstream validated a
 //   partial header, reading the missing length bytes as 0.
+// - A bad MBAP header closes the connection. Upstream replied with an error built from the
+//   transaction id bytes and kept parsing a stream whose framing was lost.
+// - The outbox is capped, so a client that never reads replies cannot exhaust the heap.
 // - ~mb_client() frees a partially received request and queued responses, which upstream
 //   leaked on every disconnect that left them behind.
+// - onClientDisconnect() no longer dereferences or double-deletes a client that stop()
+//   already deleted, and onClientConnect() rejects a connection accepted after stop().
 #include "modbus_server_tcp_async.h"
+
+#include <algorithm>
 
 #include <modbus_mbap.h>
 
 #define LOCAL_LOG_LEVEL LOG_LEVEL_VERBOSE
 #include <Logging.h>
+
+static constexpr size_t MAX_OUTBOX_MESSAGES = 8;
 
 GuardedModbusServerTCPasync::mb_client::mb_client(GuardedModbusServerTCPasync* s, AsyncClient* c) :
   server(s),
@@ -86,15 +95,10 @@ void GuardedModbusServerTCPasync::mb_client::onData(uint8_t* data, size_t len) {
       break;
     }
     if (error != SUCCESS) {
-      ModbusMessage response;
-      response.setError(message->getServerID(), message->getFunctionCode(), error);
-      message->resize(4);
-      message->add(static_cast<uint16_t>(3));
-      message->append(response);
-      addResponseToOutbox(message);  // outbox has pointer ownership now
-      // reset to starting values and process remaining data
-      message = nullptr;
-      return;  // protocol validation, abort further parsing
+      // Framing is lost, so drop the connection rather than parse the rest as frames.
+      // close() deletes this mb_client (and message) through onDisconnect.
+      client->close();
+      return;
     }
 
     // 3. receive until request is complete
@@ -160,6 +164,13 @@ void GuardedModbusServerTCPasync::mb_client::onData(uint8_t* data, size_t len) {
     // Transfer message data to outbox
     addResponseToOutbox(message);
     message = nullptr;
+    // A client that pipelines requests but never reads the replies would otherwise grow
+    // the outbox (about 20 bytes of heap per input byte) until allocation fails.
+    if (outbox.size() > MAX_OUTBOX_MESSAGES) {
+      LOG_D("outbox full, closing client\n");
+      client->close();  // deletes this mb_client through onDisconnect
+      return;
+    }
   }  // end while loop iterating incoming data
 }
 
@@ -279,7 +290,8 @@ bool GuardedModbusServerTCPasync::isRunning() {
 void GuardedModbusServerTCPasync::onClientConnect(AsyncClient* client) {
   LOG_D("new client\n");
   LOCK_GUARD(lock1, cListLock);
-  if (clients.size() < maxNoClients) {
+  // server is null once stop() ran: an accept queued just before it must not revive the server
+  if (server && clients.size() < maxNoClients) {
     clients.emplace_back(new mb_client(this, client));
     LOG_D("nr clients: %u\n", clients.size());
   } else {
@@ -292,7 +304,11 @@ void GuardedModbusServerTCPasync::onClientConnect(AsyncClient* client) {
 void GuardedModbusServerTCPasync::onClientDisconnect(mb_client* client) {
   LOCK_GUARD(lock1, cListLock);
   // delete mb_client from list
-  clients.remove_if([client](mb_client* i) { return i->client == client->client; });
+  // Compared by pointer and deleted only if still listed: stop() on another task may have
+  // deleted it while this disconnect waited for cListLock.
+  auto it = std::find(clients.begin(), clients.end(), client);
+  if (it == clients.end()) return;
+  clients.erase(it);
   // delete client itself
   delete client;
   LOG_D("nr clients: %u\n", clients.size());
