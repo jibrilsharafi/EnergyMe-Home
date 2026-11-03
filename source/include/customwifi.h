@@ -44,7 +44,9 @@ static_assert(sizeof(WIFI_HOSTNAME_PREFIX) + 1 + WIFI_HOSTNAME_DEVICE_ID_LENGTH 
 #define WIFI_AP_LIFECYCLE_TICK_MS (10 * 1000)       // How often the AP lifetime/grace predicates are evaluated while the SoftAP is up
 #define WIFI_AP_PENDING_TICK_MS (1 * 1000)          // Tick while a deferred AP raise waits on the wired boot windows (Ethernet products only)
 #define WIFI_SCAN_MS_PER_CHANNEL 120                // Per-channel dwell. The default (~300 ms) makes a full scan long enough that a phone on the SoftAP times out waiting
-#define WIFI_SCAN_HOLD_TICK_MS 500                  // Tick while association retries are paused for a scan, so they resume promptly once it ends
+#define WIFI_GATEWAY_SCAN_MIN_MS_PER_CHANNEL 30     // Gateway wifi_scan: leave a quiet channel early, max stays WIFI_SCAN_MS_PER_CHANNEL
+#define WIFI_GATEWAY_SCAN_HOME_DWELL_MS 30          // Gateway wifi_scan: back on the home channel between channels (IDF default), keeps MQTT alive while connected
+#define WIFI_SCAN_HOLD_TICK_MS 500                 // Tick while association retries are paused for a scan, so they resume promptly once it ends
 #define WIFI_SCAN_MAX_RESULTS 30                    // Cap the JSON response; a dense apartment block can see far more than a user will scroll
 #define WIFI_SCAN_RESULTS_TTL_MS (2 * 60 * 1000)    // How long a completed result set is served before it is freed and re-scanned. The driver holds the full set in internal RAM, so it must not be kept for the rest of the uptime
 #define WIFI_STABLE_CONNECTION_DURATION (5 * 60 * 1000)    // Duration of uninterrupted WiFi connection to reset the reconnection counter
@@ -193,6 +195,15 @@ namespace CustomWifi
     // restarting the scan it is waiting on.
     bool startScan();
     void getScanResultsAsJson(JsonDocument &jsonDocument, bool forceRescan = false);
+
+    // Blocking scan for the LAN gateway `wifi_scan` op, called from the gateway task. Never
+    // switches the radio on: UNAVAILABLE when the STA is not running or the provisioning AP
+    // is up, BUSY during an association attempt or a provisioning scan. Fills up to `cap`
+    // `records` (caller's buffer, strongest first); `found` is how many the scan saw.
+    // `channel` 0 scans every channel.
+    enum class GatewayScanResult { OK, UNAVAILABLE, BUSY, FAILED, NO_MEMORY };
+    GatewayScanResult scanForGateway(uint8_t channel, bool showHidden, wifi_ap_record_t *records, uint16_t cap,
+                                     uint16_t *count, uint16_t *found);
 
     // Last association failure: reason code and string, SSID, BSSID, RSSI. These were only
     // ever visible through the removed WiFiManager /diagnostic page (D11).
