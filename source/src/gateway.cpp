@@ -12,12 +12,16 @@
 
 #include "lwip/etharp.h"
 #include "lwip/netif.h"
+#include "lwip/sockets.h"
 #include "lwip/tcpip.h"
 #include "mbedtls/base64.h"
+#include "mdns.h"
 #include "ping/ping_sock.h"
 
 #include "constants.h"
 #include "collector.h"
+#include "customwifi.h"
+#include "gateway_discovery.h"
 #include "gateway_executor.h"
 #include "gateway_stream.h"
 #include "secrets.h"
@@ -917,6 +921,517 @@ namespace Gateway
         _setBool(result, "truncated", truncated);
     }
 
+    // Discovery ops (openspec change add-gateway-discovery)
+    // =====================================================
+    //
+    // No cloud address: the broadcast comes from the active interface and the
+    // SSDP group is fixed, so validateTarget keeps refusing broadcast for every
+    // other op. Network strings go out only as valid UTF-8 text.
+
+    static constexpr size_t DISCOVERY_MAX_ENTRIES = 16;
+    static constexpr size_t DISCOVERY_KEEP_BYTES = 512;
+    static constexpr size_t SSDP_MAX_RESPONSES = 32;
+    static constexpr uint32_t DISCOVERY_SELECT_SLICE_MS = 100;
+    static constexpr uint8_t SSDP_MULTICAST_TTL = 2;
+    static constexpr size_t MDNS_MAX_RESULTS = 16;
+    static constexpr uint16_t WIFI_SCAN_MAX_RECORDS = 32;
+
+    static bool _isText(const char* text, size_t length) {
+        size_t textLength = 0;
+        return text != nullptr && GatewayLogic::utf8TextLength((const uint8_t*)text, length, false, &textLength) && textLength == length;
+    }
+
+    // Copied only when it is non-empty UTF-8 text; otherwise the key is left out.
+    static void _setTextField(JsonObject entry, const char* key, const char* text) {
+        if (text != nullptr && _isText(text, strlen(text))) entry[key] = (char*)text; // char* -> ArduinoJson copies
+    }
+
+    static void _formatIp(uint32_t hostOrder, char* out, size_t size) {
+        snprintf(out, size, "%u.%u.%u.%u", (unsigned)(hostOrder >> 24), (unsigned)((hostOrder >> 16) & 0xFF), (unsigned)((hostOrder >> 8) & 0xFF),
+                 (unsigned)(hostOrder & 0xFF));
+    }
+
+    static void _toOctets(uint32_t hostOrder, uint8_t octets[4]) {
+        octets[0] = (uint8_t)(hostOrder >> 24);
+        octets[1] = (uint8_t)(hostOrder >> 16);
+        octets[2] = (uint8_t)(hostOrder >> 8);
+        octets[3] = (uint8_t)hostOrder;
+    }
+
+    // Host-order address and netmask of the active interface.
+    static bool _activeSubnet(uint32_t* address, uint32_t* mask) {
+        LOCK_TCPIP_CORE();
+        struct netif* nif = netif_default;
+        bool up = nif != nullptr && netif_is_up(nif) && netif_is_link_up(nif) && !ip4_addr_isany_val(*netif_ip4_addr(nif));
+        if (up) {
+            *address = lwip_ntohl(ip4_addr_get_u32(netif_ip4_addr(nif)));
+            *mask = lwip_ntohl(ip4_addr_get_u32(netif_ip4_netmask(nif)));
+        }
+        UNLOCK_TCPIP_CORE();
+        return up;
+    }
+
+    // Non-blocking UDP socket bound to `port` (0: ephemeral) on every interface;
+    // -1 with errno set on failure. No SO_REUSEADDR: a held port must fail.
+    static int _openUdp(uint16_t port, bool broadcast) {
+        int fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (fd < 0) return -1;
+        int one = 1;
+        struct sockaddr_in local = {};
+        local.sin_family = AF_INET;
+        local.sin_port = htons(port);
+        local.sin_addr.s_addr = htonl(INADDR_ANY);
+        if ((broadcast && setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &one, sizeof(one)) != 0) ||
+            bind(fd, (struct sockaddr*)&local, sizeof(local)) != 0) {
+            int saved = errno;
+            close(fd);
+            errno = saved;
+            return -1;
+        }
+        fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
+        return fd;
+    }
+
+    static bool _sendTo(int fd, uint32_t hostOrderIp, uint16_t port, const uint8_t* data, size_t length) {
+        struct sockaddr_in to = {};
+        to.sin_family = AF_INET;
+        to.sin_port = htons(port);
+        to.sin_addr.s_addr = htonl(hostOrderIp);
+        return sendto(fd, data, length, 0, (struct sockaddr*)&to, sizeof(to)) == (ssize_t)length;
+    }
+
+    using DatagramHandler = void (*)(uint32_t ip, uint16_t port, const uint8_t* data, size_t length, void* context);
+
+    // Reads every datagram until `deadline` (millis()), so lwIP's internal-RAM
+    // pbufs are freed at once, and hands those from a private source other than
+    // this device to `handler`. Returns how many it handed over.
+    static size_t _receiveUntil(int fd, uint32_t deadline, uint8_t* buffer, size_t capacity, DatagramHandler handler, void* context) {
+        size_t accepted = 0;
+        for (size_t loops = 0; loops < MAX_LOOP_ITERATIONS; loops++) {
+            int32_t remaining = (int32_t)(deadline - millis());
+            if (remaining <= 0) break;
+            uint32_t waitMs = (uint32_t)remaining < DISCOVERY_SELECT_SLICE_MS ? (uint32_t)remaining : DISCOVERY_SELECT_SLICE_MS;
+            fd_set set;
+            FD_ZERO(&set);
+            FD_SET(fd, &set);
+            struct timeval tv = {(time_t)(waitMs / 1000), (suseconds_t)((waitMs % 1000) * 1000)};
+            if (select(fd + 1, &set, nullptr, nullptr, &tv) <= 0) continue;
+            struct sockaddr_in from = {};
+            socklen_t fromLength = sizeof(from);
+            ssize_t got = recvfrom(fd, buffer, capacity, MSG_DONTWAIT, (struct sockaddr*)&from, &fromLength);
+            if (got <= 0) continue;
+            uint32_t source = lwip_ntohl(from.sin_addr.s_addr);
+            uint8_t octets[4];
+            _toOctets(source, octets);
+            if (!GatewayLogic::isPrivateIpv4(octets) || _isLocalOrBroadcast(octets)) continue;
+            accepted++;
+            handler(source, ntohs(from.sin_port), buffer, (size_t)got, context);
+        }
+        return accepted;
+    }
+
+    struct DatagramList {
+        JsonArray list;
+        bool truncated;
+    };
+
+    // {"ip","port","s"|"bin"}, the payload cut at DISCOVERY_KEEP_BYTES; at most DISCOVERY_MAX_ENTRIES.
+    static void _keepDatagram(uint32_t ip, uint16_t port, const uint8_t* data, size_t length, void* context) {
+        DatagramList* out = (DatagramList*)context;
+        if (out->list.size() >= DISCOVERY_MAX_ENTRIES) {
+            out->truncated = true;
+            return;
+        }
+        size_t keep = length < DISCOVERY_KEEP_BYTES ? length : DISCOVERY_KEEP_BYTES;
+        if (keep < length) out->truncated = true;
+        char ipText[IP_ADDRESS_BUFFER_SIZE];
+        _formatIp(ip, ipText, sizeof(ipText));
+        JsonObject entry = out->list.add<JsonObject>();
+        entry["ip"] = ipText;
+        entry["port"] = port;
+        size_t textLength = 0;
+        if (GatewayLogic::utf8TextLength(data, keep, keep < length, &textLength)) {
+            entry["s"] = JsonString((const char*)data, textLength);
+            return;
+        }
+        size_t encodedLength = 0;
+        mbedtls_base64_encode(nullptr, 0, &encodedLength, data, keep);
+        char* encoded = (char*)ps_malloc(encodedLength + 1);
+        size_t written = 0;
+        if (encoded != nullptr && mbedtls_base64_encode((unsigned char*)encoded, encodedLength + 1, &written, data, keep) == 0) {
+            encoded[written] = '\0';
+            entry["bin"] = (const char*)encoded;
+        } else {
+            out->truncated = true;
+        }
+        free(encoded);
+    }
+
+    static void _failNoSocket(JsonDocument& doc) { _fail(doc, "NETWORK_DOWN", "Could not open a UDP socket"); }
+
+    static void _runUdpListen(JsonObjectConst args, JsonDocument& doc, const char* executionId) {
+        int64_t port = 0, wait = 0;
+        if (!_readInt(args, "port", -1, &port) || !GatewayLogic::isListenPortAllowed(port)) {
+            _reject(doc, "BAD_ARGS", "port must be 1024-65535 and not 5353");
+            return;
+        }
+        if (!_requireInt(args, "wait_ms", 0, doc, &wait)) return;
+        uint32_t waitMs = GatewayLogic::clampListenWaitMs(wait);
+        LOG_INFO("Gateway %s: udp_listen port %u for %u ms", executionId, (unsigned)port, waitMs);
+
+        uint8_t* buffer = (uint8_t*)ps_malloc(UDP_MAX_DATAGRAM_BYTES);
+        if (buffer == nullptr) {
+            _fail(doc, "NO_MEMORY", "Could not allocate the receive buffer");
+            return;
+        }
+        int fd = _openUdp((uint16_t)port, false);
+        if (fd < 0) {
+            free(buffer);
+            if (errno == EADDRINUSE) _fail(doc, "PORT_IN_USE", "The port is already bound on the device");
+            else _failNoSocket(doc);
+            return;
+        }
+        SpiRamAllocator allocator;
+        JsonDocument lists(&allocator);
+        DatagramList kept = {lists["datagrams"].to<JsonArray>(), false};
+        size_t count = _receiveUntil(fd, millis() + waitMs, buffer, UDP_MAX_DATAGRAM_BYTES, _keepDatagram, &kept);
+        close(fd);
+        free(buffer);
+
+        JsonObject result = _succeed(doc);
+        _setNumber(result, "count", (int64_t)count);
+        _setList(result, "datagrams", kept.list, &kept.truncated);
+        _setBool(result, "truncated", kept.truncated);
+    }
+
+    struct SsdpCollect {
+        JsonArray list;
+        GatewayLogic::SsdpReply* reply; // PSRAM scratch
+        bool truncated;
+    };
+
+    static void _keepSsdp(uint32_t ip, uint16_t port, const uint8_t* data, size_t length, void* context) {
+        SsdpCollect* out = (SsdpCollect*)context;
+        if (!GatewayLogic::parseSsdpReply(data, length, out->reply)) return;
+        char ipText[IP_ADDRESS_BUFFER_SIZE];
+        _formatIp(ip, ipText, sizeof(ipText));
+        for (JsonObject seen : out->list) { // devices repeat each reply
+            if (strcmp(seen["ip"] | "", ipText) == 0 && strcmp(seen["usn"] | "", out->reply->usn) == 0 && strcmp(seen["st"] | "", out->reply->st) == 0) {
+                return;
+            }
+        }
+        if (out->list.size() >= SSDP_MAX_RESPONSES) {
+            out->truncated = true;
+            return;
+        }
+        JsonObject entry = out->list.add<JsonObject>();
+        entry["ip"] = ipText;
+        entry["port"] = port;
+        // Printable ASCII by construction (parseSsdpReply); empty means absent.
+        if (out->reply->location[0] != '\0') entry["location"] = out->reply->location;
+        if (out->reply->st[0] != '\0') entry["st"] = out->reply->st;
+        if (out->reply->usn[0] != '\0') entry["usn"] = out->reply->usn;
+        if (out->reply->server[0] != '\0') entry["server"] = out->reply->server;
+    }
+
+    static void _discoverSsdp(JsonObjectConst args, JsonDocument& doc, uint8_t* buffer) {
+        const char* st = _readString(args, "st", "ssdp:all");
+        int64_t wait = 0;
+        if (!GatewayLogic::isValidSsdpTarget(st)) {
+            _reject(doc, "BAD_ARGS", "st must be 1-128 printable ASCII characters without spaces");
+            return;
+        }
+        if (!_requireInt(args, "wait_ms", 0, doc, &wait)) return;
+        uint32_t waitMs = GatewayLogic::clampDiscoverWaitMs(wait);
+        size_t requestLength = GatewayLogic::buildSsdpSearch(st, waitMs, (char*)buffer, UDP_MAX_DATAGRAM_BYTES);
+        GatewayLogic::SsdpReply* reply = (GatewayLogic::SsdpReply*)ps_malloc(sizeof(GatewayLogic::SsdpReply));
+        int fd = reply != nullptr ? _openUdp(0, false) : -1;
+        if (fd < 0) {
+            free(reply);
+            if (reply == nullptr) _fail(doc, "NO_MEMORY", "Could not allocate the reply buffer");
+            else _failNoSocket(doc);
+            return;
+        }
+        uint8_t ttl = SSDP_MULTICAST_TTL;
+        setsockopt(fd, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl));
+        const uint8_t* g = GatewayLogic::SSDP_GROUP;
+        uint32_t group = ((uint32_t)g[0] << 24) | ((uint32_t)g[1] << 16) | ((uint32_t)g[2] << 8) | g[3];
+        if (!_sendTo(fd, group, GatewayLogic::SSDP_PORT, buffer, requestLength)) {
+            close(fd);
+            free(reply);
+            _fail(doc, "NETWORK_DOWN", "Could not send the M-SEARCH");
+            return;
+        }
+        SpiRamAllocator allocator;
+        JsonDocument lists(&allocator);
+        SsdpCollect collected = {lists["responses"].to<JsonArray>(), reply, false};
+        _receiveUntil(fd, millis() + waitMs, buffer, UDP_MAX_DATAGRAM_BYTES, _keepSsdp, &collected);
+        close(fd);
+        free(reply);
+
+        JsonObject result = _succeed(doc);
+        _setNumber(result, "count", (int64_t)collected.list.size());
+        _setList(result, "responses", collected.list, &collected.truncated);
+        _setBool(result, "truncated", collected.truncated);
+    }
+
+    // `broadcast` and `wol` are writes: a udp grant must name <broadcast>:<port>.
+    static bool _requireBroadcastGrant(uint32_t broadcast, uint16_t port, JsonDocument& doc) {
+        uint8_t octets[4];
+        _toOctets(broadcast, octets);
+        if (GatewayExec::udpWriteGranted(octets, port)) return true;
+        char ipText[IP_ADDRESS_BUFFER_SIZE];
+        _formatIp(broadcast, ipText, sizeof(ipText));
+        char description[64];
+        snprintf(description, sizeof(description), "No write grant for %s:%u udp", ipText, port);
+        _reject(doc, "WRITE_NOT_ALLOWED", description);
+        return false;
+    }
+
+    static void _discoverBroadcast(JsonObjectConst args, JsonDocument& doc, uint32_t broadcast, uint8_t* buffer) {
+        uint16_t port = 0;
+        int64_t wait = 0;
+        if (!_readPort(args, 0, doc, &port) || !_requireInt(args, "wait_ms", GatewayLogic::DISCOVER_WAIT_DEFAULT_MS, doc, &wait)) return;
+        uint32_t waitMs = GatewayLogic::clampUdpWaitMs(wait);
+        uint8_t* payload = nullptr;
+        size_t payloadLength = 0;
+        const char* payloadB64 = _readString(args, "payload_b64", nullptr);
+        if (payloadB64 == nullptr || !_decodeBase64(payloadB64, &payload, &payloadLength, UDP_MAX_DATAGRAM_BYTES)) {
+            _reject(doc, "BAD_ARGS", "payload_b64 must be base64 of 1-1460 bytes");
+            return;
+        }
+        if (!_requireBroadcastGrant(broadcast, port, doc)) {
+            free(payload);
+            return;
+        }
+        int fd = _openUdp(0, true);
+        if (fd < 0) {
+            free(payload);
+            _failNoSocket(doc);
+            return;
+        }
+        bool sent = _sendTo(fd, broadcast, port, payload, payloadLength);
+        free(payload);
+        if (!sent) {
+            close(fd);
+            _fail(doc, "NETWORK_DOWN", "Could not send the broadcast");
+            return;
+        }
+        SpiRamAllocator allocator;
+        JsonDocument lists(&allocator);
+        DatagramList kept = {lists["replies"].to<JsonArray>(), false};
+        size_t count = _receiveUntil(fd, millis() + waitMs, buffer, UDP_MAX_DATAGRAM_BYTES, _keepDatagram, &kept);
+        close(fd);
+
+        JsonObject result = _succeed(doc);
+        _setBool(result, "sent", true);
+        _setNumber(result, "count", (int64_t)count);
+        _setList(result, "replies", kept.list, &kept.truncated);
+        _setBool(result, "truncated", kept.truncated);
+    }
+
+    static void _discoverWakeOnLan(JsonObjectConst args, JsonDocument& doc, uint32_t broadcast, uint8_t* buffer) {
+        uint8_t mac[6];
+        const char* macText = _readString(args, "mac", nullptr);
+        if (macText == nullptr || !GatewayLogic::parseMac(macText, mac)) {
+            _reject(doc, "BAD_ARGS", "mac must be six lowercase hex pairs, unicast and non-zero");
+            return;
+        }
+        int64_t port = 0;
+        if (!_readInt(args, "port", 9, &port) || (port != 7 && port != 9)) {
+            _reject(doc, "BAD_ARGS", "port must be 7 or 9");
+            return;
+        }
+        if (!_requireBroadcastGrant(broadcast, (uint16_t)port, doc)) return;
+        size_t length = GatewayLogic::buildWakeOnLan(mac, buffer, UDP_MAX_DATAGRAM_BYTES);
+        int fd = _openUdp(0, true);
+        if (fd < 0) {
+            _failNoSocket(doc);
+            return;
+        }
+        bool sent = _sendTo(fd, broadcast, (uint16_t)port, buffer, length);
+        close(fd);
+        if (!sent) {
+            _fail(doc, "NETWORK_DOWN", "Could not send the magic packet");
+            return;
+        }
+        _setBool(_succeed(doc), "sent", true);
+    }
+
+    static void _runDiscover(JsonObjectConst args, JsonDocument& doc, const char* executionId) {
+        const char* mode = _readString(args, "mode", nullptr);
+        bool ssdp = mode != nullptr && strcmp(mode, "ssdp") == 0;
+        bool broadcastMode = mode != nullptr && strcmp(mode, "broadcast") == 0;
+        bool wol = mode != nullptr && strcmp(mode, "wol") == 0;
+        if (!ssdp && !broadcastMode && !wol) {
+            _reject(doc, "BAD_ARGS", "mode must be ssdp, broadcast or wol");
+            return;
+        }
+        uint32_t self = 0, mask = 0;
+        if (!_activeSubnet(&self, &mask)) {
+            _fail(doc, "NETWORK_DOWN", "No active network interface");
+            return;
+        }
+        uint32_t broadcast = GatewayLogic::directedBroadcast(self, mask);
+        if (!ssdp && broadcast == 0) {
+            _fail(doc, "NETWORK_DOWN", "The subnet has no broadcast address");
+            return;
+        }
+        char target[IP_ADDRESS_BUFFER_SIZE];
+        _formatIp(ssdp ? 0xEFFFFFFAu : broadcast, target, sizeof(target));
+        LOG_INFO("Gateway %s: discover %s to %s", executionId, mode, target);
+
+        uint8_t* buffer = (uint8_t*)ps_malloc(UDP_MAX_DATAGRAM_BYTES);
+        if (buffer == nullptr) {
+            _fail(doc, "NO_MEMORY", "Could not allocate the datagram buffer");
+            return;
+        }
+        if (ssdp) _discoverSsdp(args, doc, buffer);
+        else if (broadcastMode) _discoverBroadcast(args, doc, broadcast, buffer);
+        else _discoverWakeOnLan(args, doc, broadcast, buffer);
+        free(buffer);
+    }
+
+    static void _runMdnsQuery(JsonObjectConst args, JsonDocument& doc, const char* executionId) {
+        char service[33] = "_";
+        char proto[9] = "_";
+        const char* serviceArg = _readString(args, "service", nullptr);
+        int64_t timeout = 0;
+        if (!_parseMdnsService(serviceArg, service + 1, sizeof(service) - 1, proto + 1, sizeof(proto) - 1)) {
+            _reject(doc, "BAD_ARGS", "service must look like _http._tcp");
+            return;
+        }
+        if (!_requireInt(args, "timeout_ms", 0, doc, &timeout)) return;
+        uint32_t timeoutMs = GatewayLogic::clampMdnsTimeoutMs(timeout);
+        LOG_INFO("Gateway %s: mdns_query %s for %u ms", executionId, serviceArg, timeoutMs);
+
+        mdns_result_t* results = nullptr;
+        esp_err_t err = mdns_query_ptr(service, proto, timeoutMs, MDNS_MAX_RESULTS, &results);
+        if (err != ESP_OK) {
+            if (err == ESP_ERR_NO_MEM) _fail(doc, "NO_MEMORY", "mDNS query out of memory");
+            else _fail(doc, "MDNS_UNAVAILABLE", esp_err_to_name(err));
+            return;
+        }
+        SpiRamAllocator allocator;
+        JsonDocument lists(&allocator);
+        JsonArray list = lists["services"].to<JsonArray>();
+        size_t count = 0;
+        for (mdns_result_t* r = results; r != nullptr && count < MDNS_MAX_RESULTS; r = r->next, count++) {
+            JsonObject entry = list.add<JsonObject>();
+            _setTextField(entry, "instance", r->instance_name);
+            _setTextField(entry, "host", r->hostname);
+            for (mdns_ip_addr_t* a = r->addr; a != nullptr; a = a->next) {
+                if (a->addr.type != ESP_IPADDR_TYPE_V4) continue;
+                char ipText[IP_ADDRESS_BUFFER_SIZE];
+                _formatIp(lwip_ntohl(a->addr.u_addr.ip4.addr), ipText, sizeof(ipText));
+                entry["ip"] = ipText;
+                break;
+            }
+            if (r->port != 0) entry["port"] = r->port;
+            if (r->txt_count == 0) continue;
+            JsonObject txt = entry["txt"].to<JsonObject>();
+            for (size_t i = 0; i < r->txt_count; i++) {
+                const char* key = r->txt[i].key;
+                if (key == nullptr || !_isText(key, strlen(key))) continue;
+                size_t valueLength = r->txt_value_len != nullptr ? r->txt_value_len[i] : 0;
+                const char* value = r->txt[i].value;
+                if (value == nullptr || valueLength == 0) txt[(char*)key] = "";
+                else if (_isText(value, valueLength)) txt[(char*)key] = JsonString(value, valueLength);
+            }
+        }
+        mdns_query_results_free(results);
+
+        bool truncated = false;
+        JsonObject result = _succeed(doc);
+        _setNumber(result, "count", (int64_t)count);
+        _setList(result, "services", list, &truncated);
+        _setBool(result, "truncated", truncated);
+    }
+
+    static const char* _authName(wifi_auth_mode_t mode) {
+        switch (mode) {
+            case WIFI_AUTH_OPEN: return "open";
+            case WIFI_AUTH_WEP: return "wep";
+            case WIFI_AUTH_WPA_PSK: return "wpa";
+            case WIFI_AUTH_WPA2_PSK: return "wpa2";
+            case WIFI_AUTH_WPA_WPA2_PSK: return "wpa_wpa2";
+            case WIFI_AUTH_WPA2_ENTERPRISE: return "wpa2_enterprise";
+            case WIFI_AUTH_WPA3_PSK: return "wpa3";
+            case WIFI_AUTH_WPA2_WPA3_PSK: return "wpa2_wpa3";
+            case WIFI_AUTH_WAPI_PSK: return "wapi";
+            case WIFI_AUTH_OWE: return "owe";
+            case WIFI_AUTH_WPA3_ENTERPRISE: return "wpa3_enterprise";
+            default: return "other";
+        }
+    }
+
+    static void _runWifiScan(JsonObjectConst args, JsonDocument& doc, const char* executionId) {
+        int64_t channel = 0;
+        bool showHidden = false;
+        if (!_readInt(args, "channel", 0, &channel) || channel < 0 || channel > GatewayLogic::WIFI_CHANNEL_MAX) {
+            _reject(doc, "BAD_ARGS", "channel must be 1-13");
+            return;
+        }
+        if (!_readFlag(args, "show_hidden", doc, &showHidden)) return;
+        // While connected over WiFi the radio leaves the home channel for about 2 s in short slices.
+        LOG_INFO("Gateway %s: wifi_scan channel %u", executionId, (unsigned)channel);
+
+        wifi_ap_record_t* records = (wifi_ap_record_t*)ps_malloc(WIFI_SCAN_MAX_RECORDS * sizeof(wifi_ap_record_t));
+        if (records == nullptr) {
+            _fail(doc, "NO_MEMORY", "Could not allocate the scan records");
+            return;
+        }
+        uint16_t count = 0, found = 0;
+        switch (CustomWifi::scanForGateway((uint8_t)channel, showHidden, records, WIFI_SCAN_MAX_RECORDS, &count, &found)) {
+            case CustomWifi::GatewayScanResult::OK: break;
+            case CustomWifi::GatewayScanResult::UNAVAILABLE:
+                free(records);
+                _reject(doc, "WIFI_UNAVAILABLE", "The WiFi station is not running");
+                return;
+            case CustomWifi::GatewayScanResult::BUSY:
+                free(records);
+                _reject(doc, "WIFI_BUSY", "WiFi is associating or another scan is running");
+                return;
+            case CustomWifi::GatewayScanResult::NO_MEMORY:
+                free(records);
+                _fail(doc, "NO_MEMORY", "Could not read the scan records");
+                return;
+            default:
+                free(records);
+                _fail(doc, "SCAN_FAILED", "The WiFi scan did not complete");
+                return;
+        }
+
+        SpiRamAllocator allocator;
+        JsonDocument lists(&allocator);
+        JsonArray list = lists["networks"].to<JsonArray>();
+        for (uint16_t i = 0; i < count; i++) {
+            const wifi_ap_record_t& r = records[i];
+            JsonObject entry = list.add<JsonObject>();
+            size_t ssidLength = strnlen((const char*)r.ssid, sizeof(r.ssid) - 1);
+            if (ssidLength == 0 || _isText((const char*)r.ssid, ssidLength)) {
+                entry["ssid"] = JsonString((const char*)r.ssid, ssidLength);
+            } else {
+                char hex[sizeof(r.ssid) * 2 + 1];
+                for (size_t j = 0; j < ssidLength; j++) snprintf(hex + j * 2, sizeof(hex) - j * 2, "%02x", r.ssid[j]);
+                entry["ssid_hex"] = hex;
+            }
+            char bssid[GatewayLogic::MAC_TEXT_BUFFER];
+            GatewayLogic::formatMac(r.bssid, bssid, sizeof(bssid));
+            entry["bssid"] = bssid;
+            entry["rssi"] = r.rssi;
+            entry["channel"] = r.primary;
+            entry["auth"] = _authName(r.authmode);
+        }
+        free(records);
+
+        bool truncated = found > count;
+        JsonObject result = _succeed(doc);
+        _setNumber(result, "count", (int64_t)found);
+        _setList(result, "networks", list, &truncated);
+        _setBool(result, "truncated", truncated);
+    }
+
     // Task plumbing
     // =============
 
@@ -940,16 +1455,20 @@ namespace Gateway
                 case Op::MODBUS_READ: _runModbus(args, doc, request.executionId, false); break;
                 case Op::MODBUS_WRITE: _runModbus(args, doc, request.executionId, true); break;
                 case Op::NET_SCAN: _runScan(args, doc, request.executionId); break;
+                case Op::WIFI_SCAN: _runWifiScan(args, doc, request.executionId); break;
+                case Op::DISCOVER: _runDiscover(args, doc, request.executionId); break;
+                case Op::UDP_LISTEN: _runUdpListen(args, doc, request.executionId); break;
+                case Op::MDNS_QUERY: _runMdnsQuery(args, doc, request.executionId); break;
                 default: _reject(doc, "UNKNOWN_OP", GatewayLogic::opName(request.op)); break;
             }
         }
 
         const char* status = doc["status"] | "FAILED";
+        const char* code = doc["statusReason"]["reasonCode"] | "";
         if (strcmp(status, "SUCCEEDED") == 0) {
             LOG_DEBUG("Gateway %s: %s succeeded", request.executionId, GatewayLogic::opName(request.op));
         } else {
-            LOG_WARNING("Gateway %s: %s %s %s", request.executionId, GatewayLogic::opName(request.op), status,
-                        doc["statusReason"]["reasonCode"] | "");
+            LOG_WARNING("Gateway %s: %s %s %s", request.executionId, GatewayLogic::opName(request.op), status, code);
         }
 
         size_t length = measureJson(doc) + 1;

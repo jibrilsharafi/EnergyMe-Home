@@ -1565,7 +1565,7 @@ namespace Mqtt
             return;
         } else if (op == GatewayLogic::Op::UNKNOWN) {
             reasonCode = "UNKNOWN_OP";
-            description = "op must be ping, net_scan, http_request, https_request, tls_probe, modbus_read, modbus_write, udp_send, tcp_request, secret_set, secret_delete, tunnel_open, tunnel_close or collector_status";
+            description = "op must be ping, net_scan, http_request, https_request, tls_probe, modbus_read, modbus_write, udp_send, tcp_request, wifi_scan, discover, udp_listen, mdns_query, secret_set, secret_delete, tunnel_open, tunnel_close or collector_status";
         } else {
             switch (Gateway::submit(executionId, op, doc["args"])) {
                 case Gateway::SubmitResult::ACCEPTED:

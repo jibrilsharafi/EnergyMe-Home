@@ -11,8 +11,9 @@
 // LAN gateway (openspec capability: lan-gateway). The cloud sends one generic
 // primitive per IoT Command (ping, net_scan, http_request, https_request,
 // tls_probe, modbus_read/write, udp_send, tcp_request) and the device runs it
-// against private IPv4 targets through the executor (gateway_executor.h). All
-// device knowledge lives in the cloud.
+// against private IPv4 targets through the executor (gateway_executor.h). The
+// discovery ops (wifi_scan, discover, udp_listen, mdns_query) run here without a
+// cloud target address. All device knowledge lives in the cloud.
 //
 // Threading: submit() and takeResult() are called only by the MQTT task, which
 // owns every publish. The primitives run in the gateway task, one at a time.
