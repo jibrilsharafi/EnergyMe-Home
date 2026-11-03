@@ -30,6 +30,7 @@
 #define GATEWAY_SCAN_BATCH_WAIT_MS 300
 #define GATEWAY_SCAN_MAX_DURATION_MS (30 * 1000) // Whole scan, mDNS query included
 #define GATEWAY_MDNS_QUERY_MS 3000               // ESPmDNS queryService() timeout
+#define GATEWAY_STATUS_DEBOUNCE_MS 2000          // info shadow report once the gateway status is stable this long
 #define GATEWAY_QUEUE_WAIT_MS 1000               // Task wakes this often to check for a stop request
 #define GATEWAY_SCAN_LIST_BUDGET 3500       // Serialized bytes per result list, so the response fits the 9 KB MQTT buffer
 // Decoded args. The inbound MQTT buffer (9 KB) is the real ceiling: 6 KB of
@@ -68,4 +69,10 @@ namespace Gateway
     // command response ({status, statusReason?, result?}), which the caller
     // frees with free(). Clears the busy state.
     bool takeResult(char* executionId, size_t executionIdSize, char** responseJson);
+
+    // Gateway status for the info shadow: busy, plus op, status, reason code, end
+    // time and run time of the last command the gateway task ran. The sequence
+    // changes whenever that status does (MQTT task debounces the report).
+    uint32_t statusSequence();
+    void statusToJson(JsonObject out);
 }

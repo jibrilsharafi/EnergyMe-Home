@@ -20,6 +20,7 @@
 
 #include "constants.h"
 #include "collector.h"
+#include "customtime.h"
 #include "customwifi.h"
 #include "gateway_discovery.h"
 #include "gateway_executor.h"
@@ -49,6 +50,19 @@ namespace Gateway
     static std::atomic<bool> _busy{false};
     static char _resultExecutionId[NAME_BUFFER_SIZE] = "";
     static char* _resultJson = nullptr;
+
+    // Last command the gateway task ran, for the info shadow. Written by the
+    // gateway task, read by the MQTT task, both under _resultMutex.
+    struct LastRun {
+        bool valid;
+        Op op;
+        char status[12];
+        char code[48];
+        uint64_t endedUnix; // 0 while the clock was not synchronised
+        uint32_t durationMs;
+    };
+    static LastRun _lastRun = {};
+    static std::atomic<uint32_t> _statusSequence{0};
 
     // Response building
     // =================
@@ -1436,6 +1450,8 @@ namespace Gateway
     // =============
 
     static void _run(const Request& request) {
+        uint64_t startMs = millis64();
+        _statusSequence++; // busy since submit(); reported if it is still running after the debounce
         SpiRamAllocator allocator;
         JsonDocument doc(&allocator);
         JsonDocument argsDoc(&allocator);
@@ -1477,13 +1493,21 @@ namespace Gateway
         if (json != nullptr && acquireMutex(&_resultMutex)) {
             snprintf(_resultExecutionId, sizeof(_resultExecutionId), "%s", request.executionId);
             _resultJson = json;
+            _lastRun.valid = true;
+            _lastRun.op = request.op;
+            snprintf(_lastRun.status, sizeof(_lastRun.status), "%s", status);
+            snprintf(_lastRun.code, sizeof(_lastRun.code), "%s", code);
+            _lastRun.endedUnix = CustomTime::isTimeSynched() ? CustomTime::getUnixTime() : 0;
+            _lastRun.durationMs = (uint32_t)(millis64() - startMs);
             releaseMutex(&_resultMutex);
+            _statusSequence++;
             return;
         }
         // Nothing to publish: drop the busy flag so the gateway does not stay stuck.
         free(json);
         LOG_ERROR("Gateway %s: could not store the result", request.executionId);
         _busy = false;
+        _statusSequence++;
     }
 
     static void _gatewayTask(void* parameter) {
@@ -1628,5 +1652,24 @@ namespace Gateway
         }
         if (taken) _busy = false;
         return taken;
+    }
+
+    uint32_t statusSequence() { return _statusSequence; }
+
+    void statusToJson(JsonObject out) {
+        out["busy"] = _busy.load();
+        LastRun last = {};
+        if (_resultMutex != nullptr && acquireMutex(&_resultMutex)) {
+            last = _lastRun;
+            releaseMutex(&_resultMutex);
+        }
+        // Explicit nulls, so a reboot or a success clears what the cloud shadow kept.
+        out["last_op"] = last.valid ? GatewayLogic::opName(last.op) : nullptr;
+        out["last_status"] = last.valid ? (const char*)last.status : nullptr; // local copy -> ArduinoJson copies
+        out["last_code"] = last.valid && last.code[0] != '\0' ? (const char*)last.code : nullptr;
+        if (last.valid && last.endedUnix != 0) out["last_at"] = last.endedUnix;
+        else out["last_at"] = nullptr;
+        if (last.valid) out["last_ms"] = last.durationMs;
+        else out["last_ms"] = nullptr;
     }
 }
