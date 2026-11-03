@@ -1901,12 +1901,7 @@ namespace CustomServer
 
     static bool _fetchGitHubReleaseInfo(JsonDocument &doc)
     {
-        // Check internet connectivity before attempting API call
-        if (!CustomNet::isFullyConnected(true)) {
-            LOG_DEBUG("Cannot fetch GitHub release info: no internet connectivity");
-            return false;
-        }
-
+        // Caller already checked connectivity; not repeated since this runs on async_tcp (watchdog)
         HTTPClient http;
         http.begin(GITHUB_API_LATEST_RELEASE_URL);
         http.addHeader("User-Agent", "EnergyMe-Home-ESP32");

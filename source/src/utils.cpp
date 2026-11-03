@@ -1290,10 +1290,26 @@ void clearAllPreferences() {
 
 bool probeTcp(const char* host, uint16_t port, uint32_t timeoutMs) {
     WiFiClient client;
-    client.setTimeout(timeoutMs);
-    if (!client.connect(host, port)) return false;
+    // setTimeout() is only the read timeout; connect() would keep NetworkClient's 3 s default
+    if (!client.connect(host, port, (int32_t)timeoutMs)) return false;
     client.stop();
     return true;
+}
+
+bool probeInternet(const char** reachedHost, uint16_t* reachedPort) {
+    struct Target { const char* host; uint16_t port; };
+    static const Target targets[] = CONNECTIVITY_TEST_TARGETS;
+
+    for (const Target& target : targets) {
+        if (!probeTcp(target.host, target.port, CONNECTIVITY_TEST_TIMEOUT_MS)) {
+            LOG_DEBUG("Internet probe: %s:%u unreachable", target.host, target.port);
+            continue;
+        }
+        if (reachedHost) *reachedHost = target.host;
+        if (reachedPort) *reachedPort = target.port;
+        return true;
+    }
+    return false;
 }
 
 void getDeviceId(char* deviceId, size_t maxLength) {
