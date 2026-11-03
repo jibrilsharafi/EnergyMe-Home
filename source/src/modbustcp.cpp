@@ -113,7 +113,7 @@ namespace ModbusTcp
         }
 
         // Get 16-bit values from request (big-endian format)
-        uint16_t startAddress, registerCount;
+        uint16_t startAddress = 0, registerCount = 0; // Left as is by get() on a short PDU
         request.get(2, startAddress);   // Start address (2 bytes)
         request.get(4, registerCount);    // Register count (2 bytes)
 
