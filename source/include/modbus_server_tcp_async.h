@@ -9,6 +9,7 @@
 
 #include <options.h>
 
+#include <atomic>
 #include <list>
 #include <queue>
 #if USE_MUTEX
@@ -43,6 +44,8 @@ class GuardedModbusServerTCPasync : public ModbusServer {
     ModbusMessage* message;
     Modbus::Error error;
     std::queue<ModbusMessage*> outbox;
+    // Set by stop() on another task; the client then closes itself on async_tcp
+    std::atomic<bool> closeRequested;
     #if USE_MUTEX
     std::mutex obLock;  // outbox protection
     #endif
@@ -61,7 +64,8 @@ class GuardedModbusServerTCPasync : public ModbusServer {
   // Start the TCP server accepting requests
   bool start(uint16_t port, uint8_t maxClients, uint32_t timeout, int coreID = -1);
 
-  // Drop all connections and stop the server
+  // Stop accepting and ask every client to close. Clients are deleted on the async_tcp task,
+  // never here; waits up to STOP_DRAIN_TIMEOUT_MS for them to go.
   bool stop();
 
   bool isRunning();

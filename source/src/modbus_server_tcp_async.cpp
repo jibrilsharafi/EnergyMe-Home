@@ -21,8 +21,10 @@
 // - The outbox is capped, so a client that never reads replies cannot exhaust the heap.
 // - ~mb_client() frees a partially received request and queued responses, which upstream
 //   leaked on every disconnect that left them behind.
-// - onClientDisconnect() no longer dereferences or double-deletes a client that stop()
-//   already deleted, and onClientConnect() rejects a connection accepted after stop().
+// - stop() no longer deletes clients from the calling task while async_tcp may be inside
+//   their callbacks (use-after-free and double free in handleOutbox(), reproduced by
+//   restarting under Modbus load). It flags them and each closes itself on async_tcp.
+//   onClientConnect() rejects a connection accepted after stop().
 #include "modbus_server_tcp_async.h"
 
 #include <algorithm>
@@ -33,6 +35,8 @@
 #include <Logging.h>
 
 static constexpr size_t MAX_OUTBOX_MESSAGES = 8;
+static constexpr uint32_t STOP_DRAIN_TIMEOUT_MS = 2000;
+static constexpr uint32_t STOP_DRAIN_POLL_MS = 50;
 
 GuardedModbusServerTCPasync::mb_client::mb_client(GuardedModbusServerTCPasync* s, AsyncClient* c) :
   server(s),
@@ -40,7 +44,8 @@ GuardedModbusServerTCPasync::mb_client::mb_client(GuardedModbusServerTCPasync* s
   lastActiveTime(millis()),
   message(nullptr),
   error(SUCCESS),
-  outbox() {
+  outbox(),
+  closeRequested(false) {
     client->onData([](void* i, AsyncClient* c, void* data, size_t len) { (static_cast<mb_client*>(i))->onData(static_cast<uint8_t*>(data), len); }, this);
     client->onPoll([](void* i, AsyncClient* c) { (static_cast<mb_client*>(i))->onPoll(); }, this);
     client->onDisconnect([](void* i, AsyncClient* c) { (static_cast<mb_client*>(i))->onDisconnect(); }, this);
@@ -59,6 +64,10 @@ GuardedModbusServerTCPasync::mb_client::~mb_client() {
 }
 
 void GuardedModbusServerTCPasync::mb_client::onData(uint8_t* data, size_t len) {
+  if (closeRequested) {
+    client->close();  // deletes this mb_client through onDisconnect
+    return;
+  }
   lastActiveTime = millis();
   LOG_D("data len %u\n", len);
 
@@ -175,6 +184,10 @@ void GuardedModbusServerTCPasync::mb_client::onData(uint8_t* data, size_t len) {
 }
 
 void GuardedModbusServerTCPasync::mb_client::onPoll() {
+  if (closeRequested) {
+    client->close();  // deletes this mb_client through onDisconnect
+    return;
+  }
   // Release obLock before closing: close() deletes this mb_client (and obLock)
   // via the disconnect callback, and destroying a locked mutex leaks it on ESP32.
   {
@@ -268,16 +281,18 @@ bool GuardedModbusServerTCPasync::stop() {
   // stop server to prevent new clients connecting
   server->end();
 
-  // now close existing clients
-  LOCK_GUARD(lock1, cListLock);
-  while (!clients.empty()) {
-    // prevent onDisconnect handler to be called, resulting in deadlock
-    clients.front()->client->onDisconnect(nullptr, nullptr);
-    delete clients.front();
-    clients.pop_front();
+  {
+    LOCK_GUARD(lock1, cListLock);
+    for (mb_client* c : clients) c->closeRequested = true;
+    delete server;
+    server = nullptr;
   }
-  delete server;
-  server = nullptr;
+
+  // Each client closes on its next poll or data event on async_tcp
+  for (uint32_t waited = 0; activeClients() > 0 && waited < STOP_DRAIN_TIMEOUT_MS; waited += STOP_DRAIN_POLL_MS) {
+    delay(STOP_DRAIN_POLL_MS);
+  }
+  if (activeClients() > 0) LOG_W("%u clients still closing\n", activeClients());
   LOG_D("Modbus server stopped\n");
   return true;
 }
@@ -304,8 +319,7 @@ void GuardedModbusServerTCPasync::onClientConnect(AsyncClient* client) {
 void GuardedModbusServerTCPasync::onClientDisconnect(mb_client* client) {
   LOCK_GUARD(lock1, cListLock);
   // delete mb_client from list
-  // Compared by pointer and deleted only if still listed: stop() on another task may have
-  // deleted it while this disconnect waited for cListLock.
+  // Clients are deleted only here, on async_tcp; never delete one twice
   auto it = std::find(clients.begin(), clients.end(), client);
   if (it == clients.end()) return;
   clients.erase(it);
