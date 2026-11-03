@@ -6,7 +6,7 @@
 namespace ModbusTcp
 {
     // Static state variables
-    static ModbusServerTCPasync _mbServer;
+    static GuardedModbusServerTCPasync _mbServer;
 
     // Private function declarations
     static uint16_t _getRegisterValue(uint32_t address);
@@ -72,7 +72,7 @@ namespace ModbusTcp
         releaseMutex(&_lifecycleMutex);
     }
 
-    // Modbus TCP carries no authentication, and ModbusServerTCPasync binds every interface.
+    // Modbus TCP carries no authentication, and the async server binds every interface.
     // While the SoftAP is up that means handing meter data to anyone in radio range who
     // joins it, so the server only exists while there is a station link AND no SoftAP is
     // broadcasting.
