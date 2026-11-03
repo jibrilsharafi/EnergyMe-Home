@@ -56,9 +56,8 @@ static_assert(sizeof(WIFI_HOSTNAME_PREFIX) + 1 + WIFI_HOSTNAME_DEVICE_ID_LENGTH 
 // Connectivity test - TCP connect to public anycast IPs (no DNS lookup needed). Several operators
 // and ports, tried in order until one answers, so a firewall blocking one of them (e.g. outbound
 // DNS to anything but the local resolver) does not make the device think it is offline.
-// The per-target timeout keeps the offline worst case at ~3 s, as with the former single target:
-// some callers run on the async_tcp task. lwIP's first SYN retransmit is at 3 s, so a longer
-// per-target timeout would buy nothing but more RTT tolerance.
+// 1 s per target keeps the offline worst case at ~3 s (some callers run on async_tcp, 5 s watchdog).
+// lwIP retransmits the first SYN only at 3 s, so a longer timeout would not survive a lost SYN anyway.
 #define CONNECTIVITY_TEST_TIMEOUT_MS (1 * 1000)
 #define CONNECTIVITY_TEST_TARGETS { {"8.8.8.8", 53}, {"1.1.1.1", 443}, {"9.9.9.9", 443} } // Google DNS, Cloudflare DoH, Quad9 DoH
 

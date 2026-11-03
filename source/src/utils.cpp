@@ -1290,8 +1290,7 @@ void clearAllPreferences() {
 
 bool probeTcp(const char* host, uint16_t port, uint32_t timeoutMs) {
     WiFiClient client;
-    // Pass the timeout to connect(): setTimeout() only sets the Stream read timeout,
-    // the connect timeout would stay at NetworkClient's 3 s default
+    // setTimeout() is only the read timeout; connect() would keep NetworkClient's 3 s default
     if (!client.connect(host, port, (int32_t)timeoutMs)) return false;
     client.stop();
     return true;
