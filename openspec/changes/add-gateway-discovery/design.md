@@ -37,4 +37,5 @@ A small struct in gateway.cpp (`busy` is the existing `_busy` flag; current op a
 - WiFi scan hiccup: about 2 s of off-channel time while connected; MQTT keepalive and publishes survive it (bench check), the cloud decides when to scan.
 - `broadcast` reaches every host on the subnet, including meters on the same LAN; the grant makes it an explicit cloud decision, and payload size is capped at one datagram.
 - `udp_listen` cannot receive broadcasts dropped by WiFi modem sleep: if a device is not heard, retry with a longer `wait_ms`.
+- The WiFi task does not see the gateway scan: an association it starts during the 2 s scan is refused by the driver and counts as one failed attempt. Only reachable when the STA is not connected while the gateway is online (Home Pro on Ethernet with STA retrying); provisioning scans are kept off the radio by a flag.
 - The `WIFI_UNAVAILABLE` path cannot be bench-tested on a Home (its STA is always up); it is a plain mode check.
