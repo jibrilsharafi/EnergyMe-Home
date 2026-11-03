@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include <ModbusServerTCPasync.h>
+#include "modbus_server_tcp_async.h"
 #include <AdvancedLogger.h>
 
 #include "ade7953.h"
@@ -23,7 +23,10 @@
 
 namespace ModbusTcp
 {
-    void begin();
+    // Registers the request worker and creates the lifecycle mutex. Call once from setup(),
+    // before any task that may call stop() or syncWithNetwork() exists. Does not start the
+    // server: syncWithNetwork() does, once the network allows it.
+    void init();
     void stop();
 
     // Start or stop the server to follow the station link. Modbus TCP is unauthenticated and

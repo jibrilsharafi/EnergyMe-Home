@@ -290,6 +290,11 @@ void setup()
   LOG_DEBUG("Issue registry setup done");
   logHeapLedger("issue registry");
 
+  // Before the web server: CustomServer::begin() starts the health-check task, which calls
+  // ModbusTcp::syncWithNetwork(), so the worker must be registered and the lifecycle mutex
+  // created while setup() is still the only caller.
+  ModbusTcp::init();
+
   LOG_DEBUG("Setting up server...");
   if (!globalCommunityMode) Secrets::begin(); // before the REST server can accept a secret
   CustomServer::begin();

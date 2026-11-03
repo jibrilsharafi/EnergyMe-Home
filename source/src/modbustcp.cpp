@@ -6,7 +6,7 @@
 namespace ModbusTcp
 {
     // Static state variables
-    static ModbusServerTCPasync _mbServer;
+    static GuardedModbusServerTCPasync _mbServer;
 
     // Private function declarations
     static uint16_t _getRegisterValue(uint32_t address);
@@ -14,43 +14,50 @@ namespace ModbusTcp
     static bool _isValidRegister(uint32_t address);
     static ModbusMessage _handleReadHoldingRegisters(ModbusMessage request);
 
-    static bool _running = false;
-    static bool _workerRegistered = false;
+    // stop()/syncWithNetwork() run from setup(), the health-check task and the restart task,
+    // so they are serialised by this mutex. registerWorker() writes eModbus's workerMap, an
+    // unlocked std::map the async_tcp task reads on every request, so it runs exactly once,
+    // in init(), before any of those tasks or the server exists. Two callers racing a
+    // plain-bool guard into registerWorker() panicked in the 2.5.1 fleet (#277), and
+    // re-registering on every restart corrupted the map on the bench (2026-09-21).
+    static SemaphoreHandle_t _lifecycleMutex = nullptr;
 
-    void begin()
+    void init()
     {
-        if (_running) return;
-
-        LOG_DEBUG("Initializing Modbus TCP");
-
-        // registerWorker() writes into ModbusServer's internal workerMap (a std::map the
-        // library never mutex-protects - it assumes this runs once, before the async
-        // server task exists). begin()/stop() cycle on every LAN transition while
-        // _mbServer is a single reused instance, so re-registering on every restart raced
-        // the still-draining async task's concurrent getWorker() reads and corrupted the
-        // map (Exception/panic inside _Rb_tree_insert_and_rebalance on the bench, 2026-09-21).
-        // Registering once, ever, means later restarts only touch start()/stop().
-        if (!_workerRegistered) {
-            _mbServer.registerWorker(MODBUS_TCP_SERVER_ID, READ_HOLD_REGISTER, &_handleReadHoldingRegisters);
-            _workerRegistered = true;
+        if (_lifecycleMutex) return;
+        if (!createMutexIfNeeded(&_lifecycleMutex)) {
+            LOG_ERROR("Failed to create Modbus TCP lifecycle mutex, Modbus TCP disabled");
+            return;
         }
-        _mbServer.start(MODBUS_TCP_PORT, MODBUS_TCP_MAX_CLIENTS, MODBUS_TCP_TIMEOUT);
-        _running = true;
+        _mbServer.registerWorker(MODBUS_TCP_SERVER_ID, READ_HOLD_REGISTER, &_handleReadHoldingRegisters);
+        LOG_DEBUG("Modbus TCP worker registered");
+    }
 
-        LOG_DEBUG("Modbus TCP initialized");
+    static void _startLocked()
+    {
+        if (_mbServer.start(MODBUS_TCP_PORT, MODBUS_TCP_MAX_CLIENTS, MODBUS_TCP_TIMEOUT)) LOG_DEBUG("Modbus TCP server started");
+        else LOG_ERROR("Failed to start Modbus TCP server, will retry on the next network sync");
+    }
+
+    static void _stopLocked()
+    {
+        if (!_mbServer.isRunning()) return;
+
+        _mbServer.stop();
+        LOG_DEBUG("Modbus TCP server stopped");
     }
 
     void stop()
     {
-        if (!_running) return;
-
-        LOG_DEBUG("Stopping Modbus TCP server");
-        _mbServer.stop();
-        _running = false;
-        LOG_DEBUG("Modbus TCP server stopped");
+        if (!acquireMutex(&_lifecycleMutex)) {
+            if (_lifecycleMutex) LOG_ERROR("Failed to acquire Modbus TCP lifecycle mutex, not stopping");
+            return;
+        }
+        _stopLocked();
+        releaseMutex(&_lifecycleMutex);
     }
 
-    // Modbus TCP carries no authentication, and ModbusServerTCPasync binds every interface.
+    // Modbus TCP carries no authentication, and the async server binds every interface.
     // While the SoftAP is up that means handing meter data to anyone in radio range who
     // joins it, so the server only exists while there is a station link AND no SoftAP is
     // broadcasting.
@@ -62,14 +69,22 @@ namespace ModbusTcp
     // data to anyone on that AP for the length of the grace window.
     void syncWithNetwork(bool staConnected, bool apServing)
     {
-        bool shouldRun = staConnected && !apServing;
-        if (shouldRun && !_running) {
-            LOG_DEBUG("LAN link up (WiFi STA or Ethernet), no SoftAP broadcasting - starting Modbus TCP");
-            begin();
-        } else if (!shouldRun && _running) {
-            LOG_DEBUG("SoftAP broadcasting or no LAN link - stopping Modbus TCP so it is not exposed on it");
-            stop();
+        if (!acquireMutex(&_lifecycleMutex)) {
+            if (_lifecycleMutex) LOG_WARNING("Failed to acquire Modbus TCP lifecycle mutex, skipping network sync");
+            else LOG_ERROR("Modbus TCP not initialized, skipping network sync");
+            return;
         }
+
+        bool shouldRun = staConnected && !apServing;
+        bool running = _mbServer.isRunning();
+        if (shouldRun && !running) {
+            LOG_DEBUG("LAN link up (WiFi STA or Ethernet), no SoftAP broadcasting - starting Modbus TCP");
+            _startLocked();
+        } else if (!shouldRun && running) {
+            LOG_DEBUG("SoftAP broadcasting or no LAN link - stopping Modbus TCP so it is not exposed on it");
+            _stopLocked();
+        }
+        releaseMutex(&_lifecycleMutex);
     }
 
     static ModbusMessage _handleReadHoldingRegisters(ModbusMessage request)
@@ -84,7 +99,7 @@ namespace ModbusTcp
         }
 
         // Get 16-bit values from request (big-endian format)
-        uint16_t startAddress, registerCount;
+        uint16_t startAddress = 0, registerCount = 0; // Left as is by get() on a short PDU
         request.get(2, startAddress);   // Start address (2 bytes)
         request.get(4, registerCount);    // Register count (2 bytes)
 
