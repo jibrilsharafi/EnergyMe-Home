@@ -14,40 +14,62 @@ namespace ModbusTcp
     static bool _isValidRegister(uint32_t address);
     static ModbusMessage _handleReadHoldingRegisters(ModbusMessage request);
 
-    static bool _running = false;
-    static bool _workerRegistered = false;
+    // stop/syncWithNetwork run from setup(), the health-check task and the restart
+    // task. Two unsynchronised callers both passing a plain-bool guard ran registerWorker()
+    // twice at once, corrupting eModbus's unlocked workerMap (Exception/panic in
+    // std::map::operator[] inside registerWorker, 2.5.1 fleet, #277). All lifecycle state
+    // is now guarded by this mutex, and the worker is registered once in init(), before
+    // any of those tasks exists.
+    static SemaphoreHandle_t _lifecycleMutex = nullptr;
+    static bool _running = false; // Guarded by _lifecycleMutex
 
-    void begin()
+    // registerWorker() writes into ModbusServer's internal workerMap, a std::map the
+    // library never mutex-protects: the async_tcp task reads it (getWorker) on every
+    // request. It must therefore happen exactly once, before the server is ever started,
+    // so later restarts only touch start()/stop() (re-registering on every restart raced
+    // a still-draining async task's reads, Exception/panic in _Rb_tree_insert_and_rebalance
+    // on the bench, 2026-09-21).
+    void init()
+    {
+        if (_lifecycleMutex) return;
+        if (!createMutexIfNeeded(&_lifecycleMutex)) {
+            LOG_ERROR("Failed to create Modbus TCP lifecycle mutex, Modbus TCP disabled");
+            return;
+        }
+        _mbServer.registerWorker(MODBUS_TCP_SERVER_ID, READ_HOLD_REGISTER, &_handleReadHoldingRegisters);
+        LOG_DEBUG("Modbus TCP worker registered");
+    }
+
+    static void _startLocked()
     {
         if (_running) return;
 
-        LOG_DEBUG("Initializing Modbus TCP");
-
-        // registerWorker() writes into ModbusServer's internal workerMap (a std::map the
-        // library never mutex-protects - it assumes this runs once, before the async
-        // server task exists). begin()/stop() cycle on every LAN transition while
-        // _mbServer is a single reused instance, so re-registering on every restart raced
-        // the still-draining async task's concurrent getWorker() reads and corrupted the
-        // map (Exception/panic inside _Rb_tree_insert_and_rebalance on the bench, 2026-09-21).
-        // Registering once, ever, means later restarts only touch start()/stop().
-        if (!_workerRegistered) {
-            _mbServer.registerWorker(MODBUS_TCP_SERVER_ID, READ_HOLD_REGISTER, &_handleReadHoldingRegisters);
-            _workerRegistered = true;
+        LOG_DEBUG("Starting Modbus TCP server");
+        if (!_mbServer.start(MODBUS_TCP_PORT, MODBUS_TCP_MAX_CLIENTS, MODBUS_TCP_TIMEOUT)) {
+            LOG_ERROR("Failed to start Modbus TCP server, will retry on the next network sync");
         }
-        _mbServer.start(MODBUS_TCP_PORT, MODBUS_TCP_MAX_CLIENTS, MODBUS_TCP_TIMEOUT);
-        _running = true;
-
-        LOG_DEBUG("Modbus TCP initialized");
+        _running = _mbServer.isRunning();
+        if (_running) LOG_DEBUG("Modbus TCP server started");
     }
 
-    void stop()
+    static void _stopLocked()
     {
         if (!_running) return;
 
         LOG_DEBUG("Stopping Modbus TCP server");
         _mbServer.stop();
-        _running = false;
+        _running = _mbServer.isRunning();
         LOG_DEBUG("Modbus TCP server stopped");
+    }
+
+    void stop()
+    {
+        if (!acquireMutex(&_lifecycleMutex)) {
+            if (_lifecycleMutex) LOG_ERROR("Failed to acquire Modbus TCP lifecycle mutex, not stopping");
+            return;
+        }
+        _stopLocked();
+        releaseMutex(&_lifecycleMutex);
     }
 
     // Modbus TCP carries no authentication, and ModbusServerTCPasync binds every interface.
@@ -62,14 +84,21 @@ namespace ModbusTcp
     // data to anyone on that AP for the length of the grace window.
     void syncWithNetwork(bool staConnected, bool apServing)
     {
+        if (!acquireMutex(&_lifecycleMutex)) {
+            if (_lifecycleMutex) LOG_WARNING("Failed to acquire Modbus TCP lifecycle mutex, skipping network sync");
+            else LOG_ERROR("Modbus TCP not initialized, skipping network sync");
+            return;
+        }
+
         bool shouldRun = staConnected && !apServing;
         if (shouldRun && !_running) {
             LOG_DEBUG("LAN link up (WiFi STA or Ethernet), no SoftAP broadcasting - starting Modbus TCP");
-            begin();
+            _startLocked();
         } else if (!shouldRun && _running) {
             LOG_DEBUG("SoftAP broadcasting or no LAN link - stopping Modbus TCP so it is not exposed on it");
-            stop();
+            _stopLocked();
         }
+        releaseMutex(&_lifecycleMutex);
     }
 
     static ModbusMessage _handleReadHoldingRegisters(ModbusMessage request)
