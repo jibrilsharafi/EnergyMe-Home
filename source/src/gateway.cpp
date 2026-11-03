@@ -91,7 +91,7 @@ namespace Gateway
 
     static void _setBool(JsonObject result, const char* key, bool value) { result[key]["b"] = value; }
 
-    static bool _setBinary(JsonObject result, const char* key, const uint8_t* data, size_t length) {
+    static bool _setBase64(JsonVariant out, const uint8_t* data, size_t length) {
         size_t encodedLength = 0;
         mbedtls_base64_encode(nullptr, 0, &encodedLength, data, length);
         char* encoded = (char*)ps_malloc(encodedLength + 1);
@@ -100,11 +100,13 @@ namespace Gateway
         bool ok = mbedtls_base64_encode((unsigned char*)encoded, encodedLength + 1, &written, data, length) == 0;
         if (ok) {
             encoded[written] = '\0';
-            result[key]["bin"] = (const char*)encoded; // const char* -> ArduinoJson copies
+            out.set((const char*)encoded); // const char* -> ArduinoJson copies
         }
         free(encoded);
         return ok;
     }
+
+    static bool _setBinary(JsonObject result, const char* key, const uint8_t* data, size_t length) { return _setBase64(result[key]["bin"], data, length); }
 
     // UTF-8 text goes out as a plain string so the cloud can read it without decoding; anything else stays base64.
     // AWS rejects the whole response when a value is empty (no "s": "" or zero-byte "bin"), so an empty payload omits the key.
@@ -1032,7 +1034,7 @@ namespace Gateway
             if (select(fd + 1, &set, nullptr, nullptr, &tv) <= 0) continue;
             struct sockaddr_in from = {};
             socklen_t fromLength = sizeof(from);
-            ssize_t got = recvfrom(fd, buffer, capacity, MSG_DONTWAIT, (struct sockaddr*)&from, &fromLength);
+            ssize_t got = recvfrom(fd, buffer, capacity, 0, (struct sockaddr*)&from, &fromLength);
             if (got <= 0) continue;
             uint32_t source = lwip_ntohl(from.sin_addr.s_addr);
             uint8_t octets[4];
@@ -1068,22 +1070,12 @@ namespace Gateway
             entry["s"] = JsonString((const char*)data, textLength);
             return;
         }
-        size_t encodedLength = 0;
-        mbedtls_base64_encode(nullptr, 0, &encodedLength, data, keep);
-        char* encoded = (char*)ps_malloc(encodedLength + 1);
-        size_t written = 0;
-        if (encoded != nullptr && mbedtls_base64_encode((unsigned char*)encoded, encodedLength + 1, &written, data, keep) == 0) {
-            encoded[written] = '\0';
-            entry["bin"] = (const char*)encoded;
-        } else {
-            out->truncated = true;
-        }
-        free(encoded);
+        if (!_setBase64(entry["bin"], data, keep)) out->truncated = true;
     }
 
     static void _failNoSocket(JsonDocument& doc) { _fail(doc, "NETWORK_DOWN", "Could not open a UDP socket"); }
 
-    static void _runUdpListen(JsonObjectConst args, JsonDocument& doc, const char* executionId) {
+    __attribute__((noinline)) static void _runUdpListen(JsonObjectConst args, JsonDocument& doc, const char* executionId) {
         int64_t port = 0, wait = 0;
         if (!_readInt(args, "port", -1, &port) || !GatewayLogic::isListenPortAllowed(port)) {
             _reject(doc, "BAD_ARGS", "port must be 1024-65535 and not 5353");
@@ -1148,7 +1140,7 @@ namespace Gateway
         if (out->reply->server[0] != '\0') entry["server"] = out->reply->server;
     }
 
-    static void _discoverSsdp(JsonObjectConst args, JsonDocument& doc, uint8_t* buffer) {
+    __attribute__((noinline)) static void _discoverSsdp(JsonObjectConst args, JsonDocument& doc, uint8_t* buffer) {
         const char* st = _readString(args, "st", "ssdp:all");
         int64_t wait = 0;
         if (!GatewayLogic::isValidSsdpTarget(st)) {
@@ -1168,9 +1160,7 @@ namespace Gateway
         }
         uint8_t ttl = SSDP_MULTICAST_TTL;
         setsockopt(fd, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl));
-        const uint8_t* g = GatewayLogic::SSDP_GROUP;
-        uint32_t group = ((uint32_t)g[0] << 24) | ((uint32_t)g[1] << 16) | ((uint32_t)g[2] << 8) | g[3];
-        if (!_sendTo(fd, group, GatewayLogic::SSDP_PORT, buffer, requestLength)) {
+        if (!_sendTo(fd, GatewayLogic::SSDP_GROUP, GatewayLogic::SSDP_PORT, buffer, requestLength)) {
             close(fd);
             free(reply);
             _fail(doc, "NETWORK_DOWN", "Could not send the M-SEARCH");
@@ -1202,7 +1192,7 @@ namespace Gateway
         return false;
     }
 
-    static void _discoverBroadcast(JsonObjectConst args, JsonDocument& doc, uint32_t broadcast, uint8_t* buffer) {
+    __attribute__((noinline)) static void _discoverBroadcast(JsonObjectConst args, JsonDocument& doc, uint32_t broadcast, uint8_t* buffer) {
         uint16_t port = 0;
         int64_t wait = 0;
         if (!_readPort(args, 0, doc, &port) || !_requireInt(args, "wait_ms", GatewayLogic::DISCOVER_WAIT_DEFAULT_MS, doc, &wait)) return;
@@ -1244,7 +1234,7 @@ namespace Gateway
         _setBool(result, "truncated", kept.truncated);
     }
 
-    static void _discoverWakeOnLan(JsonObjectConst args, JsonDocument& doc, uint32_t broadcast, uint8_t* buffer) {
+    __attribute__((noinline)) static void _discoverWakeOnLan(JsonObjectConst args, JsonDocument& doc, uint32_t broadcast, uint8_t* buffer) {
         uint8_t mac[6];
         const char* macText = _readString(args, "mac", nullptr);
         if (macText == nullptr || !GatewayLogic::parseMac(macText, mac)) {
@@ -1272,7 +1262,7 @@ namespace Gateway
         _setBool(_succeed(doc), "sent", true);
     }
 
-    static void _runDiscover(JsonObjectConst args, JsonDocument& doc, const char* executionId) {
+    __attribute__((noinline)) static void _runDiscover(JsonObjectConst args, JsonDocument& doc, const char* executionId) {
         const char* mode = _readString(args, "mode", nullptr);
         bool ssdp = mode != nullptr && strcmp(mode, "ssdp") == 0;
         bool broadcastMode = mode != nullptr && strcmp(mode, "broadcast") == 0;
@@ -1292,7 +1282,7 @@ namespace Gateway
             return;
         }
         char target[IP_ADDRESS_BUFFER_SIZE];
-        _formatIp(ssdp ? 0xEFFFFFFAu : broadcast, target, sizeof(target));
+        _formatIp(ssdp ? GatewayLogic::SSDP_GROUP : broadcast, target, sizeof(target));
         LOG_INFO("Gateway %s: discover %s to %s", executionId, mode, target);
 
         uint8_t* buffer = (uint8_t*)ps_malloc(UDP_MAX_DATAGRAM_BYTES);
@@ -1306,7 +1296,7 @@ namespace Gateway
         free(buffer);
     }
 
-    static void _runMdnsQuery(JsonObjectConst args, JsonDocument& doc, const char* executionId) {
+    __attribute__((noinline)) static void _runMdnsQuery(JsonObjectConst args, JsonDocument& doc, const char* executionId) {
         char service[33] = "_";
         char proto[9] = "_";
         const char* serviceArg = _readString(args, "service", nullptr);
@@ -1334,7 +1324,8 @@ namespace Gateway
             JsonObject entry = list.add<JsonObject>();
             _setTextField(entry, "instance", r->instance_name);
             _setTextField(entry, "host", r->hostname);
-            for (mdns_ip_addr_t* a = r->addr; a != nullptr; a = a->next) {
+            size_t hops = 0;
+            for (mdns_ip_addr_t* a = r->addr; a != nullptr && hops++ < MAX_LOOP_ITERATIONS; a = a->next) {
                 if (a->addr.type != ESP_IPADDR_TYPE_V4) continue;
                 char ipText[IP_ADDRESS_BUFFER_SIZE];
                 _formatIp(lwip_ntohl(a->addr.u_addr.ip4.addr), ipText, sizeof(ipText));
@@ -1344,7 +1335,7 @@ namespace Gateway
             if (r->port != 0) entry["port"] = r->port;
             if (r->txt_count == 0) continue;
             JsonObject txt = entry["txt"].to<JsonObject>();
-            for (size_t i = 0; i < r->txt_count; i++) {
+            for (size_t i = 0; i < r->txt_count && i < MAX_LOOP_ITERATIONS; i++) {
                 const char* key = r->txt[i].key;
                 if (key == nullptr || !_isText(key, strlen(key))) continue;
                 size_t valueLength = r->txt_value_len != nullptr ? r->txt_value_len[i] : 0;
@@ -1379,7 +1370,7 @@ namespace Gateway
         }
     }
 
-    static void _runWifiScan(JsonObjectConst args, JsonDocument& doc, const char* executionId) {
+    __attribute__((noinline)) static void _runWifiScan(JsonObjectConst args, JsonDocument& doc, const char* executionId) {
         int64_t channel = 0;
         bool showHidden = false;
         if (!_readInt(args, "channel", 0, &channel) || channel < 0 || channel > GatewayLogic::WIFI_CHANNEL_MAX) {
@@ -1396,24 +1387,16 @@ namespace Gateway
             return;
         }
         uint16_t count = 0, found = 0;
-        switch (CustomWifi::scanForGateway((uint8_t)channel, showHidden, records, WIFI_SCAN_MAX_RECORDS, &count, &found)) {
-            case CustomWifi::GatewayScanResult::OK: break;
-            case CustomWifi::GatewayScanResult::UNAVAILABLE:
-                free(records);
-                _reject(doc, "WIFI_UNAVAILABLE", "The WiFi station is not running");
-                return;
-            case CustomWifi::GatewayScanResult::BUSY:
-                free(records);
-                _reject(doc, "WIFI_BUSY", "WiFi is associating or another scan is running");
-                return;
-            case CustomWifi::GatewayScanResult::NO_MEMORY:
-                free(records);
-                _fail(doc, "NO_MEMORY", "Could not read the scan records");
-                return;
-            default:
-                free(records);
-                _fail(doc, "SCAN_FAILED", "The WiFi scan did not complete");
-                return;
+        CustomWifi::GatewayScanResult scan = CustomWifi::scanForGateway((uint8_t)channel, showHidden, records, WIFI_SCAN_MAX_RECORDS, &count, &found);
+        if (scan != CustomWifi::GatewayScanResult::OK) {
+            free(records);
+            switch (scan) {
+                case CustomWifi::GatewayScanResult::UNAVAILABLE: _reject(doc, "WIFI_UNAVAILABLE", "The WiFi station is not running"); break;
+                case CustomWifi::GatewayScanResult::BUSY: _reject(doc, "WIFI_BUSY", "WiFi is associating or another scan is running"); break;
+                case CustomWifi::GatewayScanResult::NO_MEMORY: _fail(doc, "NO_MEMORY", "Could not read the scan records"); break;
+                default: _fail(doc, "SCAN_FAILED", "The WiFi scan did not complete"); break;
+            }
+            return;
         }
 
         SpiRamAllocator allocator;
@@ -1490,9 +1473,16 @@ namespace Gateway
         size_t length = measureJson(doc) + 1;
         char* json = (char*)ps_malloc(length);
         if (json != nullptr) serializeJson(doc, json, length);
-        if (json != nullptr && acquireMutex(&_resultMutex)) {
-            snprintf(_resultExecutionId, sizeof(_resultExecutionId), "%s", request.executionId);
-            _resultJson = json;
+        bool stored = false;
+        if (acquireMutex(&_resultMutex)) {
+            if (json != nullptr) {
+                snprintf(_resultExecutionId, sizeof(_resultExecutionId), "%s", request.executionId);
+                _resultJson = json;
+                stored = true;
+            } else {
+                status = "FAILED"; // the reply is lost: the status shows why
+                code = "NO_MEMORY";
+            }
             _lastRun.valid = true;
             _lastRun.op = request.op;
             snprintf(_lastRun.status, sizeof(_lastRun.status), "%s", status);
@@ -1500,13 +1490,13 @@ namespace Gateway
             _lastRun.endedUnix = CustomTime::isTimeSynched() ? CustomTime::getUnixTime() : 0;
             _lastRun.durationMs = (uint32_t)(millis64() - startMs);
             releaseMutex(&_resultMutex);
-            _statusSequence++;
-            return;
         }
-        // Nothing to publish: drop the busy flag so the gateway does not stay stuck.
-        free(json);
-        LOG_ERROR("Gateway %s: could not store the result", request.executionId);
-        _busy = false;
+        if (!stored) {
+            // Nothing to publish: drop the busy flag so the gateway does not stay stuck.
+            free(json);
+            LOG_ERROR("Gateway %s: could not store the result", request.executionId);
+            _busy = false;
+        }
         _statusSequence++;
     }
 
@@ -1659,7 +1649,7 @@ namespace Gateway
     void statusToJson(JsonObject out) {
         out["busy"] = _busy.load();
         LastRun last = {};
-        if (_resultMutex != nullptr && acquireMutex(&_resultMutex)) {
+        if (acquireMutex(&_resultMutex)) {
             last = _lastRun;
             releaseMutex(&_resultMutex);
         }

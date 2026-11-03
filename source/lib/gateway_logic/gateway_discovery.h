@@ -26,7 +26,7 @@ inline constexpr uint16_t MDNS_PORT = 5353;
 inline constexpr uint8_t WIFI_CHANNEL_MAX = 13;
 
 inline constexpr uint16_t SSDP_PORT = 1900;
-inline constexpr uint8_t SSDP_GROUP[4] = {239, 255, 255, 250};
+inline constexpr uint32_t SSDP_GROUP = 0xEFFFFFFAu; // 239.255.255.250, host order
 inline constexpr size_t SSDP_ST_MAX = 128;
 inline constexpr size_t SSDP_REQUEST_MAX = 256;
 inline constexpr size_t SSDP_VALUE_MAX = 192; // per header value, cut beyond
