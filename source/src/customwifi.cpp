@@ -1327,13 +1327,12 @@ namespace CustomWifi
       return false;
     }
 
-    // Simple TCP connect to Google Public DNS (8.8.8.8:53) - lightweight internet connectivity test
-    // Uses IP address to avoid DNS lookup, port 53 is rarely blocked by firewalls
-    if (!probeTcp(CONNECTIVITY_TEST_IP, CONNECTIVITY_TEST_PORT, CONNECTIVITY_TEST_TIMEOUT_MS)) {
+    const char *reachedHost = nullptr;
+    uint16_t reachedPort = 0;
+    if (!probeInternet(&reachedHost, &reachedPort)) {
       // Here we only log a debug since the internet connectivity is not a must-have
       // While before we used LOG_WARNING since the issue is WiFi related (critical)
-      LOG_DEBUG("Connectivity test failed: cannot reach %s:%d (no internet)",
-                  CONNECTIVITY_TEST_IP, CONNECTIVITY_TEST_PORT);
+      LOG_DEBUG("Connectivity test failed: no probe target reachable (no internet)");
       return false;
     }
 
@@ -1345,8 +1344,8 @@ namespace CustomWifi
     LOG_DEBUG("Connectivity test passed - Gateway: %s, DNS: %s, Internet: %s:%d reachable", 
               gatewayStr,
               dns1Str,
-              CONNECTIVITY_TEST_IP,
-              CONNECTIVITY_TEST_PORT);
+              reachedHost,
+              reachedPort);
     return true;
   }
 

@@ -15,8 +15,7 @@ namespace CustomNet
         // as before this change. With Ethernet up that probe fails early on
         // WiFi-specific pre-checks that are legitimately absent, so probe the
         // default route directly instead.
-        return ethUp ? probeTcp(CONNECTIVITY_TEST_IP, CONNECTIVITY_TEST_PORT, CONNECTIVITY_TEST_TIMEOUT_MS)
-                     : CustomWifi::testConnectivity();
+        return ethUp ? probeInternet() : CustomWifi::testConnectivity();
     }
 
     bool isNetworkServiceable()

@@ -154,6 +154,10 @@ void getDeviceId(char* deviceId, size_t maxLength);
 // follows whichever interface holds the default route (WiFi or Ethernet).
 bool probeTcp(const char* host, uint16_t port, uint32_t timeoutMs);
 
+// probeTcp over CONNECTIVITY_TEST_TARGETS until one answers. On success
+// reachedHost/reachedPort (optional) name the target that answered.
+bool probeInternet(const char** reachedHost = nullptr, uint16_t* reachedPort = nullptr);
+
 // Fills out with a 16-char lowercase-hex random token (e.g. for an event/correlation
 // id) plus null terminator; outSize must be >= 17, else out is left untouched.
 // Free function rather than ShadowLogic::formatClientToken (lib/shadow_logic) -

@@ -53,10 +53,14 @@ static_assert(sizeof(WIFI_HOSTNAME_PREFIX) + 1 + WIFI_HOSTNAME_DEVICE_ID_LENGTH 
 #define WIFI_LWIP_STABILIZATION_DELAY (1 * 1000)    // Delay after WiFi connection to allow lwIP network stack to stabilize (prevents DNS/UDP crashes)
 #define SETUP_NETWORK_WAIT_TIMEOUT_MS (60 * 1000)   // How long setup() waits for either interface before starting the rest of the system anyway. Bounds the case where no STA link is possible and no SoftAP subnet is available, which would otherwise block the web server from ever starting
 
-// Connectivity test parameters - lightweight TCP connect to public DNS (no DNS lookup needed, rarely blocked)
-#define CONNECTIVITY_TEST_TIMEOUT_MS (3 * 1000)           // Timeout for connectivity tests
-#define CONNECTIVITY_TEST_IP "8.8.8.8"  // Google Public DNS - stable, reliable, no DNS lookup needed
-#define CONNECTIVITY_TEST_PORT 53                   // DNS port - rarely blocked by firewalls
+// Connectivity test - TCP connect to public anycast IPs (no DNS lookup needed). Several operators
+// and ports, tried in order until one answers, so a firewall blocking one of them (e.g. outbound
+// DNS to anything but the local resolver) does not make the device think it is offline.
+// The per-target timeout keeps the offline worst case at ~3 s, as with the former single target:
+// some callers run on the async_tcp task. lwIP's first SYN retransmit is at 3 s, so a longer
+// per-target timeout would buy nothing but more RTT tolerance.
+#define CONNECTIVITY_TEST_TIMEOUT_MS (1 * 1000)
+#define CONNECTIVITY_TEST_TARGETS { {"8.8.8.8", 53}, {"1.1.1.1", 443}, {"9.9.9.9", 443} } // Google DNS, Cloudflare DoH, Quad9 DoH
 
 #define MDNS_HOSTNAME "energyme"
 
