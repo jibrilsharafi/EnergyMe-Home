@@ -14,21 +14,14 @@ namespace ModbusTcp
     static bool _isValidRegister(uint32_t address);
     static ModbusMessage _handleReadHoldingRegisters(ModbusMessage request);
 
-    // stop/syncWithNetwork run from setup(), the health-check task and the restart
-    // task. Two unsynchronised callers both passing a plain-bool guard ran registerWorker()
-    // twice at once, corrupting eModbus's unlocked workerMap (Exception/panic in
-    // std::map::operator[] inside registerWorker, 2.5.1 fleet, #277). All lifecycle state
-    // is now guarded by this mutex, and the worker is registered once in init(), before
-    // any of those tasks exists.
+    // stop()/syncWithNetwork() run from setup(), the health-check task and the restart task,
+    // so they are serialised by this mutex. registerWorker() writes eModbus's workerMap, an
+    // unlocked std::map the async_tcp task reads on every request, so it runs exactly once,
+    // in init(), before any of those tasks or the server exists. Two callers racing a
+    // plain-bool guard into registerWorker() panicked in the 2.5.1 fleet (#277), and
+    // re-registering on every restart corrupted the map on the bench (2026-09-21).
     static SemaphoreHandle_t _lifecycleMutex = nullptr;
-    static bool _running = false; // Guarded by _lifecycleMutex
 
-    // registerWorker() writes into ModbusServer's internal workerMap, a std::map the
-    // library never mutex-protects: the async_tcp task reads it (getWorker) on every
-    // request. It must therefore happen exactly once, before the server is ever started,
-    // so later restarts only touch start()/stop() (re-registering on every restart raced
-    // a still-draining async task's reads, Exception/panic in _Rb_tree_insert_and_rebalance
-    // on the bench, 2026-09-21).
     void init()
     {
         if (_lifecycleMutex) return;
@@ -42,23 +35,15 @@ namespace ModbusTcp
 
     static void _startLocked()
     {
-        if (_running) return;
-
-        LOG_DEBUG("Starting Modbus TCP server");
-        if (!_mbServer.start(MODBUS_TCP_PORT, MODBUS_TCP_MAX_CLIENTS, MODBUS_TCP_TIMEOUT)) {
-            LOG_ERROR("Failed to start Modbus TCP server, will retry on the next network sync");
-        }
-        _running = _mbServer.isRunning();
-        if (_running) LOG_DEBUG("Modbus TCP server started");
+        if (_mbServer.start(MODBUS_TCP_PORT, MODBUS_TCP_MAX_CLIENTS, MODBUS_TCP_TIMEOUT)) LOG_DEBUG("Modbus TCP server started");
+        else LOG_ERROR("Failed to start Modbus TCP server, will retry on the next network sync");
     }
 
     static void _stopLocked()
     {
-        if (!_running) return;
+        if (!_mbServer.isRunning()) return;
 
-        LOG_DEBUG("Stopping Modbus TCP server");
         _mbServer.stop();
-        _running = _mbServer.isRunning();
         LOG_DEBUG("Modbus TCP server stopped");
     }
 
@@ -91,10 +76,11 @@ namespace ModbusTcp
         }
 
         bool shouldRun = staConnected && !apServing;
-        if (shouldRun && !_running) {
+        bool running = _mbServer.isRunning();
+        if (shouldRun && !running) {
             LOG_DEBUG("LAN link up (WiFi STA or Ethernet), no SoftAP broadcasting - starting Modbus TCP");
             _startLocked();
-        } else if (!shouldRun && _running) {
+        } else if (!shouldRun && running) {
             LOG_DEBUG("SoftAP broadcasting or no LAN link - stopping Modbus TCP so it is not exposed on it");
             _stopLocked();
         }
