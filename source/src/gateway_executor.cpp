@@ -380,6 +380,16 @@ namespace GatewayExec
         return count;
     }
 
+    bool udpWriteGranted(const uint8_t ip[4], uint16_t port) {
+        PolicyRequest policy = {};
+        policy.module = Module::UDP;
+        memcpy(policy.ip, ip, 4);
+        policy.port = port;
+        policy.payloadLength = 1;
+        int entryIndex = -1;
+        return matchWriteGrant(policy, _snapshot, _copyGrants(_snapshot), &entryIndex) == GrantMatch::ALLOWED;
+    }
+
     static void _runChecked(const Request& rq, Result& result, uint32_t start) {
         if (!_validate(rq, result)) return;
 

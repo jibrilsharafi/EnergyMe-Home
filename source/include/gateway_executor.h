@@ -129,6 +129,10 @@ namespace GatewayExec
     using ResultScrub = void (*)(const Request& request, Result& result);
     void setResultScrub(ResultScrub scrub);
 
+    // A `udp` write grant admits ip:port (the discovery broadcasts, which skip
+    // run()). Gateway task only: it shares run()'s grant snapshot.
+    bool udpWriteGranted(const uint8_t ip[4], uint16_t port);
+
     bool httpsAvailable();
 
     // Write grants (one list, replaced as a whole).
