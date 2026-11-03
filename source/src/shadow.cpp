@@ -524,6 +524,8 @@ static void _reportInfo(JsonDocument& doc) {
     rep["serial_number"] = serial;
     rep["pcb_revision"] = pcbRev;
     rep["manufacturing_unix"] = mfgTs;
+
+    Gateway::statusToJson(rep["gateway"].to<JsonObject>());
 }
 
 // ============================================================================

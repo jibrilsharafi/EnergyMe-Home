@@ -29,6 +29,10 @@ constexpr OpEntry OPS[] = {
     {"secret_set", Op::SECRET_SET},
     {"secret_delete", Op::SECRET_DELETE},
     {"collector_status", Op::COLLECTOR_STATUS},
+    {"wifi_scan", Op::WIFI_SCAN},
+    {"discover", Op::DISCOVER},
+    {"udp_listen", Op::UDP_LISTEN},
+    {"mdns_query", Op::MDNS_QUERY},
 };
 
 void putU16(uint8_t *p, uint16_t v) {

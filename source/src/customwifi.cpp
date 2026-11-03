@@ -2,6 +2,8 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "customwifi.h"
+
+#include <atomic>
 #include "custometh.h"
 #include "customnet.h"
 #include "taskprofiler.h"
@@ -349,9 +351,14 @@ namespace CustomWifi
   // is single threaded. That is what makes the buffer safe to touch without a mutex, and it
   // is why the buffer is NOT freed from the WiFi task on AP teardown: that would race a
   // getScanResultsAsJson() mid-iteration over results the driver had just freed.
+  // Set around the gateway's raw scan: a provisioning scan started meanwhile could
+  // have Arduino's SCAN_DONE handler take (and free) the gateway's records.
+  static std::atomic<bool> _gatewayScanActive{false};
+
   bool startScan()
   {
     if (WiFi.scanComplete() == WIFI_SCAN_RUNNING) return true; // Already in flight
+    if (_gatewayScanActive) return false;                      // Radio busy for a gateway scan; the client polls again
 
     // Never scan while an association attempt is in flight: esp_wifi_scan_start returns
     // ESP_ERR_WIFI_STATE during connect, and on some paths it aborts the attempt.
@@ -471,6 +478,52 @@ namespace CustomWifi
       network["channel"] = WiFi.channel(i);
       network["secure"] = WiFi.encryptionType(i) != WIFI_AUTH_OPEN;
     }
+  }
+
+  // Raw IDF scan for the LAN gateway, separate from the provisioning scan above: Arduino's
+  // scan buffer belongs to the AsyncTCP task, and Arduino's SCAN_DONE handler ignores a scan
+  // it did not start (no WIFI_SCANNING_BIT), so it never takes these records. The driver
+  // holds the AP list in internal RAM until it is read, which happens right here.
+  GatewayScanResult scanForGateway(uint8_t channel, bool showHidden, wifi_ap_record_t *records, uint16_t cap,
+                                   uint16_t *count, uint16_t *found)
+  {
+    *count = 0;
+    *found = 0;
+    wifi_mode_t mode = WIFI_MODE_NULL;
+    if (esp_wifi_get_mode(&mode) != ESP_OK || (mode & WIFI_MODE_STA) == 0 || WiFi.AP.started()) {
+      return GatewayScanResult::UNAVAILABLE;
+    }
+    // Same unsynchronised zero/nonzero read as startScan(): a torn value refuses one scan
+    // or lets the driver refuse it with ESP_ERR_WIFI_STATE.
+    if (_connectDeadlineMs != 0 || WiFi.scanComplete() == WIFI_SCAN_RUNNING) return GatewayScanResult::BUSY;
+
+    wifi_scan_config_t config = {};
+    config.channel = channel;
+    config.show_hidden = showHidden;
+    config.scan_type = WIFI_SCAN_TYPE_ACTIVE;
+    config.scan_time.active.min = WIFI_GATEWAY_SCAN_MIN_MS_PER_CHANNEL;
+    config.scan_time.active.max = WIFI_SCAN_MS_PER_CHANNEL;
+    config.home_chan_dwell_time = WIFI_GATEWAY_SCAN_HOME_DWELL_MS;
+    _gatewayScanActive = true;
+    esp_err_t err = esp_wifi_scan_start(&config, true);
+    _gatewayScanActive = false;
+    if (err == ESP_ERR_WIFI_NOT_INIT || err == ESP_ERR_WIFI_NOT_STARTED) return GatewayScanResult::UNAVAILABLE;
+    if (err == ESP_ERR_WIFI_STATE) return GatewayScanResult::BUSY;
+    if (err != ESP_OK) {
+      LOG_WARNING("Gateway WiFi scan failed: %s", esp_err_to_name(err));
+      esp_wifi_clear_ap_list();
+      return GatewayScanResult::FAILED;
+    }
+
+    esp_wifi_scan_get_ap_num(found);
+    uint16_t n = cap;
+    err = esp_wifi_scan_get_ap_records(&n, records); // frees the driver's whole list
+    if (err != ESP_OK) {
+      esp_wifi_clear_ap_list();
+      return err == ESP_ERR_NO_MEM ? GatewayScanResult::NO_MEMORY : GatewayScanResult::FAILED;
+    }
+    *count = n;
+    return GatewayScanResult::OK;
   }
 
   void getStoredSsid(char* out, size_t outSize)

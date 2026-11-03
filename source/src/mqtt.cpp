@@ -268,6 +268,7 @@ namespace Mqtt
     static void _handleGatewayCommand(const char* executionId, JsonDocument& doc);
     static void _handleCollectorStatus(const char* executionId, JsonDocument& doc);
     static void _drainGatewayResult();
+    static void _reportGatewayStatus();
     static void _handleTunnelCommand(const char* executionId, GatewayLogic::Op op, JsonDocument& doc);
     static void _serviceTunnel();
     static void _serviceCollector();
@@ -1565,7 +1566,7 @@ namespace Mqtt
             return;
         } else if (op == GatewayLogic::Op::UNKNOWN) {
             reasonCode = "UNKNOWN_OP";
-            description = "op must be ping, net_scan, http_request, https_request, tls_probe, modbus_read, modbus_write, udp_send, tcp_request, secret_set, secret_delete, tunnel_open, tunnel_close or collector_status";
+            description = "op must be ping, net_scan, http_request, https_request, tls_probe, modbus_read, modbus_write, udp_send, tcp_request, wifi_scan, discover, udp_listen, mdns_query, secret_set, secret_delete, tunnel_open, tunnel_close or collector_status";
         } else {
             switch (Gateway::submit(executionId, op, doc["args"])) {
                 case Gateway::SubmitResult::ACCEPTED:
@@ -1770,6 +1771,25 @@ namespace Mqtt
         if (!Gateway::takeResult(executionId, sizeof(executionId), &responseJson)) return;
         LOG_DEBUG("Gateway result %s (%u bytes): %.300s", executionId, (unsigned)strlen(responseJson), responseJson);
         _publishCommandResponse(executionId, responseJson);
+    }
+
+    // The info shadow carries the gateway status (openspec add-gateway-discovery).
+    // Reported once the status has been stable for GATEWAY_STATUS_DEBOUNCE_MS, so a
+    // burst of commands publishes once and a command still running shows busy.
+    static void _reportGatewayStatus() {
+        static uint32_t reported = 0;
+        static uint32_t seen = 0;
+        static uint64_t changedAtMs = 0;
+        uint32_t sequence = Gateway::statusSequence();
+        if (sequence == reported) return;
+        if (sequence != seen) {
+            seen = sequence;
+            changedAtMs = millis64();
+            return;
+        }
+        if (millis64() - changedAtMs < GATEWAY_STATUS_DEBOUNCE_MS) return;
+        Shadow::requestReport("info");
+        reported = sequence;
     }
 
     // Command handoff. Both the broker RX path (_subscribeCallback) and the dev
@@ -3690,6 +3710,7 @@ namespace Mqtt
         Shadow::checkPublish(); // drain shadow deltas/local-edits/reports (MQTT task body)
         _drainPendingCommand(); // process queued IoT Command (broker RX or dev inject) off the callback
         _drainGatewayResult(); // publish a finished LAN gateway request from the task body
+        _reportGatewayStatus(); // info shadow gateway status, debounced
         _serviceTunnel(); // tunnel uplink frames and terminal status, after telemetry
         _serviceCollector(); // collector parts, at most one message per second
         _checkOfflineEnergyReplay(); // last, so a backlog never delays live publishes, commands or the tunnel

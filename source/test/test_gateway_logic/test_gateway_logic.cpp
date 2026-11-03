@@ -481,6 +481,7 @@ void test_utf8_truncated_to_nothing_is_not_text(void) {
 void run_gateway_policy_tests(void);
 void run_gateway_template_tests(void);
 void run_gateway_stream_tests(void);
+void run_gateway_discovery_tests(void);
 
 int main(int, char **) {
     UNITY_BEGIN();
@@ -525,5 +526,6 @@ int main(int, char **) {
     run_gateway_policy_tests();
     run_gateway_template_tests();
     run_gateway_stream_tests();
+    run_gateway_discovery_tests();
     return UNITY_END();
 }
