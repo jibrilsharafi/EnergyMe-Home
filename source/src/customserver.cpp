@@ -2211,6 +2211,7 @@ namespace CustomServer
                     respDoc["newTime"] = isoBuffer;
 
                     _sendJsonResponse(request, respDoc);
+                    releaseMutex(&_apiMutex); // taken by _validateRequest; only the success/error helpers release it
                 }
                 else
                 {
