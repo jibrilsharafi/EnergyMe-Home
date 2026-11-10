@@ -275,6 +275,9 @@ bool isFirstBootDone();
 void setFirstBootDone();
 void createAllNamespaces();
 void clearAllPreferences();
+// Factory reset for the boot-loop ladder, before WiFi, LittleFS or any task is
+// up. Does not restart: the caller does, flagged as deliberate.
+void factoryResetAtBoot();
 
 // LittleFS file operations
 bool listLittleFsFiles(JsonDocument &doc, const char* folderPath = nullptr); // Optional folder path to filter files

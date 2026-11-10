@@ -14,6 +14,7 @@
 
 #include <esp_random.h>
 #include <esp_wifi.h>
+#include <nvs.h>
 
 #include "taskprofiler.h"
 
@@ -1173,6 +1174,18 @@ static void _factoryReset() { // No logger here it is likely destroyed already
     // resetWifi() erases via this same call). Without this, a factory reset left the
     // device rejoining its old network on the next boot instead of coming up unprovisioned.
     esp_err_t err = esp_wifi_restore();
+    if (err == ESP_ERR_WIFI_NOT_INIT) {
+        // The boot-loop ladder wipes before WiFi exists: erase the driver's store directly
+        nvs_handle_t handle;
+        err = nvs_open(PREFERENCES_DEFAULT_NAMESPACE_WIFI, NVS_READWRITE, &handle);
+        if (err == ESP_OK) {
+            err = nvs_erase_all(handle);
+            if (err == ESP_OK) err = nvs_commit(handle);
+            nvs_close(handle);
+        } else if (err == ESP_ERR_NVS_NOT_FOUND) {
+            err = ESP_OK; // Never associated: nothing stored
+        }
+    }
     if (err != ESP_OK) {
         Serial.printf("[ERROR] Failed to erase stored WiFi credentials: %s\n", esp_err_to_name(err));
     }
@@ -1191,6 +1204,10 @@ static void _factoryReset() { // No logger here it is likely destroyed already
     LittleFS.format();
 
     // Removed ESP.restart() call since the factory reset must be called only from the restart task
+}
+
+void factoryResetAtBoot() {
+    _factoryReset();
 }
 
 bool isFirstBootDone() {
