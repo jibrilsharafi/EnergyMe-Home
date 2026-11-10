@@ -41,6 +41,7 @@ enum class Code : uint8_t {
     Ade7953ReadFailures,      // sustained meter reading failures
     AuthBruteForce,           // event: a source was locked out for repeated failed web logins
     OverTemperature,          // sustained high internal die temperature
+    RecoveryModeActive,       // boot-loop ladder put the device in a degraded boot
     Count
 };
 

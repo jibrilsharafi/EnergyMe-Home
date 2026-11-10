@@ -41,6 +41,8 @@ void test_severity_mapping(void) {
     TEST_ASSERT_EQUAL(Severity::Warning, codeSeverity(Code::CloudMqttDisconnected));
     TEST_ASSERT_EQUAL(Severity::Warning, codeSeverity(Code::InfluxDbUploadFailing));
     TEST_ASSERT_EQUAL(Severity::Error, codeSeverity(Code::SafeModeActive));
+    TEST_ASSERT_EQUAL(Severity::Error, codeSeverity(Code::RecoveryModeActive));
+    TEST_ASSERT_EQUAL_STRING("recovery_mode_active", codeToString(Code::RecoveryModeActive));
     TEST_ASSERT_EQUAL(Severity::Warning, codeSeverity(Code::HeapLow));
 }
 
