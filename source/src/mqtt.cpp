@@ -3,6 +3,7 @@
 
 #include "mqtt.h"
 #include "issueregistry.h"
+#include "bootrecovery.h"
 #include "crashmonitor.h"
 #include "shadow.h"
 #include "rollback_logic.h"
@@ -2383,7 +2384,7 @@ namespace Mqtt
 
             // Fresh image in the partition - give it its own rollback chance,
             // independent of whatever the previous firmware already consumed
-            CrashMonitor::clearRollbackTried();
+            BootRecovery::setAutoRollbackBlocked(false);
 
             // Give time for MQTT message to be sent - no need to rush to the restart
             delay(2000);

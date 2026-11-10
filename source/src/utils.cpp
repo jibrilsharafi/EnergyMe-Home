@@ -889,21 +889,21 @@ FirmwareRollbackResult attemptFirmwareRollback(const char* reason) {
         return FirmwareRollbackResult::INVALID_IMAGE;
     }
 
-    // Disarm the crash-driven auto-rollback BEFORE scheduling the restart: the
+    // Disarm the boot-loop ladder's auto-rollback BEFORE scheduling the restart: the
     // restart task can preempt this one, and the device must never reboot with
     // the flag unset (the crash ladder would bounce straight back to the image
     // the operator just left). The pending-OTA record is deliberately NOT
     // cleared: it belongs to the job that flashed the currently running image,
     // and the post-reboot validation reporting that job FAILED
     // (sha256_mismatch_firmware_rollback) is its correct terminal status.
-    CrashMonitor::markRollbackTried();
+    BootRecovery::setAutoRollbackBlocked(true);
 
     if (!setRestartSystem(reason)) {
         // Residual race only (both refusal branches were pre-checked above).
         // setRestartSystem holds a refused restart rather than cancelling it, so
         // undo everything or that held restart would silently execute the
         // rollback after we report failure.
-        CrashMonitor::clearRollbackTried();
+        BootRecovery::setAutoRollbackBlocked(false);
         esp_err_t restoreErr = esp_ota_set_boot_partition(running);
         if (restoreErr != ESP_OK) {
             // Practically unreachable (the running image validated at boot); if it

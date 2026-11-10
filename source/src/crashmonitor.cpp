@@ -3,7 +3,6 @@
 
 #include "crashmonitor.h"
 #include "bootrecovery.h"
-#include "app_image_descriptor.h"
 #include "duration_format.h"
 
 #include <LittleFS.h>
@@ -70,7 +69,6 @@ namespace CrashMonitor
     RTC_NOINIT_ATTR uint32_t _crashCount = 0; // Total crashes since first boot
     RTC_NOINIT_ATTR uint32_t _consecutiveCrashCount = 0; // Consecutive crashes (resets after 180s stable)
     RTC_NOINIT_ATTR uint32_t _consecutiveResetCount = 0; // Consecutive resets (resets after 180s stable)
-    RTC_NOINIT_ATTR bool _rollbackTried = false; // Rollback attempted flag (prevents infinite rollback loops)
     
     // Tier 1: Quick restart tracking (rapid loop detection for safe mode)
     RTC_NOINIT_ATTR uint32_t _quickRestartCount = 0; // Number of quick consecutive restarts (resets when restart > 60s uptime)
@@ -109,18 +107,6 @@ namespace CrashMonitor
 
     void clearConsecutiveCrashCount() {
         _consecutiveCrashCount = 0;
-    }
-
-    void clearRollbackTried() {
-        if (_rollbackTried) {
-            LOG_DEBUG("Clearing rollback-tried flag, re-arming rollback eligibility");
-            _rollbackTried = false;
-        }
-    }
-
-    void markRollbackTried() {
-        LOG_DEBUG("Marking rollback as tried (deliberate rollback in progress)");
-        _rollbackTried = true;
     }
 
     bool isInSafeMode() {
@@ -179,7 +165,6 @@ namespace CrashMonitor
             _crashCount = 0;
             _consecutiveCrashCount = 0;
             _consecutiveResetCount = 0;
-            _rollbackTried = false;
             _quickRestartCount = 0;
             _lastBootTimestamp = 0;
             _safeModeActive = false;
@@ -345,12 +330,6 @@ namespace CrashMonitor
         _consecutiveCrashCount = 0;
         _consecutiveResetCount = 0;
         // Note: Don't reset _quickRestartCount here - it's managed separately based on restart timing
-
-        // Stable operation proves this boot isn't the tail of a crash loop, so
-        // rollback eligibility can be re-armed without waiting for a power cycle
-        // (RTC_NOINIT_ATTR _rollbackTried otherwise stays stuck true across every
-        // reset until power is physically cut - see issue found 2026-07-23).
-        clearRollbackTried();
 
         _crashResetTaskHandle = nullptr;
         vTaskDelete(NULL);

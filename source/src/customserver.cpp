@@ -1441,7 +1441,7 @@ namespace CustomServer
 
             // Fresh image in the partition - give it its own rollback chance,
             // independent of whatever the previous firmware already consumed
-            CrashMonitor::clearRollbackTried();
+            BootRecovery::setAutoRollbackBlocked(false);
 
             Led::blinkGreenFast(Led::PRIO_CRITICAL, 3000ULL);
             setRestartSystem("Restart needed after firmware update");

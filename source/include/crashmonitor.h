@@ -7,7 +7,6 @@
 #include <esp_system.h>
 #include <AdvancedLogger.h>
 #include <Arduino.h>
-#include <Update.h>
 #include <ArduinoJson.h>
 #include "esp_core_dump.h"
 
@@ -109,8 +108,6 @@ namespace CrashMonitor {
     uint32_t getConsecutiveResetCount();
 
     void clearConsecutiveCrashCount(); // Useful for avoiding crash loops (e.g. during factory reset)
-    void clearRollbackTried(); // Re-arm rollback eligibility: call after stable operation, and after every successful OTA flash (new partition contents = new image, deserves its own rollback chance)
-    void markRollbackTried(); // Deliberate rollback in progress: keeps the crash-driven auto-rollback from bouncing back to the image the operator just left
 
     // Safe mode protection
     bool isInSafeMode(); // Returns true if device is in safe mode (rapid restart protection)
