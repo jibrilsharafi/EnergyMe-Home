@@ -132,6 +132,10 @@ void setup()
   // Before anything that touches flash state (LittleFS, the NVS restore, the logger),
   // so a fault in any of them is counted. May factory reset or roll back and restart.
   BootRecovery::begin();
+  if (BootRecovery::isDegraded()) {
+    Led::blinkPurpleFast(Led::PRIO_CRITICAL); // Recovery boot, over the AP blink and every boot colour
+    if (BootRecovery::cloudDisabled()) globalCommunityMode = true; // Minimal: the cloud stack stays down
+  }
 
   if (!isFirstBootDone())
   {
@@ -350,8 +354,12 @@ void setup()
   LOG_DEBUG("Maintenance task started");
   logHeapLedger("maintenance");
 
-  // Visual indicator for safe mode (restart protection active)
-  if (CrashMonitor::isInSafeMode()) {
+  // Visual indicator for safe mode (restart protection active). A recovery boot keeps its own.
+  if (BootRecovery::isDegraded()) {
+    LOG_WARNING("Recovery boot (%s): meter passive%s. Update the firmware or exit recovery from the API",
+                BootRecoveryLogic::stageToString(BootRecovery::stage()),
+                BootRecovery::cloudDisabled() ? ", cloud disabled" : "");
+  } else if (CrashMonitor::isInSafeMode()) {
     Led::setPurple(Led::PRIO_CRITICAL); // Purple = safe mode (restart protection)
   } else {
     Led::setGreen(Led::PRIO_NORMAL);

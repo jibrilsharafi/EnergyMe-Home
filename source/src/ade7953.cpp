@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "ade7953.h"
+#include "bootrecovery.h"
 #include "taskprofiler.h"
 #include "duration_format.h"
 #include "grid_frequency.h"
@@ -343,6 +344,13 @@ namespace Ade7953
         const float ratio = globalHwProfile->voltageDividerR2 / (globalHwProfile->voltageDividerR1 + globalHwProfile->voltageDividerR2);
         _voltPerLsb             = (MAXIMUM_ADC_CHANNEL_INPUT / 1.41421356f) / ratio / static_cast<float>(FULL_SCALE_LSB_FOR_RMS_VALUES);
         _voltPerLsbInstantaneous = MAXIMUM_ADC_CHANNEL_INPUT / ratio / static_cast<float>(FULL_SCALE_LSB_FOR_INSTANTANEOUS_VALUES);
+
+        // Same state as a meter that does not answer, which the rest of the firmware
+        // already tolerates: mutexes and buffers exist, no SPI, interrupts or tasks
+        if (BootRecovery::meterPassive()) {
+            LOG_WARNING("Recovery boot: meter left passive");
+            return false;
+        }
 
         if (!_verifyCommunication()) {
             LOG_ERROR("Failed to communicate with ADE7953");
