@@ -27,6 +27,11 @@ The trigger is still unknown, but the loop could not have broken itself on any f
 
 Not covered, still USB-only: a crash inside the WiFi or web server stack itself, or one before `setup()` reaches the LED.
 
+Known limits:
+- On the first release with the ladder, an automatic rollback can only land on a release without it. If that older image also loops before its own crash monitor starts, it stays there.
+- Loops of deliberate restarts longer than 60 s (a health check that keeps failing) are left to safe mode and are not counted.
+- If NVS cannot be opened, the ladder is disabled for that boot.
+
 ## Capabilities
 
 ### New Capabilities

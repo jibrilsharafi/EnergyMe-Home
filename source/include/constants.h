@@ -67,6 +67,7 @@
 #define PREFERENCES_NAMESPACE_UDP_LOG "udp_log_ns"
 #define PREFERENCES_NAMESPACE_GATEWAY "gateway_ns"
 #define PREFERENCES_NAMESPACE_SECRETS "secrets_ns" // write-only credentials, never in a backup
+#define PREFERENCES_NAMESPACE_RECOVERY "recovery_ns" // boot-loop ladder state, see bootrecovery.h
 
 // Default ESP32 NVS spaces (only for reference - should never be touched)
 #define PREFERENCES_DEFAULT_NAMESPACE_PHY "phy"
@@ -80,7 +81,7 @@
     PREFERENCES_DEFAULT_NAMESPACE_PHY, \
     PREFERENCES_NAMESPACE_FACTORY, \
     PREFERENCES_NAMESPACE_SECRETS, \
-    "recovery_ns" /* PREFERENCES_NAMESPACE_RECOVERY in bootrecovery.h: the ladder outlives its own wipe */
+    PREFERENCES_NAMESPACE_RECOVERY /* the ladder outlives its own wipe */
 
 #define TO_INITIALIZE_NVS_NAMESPACES_LIST \
     PREFERENCES_NAMESPACE_GENERAL, \

@@ -34,6 +34,10 @@ namespace BootRecovery
     static ResetKind _classifyReset(esp_reset_reason_t reason) {
         switch (reason) {
             case ESP_RST_POWERON:
+            // A sagging supply is not a firmware loop, and a wipe would not fix it:
+            // a storm of brownouts must never cost the user their configuration
+            case ESP_RST_BROWNOUT:
+            case ESP_RST_PWR_GLITCH:
             case ESP_RST_EXT:
             case ESP_RST_USB:
             case ESP_RST_JTAG:
@@ -42,7 +46,7 @@ namespace BootRecovery
             case ESP_RST_SW:
                 return ResetKind::Software;
             default:
-                return ResetKind::Fault; // Panics, watchdogs, brownout and anything unknown
+                return ResetKind::Fault; // Panics, watchdogs and anything unknown
         }
     }
 
@@ -112,7 +116,10 @@ namespace BootRecovery
                       BootRecoveryLogic::stageToString(storedStage), BootRecoveryLogic::stageToString(decision.stage),
                       storedUnstable, decision.unstableBoots, firmwareMatches ? "" : " | new firmware");
 
-        if (!firmwareMatches) prefs.putString(BOOT_RECOVERY_FIRMWARE_KEY, firmwareId);
+        if (!firmwareMatches) {
+            prefs.putString(BOOT_RECOVERY_FIRMWARE_KEY, firmwareId);
+            prefs.remove(BOOT_RECOVERY_DEBUG_CRASH_KEY); // A reflash always gets a bench device back
+        }
         if (!firmwareMatches || decision.stage != storedStage) prefs.putUChar(BOOT_RECOVERY_STAGE_KEY, (uint8_t)decision.stage);
         if (!firmwareMatches || decision.unstableBoots != storedUnstable) prefs.putUChar(BOOT_RECOVERY_UNSTABLE_KEY, decision.unstableBoots);
 
@@ -146,7 +153,6 @@ namespace BootRecovery
     }
 
     Stage stage() { return _stage; }
-    uint8_t unstableBoots() { return _unstableBoots; }
     bool meterPassive() { return BootRecoveryLogic::meterPassive(_stage); }
     bool cloudDisabled() { return BootRecoveryLogic::cloudDisabled(_stage); }
     bool isDegraded() { return BootRecoveryLogic::isDegraded(_stage); }
@@ -163,9 +169,25 @@ namespace BootRecovery
         }
         if (prefs.getUChar(BOOT_RECOVERY_UNSTABLE_KEY, 0) != 0) prefs.putUChar(BOOT_RECOVERY_UNSTABLE_KEY, 0);
         if (prefs.getBool(BOOT_RECOVERY_AUTO_ROLLBACK_KEY, false)) prefs.putBool(BOOT_RECOVERY_AUTO_ROLLBACK_KEY, false);
+        // A full boot that holds proves the wipe (or the recovery exit) worked: the
+        // next loop on this firmware starts the ladder from the top again
+        if (_stage == Stage::Wiped) {
+            prefs.putUChar(BOOT_RECOVERY_STAGE_KEY, (uint8_t)Stage::Normal);
+            _stage = Stage::Normal;
+        }
         prefs.end();
         _unstableBoots = 0;
         LOG_DEBUG("Boot marked stable for the boot-loop ladder");
+    }
+
+    void setAutoRollbackBlocked(bool blocked) {
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_RECOVERY, false)) {
+            LOG_WARNING("Cannot open the recovery namespace to %s automatic rollback", blocked ? "block" : "allow");
+            return;
+        }
+        prefs.putBool(BOOT_RECOVERY_AUTO_ROLLBACK_KEY, blocked);
+        prefs.end();
     }
 
     bool requestExit() {

@@ -2152,7 +2152,6 @@ namespace CustomServer
                 _sendSuccessResponse(request, "Device is not in safe mode");
             } });
 
-        // Boot-loop ladder state
         server.on("/api/v1/system/recovery", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
             SpiRamAllocator allocator;
@@ -3164,8 +3163,9 @@ namespace CustomServer
 
             auto param = request->getParam("untilStage");
             long untilStage = param ? strtol(param->value().c_str(), nullptr, 10) : -1;
-            if (untilStage < 0 || untilStage > (long)BootRecoveryLogic::Stage::Minimal + 1) {
-                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "untilStage must be 0 (disarm) to 4");
+            // Capped at Minimal: crashing in Minimal too would leave no web server to disarm it
+            if (untilStage < 0 || untilStage > (long)BootRecoveryLogic::Stage::Minimal) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "untilStage must be 0 (disarm) to 3");
                 return;
             }
             if (!BootRecovery::setBootCrashThreshold((uint8_t)untilStage)) {

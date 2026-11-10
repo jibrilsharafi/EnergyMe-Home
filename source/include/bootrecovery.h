@@ -7,6 +7,7 @@
 #include <ArduinoJson.h>
 
 #include "boot_recovery_logic.h" // lib/boot_recovery_logic - pure ladder (host-tested)
+#include "constants.h"
 
 // Boot-loop ladder (openspec capability: boot-loop-recovery). Runs first thing in
 // setup(), before LittleFS, the NVS restore or the logger, and needs nothing but
@@ -16,7 +17,6 @@
 // Minimal (also no cloud). The stage sticks to the running firmware and survives
 // power cycles; a firmware change clears it.
 
-#define PREFERENCES_NAMESPACE_RECOVERY "recovery_ns" // Excluded from factory reset and backups
 #define BOOT_RECOVERY_STAGE_KEY "stage"
 #define BOOT_RECOVERY_UNSTABLE_KEY "unstable"
 #define BOOT_RECOVERY_FIRMWARE_KEY "fw"
@@ -32,7 +32,6 @@ namespace BootRecovery
     void begin();
 
     BootRecoveryLogic::Stage stage();
-    uint8_t unstableBoots();
     bool meterPassive();
     bool cloudDisabled();
     bool isDegraded();
@@ -41,8 +40,14 @@ namespace BootRecovery
     // it as unstable. Survives software resets only (RTC memory).
     void markDeliberateRestart();
 
-    // The boot reached COUNTERS_RESET_TIMEOUT: clear the unstable-boot count.
+    // The boot reached COUNTERS_RESET_TIMEOUT: clear the unstable-boot count, and
+    // drop Wiped back to Normal.
     void markStable();
+
+    // Blocked while an operator rollback is in flight, so the ladder never bounces
+    // back to the image just left; allowed again after a fresh OTA. Stable boots
+    // clear it too.
+    void setAutoRollbackBlocked(bool blocked);
 
     // Leave Recovery/Minimal: the next boot is a full one, re-entering the ladder
     // at Wiped so a repeated failure goes back to Recovery without a second wipe.
