@@ -678,6 +678,62 @@ paths:
         '200':
           $ref: '#/components/responses/Success'
 
+  /api/v1/system/recovery:
+    get:
+      summary: Get boot-loop recovery state
+      description: >-
+        Stage of the boot-loop ladder. Three boots in a row that end within three minutes without a
+        deliberate restart escalate one stage: normal (rollback or factory reset), wiped, recovery
+        (meter stopped, no Modbus TCP), minimal (recovery plus no cloud). The stage sticks until the
+        firmware changes or the recovery is exited.
+      tags:
+        - System
+      responses:
+        '200':
+          description: Recovery state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stage:
+                    type: string
+                    enum: [normal, wiped, recovery, minimal]
+                    example: recovery
+                  unstableBoots:
+                    type: integer
+                    description: Consecutive unstable boots counted so far
+                    example: 0
+                  unstableBootsToEscalate:
+                    type: integer
+                    example: 3
+                  degraded:
+                    type: boolean
+                    description: The device booted in recovery or minimal
+                    example: true
+                  meterPassive:
+                    type: boolean
+                    example: true
+                  cloudDisabled:
+                    type: boolean
+                    example: false
+
+  /api/v1/system/recovery/exit:
+    post:
+      summary: Exit recovery mode
+      description: >-
+        Leaves recovery or minimal and restarts into a full boot. If the device keeps failing, it goes
+        back to recovery without a second factory reset.
+      tags:
+        - System
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /api/v1/system/secrets:
     get:
       summary: Check secrets availability

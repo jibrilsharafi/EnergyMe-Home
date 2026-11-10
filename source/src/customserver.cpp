@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "customserver.h"
+#include "bootrecovery.h"
 #include "collector.h"
 #include "gateway.h"
 #include "gateway_executor.h"
@@ -2151,6 +2152,30 @@ namespace CustomServer
                 _sendSuccessResponse(request, "Device is not in safe mode");
             } });
 
+        // Boot-loop ladder state
+        server.on("/api/v1/system/recovery", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            BootRecovery::toJson(doc);
+            _sendJsonResponse(request, doc); });
+
+        // Leave a recovery boot: the next boot is a full one
+        server.on("/api/v1/system/recovery/exit", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
+            if (!_validateRequest(request, "POST")) return;
+
+            if (!BootRecovery::isDegraded()) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Device is not in recovery mode");
+                return;
+            }
+            if (!BootRecovery::requestExit()) {
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to leave recovery mode");
+                return;
+            }
+            _sendSuccessResponse(request, "Leaving recovery mode. Device will restart.");
+            setRestartSystem("Recovery mode exit requested via API"); });
+
         // Check if secrets exist
         server.on("/api/v1/system/secrets", HTTP_GET, [](AsyncWebServerRequest *request)
                   {
@@ -3131,7 +3156,26 @@ namespace CustomServer
             portENABLE_INTERRUPTS();
         });
 
-        LOG_DEBUG("Registered dev-only crash test endpoints: null-deref, abort, stack-overflow, int-wdt");
+        // Arms a crash right after LittleFS mounts on every boot while the boot-loop ladder's
+        // stage is below untilStage (0 disarms), to walk the ladder on the bench
+        server.on("/api/v1/debug/boot-crash", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
+            if (!_validateRequest(request, "POST")) return;
+
+            auto param = request->getParam("untilStage");
+            long untilStage = param ? strtol(param->value().c_str(), nullptr, 10) : -1;
+            if (untilStage < 0 || untilStage > (long)BootRecoveryLogic::Stage::Minimal + 1) {
+                _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "untilStage must be 0 (disarm) to 4");
+                return;
+            }
+            if (!BootRecovery::setBootCrashThreshold((uint8_t)untilStage)) {
+                _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to store the boot crash threshold");
+                return;
+            }
+            LOG_WARNING("Debug endpoint: boot crash armed until stage %ld", untilStage);
+            _sendSuccessResponse(request, untilStage == 0 ? "Boot crash disarmed" : "Boot crash armed, restart to start the loop"); });
+
+        LOG_DEBUG("Registered dev-only crash test endpoints: null-deref, abort, stack-overflow, int-wdt, boot-crash");
 
         // Bench aid for the offline energy buffer: drops the cloud session and keeps it down
         // for `seconds` (0 ends it), without touching the LAN the web UI and tunnel use
