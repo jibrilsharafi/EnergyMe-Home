@@ -310,6 +310,14 @@ namespace Ade7953
     // Core lifecycle management
     // =========================
 
+    // A recovery boot leaves the meter passive: nothing was loaded from NVS, so a
+    // write would persist defaults over the user's configuration, channels or energy
+    static bool _refusedWhilePassive() {
+        if (!BootRecovery::meterPassive()) return false;
+        LOG_WARNING("Recovery boot: meter is passive, change refused");
+        return true;
+    }
+
     bool begin(
         uint8_t ssPin,
         uint8_t sckPin,
@@ -580,6 +588,7 @@ namespace Ade7953
     }
 
     bool setConfiguration(const Ade7953Configuration &config) {
+        if (_refusedWhilePassive()) return false;
         if (!acquireMutex(&_configMutex, CONFIG_MUTEX_TIMEOUT_MS)) {
             LOG_ERROR("Failed to acquire config mutex for setConfiguration");
             return false;
@@ -597,6 +606,7 @@ namespace Ade7953
     }
 
     void resetConfiguration() {
+        if (_refusedWhilePassive()) return;
         LOG_DEBUG("Resetting ADE7953 configuration to defaults...");
 
         Ade7953Configuration defaultConfig;
@@ -612,6 +622,7 @@ namespace Ade7953
 
     bool setConfigurationFromJson(const JsonDocument &jsonDocument, bool partial)
     {
+        if (_refusedWhilePassive()) return false;
         Ade7953Configuration config;
         config = _configuration; // Start with current configuration
         if (!configurationFromJson(jsonDocument, config, partial)) {
@@ -711,6 +722,7 @@ namespace Ade7953
     }
 
     bool setSampleTime(uint64_t sampleTime) {
+        if (_refusedWhilePassive()) return false;
         if (sampleTime < MINIMUM_SAMPLE_TIME) {
             LOG_WARNING("Sample time %llu is below minimum %llu", sampleTime, MINIMUM_SAMPLE_TIME);
             return false;
@@ -735,6 +747,7 @@ namespace Ade7953
     }
 
     bool setVoltagePhase(Phase voltagePhase) {
+        if (_refusedWhilePassive()) return false;
         if (!PhaseUtils::isValidVoltagePhase(voltagePhase)) {
             LOG_WARNING("Invalid voltage phase %lu (valid: 1-3)", static_cast<unsigned long>(voltagePhase));
             return false;
@@ -843,6 +856,7 @@ namespace Ade7953
     }
 
     bool setChannelData(const ChannelData &channelData, uint8_t channelIndex, bool* roleChanged, bool armTransients) {
+        if (_refusedWhilePassive()) return false;
         if (!isChannelValid(channelIndex)) {
             LOG_WARNING("Channel index out of bounds: %lu", channelIndex);
             return false;
@@ -949,6 +963,7 @@ namespace Ade7953
     }
 
     bool resetChannelData(uint8_t channelIndex) {
+        if (_refusedWhilePassive()) return false;
         if (!isChannelValid(channelIndex)) {
             LOG_WARNING("Channel index out of bounds: %lu", channelIndex);
             return false;
@@ -1026,6 +1041,7 @@ namespace Ade7953
     }
 
     bool setChannelDataFromJson(const JsonDocument &jsonDocument, bool partial, bool* roleChanged) {
+        if (_refusedWhilePassive()) return false;
         if (!_validateChannelDataJson(jsonDocument, partial)) {
             LOG_WARNING("Invalid channel data JSON. Skipping setting data");
             return false;
@@ -1212,6 +1228,7 @@ namespace Ade7953
     }
 
     void resetEnergyValues() {
+        if (_refusedWhilePassive()) return;
         if (!acquireMutex(&_meterValuesMutex)) {
             LOG_ERROR("Failed to acquire mutex for meter values");
             return;
@@ -1250,6 +1267,7 @@ namespace Ade7953
     }
 
     void resetChannelEnergyValues(uint8_t channelIndex) {
+        if (_refusedWhilePassive()) return;
         if (!isChannelValid(channelIndex)) {
             LOG_ERROR("Invalid channel index: %u", channelIndex);
             return;
@@ -1465,6 +1483,7 @@ namespace Ade7953
         double reactiveEnergyExported,
         double apparentEnergy
     ) {
+        if (_refusedWhilePassive()) return false;
         if (!isChannelValid(channelIndex)) {
             LOG_ERROR("Invalid channel index %d", channelIndex);
             return false;
