@@ -18,16 +18,14 @@
 #include "utils.h"
 
 #ifdef ENV_DEV
-#define MAX_CRASH_COUNT 10     // Higher limits in development
-#define MAX_RESET_COUNT 30
-#define MAX_QUICK_RESTARTS 30
+#define MAX_QUICK_RESTARTS 30  // Higher limit in development
 #else
-#define MAX_CRASH_COUNT 3      // Production defaults
-#define MAX_RESET_COUNT 10
 #define MAX_QUICK_RESTARTS 5
 #endif
 
-#define COUNTERS_RESET_TIMEOUT (180 * 1000) // Timeout for the consecutive crash counter to reset
+// Uptime after which the consecutive crash counters reset and the boot-loop ladder
+// (bootrecovery.h) stops counting this boot as unstable
+#define COUNTERS_RESET_TIMEOUT (180 * 1000)
 
 // Safe mode protection against infinite restart loops
 #define QUICK_RESTART_THRESHOLD (60 * 1000) // Restart is considered "quick" if it happens within this time (1 minute)

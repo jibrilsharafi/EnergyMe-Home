@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "crashmonitor.h"
+#include "bootrecovery.h"
 #include "app_image_descriptor.h"
 #include "duration_format.h"
 
@@ -42,7 +43,6 @@ namespace CrashMonitor
     };
 
     // Private function declarations
-    static void _handleCounters();
     static void _crashResetTask(void *parameter);
     static void _safeModeTask(void *parameter);
     static void _logCompleteCrashData();
@@ -289,13 +289,9 @@ namespace CrashMonitor
             }
         }
         
-        // === ROLLBACK/FACTORY RESET: Last resort for persistent failures ===
-        // This handles the case where crashes/resets keep happening even after safe mode.
-        // Deliberately ahead of the archive below: the archive is the riskiest
-        // thing this function does and runs before WiFi, so the escape hatch has
-        // to get its turn first. Behind it, a bug in the archive path would take
-        // the recovery down with it on every boot.
-        _handleCounters();
+        // Rollback and factory reset live in BootRecovery::begin(), which runs before
+        // LittleFS is mounted and so before the archive below: a bug in the archive
+        // path cannot take the recovery down with it.
 
         // Runs on every boot, not just the crashing one, so a dump left behind by
         // a failed archive is retried rather than lost to the next crash
@@ -336,6 +332,8 @@ namespace CrashMonitor
         LOG_DEBUG("Starting crash/reset counter task (will reset after %lu seconds of stable operation)", COUNTERS_RESET_TIMEOUT / 1000);
 
         delay(COUNTERS_RESET_TIMEOUT);
+
+        BootRecovery::markStable();
         
         // After stable operation, reset the consecutive counters
         bool hadCounters = _consecutiveCrashCount > 0 || _consecutiveResetCount > 0;
@@ -416,49 +414,6 @@ namespace CrashMonitor
     uint32_t getConsecutiveCrashCount() {return _consecutiveCrashCount;}
     uint32_t getResetCount() {return _resetCount;}
     uint32_t getConsecutiveResetCount() {return _consecutiveResetCount;}
-
-    void _handleCounters() {
-        // This is the LAST RESORT - only triggered after safe mode failed to resolve the issue
-        // Safe mode should have already prevented most rapid restart loops
-        if (_consecutiveCrashCount >= MAX_CRASH_COUNT || _consecutiveResetCount >= MAX_RESET_COUNT) {
-            LOG_FATAL("Recovery mode triggered: crashes=%d, resets=%d", _consecutiveCrashCount, _consecutiveResetCount);
-            LOG_FATAL("Safe mode insufficient, attempting rollback/factory reset");
-            
-            // Reset counters before recovery attempt to prevent infinite loops
-            _consecutiveCrashCount = 0;
-            _consecutiveResetCount = 0;
-            _quickRestartCount = 0; // Also clear quick restart counter
-
-            // Try rollback first (if available and not already tried). Never onto an image of
-            // the other product: canRollBack() only looks at the first byte, and such an image
-            // crash-loops without PSRAM.
-            bool rollbackPossible = Update.canRollBack() && !_rollbackTried;
-            ImageDescriptor::Verdict passiveVerdict = rollbackPossible
-                ? AppImageDescriptor::validatePartition(esp_ota_get_next_update_partition(NULL), false)
-                : ImageDescriptor::Verdict::ACCEPT;
-            if (!ImageDescriptor::accepts(passiveVerdict)) {
-                LOG_WARNING("Rollback image is not compatible with this device (%s)", ImageDescriptor::verdictToString(passiveVerdict));
-            } else if (rollbackPossible) {
-                LOG_WARNING("Attempting firmware rollback...");
-                if (Update.rollBack()) {
-                    _rollbackTried = true;
-                    LOG_INFO("Rollback successful, restarting");
-                    ESP.restart(); // Immediate restart, bypass safe mode checks
-                    return;
-                }
-                LOG_ERROR("Rollback failed: %s", Update.errorString());
-            } else if (_rollbackTried) {
-                LOG_WARNING("Rollback already attempted");
-            } else {
-                LOG_WARNING("No rollback partition available");
-            }
-
-            // Last resort: factory reset
-            LOG_FATAL("Initiating factory reset (last recovery option)");
-            _safeModeActive = false;
-            setRestartSystem("Persistent failures - factory reset required", true);
-        }
-    }
 
     static esp_reset_reason_t _getCrashResetReason() {
         if (_crashResetReasonValid) return (esp_reset_reason_t)_crashResetReason;

@@ -16,6 +16,7 @@
 #include "utils.h"
 #include "hardware_profile.h"
 #include "app_image_descriptor.h"
+#include "bootrecovery.h"
 
 #include "ade7953.h"
 #include "buttonhandler.h"
@@ -128,6 +129,10 @@ void setup()
 
   Led::setWhite(Led::PRIO_NORMAL);
 
+  // Before anything that touches flash state (LittleFS, the NVS restore, the logger),
+  // so a fault in any of them is counted. May factory reset or roll back and restart.
+  BootRecovery::begin();
+
   if (!isFirstBootDone())
   {
     setFirstBootDone();
@@ -138,9 +143,13 @@ void setup()
   if (!LittleFS.begin(true)) // Ensure the partition name is "spiffs" in partitions.csv (even when using LittleFS). Setting the partition label to "littlefs" caused issues
   {
     Serial.println("LittleFS initialization failed!");
-    ESP.restart(); // No reason to live if we cannot mount the filesystem
+    ESP.restart(); // No reason to live if we cannot mount the filesystem. Counted by the boot-loop ladder
     return;
   }
+
+#ifdef ENV_DEV
+  BootRecovery::injectBootCrashIfArmed();
+#endif
 
   // Check for pending configuration restore (BEFORE services start = natural "blocked state")
   if (isNvsRestorePending()) {

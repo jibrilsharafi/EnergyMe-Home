@@ -11,6 +11,7 @@
 #include "duration_format.h"
 #include "sha256_hex.h"
 #include "version_compare.h"
+#include "bootrecovery.h"
 
 #include <esp_random.h>
 #include <esp_wifi.h>
@@ -666,6 +667,7 @@ TaskInfo getMaintenanceTaskInfo()
 // even if all other tasks are blocked/deadlocked
 static void _failsafeRestartCallback(void* parameter) {
     // Don't log here - we're in timer context and logging might be what's blocked
+    BootRecovery::markDeliberateRestart();
     ESP.restart();
 }
 
@@ -719,6 +721,7 @@ static void _restartTask(void* parameter) {
     if (factoryReset) { _factoryReset(); }
 
     // 5. Normal restart - if we get here, great. If not, failsafe timer handles it.
+    BootRecovery::markDeliberateRestart();
     ESP.restart();
 
     // Should never reach here

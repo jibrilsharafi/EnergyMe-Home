@@ -760,11 +760,8 @@ namespace CustomServer
     {
         // Serving on the SoftAP with no upstream network is a working device, not a
         // sick one. Gating on isFullyConnected() here fails every 30 s during AP-only
-        // operation, and five failures request a restart: at ~150 s uptime that is
-        // above QUICK_RESTART_THRESHOLD so safe mode never arms, and below
-        // COUNTERS_RESET_TIMEOUT so the consecutive-reset counter never clears. About
-        // 25 minutes of that reaches MAX_RESET_COUNT, which rolls the firmware back
-        // and wipes the user's NVS.
+        // operation, and five failures request a restart: a provisioning device would
+        // restart every ~150 s for as long as nobody configured it.
         if (!CustomNet::isNetworkServiceable())
         {
             LOG_DEBUG("Health check: no serviceable network interface");
