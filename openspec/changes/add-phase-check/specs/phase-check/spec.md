@@ -1,8 +1,19 @@
 ## Purpose
 
-Checks the phase and reverse configuration of three-phase lines on the device itself, from the measured angles, during setup and afterwards. It proposes a fix only when the evidence admits exactly one, and otherwise offers the installer the candidates to choose from. The installer's labels are the hypothesis under test; CT orientation and switching loads on are never required.
+Checks the phase and reverse configuration of three-phase installs on the device itself, from the measured angles, while the installer is on the setup page. It advises and never decides: a reverse-only fix is proposed alone, any phase change is a choice among the candidates, and nothing is applied without the installer. The installer's labels are the hypothesis under test; CT orientation and switching loads on are never required. Checking installs after setup is left to the cloud, which already receives the readings.
 
 ## ADDED Requirements
+
+### Requirement: Check window
+The device SHALL run the phase check only inside a check window. The window SHALL be open while the device has never completed setup, and for 2 hours after `POST /api/v1/setup/start` (sent by the configuration page's "Run setup again"). It SHALL close when setup completes or is skipped, when those 2 hours pass, and on reboot for a window opened by `setup/start`. Outside the window the device SHALL keep no evidence, run no evaluation and report no line or channel check. The phase check SHALL never change the configuration on its own and SHALL raise no issue.
+
+#### Scenario: Window closes at finish
+- **WHEN** the installer finishes the setup while a line is still `collecting`
+- **THEN** the device drops that line's evidence, stops evaluating it, and changes nothing
+
+#### Scenario: Setup run again
+- **WHEN** the configuration page's "Run setup again" is used on a device set up months ago
+- **THEN** the check runs on its lines for up to 2 hours or until the setup is finished, and the energy counters are kept
 
 ### Requirement: Three-phase line
 The device SHALL detect three-phase lines automatically, with no installer action: a line is a set of exactly three active, non-split-phase channels that share a group label, have the same role, and are configured on three different phases. Once detected, a line SHALL keep its identity, keyed on its group label and its three channels, while its channels' phases or reverse flags change, so that a phase swap applied one channel at a time never dissolves it. It SHALL stop being a line when a channel leaves the group, is deactivated, is set to split-phase or is given another role.
@@ -17,35 +28,39 @@ The device SHALL detect three-phase lines automatically, with no installer actio
 
 #### Scenario: Single-phase loads sharing a label
 - **WHEN** three unrelated single-phase loads on L1, L2 and L3 share a group label
-- **THEN** they are detected as a line, their angles disagree, the line becomes `inconsistent`, and nothing is proposed
+- **THEN** they are detected as a line, no hypothesis makes their angles agree, the line stays `collecting`, and nothing is proposed
 
 ### Requirement: Evidence is kept in the raw frame
-The device SHALL accumulate the evidence of each channel of a line from the voltage-to-current energy pair as the meter measures it against V1, taken after the reading passed the meter's validity checks but before reverse, phase rotation and the load/PV clamp, so that the evidence does not depend on the channel's phase or reverse setting. Readings SHALL count only when the channel's RMS current is at least 3% of its CT rating. Each reading SHALL be weighted by its elapsed time, not by how often the multiplexer read the channel, and the per-channel evidence SHALL be energy-weighted. For each pair of channels in a line the device SHALL accumulate the per-minute angle difference over minutes in which both conducted, weighted by the smaller of the two. All evidence SHALL decay with a half-life of 3 days. The device SHALL reset a channel's evidence, and that of its pairs, when its recent angle departs from the accumulated one by more than 60 degrees for an hour (a moved CT), and on an explicit reset request. Phase and reverse writes SHALL NOT reset evidence. Evidence SHALL be kept in RAM only.
+The device SHALL accumulate the evidence of each channel of a line, and of each channel under the single-phase check, from the voltage-to-current energy pair as the meter measures it against V1, taken after the reading passed the meter's validity checks but before reverse, phase rotation and the load/PV clamp, so that the evidence does not depend on the channel's phase or reverse setting. Readings SHALL count only when the channel's RMS current is at least 3% of its CT rating. Each reading SHALL be weighted by its elapsed time, not by how often the multiplexer read the channel. For each pair of channels in a line the device SHALL accumulate the per-minute angle difference over minutes in which both conducted, weighted by the smaller of the two. Evidence SHALL start when the window opens or the line forms, SHALL be kept in RAM only, and SHALL be dropped when the window closes and when a channel's CT rating or role changes. Phase and reverse writes SHALL NOT reset it. For each such channel the device SHALL also keep its latest RMS current taken at the same point, before the clamp, so a reversed CT on a load channel still shows its current.
 
 #### Scenario: Clamped readings still count
-- **WHEN** a load channel's configured reading is negative and stored as 0 W while its CT carries current above the gate
-- **THEN** that channel's evidence still grows from the unclamped raw pair
+- **WHEN** a load channel's configured reading is negative and stored as 0 W and 0 A while its CT carries 8 A
+- **THEN** that channel's evidence still grows from the unclamped raw pair, and the phase check reports 8 A for it
 
 #### Scenario: Read-rate does not bias the evidence
 - **WHEN** channel 0 is read every window and a multiplexed channel of the same line every fourth window, both carrying the same power
-- **THEN** both channels accumulate the same evidence per hour
+- **THEN** both channels accumulate the same evidence per minute
 
-#### Scenario: Applying a fix keeps the evidence
-- **WHEN** a proposal is applied to a line
-- **THEN** the next evaluation reuses the existing evidence and reports the line `verified` without a new collection period
+#### Scenario: Applying a candidate keeps the evidence
+- **WHEN** a candidate is applied to a line
+- **THEN** the device re-evaluates the line at once on the existing evidence, and reports it `verified` without a new collection period when the evidence supports the applied configuration
 
 ### Requirement: Line states
-Each three-phase line SHALL be in one of these states, re-evaluated once a minute:
-- `collecting`: a channel has under 50 Wh of evidence, or fewer than two pairs of the line have 60 co-conducting minutes each;
+Each three-phase line SHALL be evaluated each time a minute of evidence closes, and at once after any configuration write to one of its channels (an apply included), in one of these states:
+- `collecting`: a channel has under 1 Wh of evidence, fewer than two pairs of the line have 2 co-conducting minutes each, or no hypothesis fits;
 - `verified`: under the configured phases and reverse flags, every evaluable pair's mean angle difference is within 40 degrees and every channel's angle is inside its role band;
-- `mismatch`: the configuration is not verified and exactly one hypothesis remains consistent after the tie-breaks;
-- `ambiguous`: the configuration is not verified and more than one hypothesis remains after the tie-breaks; or the pairs agree under the configuration, every channel reads positive power, but an angle falls outside its role band (the configuration itself is then offered with the alternatives);
-- `inconsistent`: no hypothesis makes every evaluable pair agree within 40 degrees (genuinely unbalanced feeders, and measurement faults such as multiplexer crosstalk).
-No state SHALL block configuration, setup completion or measurement.
+- `fix`: a single proposal that changes reverse flags only (see "Hypotheses and proposals");
+- `choose`: two or more candidates, most likely first, for the installer to pick from.
+
+A state other than `collecting` SHALL be reported only once two consecutive minute evaluations agree; an evaluation after a configuration write is reported at once. No state SHALL block configuration, setup completion or measurement. Every evaluation works on the evidence already summed and takes no new measurement.
+
+#### Scenario: Running load at install time
+- **WHEN** a line's load runs while the installer is on the phase check step
+- **THEN** the line leaves `collecting` within minutes
 
 #### Scenario: No load at install time
 - **WHEN** a line is configured while its load draws no current
-- **THEN** the line is `collecting`, setup can be completed, and the line is evaluated as soon as enough evidence accumulates, with no user action
+- **THEN** the line is `collecting`, and setup can be completed
 
 #### Scenario: Inductive load not moved to a higher power factor
 - **WHEN** a correctly configured compressor reads 45 degrees lagging on all three phases
@@ -55,104 +70,129 @@ No state SHALL block configuration, setup completion or measurement.
 - **WHEN** a feeder reads 30 to 34 degrees leading on all three phases under its configuration
 - **THEN** the line is `verified`
 
-#### Scenario: Low power factor load
-- **WHEN** a lighting feeder reads 80 degrees lagging on all three phases under its configuration
-- **THEN** the line is `ambiguous`, with the configuration as one of the offered candidates
-
 #### Scenario: Crosstalk
 - **WHEN** one channel of a line carries an extra signal that its siblings do not see, so that no hypothesis brings the pairs within 40 degrees
-- **THEN** the line is `inconsistent` and nothing is proposed
+- **THEN** the line stays `collecting` and nothing is proposed
 
-### Requirement: Hypotheses and tie-breaks
-For a line with a clamped role (load, PV) the device SHALL consider every assignment of its three channels to phases 1, 2, 3, combined with every reverse setting of each channel. Angles SHALL be expressed in the channel frame: raw angle plus `angle(phase) - angle(voltage phase)` plus 180 degrees when reversed. A hypothesis SHALL be consistent when every evaluable pair agrees within 40 degrees and every channel's angle is inside its role band (load and grid: -50 to +75 degrees; PV: -65 to +35 degrees).
+### Requirement: Hypotheses and proposals
+For a line with a clamped role (load, PV) the device SHALL consider every assignment of its three channels to phases 1, 2, 3, combined with every reverse setting of each channel. Angles SHALL be expressed in the channel frame: raw angle plus `angle(phase) - angle(voltage phase)` plus 180 degrees when reversed. A hypothesis SHALL fit when every evaluable pair agrees within 40 degrees and every channel's angle is inside its role band (load and grid: -50 to +75 degrees; PV: -65 to +35 degrees). Fitting hypotheses SHALL be ranked by how close their mean channel angle is to the role's typical angle (20 degrees lagging for load and grid, 10 degrees leading for PV), most likely first.
 
-Among consistent hypotheses for a configuration that is not verified, the device SHALL apply, in order:
-1. trust the labelled phases over CT orientation: keep the hypotheses that change the fewest labelled phases, provided every other one changes at least 2 more; reverse flags SHALL never count, because orientation errors are common and existing flags may have been set by the detector;
-2. for PV, keep the hypothesis whose mean angle is closest to -10 degrees, provided it is at least 15 degrees closer than every other.
+When the configuration is not verified:
+1. if its pairs agree, every channel reads positive power and only the role band fails, the line SHALL be `choose` with the configuration first and the fitting hypotheses after it, because a uniform error and an unusual load (low-PF lighting, a capacitive feeder) look the same;
+2. otherwise, if exactly one fitting hypothesis keeps every configured phase and it is also ranked first, the line SHALL be `fix` with that hypothesis alone;
+3. otherwise the line SHALL be `choose` with every fitting hypothesis, ranked.
 
-Trusting the labels has one accepted limit: a line whose labels are cyclically rotated (written L1-L2-L3, wired L2-L3-L1) reads like a reverse pattern 60 degrees away and can receive a wrong reverse-only fix.
+A change of any phase SHALL therefore always be a choice. Rotated labels (written L1-L2-L3, wired L2-L3-L1) can still read like a reverse-only change 60 degrees away; rule 2 offers it alone only when it is also the most likely hypothesis.
 
 For signed roles (grid, battery, inverter, bidirectional):
 - the angles SHALL be evaluated modulo 180 degrees;
 - only the phase assignment SHALL be checked;
-- reverse flags SHALL be neither checked nor proposed.
+- reverse flags SHALL be neither checked nor proposed, so such a line is never `fix`.
 
-#### Scenario: Swapped labels with detector-made reverse flags
-- **WHEN** the CTs labelled L1 and L3 of a PV line sit on each other's line, the configured reverse flags make L1 read 60 degrees off and L3 read negative, and all three agree at -15 degrees under the swapped phases with every reverse false
-- **THEN** the line is `mismatch` with that single proposal
-
-#### Scenario: One reversed CT on a PV line
-- **WHEN** a PV line whose labels are right has one CT reversed and reads -10 degrees once that CT is flipped
-- **THEN** the line is `mismatch` with a proposal that flips that channel's reverse flag only
-
-#### Scenario: One reversed CT on a load line
+#### Scenario: One reversed CT
 - **WHEN** a load line at 25 degrees whose labels are right has one CT reversed
-- **THEN** the line is `mismatch` with a proposal that flips that channel's reverse flag only, preferred over the cyclic relabel 60 degrees away because it keeps every labelled phase
+- **THEN** the line is `fix` with a proposal that flips that channel's reverse flag only
 
 #### Scenario: All CTs reversed
 - **WHEN** a load line at 40 degrees whose labels are right has all three CTs reversed
-- **THEN** the line is `mismatch` with a proposal that flips all three reverse flags
+- **THEN** the line is `fix` with a proposal that flips all three reverse flags
+
+#### Scenario: Swapped labels
+- **WHEN** a load line at 22 degrees has its L1 and L3 labels swapped
+- **THEN** the line is `choose`, with the true wiring first and its alias 60 degrees away second
+
+#### Scenario: Rotated labels
+- **WHEN** a load line at 10 degrees has labels written L1-L2-L3 but wired L2-L3-L1
+- **THEN** the line is `choose` with the true wiring first and "all CTs reversed" as another option, not `fix`
+
+#### Scenario: Low power factor load
+- **WHEN** a lighting feeder reads 80 degrees lagging on all three phases under its configuration
+- **THEN** the line is `choose` with the configuration first
 
 ### Requirement: Labels are tested, not overwritten
-The configured phases SHALL be the installer's labels. A proposal SHALL be described relative to them: which labelled phases are exchanged or rotated, and which CTs are reversed.
+The configured phases SHALL be the installer's labels. A proposal SHALL be described relative to them, channel by channel: the phase and reverse flag now and after. The device SHALL change a line's channels only on an explicit apply through local REST or the web UI, never on its own, including a `fix`.
 
-The device SHALL change the phase of a line's channel only on an explicit request through local REST, the web UI or the `channels` shadow. It SHALL apply a `mismatch` proposal on its own only when that proposal changes reverse flags only and keeps every phase; in that case it SHALL log the change and raise the `ct_polarity_flipped` event, as the detector does today. An `ambiguous` line SHALL never be changed by the device.
+#### Scenario: Fix waits for the installer
+- **WHEN** a line is `fix` and the installer finishes the setup without applying it
+- **THEN** the reverse flags stay as configured
 
-#### Scenario: Reverse-only proposal applied by the device
-- **WHEN** a line reaches `mismatch` with a reverse-only proposal
-- **THEN** the device sets those reverse flags, raises `ct_polarity_flipped` for each, and the line becomes `verified` at the next evaluation
+### Requirement: Single-phase channel check
+On a device with three-phase channels, each active load, grid or PV channel outside any line SHALL get an advisory check inside the check window, with the same minimums as a line: the device SHALL report it `suspect` when its angle under the configured phase and reverse flag falls outside its role band, with the phase and reverse options that fit, most likely first, and `ok` otherwise. A wrong phase combined with a reversed CT is 60 degrees off and can pass unnoticed; only a three-phase line can catch it.
 
-#### Scenario: Phase proposal waits for a person
-- **WHEN** a line reaches `mismatch` with a proposal that changes a phase
-- **THEN** the configuration stays unchanged until someone applies the proposal
-
-### Requirement: Phase issues
-The device SHALL raise, scoped to the line's lowest channel:
-- `channel_phase_suspect` (Warning) while a line is `mismatch` with a proposal that waits for a person;
-- `channel_phase_ambiguous` (Warning) while a line is `ambiguous`;
-- `channel_readings_inconsistent` (Info) while a line is `inconsistent`.
-
-Each SHALL be raised only after its state has held for 3 consecutive evaluations, and cleared only after 3 consecutive evaluations without it. The message SHALL fit the issue buffer and name the lowest channel and the proposal in short form; the full candidates SHALL be available through REST. For channels of a line, `channel_polarity_mismatch` SHALL be suppressed while the line is `verified`, `mismatch` or `ambiguous`, and kept while it is `collecting`.
-
-#### Scenario: Mismatch reaches the cloud
-- **WHEN** a line stays `mismatch` with a phase proposal for 3 evaluations on a cloud-connected device
-- **THEN** the `issues` shadow reports `channel_phase_suspect`, and applying the proposal through the `channels` shadow clears it 3 evaluations after the line becomes `verified`
+#### Scenario: Single-phase load on the wrong phase
+- **WHEN** an oven wired on L2 is configured on L1
+- **THEN** the channel is `suspect` with L2 offered first
 
 ### Requirement: Phase check REST interface
-The device SHALL expose `GET /api/v1/ade7953/phase-check`, returning for each line:
+The device SHALL expose `GET /api/v1/ade7953/phase-check`, returning whether the check window is open and, while it is, for each line:
 - the state;
-- the configured phase and reverse of each channel;
-- each candidate hypothesis, with the angle and power factor every channel would read under it;
-- each channel's angle under the configuration and its accumulated evidence;
-- a generation number.
+- the configured phase and reverse of each channel, and each channel's latest RMS current before the clamp;
+- each candidate, with the phase and reverse of each channel and the active power and power factor each channel would read under it;
+- each channel's active power and power factor under the configuration;
+- the line's generation number, which changes on any configuration write to one of its channels and on every apply to it, and on nothing else.
 
-It SHALL expose `POST /api/v1/ade7953/phase-check/apply`, taking a line (by its lowest channel), a candidate's phases and reverse flags, and the generation number:
+The same response SHALL list the single-phase channel checks: channel, state, current, options.
+
+It SHALL expose `POST /api/v1/ade7953/phase-check/apply`, taking a line (by its lowest channel), the phase and reverse flag of each of its channels keyed by channel index, and the line's generation number. Applies SHALL be serialized under the configuration lock, so concurrent requests run one after the other:
 - if the line's configuration already equals the candidate, the device SHALL return success with no change;
-- if the generation still matches and the candidate is one the line currently offers, the device SHALL write all three channels in one step under the configuration lock, so that no intermediate state is applied or persisted, and SHALL roll back the channels already written if any write fails;
+- if the generation still matches and the candidate is one the line currently offers, the device SHALL write all three channels in one step under the configuration lock, so that no intermediate state is applied or persisted, SHALL roll back the channels already written if any write fails, and SHALL then re-evaluate the line at once; a channel label that is the line's group label followed by its old phase (`<group> L1`) SHALL follow the new phase, and any other label SHALL be kept;
 - otherwise it SHALL refuse with an error envelope and change nothing.
 
-It SHALL also expose `POST /api/v1/ade7953/phase-check/reset` to drop a line's evidence. All three endpoints SHALL require the web password.
+A single-phase option SHALL be applied as an ordinary channel write. Both endpoints SHALL require the web password.
 
 #### Scenario: Stale apply refused
 - **WHEN** a client applies a candidate read before the line's generation changed
 - **THEN** the device refuses the request and changes nothing
+
+#### Scenario: Two clients apply at once
+- **WHEN** two clients apply the same candidate to a line at the same moment
+- **THEN** one request writes the line and the other returns success with no change
+
+#### Scenario: Lines are independent
+- **WHEN** a client applies a candidate to one line and then a candidate it read earlier for another line
+- **THEN** both applies succeed, because an apply changes only its own line's generation
 
 #### Scenario: Retry after success
 - **WHEN** a client repeats an apply that already succeeded
 - **THEN** the device returns success and changes nothing
 
 ### Requirement: Setup page
-After Wi-Fi provisioning and the password change, the device SHALL serve a setup page at `/setup` in its local web UI. The page SHALL work without internet access and guide through, in order:
-1. cloud services, on by default, with an explicit local-only option;
-2. the voltage phase, as the labelled line of the device's own L wire;
-3. the channels: label, role, labelled phase and group label (three channels with the same group label on three phases form a line);
-4. a live check of each detected line's state from the phase check interface, with one action per candidate to apply it.
+After Wi-Fi provisioning and the password change, the device SHALL serve a setup page at `/setup` in its local web UI, built from the web UI's shared styles, API client, toasts and tooltips. The page SHALL work without internet access and guide through, in order:
+1. cloud services, on by default, with an explicit local-only option; the choice SHALL be sent when setup completes, not when the step is left (`cloud-services-default`);
+2. the supply: single-phase (the default), three-phase or split-phase, each with a one-line description, and a note that the meter's N always goes to neutral; the voltage phase SHALL be asked only for three-phase, and is `PHASE_1` otherwise. The supply SHALL NOT be stored: the page SHALL derive it from the channels (any split-phase channel: split-phase; a voltage phase other than 1 or any channel on phase 2 or 3: three-phase; otherwise single-phase);
+3. the circuits, one per breaker, the first one open: name, role (with the channel page's role labels and tooltip), CT rating (30, 75, 150 or 400 A, or a custom value) and the channel each CT is on, with channels used by other circuits not selectable. A three-phase supply SHALL offer single-phase or three-phase circuits; a three-phase circuit has three CTs, one per phase, and SHALL be refused unless its three phases differ. A split-phase supply SHALL offer 120 V or 240 V per circuit, on any channel. A circuit SHALL be saved as channels sharing its name as group label, with labels `<name>` or `<name> L<phase>`;
+4. for a three-phase supply only, the phase check of each line and each `suspect` single-phase circuit:
+   - while `collecting` and right after an apply, a measuring indicator and each channel's current; when one channel of a line carries no current above the gate while another does, the page SHALL name that channel as the likely unclamped or misplaced CT;
+   - otherwise each channel's phase, reverse flag, active power and power factor under the configuration and, for a proposal, under each candidate, with every change marked;
+   - a `fix` SHALL be applied with one action; a `choose` SHALL need the installer to select a candidate and then confirm it, with the first one marked as most likely. Apply actions SHALL be disabled while a request is in flight.
 
-The installer SHALL be able to finish while lines are `collecting`. On a device that has never completed setup, `/` SHALL lead to this page once the password is no longer the default; afterwards the page SHALL stay reachable from the configuration pages. A device upgraded with a non-default password SHALL count as already set up.
+Errors SHALL be shown as toasts. Reloading the page, or opening it from another device, before setup completes SHALL resume on the phase check step when the device has lines or checked single-phase channels. The installer SHALL be able to finish at any time; finishing while a line is `collecting`, `fix` or `choose`, or a single-phase channel is `suspect`, SHALL ask for confirmation, naming them. The installer SHALL also be able to skip the setup from its first step, which completes it with the defaults.
+
+The device SHALL expose `GET /api/v1/setup/status`, `POST /api/v1/setup/start` and `POST /api/v1/setup/complete` (taking the cloud services choice), behind the web password. Completing or skipping the first setup SHALL reset the energy counters of every channel, so the install starts from zero; completing a setup run again SHALL NOT. The device decides where `/` leads: on a device that has never completed setup, to this page once the password is no longer the default, and to the dashboard afterwards. The configuration page SHALL offer to run the setup again; it starts from the current configuration on the first step and resets nothing. A device upgraded with a non-default password SHALL count as already set up.
 
 #### Scenario: Installer finishes with nothing running
-- **WHEN** the installer completes the setup page while two lines are `collecting`
-- **THEN** setup completes, the lines keep collecting, and a later `channel_phase_suspect` reaches the cloud
+- **WHEN** the installer finishes the setup while two lines are `collecting` and confirms
+- **THEN** setup completes, the energy counters restart from zero, the check stops and nothing is changed
+
+#### Scenario: Page reopened from a laptop
+- **WHEN** the installer saves the circuits on a phone, closes the page, and opens the device from a laptop before finishing
+- **THEN** the page opens on the phase check step with the lines' current states
+
+#### Scenario: Reversed CT before a verdict
+- **WHEN** a load line runs with one CT reversed and the line is still `collecting`
+- **THEN** the page shows the current of all three channels, the reversed one included
+
+#### Scenario: CT not clamped
+- **WHEN** two channels of a line carry 8 A and the third carries no current
+- **THEN** the line stays `collecting` and the page names the third channel
+
+#### Scenario: Setup skipped
+- **WHEN** the installer skips the setup on its first step
+- **THEN** setup completes with cloud services on and the channels unchanged, the energy counters restart from zero, and `/` serves the dashboard
+
+#### Scenario: Three-phase circuit on two equal phases
+- **WHEN** the installer leaves the circuits step with a three-phase circuit whose CTs are on L1, L1 and L3
+- **THEN** nothing is saved, a toast names the circuit and the circuit opens
 
 #### Scenario: Upgraded device not redirected
 - **WHEN** a device with a changed password is updated to this firmware

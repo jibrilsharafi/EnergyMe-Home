@@ -1,26 +1,7 @@
 ## MODIFIED Requirements
 
-### Requirement: Changing the voltage phase re-arms CT polarity detection
-When the voltage phase changes, the device SHALL, once the new value is persisted and applied and under the channel lock, re-arm CT polarity detection on every active channel whose rotation changes, which is every active channel that is not split-phase 240 V, channel 0 included, except the clamped-role channels of a three-phase line that is not `inconsistent` (`phase-check`), whose orientation the phase check owns: detection armed, vote and conducting-read counters zeroed, and a priority read requested for multiplexed channels. If the channel lock cannot be taken within its timeout, the next reading SHALL perform the same re-arm. Inactive and split-phase channels SHALL NOT be armed. The re-arm SHALL NOT depend on the channel role for channels outside lines: the vote sees the rotated active power before any load or PV clamp, so a bidirectional channel that exports while the voltage phase changes can flip its `reverse` (design D4 of the archived `add-voltage-phase`). The device SHALL log the old and new value and the number of channels re-armed.
-
-#### Scenario: Active non-split channels re-armed
-- **WHEN** the voltage phase changes from 1 to 2 on a meter with channels 0 and 5 active at phase 1, channel 6 active at split-phase 240 V and channel 7 inactive
-- **THEN** detection is armed on channels 0 and 5 only, and the log reports 2 channels re-armed
-
-#### Scenario: Line channels left to the phase check
-- **WHEN** the voltage phase changes on a meter with a verified three-phase load line on channels 3-5 and a single channel 6
-- **THEN** only channel 6 (and channel 0 if active and outside the line) is re-armed, and the line is re-evaluated from its raw evidence
-
-#### Scenario: Right frame confirms the CTs
-- **WHEN** the new voltage phase makes every armed channel read positive active power while conducting
-- **THEN** no `reverse` flag changes
-
-#### Scenario: Wrong frame flips and recovers
-- **WHEN** a wrong voltage phase makes an armed channel that conducts in the import direction read negative active power for the vote threshold, and the right value is set afterwards while it still imports
-- **THEN** the channel's `reverse` flips and is persisted, and after the right value is set the channel is re-armed and flips back
-
 ### Requirement: Web UI channel page uses the voltage phase as its base
-The channel configuration page SHALL read the voltage phase from the device and use it, not channel 0's phase, as the base for deciding whether the install is three-phase and for the live phase preview. The page SHALL show the voltage phase as the phase of the device's own L wire in a selector that sets it, asking for confirmation with a warning that the change re-runs the reversed-CT detection on every active channel outside three-phase lines. For a channel of a three-phase line the page SHALL show the line's phase check state and candidates instead of a preview. Every other channel, channel 0 included, SHALL get the per-phase preview, which SHALL NOT mark any row as the best. If the voltage phase cannot be read, the page SHALL show it as unavailable and hide the phase previews instead of assuming a base. Channel 0's phase selector SHALL offer phases 1 to 3 only.
+The channel configuration page SHALL read the voltage phase from the device and use it, not channel 0's phase, as the base for deciding whether the install is three-phase and for the live phase preview. The page SHALL show the voltage phase as the phase of the device's own L wire in a selector that sets it, asking for confirmation with a warning that the change re-runs the reversed-CT detection on every active channel. Every channel, channel 0 included, SHALL get the per-phase preview, which SHALL NOT mark any row as the best: with `reverse` free the candidate rows are 60 degrees apart and the highest power factor is often the wrong one; the setup page's phase check is where phases are verified. If the voltage phase cannot be read, the page SHALL show it as unavailable and hide the phase previews instead of assuming a base. Channel 0's phase selector SHALL offer phases 1 to 3 only.
 
 #### Scenario: Voltage phase shown
 - **WHEN** the channel page loads on a device with voltage phase 3
@@ -35,13 +16,46 @@ The channel configuration page SHALL read the voltage phase from the device and 
 - **THEN** nothing is sent and the selector returns to the stored value
 
 #### Scenario: Channel 0 preview on an off-line CT
-- **WHEN** channel 0 is outside any line, at phase 1 under load on a device with voltage phase 2
+- **WHEN** channel 0 is at phase 1 under load on a device with voltage phase 2
 - **THEN** the page shows channel 0's readings for phases 1, 2 and 3 with no row marked as best
-
-#### Scenario: Channel of a line
-- **WHEN** the page shows a channel of a `mismatch` line
-- **THEN** it shows the line's proposal and no per-phase preview
 
 #### Scenario: Voltage phase unavailable
 - **WHEN** the voltage phase request fails
 - **THEN** the voltage phase is shown as unavailable, no phase preview is shown and the rest of the page works
+
+### Requirement: One-time migration from channel 0
+At boot, after the channel configuration is loaded and before the meter reading task starts, the device SHALL load the voltage phase, telling an absent key from a stored one by the key's presence, not by a read default. When the key is absent, the device SHALL set the voltage phase to channel 0's phase as loaded or to `PHASE_1` if that is not 1..3 (split-phase 240 V included), persist it and log the migration. When the key is present but does not hold a u8 in 1..3 (0 included, or a key of another type), the device SHALL log a warning with the stored value, derive the voltage phase the same way and replace the key with it as a u8. When a valid key is present the device SHALL use it and SHALL NOT re-derive it from channel 0. If the NVS namespace cannot be opened, the device SHALL log an error, use the derived value in RAM only and write nothing. If the migration write fails, the device SHALL log an error and use the derived value until it is stored by a later setter call or boot. Neither the load nor the migration SHALL re-arm CT polarity detection.
+
+#### Scenario: Upgrade changes no reading
+- **WHEN** a meter on 2.7.x with channel 0 at phase 2 and other channels at phases 1, 2 and 3 boots 2.8.0 for the first time
+- **THEN** the voltage phase is stored as 2 before the first reading, and every channel's active power, reactive power and power factor match the 2.7.x readings
+
+#### Scenario: Stored key wins after a downgrade and re-upgrade
+- **WHEN** a meter with voltage phase 2 is downgraded to 2.7.x, channel 0's phase is changed to 3 there, and the meter is upgraded again
+- **THEN** the voltage phase is still 2 and only channel 0's own rotation reflects the new phase
+
+#### Scenario: Out-of-range stored value
+- **WHEN** the stored `voltage_phase` holds 7 at boot and channel 0 is at phase 3
+- **THEN** the device logs a warning, sets and persists the voltage phase 3, and uses it from the first reading
+
+#### Scenario: Stored zero is not absent
+- **WHEN** the stored `voltage_phase` holds 0 at boot and channel 0 is at phase 2
+- **THEN** the device logs a warning with the value 0 (not an informational migration), sets and persists the voltage phase 2
+
+#### Scenario: Namespace cannot be opened
+- **WHEN** the NVS namespace holding a valid `voltage_phase` of 2 cannot be opened at boot and channel 0 is at phase 3
+- **THEN** the device logs an error, uses 3 in RAM for that boot and leaves the stored 2 untouched
+
+#### Scenario: Fresh device and factory reset
+- **WHEN** a device boots with no `voltage_phase` key and channel 0 at its default phase
+- **THEN** the voltage phase is `PHASE_1` and is persisted
+
+#### Scenario: Reboot arms nothing
+- **WHEN** a meter with a stored voltage phase of 3 reboots
+- **THEN** no channel has CT polarity detection armed by the voltage phase load
+
+## REMOVED Requirements
+
+### Requirement: Channel 0 cannot be split-phase 240 V
+**Reason**: channel 0 is a channel like the others. The rule only protected V1, which the device took from channel 0's own scaled voltage; V1 is now kept unscaled (`meter-reading-integrity`), so a split-phase 240 V circuit can sit on channel 0.
+**Migration**: none; split-phase 240 V becomes selectable for channel 0 on every write path.

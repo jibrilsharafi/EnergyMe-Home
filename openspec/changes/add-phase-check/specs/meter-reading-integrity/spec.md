@@ -1,16 +1,23 @@
 ## ADDED Requirements
 
-### Requirement: Three-phase line orientation is not flipped by the sign vote
-A channel of a three-phase line (`phase-check`) with a clamped role SHALL NOT be armed for, or flipped by, the CT-reversal sign-vote detector while the line is `collecting`, `verified`, `mismatch` or `ambiguous`. Joining a line SHALL clear any pending arm and its vote counters, including the arm that activating a channel or changing its phase sets today. The orientation of such a channel SHALL change only through an explicit configuration write or a reverse-only phase check proposal. While a line is `inconsistent` (not behaving as one three-phase load, such as unrelated single-phase loads sharing a label), its channels SHALL be handled by the detector like any other channel. A channel that leaves a line SHALL be handled like any other channel from then on, with no arm carried over from the line. Channels outside lines keep the detector unchanged.
+### Requirement: No sign-vote flips during the phase check
+On a device with three-phase channels, the CT-reversal sign-vote detector SHALL NOT flip any load or PV channel while the phase check window is open (`phase-check`): a channel on the wrong phase reads negative, and a flip turns it into a 60-degree error that looks plausible. Pending arms and vote counters SHALL be kept, so the detector resumes when the window closes. A device with no three-phase channels SHALL keep the detector unchanged.
 
-#### Scenario: Wrong phase does not trigger a flip
-- **WHEN** a load channel of a line is configured on the wrong phase and reads steadily negative
-- **THEN** its reverse flag is not changed, its readings are clamped as before, and the line's phase check state reports the problem
+#### Scenario: Wrong phase does not trigger a flip during setup
+- **WHEN** a load channel of a line is configured on the wrong phase and reads steadily negative while the installer is on the setup page
+- **THEN** its reverse flag is not changed, its readings are clamped as before, and the phase check offers the candidates
 
 #### Scenario: Single-phase install unchanged
-- **WHEN** a load channel outside any line is activated with a reversed CT
+- **WHEN** a single-phase device's load channel is activated with a reversed CT during setup
 - **THEN** the detector flips its reverse flag as before
 
-#### Scenario: Unrelated loads sharing a label
-- **WHEN** a line made of three unrelated single-phase loads becomes `inconsistent` and one of its CTs is reversed
-- **THEN** the detector flips that channel's reverse flag as it does for any single channel
+#### Scenario: Detector after setup
+- **WHEN** setup completes on a three-phase device with an armed channel
+- **THEN** the detector works on that channel as before
+
+### Requirement: V1 is never scaled by a channel's split-phase multiplier
+The device SHALL keep the voltage it reads from V1 unscaled: it is the voltage every channel is integrated against and the device voltage that MQTT, Modbus and the issue registry report. The 2x multiplier of a split-phase 240 V channel SHALL apply only to that channel's own voltage, powers and energies, on channel 0 as on any other channel.
+
+#### Scenario: Split-phase circuit on channel 0
+- **WHEN** channel 0 is set to split-phase 240 V on a 120 V leg, next to 120 V channels
+- **THEN** channel 0 reports about 240 V and twice the leg power, while the device voltage and every other channel's readings stay as with channel 0 at phase 1

@@ -1,26 +1,24 @@
 ## Context
 
-The meter integrates every channel against one voltage input V1 on the stored voltage phase (`add-voltage-phase`, 2.8.0). For channel k the chip latches a raw energy pair (P1, Q1) per window. `PhaseUtils::toChannelFrame` negates the pair for `reverse` and rotates it by `angle(phase_k) - angle(voltagePhase)`. The load/PV clamp then zeroes negative results, energy included. The CT-reversal detector flips `reverse` after a net run of negative votes.
+The meter integrates every channel against one voltage input V1 on the stored voltage phase (`add-voltage-phase`, 2.8.0). For channel k the chip latches a raw energy pair (P1, Q1) per window. `PhaseUtils::toChannelFrame` negates the pair for `reverse` and rotates it by `angle(phase_k) - angle(voltagePhase)`. The load/PV clamp then zeroes negative results, current and energy included. The CT-reversal detector flips `reverse` after a net run of negative votes.
 
-So a wrong phase (120 degrees) plus a detector flip (180 degrees) leaves a channel 60 degrees off, with positive power and a plausible PF. The raw pair exists only on the device: the cloud sees post-rotation, post-clamp values.
+So a wrong phase (120 degrees) plus a detector flip (180 degrees) leaves a channel 60 degrees off, with positive power and a plausible PF.
 
 The normative model of every decision below is `source/utils/phase_solver_ref.py`, and its cases are `source/utils/test_phase_solver_ref.py`. The firmware solver must reproduce both.
 
 ## Goals / Non-Goals
 
 **Goals:**
-- Never propose a wrong configuration.
-- Prefer `ambiguous`, which asks a person, over guessing.
+- An answer while the installer is still on site: minutes, not hours. Fast and sometimes wrong is better than slow (Jibril, 2026-11-11): a slow check belongs in the cloud.
+- Never apply anything on the device's own initiative.
+- Never flag a correct install.
+- Never offer a phase change as the only answer.
 - No load switching and no CT orientation requirement.
-- Tell a configuration error from a measurement fault.
-- Keep checking after setup.
 
 **Non-Goals:**
+- Checking after setup. The cloud already has the readings and can run the same math over days (`energyme-infra`, later). The installer stays at most about half an hour, and a one-hour confirmation on the device would only add auto-fixes and issues nobody watches.
 - Absolute phase identity.
-- Automatic phase changes.
-- Grid-step disambiguation of `ambiguous` lines (a possible later on-device addition).
-- Single channels.
-- Cloud-side display (a separate `energyme-infra` change).
+- Grid-step disambiguation of `choose` lines.
 
 ## Decisions
 
@@ -29,108 +27,116 @@ For one line there are 48 hypotheses: 6 permutations times 8 reverse sets. They 
 
 The pair test therefore fixes the class. Inside it, the configured load angle φ is known only up to 60 degrees. Two of those shifts typically fall inside any plausible load band (-50 to +75). For example, "labels right, one CT reversed" and "labels cyclically rotated, two CTs reversed" are indistinguishable from angles alone.
 
-Ranking by PF picks the shift closest to 0. That is wrong for every inductive load above 30 degrees, and for capacitive feeders below -30.
+Ranking by PF picks the shift closest to 0. That is wrong for every inductive load above 30 degrees, and for capacitive feeders below -30. The ranking used here (D4) targets a typical angle instead, and only orders a choice.
 
-### D2. Evidence
-**Tap point.** Evidence is tapped in `_readMeterValues` right after the RMS witness check, on `rawActiveEnergy` and `rawReactiveEnergy`. That is before `toChannelFrame`, the off-phase no-load gate, the `MINIMUM_POWER_FACTOR` zeroing and the clamp: all of these depend on the configured phase.
+### D2. Check window
+- Open while setup was never completed, and for 2 hours after `POST /api/v1/setup/start` ("Run setup again"); closed by `setup/complete` (finish or skip), by the 2 hours, and by a reboot for a `setup/start` window. The first-setup window survives reboots because it follows the setup-done flag.
+- Outside the window: no evidence, no evaluation, no CPU. The window bounds the RAM and the detector hold (D6).
+- Closing drops all evidence. Nothing is applied and no issue is raised at close.
+
+### D3. Evidence
+**Tap point.** In `_readMeterValues` right after the RMS witness check, on `rawActiveEnergy` and `rawReactiveEnergy` and the RMS current. That is before `toChannelFrame`, the off-phase no-load gate, the `MINIMUM_POWER_FACTOR` zeroing and the clamp: all of these depend on the configured phase.
 
 **Gate.** Raw current ≥ 3% of the CT rating. At the conducting gate (0.03%) the angle is offset noise, and PV standby at night reads about -90 degrees.
 
-**Weighting.** Each reading adds `(P1 + jQ1) × deltaMillis / windowMillis`, i.e. power × elapsed time. This matches the existing energy accounting, so channel 0 (read every window) and multiplexed channels accumulate alike, and a double-serviced window is not counted twice. Accumulators are `double`, for the same reason as the energy counters.
+**Weighting.** Each reading adds `(P1 + jQ1) × deltaMillis / windowMillis`, i.e. power × elapsed time, so channel 0 (read every window) and multiplexed channels accumulate alike. Accumulators are `double`.
 
 **Signed roles.** They also keep the doubled-angle sum `(P1 + jQ1)² / |S1|`.
 
 **Pairs.** At each minute boundary, for each pair of a line in which both channels passed the gate in that minute, the minute phasors give `D_ab += min(|Sa|, |Sb|) × e^{j(θa - θb)}` (doubled angles for signed roles).
 
-**Decay.** Half-life 3 days.
+**No decay.** The check lasts minutes; plain sums.
 
-**Moved CT.** A channel whose last-hour angle differs from `arg(E)` by more than 60 degrees resets its own and its pairs' evidence.
+**Current.** The latest pre-clamp RMS current per checked channel, for the page's waiting view. The stored reading of a reversed load CT is 0 A (the clamp zeroes current too, `ade7953.cpp` around line 4261), so the page would otherwise read a reversed CT as an unclamped one.
 
-**RAM.** Per line channel: 2 × complex double plus counters. Per line: 3 pairs. Under 1 KB for 16 channels.
+**RAM.** Per checked channel: 2 × complex double, a current, counters. Per line: 3 pairs. Under 1 KB for 16 channels, only inside the window.
 
-### D3. Decision procedure (as in the reference model)
-Constants:
+### D4. Decision procedure (as in the reference model)
 
 | Constant | Value |
 |---|---|
 | `PAIR_TOL` | 40° |
 | Load / grid band | -50 to +75° |
 | PV band | -65 to +35° |
-| PV target | -10° |
-| PV margin | 15° |
-| Phase-change margin | 2 |
-| Minimum per channel | 50 Wh |
-| Minimum per pair | 60 co-conducting minutes |
+| Typical angle (ranking) | load, grid 20°; PV -10° |
+| Minimum per channel | 1 Wh |
+| Minimum per pair | 2 co-conducting minutes, on 2 pairs |
+| Agreeing evaluations | 2 |
 
-1. Any channel under 50 Wh, or no pair evaluable: `collecting`.
+1. Any channel under 1 Wh, or fewer than two evaluable pairs: `collecting`.
 2. The configuration passes the pair test and the band test: `verified`.
-3. The configuration passes the pair test and reads positive power on every channel, but fails the band: `ambiguous`, offering the configuration plus the consistent alternatives. A uniform error and an unusual load, such as low-PF lighting, look the same. Field case: a lighting feeder at 53-75 degrees. A configuration reading negative power is a plain error and goes on to step 4.
-4. Otherwise, collect the consistent hypotheses. If there are none: `inconsistent`.
-5. Tie-break 1, labels over orientation (Jibril, 2026-11-11): keep the hypotheses that change the fewest labelled phases when every other changes at least 2 more. Reverse flags never count. This resolves the common single errors (one or all CTs reversed, a transposition) on its own. Accepted limit: a line whose labels are cyclically rotated reads like a reverse pattern 60 degrees away and can get a wrong reverse-only fix. Tried and rejected: counting reverse changes too (wrong when orientation errors are frequent), and a "frame confirmed by another verified line" guard (it rules out a wrong voltage phase, not a rotation within one line).
-6. PV only: keep the hypothesis whose mean is closest to -10 degrees, with a 15-degree margin. Loads get no prior: the field spans -35 (capacitive feeders) to +60 (motors), and every load prior tried proposed wrong fixes.
-7. One hypothesis left: `mismatch`, with `reverse_only` when it keeps every phase. Otherwise: `ambiguous`.
+3. Collect the fitting hypotheses. None: `collecting` (an unbalanced feeder, crosstalk, or a CT on the wrong cable; the page's current view shows which). Rank them by distance of the mean angle to the typical angle.
+4. The configuration's pairs agree, every channel reads positive power, only the band fails: `choose` with the configuration first, then the ranked hypotheses. A uniform error and an unusual load (the field's low-PF lighting feeder at 53-75 degrees) look the same, so the configuration keeps the default position.
+5. Exactly one fitting hypothesis keeps every configured phase and it ranks first: `fix`, alone.
+6. Otherwise: `choose`, ranked.
 
-Signed roles run steps 2-4 on doubled angles over the 6 permutations only, keeping the configured reverse flags.
+Evaluated at each closed minute and at once after a configuration write. A state is shown once two consecutive minute evaluations agree.
 
-### D4. Reverse-only auto-apply
-A `mismatch` that only flips reverse flags is what the detector does today. The difference is that it is now proven by the whole line, and only as the unique consistent hypothesis, so the bands have already excluded the 60-degree alias. The device applies it through the same path as an explicit apply and raises `ct_polarity_flipped`. In the Monte Carlo every reverse-only `mismatch` was correct. An `ambiguous` line is never changed by the device.
+Signed roles run steps 1-3 and 6 on doubled angles over the 6 permutations only, keeping the configured reverse flags.
+
+Earlier rules, tried and replaced:
+- "Fewest phase changes wins, by a margin of 2" (labels over orientation) gave single proposals for swaps but a wrong reverse-only fix for 37% of rotated labels. Rule 5 keeps the reverse-only case single only when the ranking agrees.
+- A single proposal only when it is the only fitting hypothesis: almost never, because the 60-degree alias of a reverse-only fix usually fits too.
+- Putting the configuration first in step 4 only when it lags: 3 points better on rotated labels, worse on correct installs. Correct installs win.
 
 ### D5. Line detection and atomic apply
 - Lines are detected from the existing configuration: group label, role, active, non-split, three different phases. No new channel setting.
-- Once detected, a line is keyed on its group label and channel set, so phase writes (even one channel at a time, as the `channels` shadow applies them) never dissolve it; the "three different phases" test applies only to forming a line.
+- Once detected, a line is keyed on its group label and channel set, so phase writes (even one channel at a time) never dissolve it; the "three different phases" test applies only to forming a line.
 - Apply holds `_configMutex`, then `_channelDataMutex` (the `add-voltage-phase` D4 order). It checks the generation, writes the three channels' phase and reverse in memory, persists them, rolls back on any NVS failure, and re-derives once.
-- The `channels` shadow path applies channel by channel and so can pass through a transient configuration. Line identity does not depend on phases, so nothing is lost; the next minute's evaluation simply sees the final state.
+- Generated labels (`<group> L<n>`) follow the new phase; any other label is kept.
 
-### D6. Detector gating
-- Gated channels: load/PV channels of a line that is not `inconsistent`. Lines start `collecting`, so the detector is off from the moment a line forms, which is the window where it used to make the 60-degree errors. An `inconsistent` line (unrelated loads sharing a label) gives its channels back to the detector.
-- `setChannelData` clears `_pendingPolarityCheck` and the vote/read counters for gated channels.
-- `_rearmPolarityOnVoltagePhaseChangeLocked` skips them (MODIFIED `voltage-phase` requirement).
-- The runtime vote ignores them. The WDRR armed boost (`_recalculateWeights`) never sees an arm on them.
-- `channel_polarity_mismatch` is suppressed per the spec.
+### D6. Detector hold
+- On a device with three-phase channels, no sign-vote flip of a load/PV channel while the window is open: a wrong phase reads negative, and a flip makes it a 60-degree error the check can no longer see (the single-phase replay showed half the wrong phases hidden this way, the Roncade sequence). The candidates are on the page instead.
+- Arms and counters are kept, so the detector resumes at close; a still-wrong channel is then handled as today.
+- Single-phase devices keep the detector unchanged.
 
-### D7. Issues
-- Codes: `channel_phase_suspect`, `channel_phase_ambiguous` (Warning) and `channel_readings_inconsistent` (Info).
-- Their own streaks count solver evaluations, 3 to raise and 3 to clear, not 5-second ticks.
-- Messages use short form within 192 bytes, e.g. `ch3-5 L1<->L3, ch4 rev`. The full candidates come from REST.
-- Evidence is RAM-only and the registry is RAM-only: after a reboot a line re-raises once its evidence is back. This is documented, not avoided.
+### D7. Energy reset at first setup
+Completing or skipping the first setup resets the energy counters of every channel, before cloud services start (`cloud-services-default`), so the cloud never sees a drop. Bench tests and a wrong configuration during the visit leave nothing behind. "Run setup again" never resets energy.
 
-### D8. Validation done before this design was fixed
-**Synthetic tests.** Truth phases with random CT orientation (20/50/80% reversed), random label errors (transpositions, cycles, none), detector-made or default reverse flags, dedicated and mixed loads, and load angles from -35 to +60 (PV -30 to +5).
-- Before the fixes, every earlier rule produced wrong proposals: 1-13% with label-keeping or change-count tie-breaks counted on reverse flags, and wrong proposals for capacitive and motor loads with a load prior.
-- With D3: 0 wrong proposals for every error except cyclically rotated labels, in 1,200 random installs (20/50/80% of CTs reversed, 15% rotated labels, 35% transpositions). 63-71% of the erroneous installs resolve to a single `mismatch`; the rest are `ambiguous`, always containing the truth, almost always as 2 options.
-- Rotated labels, the accepted limit: about a third get a wrong reverse-only fix, the rest are `ambiguous` or correct.
-- "False verified" (a configuration exactly 60 degrees uniformly off) is 4-7% of installs. Most are made by the old detector, which the line marking switches off. A remainder of up to 3% comes from all three CTs reversed plus a cyclic relabel, which no angle rule can see.
+### D8. Validation of the angle math
+**Synthetic tests.** Truth phases with random CT orientation, random label errors (transpositions, cycles, none), detector-made or default reverse flags, dedicated and mixed loads, load angles from -35 to +60 (PV -30 to +5). With the current rules: no correct install flagged, the truth always offered, a single fix wrong only for rotated labels.
 
-**Fleet replay.** 61 three-phase groups, up to 3 days of prod data per device, restricted to the minutes after each device's last configuration write (the cloud keeps no reverse history), rebuilt to the raw frame from the stored power, PF sign and configuration.
-- 23 verified, including the known-correct chillers, compressors, ovens, grids and PV, and the corrected 2.8.1 field site after its fix.
-- 3 inconsistent: two genuinely unbalanced mixed feeders, and the site with known multiplexer crosstalk.
-- 1 ambiguous: the low-PF lighting feeder.
-- 0 mismatch proposals; 33 collecting.
-- The one grid known to be misconfigured stays `collecting` on a single evaluable pair. Requiring two pairs is what stopped an earlier replay from calling it verified.
-- Limit: the cloud has no samples for clamped channels, so the pre-fix field site and lines with clamped legs could not be replayed. That case needs the bench.
-
-**Release gate.** A bench line on the dev meter with known swaps, one reversed CT, all reversed and a cyclic relabel must give exactly the states and proposals of the reference model. A debug dump of the raw accumulators (`GET .../phase-check` includes them) is compared with the model fed the same minute data. All fixtures in the repo are synthetic.
+**Fleet replay.** 61 three-phase groups, up to 3 days of prod data per device, rebuilt to the raw frame from the stored power, PF sign and configuration. 23 lines verify on days of data with the old long thresholds (50 Wh, 60 co-conducting minutes); their wiring is taken as known. Limit: the cloud has no samples for clamped channels, so lines with clamped legs could not be replayed. That case needs the bench.
 
 ### D9. Cloud default
 - The static `_cloudServicesEnabled` stays false.
 - In `_loadConfigFromPreferences`, the `getBool` default becomes `!globalCommunityMode`, and the unconditional `_saveConfigToPreferences()` after load no longer writes `en_cloud` when the key is absent.
 - `setCloudServicesEnabled` always persists an explicit call.
-- Community mode is known before MQTT loads. Mqtt never starts in community mode anyway.
+- Held until setup completes or is skipped, so no update restarts the meter mid-setup.
+
+### D10. Speed and accuracy on the fleet
+The 22 of those lines with enough working-hour data. Each was configured in every way it could be got wrong, and the installation started at 10 random working-hour minutes; the check ran for up to 60 minutes with the D4 constants. Script `quick3.py`, read-only, not committed.
+
+| Configured | Right answer alone | Choose, truth first | Choose, truth lower | Truth missing | Wrong | Still measuring at 60 min |
+|---|---|---|---|---|---|---|
+| As wired | 92.7% verified | 1.8% (configuration) | 0% | 0% | 0% | 5.5% |
+| CTs reversed (1, 2 or 3) | 80.0% fix | 0% | 11.9% | 1.9% | 0% | 6.2% |
+| Two labels swapped | 0% | 79.5% | 12.4% | 1.9% | 0% | 6.2% |
+| Labels rotated | 0% | 70.8% | 10.2% | 0.9% | 6.0% fix, 5.9% verified | 6.1% |
+
+- Time to an answer: median 3 minutes, p90 25 minutes. The wait is for the load to run.
+- Choices have 2 options (median), 3 at most.
+- "Verified" on rotated labels is rotated labels plus every CT reversed: a uniform 60-degree shift no angle rule can see.
+- The ranking is in-sample (the typical angle was chosen on these lines). On synthetic loads spread evenly from -35 to 60 degrees, the truth comes first about 60% of the time. Real loads cluster, so the order helps, but the installer chooses.
+
+The single-phase check, on the same channels taken one at a time: no false alarm on correct channels; a wrong phase flagged 96% of the time, with the truth first 82% of the time; a wrong phase plus a reversed CT passes unnoticed half the time (the 60-degree case).
+
+**Data limits:** the cloud data keeps only positive power samples (the load clamp). The device sees the raw frame, so the numbers should be no worse there.
 
 ## Risks / Trade-offs
 
-- **Most erroneous load lines land in `ambiguous`** → the setup page shows both candidates with the PF and power each would read, and a person picks; the cloud issue carries them too. Resolving them automatically needs more than angles: grid-step correlation, or an assumption that installers never rotate labels within one line (a product decision, not a math one).
-- **Unbalanced mixed feeders read `inconsistent`** → Info only, no proposal.
-- **The 3% gate delays evidence on lightly loaded lines** → `collecting` is harmless. The same gate keeps noise out.
-- **Cloud on by default for new devices only** → matches "from now on"; the existing fleet keeps its stored value.
+- **A wrong choice made on site** → the configuration is still the installer's; the cloud check can catch it later from the readings.
+- **Rotated labels plus every CT reversed read as verified** → no angle rule can see it; the cloud check over days with grid steps can.
+- **No load during the visit** → nothing is checked on the device; the cloud check covers it.
+- **Cloud on by default for new devices only** → the existing fleet keeps its stored value.
 
 ## Migration Plan
 
-1. Firmware release. Lines are detected on existing devices from their group labels at the first boot. Nothing is changed automatically except unique reverse-only fixes (D4), which is what the detector does today.
-2. After the OTA, every `channel_phase_suspect` and `channel_phase_ambiguous` raised in the fleet is triaged by a person before any phase is changed, with the owner's consent.
+1. Firmware release. Upgraded devices with a non-default password count as set up: no window, no check, no energy reset, detector unchanged.
+2. Cloud-side checking is a separate `energyme-infra` change.
 
-Rollback: older firmware ignores the line id and the setup flag.
+Rollback: older firmware ignores the setup flag.
 
 ## Open Questions
 
-- None blocking. `add-voltage-phase` is archived (2026-11-11) and this change carries MODIFIED deltas for its re-arm and channel page requirements.
+- None blocking.
