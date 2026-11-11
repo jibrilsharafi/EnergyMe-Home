@@ -28,7 +28,7 @@ constexpr const char *TARGET_NOT_ALLOWED = "TARGET_NOT_ALLOWED";
 constexpr const char *BAD_TEMPLATE = "BAD_TEMPLATE";
 constexpr const char *MODULE_UNAVAILABLE = "MODULE_UNAVAILABLE";
 
-constexpr int64_t INTERVAL_MIN_S = 60;
+constexpr int64_t INTERVAL_MIN_S = 10;
 constexpr int64_t INTERVAL_MAX_S = 86400;
 constexpr int64_t JITTER_MAX_S = 300;
 constexpr int64_t DEADLINE_MIN_S = 5;

@@ -203,7 +203,7 @@ bool isExpired(const Job& job, int protoStatus, const uint8_t* body, size_t body
 uint64_t firstSlotS(uint64_t nowS, uint32_t intervalS, uint32_t randomDelayS);
 // The next slot t0 + k*interval strictly after `nowS` (missed slots skipped).
 uint64_t nextSlotS(uint64_t t0S, uint32_t intervalS, uint64_t nowS);
-// min(interval * 2^n, max(interval, 3600)) after n consecutive failures (n >= 1).
+// min(interval * 2^n, max(interval, min(3600, 60 * interval))) after n consecutive failures (n >= 1).
 uint64_t backoffDelayS(uint32_t intervalS, uint32_t failures);
 
 struct Window {
