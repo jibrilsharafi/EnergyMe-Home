@@ -692,8 +692,10 @@ bool parseJob(Validation &v, size_t index, JsonVariantConst value) {
     // out, else one silent unit stops the run with DEADLINE and the job backs off.
     if (job.intervalS < FAST_INTERVAL_S) {
         uint64_t worstMs = 0;
-        for (size_t i = 0; i < job.loginCount; i++) worstMs += job.login[i].timeoutMs;
-        for (size_t i = 0; i < job.stepCount; i++) worstMs += job.steps[i].timeoutMs;
+        // A UDP reply wait runs on wait_ms, not on the step timeout.
+        auto worst = [](const Step &step) { return step.timeoutMs > step.args.waitMs ? step.timeoutMs : step.args.waitMs; };
+        for (size_t i = 0; i < job.loginCount; i++) worstMs += worst(job.login[i]);
+        for (size_t i = 0; i < job.stepCount; i++) worstMs += worst(job.steps[i]);
         if (worstMs > (uint64_t)job.deadlineS * 1000) return fail(v.error, BAD_JOB, job.id, "step_timeout_ms");
     }
 

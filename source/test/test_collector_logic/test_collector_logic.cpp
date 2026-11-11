@@ -345,6 +345,12 @@ static void test_ten_second_job(void) {
     expectError(set(replace(job("f3", "modbus_tcp", "192.168.1.60", 502, slow), R"("interval_s":60)", R"("interval_s":10)")), "BAD_JOB", "f3",
                 "step_timeout_ms");
     expectValid(set(job("f4", "modbus_tcp", "192.168.1.60", 502, two, R"(,"deadline_s":5)")));
+    // A UDP step waits wait_ms for its reply whatever the step timeout.
+    const char *udp = R"([{"id":"q1","args":{"payload_b64":"AQI=","wait_ms":3000}},{"id":"q2","args":{"payload_b64":"AQI=","wait_ms":3000}}])";
+    std::string u = replace(job("u", "udp", "192.168.1.70", 9000, udp, R"(,"step_timeout_ms":100)"), R"("interval_s":60)", R"("interval_s":10)");
+    expectError(set(u), "BAD_JOB", "u", "step_timeout_ms");
+    expectValid(set(replace(u, R"("wait_ms":3000}},{"id":"q2","args":{"payload_b64":"AQI=","wait_ms":3000)",
+                            R"("wait_ms":2500}},{"id":"q2","args":{"payload_b64":"AQI=","wait_ms":2500)")));
 }
 
 static void test_step_and_var_quotas(void) {
