@@ -274,7 +274,10 @@ bool safeSerializeJson(JsonDocument &jsonDocument, char* buffer, size_t bufferSi
 bool isFirstBootDone();
 void setFirstBootDone();
 void createAllNamespaces();
-void clearAllPreferences();
+void clearAllPreferences(bool keepWifi = false);
+// Factory reset for the boot-loop ladder, before WiFi, LittleFS or any task is
+// up. Does not restart: the caller does, flagged as deliberate.
+void factoryResetAtBoot(bool keepWifi = false);
 
 // LittleFS file operations
 bool listLittleFsFiles(JsonDocument &doc, const char* folderPath = nullptr); // Optional folder path to filter files

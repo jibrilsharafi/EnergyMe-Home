@@ -7,7 +7,6 @@
 #include <esp_system.h>
 #include <AdvancedLogger.h>
 #include <Arduino.h>
-#include <Update.h>
 #include <ArduinoJson.h>
 #include "esp_core_dump.h"
 
@@ -18,16 +17,14 @@
 #include "utils.h"
 
 #ifdef ENV_DEV
-#define MAX_CRASH_COUNT 10     // Higher limits in development
-#define MAX_RESET_COUNT 30
-#define MAX_QUICK_RESTARTS 30
+#define MAX_QUICK_RESTARTS 30  // Higher limit in development
 #else
-#define MAX_CRASH_COUNT 3      // Production defaults
-#define MAX_RESET_COUNT 10
 #define MAX_QUICK_RESTARTS 5
 #endif
 
-#define COUNTERS_RESET_TIMEOUT (180 * 1000) // Timeout for the consecutive crash counter to reset
+// Uptime after which the consecutive crash counters reset and the boot-loop ladder
+// (bootrecovery.h) stops counting this boot as unstable
+#define COUNTERS_RESET_TIMEOUT (180 * 1000)
 
 // Safe mode protection against infinite restart loops
 #define QUICK_RESTART_THRESHOLD (60 * 1000) // Restart is considered "quick" if it happens within this time (1 minute)
@@ -111,8 +108,6 @@ namespace CrashMonitor {
     uint32_t getConsecutiveResetCount();
 
     void clearConsecutiveCrashCount(); // Useful for avoiding crash loops (e.g. during factory reset)
-    void clearRollbackTried(); // Re-arm rollback eligibility: call after stable operation, and after every successful OTA flash (new partition contents = new image, deserves its own rollback chance)
-    void markRollbackTried(); // Deliberate rollback in progress: keeps the crash-driven auto-rollback from bouncing back to the image the operator just left
 
     // Safe mode protection
     bool isInSafeMode(); // Returns true if device is in safe mode (rapid restart protection)

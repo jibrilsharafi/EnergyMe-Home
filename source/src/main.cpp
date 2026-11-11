@@ -16,6 +16,7 @@
 #include "utils.h"
 #include "hardware_profile.h"
 #include "app_image_descriptor.h"
+#include "bootrecovery.h"
 
 #include "ade7953.h"
 #include "buttonhandler.h"
@@ -128,6 +129,14 @@ void setup()
 
   Led::setWhite(Led::PRIO_NORMAL);
 
+  // Before anything that touches flash state (LittleFS, the NVS restore, the logger),
+  // so a fault in any of them is counted. May factory reset or roll back and restart.
+  BootRecovery::begin();
+  if (BootRecovery::isDegraded()) {
+    Led::blinkPurpleFast(Led::PRIO_CRITICAL); // Recovery boot, over the AP blink and every boot colour
+    if (BootRecovery::cloudDisabled()) globalCommunityMode = true; // Minimal: the cloud stack stays down
+  }
+
   if (!isFirstBootDone())
   {
     setFirstBootDone();
@@ -138,9 +147,13 @@ void setup()
   if (!LittleFS.begin(true)) // Ensure the partition name is "spiffs" in partitions.csv (even when using LittleFS). Setting the partition label to "littlefs" caused issues
   {
     Serial.println("LittleFS initialization failed!");
-    ESP.restart(); // No reason to live if we cannot mount the filesystem
+    ESP.restart(); // No reason to live if we cannot mount the filesystem. Counted by the boot-loop ladder
     return;
   }
+
+#ifdef ENV_DEV
+  BootRecovery::injectBootCrashIfArmed();
+#endif
 
   // Check for pending configuration restore (BEFORE services start = natural "blocked state")
   if (isNvsRestorePending()) {
@@ -341,8 +354,12 @@ void setup()
   LOG_DEBUG("Maintenance task started");
   logHeapLedger("maintenance");
 
-  // Visual indicator for safe mode (restart protection active)
-  if (CrashMonitor::isInSafeMode()) {
+  // Visual indicator for safe mode (restart protection active). A recovery boot keeps its own.
+  if (BootRecovery::isDegraded()) {
+    LOG_WARNING("Recovery boot (%s): meter passive%s. Update the firmware or exit recovery from the API",
+                BootRecoveryLogic::stageToString(BootRecovery::stage()),
+                BootRecovery::cloudDisabled() ? ", cloud disabled" : "");
+  } else if (CrashMonitor::isInSafeMode()) {
     Led::setPurple(Led::PRIO_CRITICAL); // Purple = safe mode (restart protection)
   } else {
     Led::setGreen(Led::PRIO_NORMAL);

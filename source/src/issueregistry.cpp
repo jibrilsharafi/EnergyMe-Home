@@ -6,6 +6,7 @@
 #include <LittleFS.h>
 
 #include "ade7953.h"
+#include "bootrecovery.h"
 #include "crashmonitor.h"
 #include "custommqtt.h"
 #include "customtime.h"
@@ -408,6 +409,18 @@ namespace IssueRegistry
         bool safeMode = CrashMonitor::isInSafeMode();
         _updateInstance(IssueLogic::Code::SafeModeActive, ISSUE_GLOBAL_SCOPE, safeMode,
                         "Safe mode active - restart protection engaged after rapid restarts");
+
+        // --- recovery_mode_active
+        bool degraded = BootRecovery::isDegraded();
+        if (degraded) {
+            snprintf(message, sizeof(message),
+                     "Recovery boot (%s) after repeated boot failures: meter stopped%s. Update the firmware or exit recovery mode",
+                     BootRecoveryLogic::stageToString(BootRecovery::stage()),
+                     BootRecovery::cloudDisabled() ? ", cloud disabled" : "");
+        } else {
+            message[0] = '\0';
+        }
+        _updateInstance(IssueLogic::Code::RecoveryModeActive, ISSUE_GLOBAL_SCOPE, degraded, message);
 
         // --- heap_low
         uint32_t freeHeap = ESP.getFreeHeap();

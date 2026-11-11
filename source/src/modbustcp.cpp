@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "modbustcp.h"
+#include "bootrecovery.h"
 
 namespace ModbusTcp
 {
@@ -75,7 +76,8 @@ namespace ModbusTcp
             return;
         }
 
-        bool shouldRun = staConnected && !apServing;
+        // Recovery boots keep the meter passive, so there is nothing to serve
+        bool shouldRun = staConnected && !apServing && !BootRecovery::meterPassive();
         bool running = _mbServer.isRunning();
         if (shouldRun && !running) {
             LOG_DEBUG("LAN link up (WiFi STA or Ethernet), no SoftAP broadcasting - starting Modbus TCP");

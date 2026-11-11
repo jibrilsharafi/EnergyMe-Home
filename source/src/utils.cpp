@@ -11,9 +11,11 @@
 #include "duration_format.h"
 #include "sha256_hex.h"
 #include "version_compare.h"
+#include "bootrecovery.h"
 
 #include <esp_random.h>
 #include <esp_wifi.h>
+#include <nvs.h>
 
 #include "taskprofiler.h"
 
@@ -44,7 +46,7 @@ static char _pendingRestartReason[STATUS_BUFFER_SIZE] = {0};
 static TaskHeartbeat _maintenanceHeartbeat;
 
 // Static function declarations
-static void _factoryReset();
+static void _factoryReset(bool keepWifi = false);
 static void _restartTask(void* parameter);
 static void _failsafeRestartCallback(void* parameter);
 static void _startFailsafeTimer(uint32_t timeoutMs);
@@ -665,6 +667,7 @@ TaskInfo getMaintenanceTaskInfo()
 // even if all other tasks are blocked/deadlocked
 static void _failsafeRestartCallback(void* parameter) {
     // Don't log here - we're in timer context and logging might be what's blocked
+    BootRecovery::markDeliberateRestart();
     ESP.restart();
 }
 
@@ -718,6 +721,7 @@ static void _restartTask(void* parameter) {
     if (factoryReset) { _factoryReset(); }
 
     // 5. Normal restart - if we get here, great. If not, failsafe timer handles it.
+    BootRecovery::markDeliberateRestart();
     ESP.restart();
 
     // Should never reach here
@@ -885,21 +889,21 @@ FirmwareRollbackResult attemptFirmwareRollback(const char* reason) {
         return FirmwareRollbackResult::INVALID_IMAGE;
     }
 
-    // Disarm the crash-driven auto-rollback BEFORE scheduling the restart: the
+    // Disarm the boot-loop ladder's auto-rollback BEFORE scheduling the restart: the
     // restart task can preempt this one, and the device must never reboot with
     // the flag unset (the crash ladder would bounce straight back to the image
     // the operator just left). The pending-OTA record is deliberately NOT
     // cleared: it belongs to the job that flashed the currently running image,
     // and the post-reboot validation reporting that job FAILED
     // (sha256_mismatch_firmware_rollback) is its correct terminal status.
-    CrashMonitor::markRollbackTried();
+    BootRecovery::setAutoRollbackBlocked(true);
 
     if (!setRestartSystem(reason)) {
         // Residual race only (both refusal branches were pre-checked above).
         // setRestartSystem holds a refused restart rather than cancelling it, so
         // undo everything or that held restart would silently execute the
         // rollback after we report failure.
-        CrashMonitor::clearRollbackTried();
+        BootRecovery::setAutoRollbackBlocked(false);
         esp_err_t restoreErr = esp_ota_set_boot_partition(running);
         if (restoreErr != ESP_OK) {
             // Practically unreachable (the running image validated at boot); if it
@@ -1139,12 +1143,12 @@ void statisticsToJson(Statistics& statistics, JsonDocument &jsonDocument) {
 // Helper functions
 // -----------------------------
 
-static void _factoryReset() { // No logger here it is likely destroyed already
+static void _factoryReset(bool keepWifi) { // No logger here it is likely destroyed already
     Serial.println("[WARNING] Factory reset requested");
 
     Led::blinkRedFast(Led::PRIO_CRITICAL); // The critical layer carries its own brightness floor
 
-    clearAllPreferences();
+    clearAllPreferences(keepWifi);
 
     // clearAllPreferences() shares its exclusion list with backup/restore, where the web
     // password must never travel. A factory reset is the opposite case: it has to hand the
@@ -1172,7 +1176,19 @@ static void _factoryReset() { // No logger here it is likely destroyed already
     // (nvs.net80211 - the same store CustomWifi::_hasStoredCredentials() reads and
     // resetWifi() erases via this same call). Without this, a factory reset left the
     // device rejoining its old network on the next boot instead of coming up unprovisioned.
-    esp_err_t err = esp_wifi_restore();
+    esp_err_t err = keepWifi ? ESP_OK : esp_wifi_restore();
+    if (err == ESP_ERR_WIFI_NOT_INIT) {
+        // The boot-loop ladder wipes before WiFi exists: erase the driver's store directly
+        nvs_handle_t handle;
+        err = nvs_open(PREFERENCES_DEFAULT_NAMESPACE_WIFI, NVS_READWRITE, &handle);
+        if (err == ESP_OK) {
+            err = nvs_erase_all(handle);
+            if (err == ESP_OK) err = nvs_commit(handle);
+            nvs_close(handle);
+        } else if (err == ESP_ERR_NVS_NOT_FOUND) {
+            err = ESP_OK; // Never associated: nothing stored
+        }
+    }
     if (err != ESP_OK) {
         Serial.printf("[ERROR] Failed to erase stored WiFi credentials: %s\n", esp_err_to_name(err));
     }
@@ -1191,6 +1207,10 @@ static void _factoryReset() { // No logger here it is likely destroyed already
     LittleFS.format();
 
     // Removed ESP.restart() call since the factory reset must be called only from the restart task
+}
+
+void factoryResetAtBoot(bool keepWifi) {
+    _factoryReset(keepWifi);
 }
 
 bool isFirstBootDone() {
@@ -1228,7 +1248,7 @@ void createAllNamespaces() {
     LOG_DEBUG("All namespaces created");
 }
 
-void clearAllPreferences() {
+void clearAllPreferences(bool keepWifi) {
     // Clear all app namespaces during factory reset, skipping only critical ones
     // Critical namespaces: factory-provisioned data (certs, calibration) and device-specific data
     const char* excludedNamespaces[] = {EXCLUDED_NVS_NAMESPACES_LIST};
@@ -1258,7 +1278,7 @@ void clearAllPreferences() {
         }
 
         // Check if this namespace should be skipped (critical data)
-        bool isExcluded = false;
+        bool isExcluded = keepWifi && strcmp(info.namespace_name, PREFERENCES_NAMESPACE_WIFI) == 0;
         for (const char* excluded : excludedNamespaces) {
             if (strcmp(info.namespace_name, excluded) == 0) {
                 isExcluded = true;

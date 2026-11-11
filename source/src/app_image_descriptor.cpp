@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Jibril Sharafi
 
 #include "app_image_descriptor.h"
+#include "bootrecovery.h"
 
 #include <cstdio>
 #include <cstring>
@@ -107,6 +108,7 @@ void rollBackIfWrongImage() {
     }
     Serial.printf("Rolled back to the previous firmware (%s), restarting\n", passive->label);
     Serial.flush();
+    BootRecovery::markDeliberateRestart();
     ESP.restart();
 }
 
