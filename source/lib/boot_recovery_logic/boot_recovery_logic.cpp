@@ -55,4 +55,23 @@ Decision decide(const Input &input) {
     return {Action::Boot, stage, 0};
 }
 
+const char *actionToString(Action action) {
+    switch (action) {
+        case Action::Boot: return "boot";
+        case Action::RollBack: return "rollback";
+        case Action::FactoryReset: return "factory_reset";
+    }
+    return "boot";
+}
+
+uint8_t pushHistory(HistoryEntry *entries, uint8_t count, const HistoryEntry &entry) {
+    if (count > HISTORY_CAPACITY) count = HISTORY_CAPACITY;
+    if (count == HISTORY_CAPACITY) {
+        for (uint8_t i = 1; i < HISTORY_CAPACITY; i++) entries[i - 1] = entries[i];
+        count--;
+    }
+    entries[count] = entry;
+    return count + 1;
+}
+
 } // namespace BootRecoveryLogic

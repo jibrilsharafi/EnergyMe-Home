@@ -58,6 +58,26 @@ bool isUnstableBoot(ResetKind kind, bool deliberateRestart);
 
 Decision decide(const Input &input);
 
+const char *actionToString(Action action);
+
+// One boot as the ladder saw it. Persisted as a raw blob, so the layout is part
+// of the NVS format: append fields only.
+struct HistoryEntry {
+    uint8_t resetReason; // esp_reset_reason_t of the previous boot
+    uint8_t deliberate;  // the previous boot flagged its restart as deliberate
+    uint8_t newFirmware; // first boot of this image
+    uint8_t fromStage;
+    uint8_t toStage;
+    uint8_t unstableBoots; // count after this boot
+    uint8_t action;
+};
+
+inline constexpr uint8_t HISTORY_CAPACITY = 12;
+
+// Appends entry to a history of `count` entries, oldest first, dropping the
+// oldest when full. Returns the new count.
+uint8_t pushHistory(HistoryEntry *entries, uint8_t count, const HistoryEntry &entry);
+
 // What a stage turns off.
 inline bool meterPassive(Stage stage) { return stage == Stage::Recovery || stage == Stage::Minimal; }
 inline bool cloudDisabled(Stage stage) { return stage == Stage::Minimal; }

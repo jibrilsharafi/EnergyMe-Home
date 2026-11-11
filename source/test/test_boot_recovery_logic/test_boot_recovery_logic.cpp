@@ -191,6 +191,43 @@ void test_stage_effects(void) {
     TEST_ASSERT_TRUE(cloudDisabled(Stage::Minimal));
 }
 
+void test_action_names(void) {
+    TEST_ASSERT_EQUAL_STRING("boot", actionToString(Action::Boot));
+    TEST_ASSERT_EQUAL_STRING("rollback", actionToString(Action::RollBack));
+    TEST_ASSERT_EQUAL_STRING("factory_reset", actionToString(Action::FactoryReset));
+}
+
+static HistoryEntry entryWithReason(uint8_t reason) {
+    HistoryEntry entry = {};
+    entry.resetReason = reason;
+    return entry;
+}
+
+void test_history_appends_until_full(void) {
+    HistoryEntry entries[HISTORY_CAPACITY] = {};
+    uint8_t count = 0;
+    for (uint8_t i = 0; i < HISTORY_CAPACITY; i++) count = pushHistory(entries, count, entryWithReason(i));
+    TEST_ASSERT_EQUAL_UINT8(HISTORY_CAPACITY, count);
+    TEST_ASSERT_EQUAL_UINT8(0, entries[0].resetReason);
+    TEST_ASSERT_EQUAL_UINT8(HISTORY_CAPACITY - 1, entries[HISTORY_CAPACITY - 1].resetReason);
+}
+
+void test_history_drops_the_oldest(void) {
+    HistoryEntry entries[HISTORY_CAPACITY] = {};
+    uint8_t count = 0;
+    for (uint8_t i = 0; i < HISTORY_CAPACITY + 2; i++) count = pushHistory(entries, count, entryWithReason(i));
+    TEST_ASSERT_EQUAL_UINT8(HISTORY_CAPACITY, count);
+    TEST_ASSERT_EQUAL_UINT8(2, entries[0].resetReason);
+    TEST_ASSERT_EQUAL_UINT8(HISTORY_CAPACITY + 1, entries[HISTORY_CAPACITY - 1].resetReason);
+}
+
+void test_history_tolerates_a_corrupt_count(void) {
+    HistoryEntry entries[HISTORY_CAPACITY] = {};
+    uint8_t count = pushHistory(entries, 200, entryWithReason(7));
+    TEST_ASSERT_EQUAL_UINT8(HISTORY_CAPACITY, count);
+    TEST_ASSERT_EQUAL_UINT8(7, entries[HISTORY_CAPACITY - 1].resetReason);
+}
+
 int main(int argc, char **argv) {
     (void)argc;
     (void)argv;
@@ -215,5 +252,9 @@ int main(int argc, char **argv) {
     RUN_TEST(test_unknown_stage_byte_is_normal);
     RUN_TEST(test_stage_names);
     RUN_TEST(test_stage_effects);
+    RUN_TEST(test_action_names);
+    RUN_TEST(test_history_appends_until_full);
+    RUN_TEST(test_history_drops_the_oldest);
+    RUN_TEST(test_history_tolerates_a_corrupt_count);
     return UNITY_END();
 }
