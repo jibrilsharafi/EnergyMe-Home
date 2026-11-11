@@ -28,8 +28,9 @@ constexpr const char *TARGET_NOT_ALLOWED = "TARGET_NOT_ALLOWED";
 constexpr const char *BAD_TEMPLATE = "BAD_TEMPLATE";
 constexpr const char *MODULE_UNAVAILABLE = "MODULE_UNAVAILABLE";
 
-constexpr int64_t INTERVAL_MIN_S = 60;
+constexpr int64_t INTERVAL_MIN_S = 10;
 constexpr int64_t INTERVAL_MAX_S = 86400;
+constexpr uint32_t FAST_INTERVAL_S = 60; // below it, the step timeouts must fit deadline_s
 constexpr int64_t JITTER_MAX_S = 300;
 constexpr int64_t DEADLINE_MIN_S = 5;
 constexpr int64_t DEADLINE_MAX_S = 300;
@@ -687,6 +688,16 @@ bool parseJob(Validation &v, size_t index, JsonVariantConst value) {
         job.stepCount++;
     }
     if (runBytes > RUN_BYTES_MAX) return fail(v.error, QUOTA_EXCEEDED, job.id, "max_bytes");
+    // Below 60 s the deadline is a few seconds: every step must fit it even when each one times
+    // out, else one silent unit stops the run with DEADLINE and the job backs off.
+    if (job.intervalS < FAST_INTERVAL_S) {
+        uint64_t worstMs = 0;
+        // A UDP reply wait runs on wait_ms, not on the step timeout.
+        auto worst = [](const Step &step) { return step.timeoutMs > step.args.waitMs ? step.timeoutMs : step.args.waitMs; };
+        for (size_t i = 0; i < job.loginCount; i++) worstMs += worst(job.login[i]);
+        for (size_t i = 0; i < job.stepCount; i++) worstMs += worst(job.steps[i]);
+        if (worstMs > (uint64_t)job.deadlineS * 1000) return fail(v.error, BAD_JOB, job.id, "step_timeout_ms");
+    }
 
     for (size_t k = 0; k < index; k++) {
         const Job &other = v.table->jobs[k];

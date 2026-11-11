@@ -219,6 +219,8 @@ namespace Collector
         uint32_t seq;
         uint64_t advanceTo; // cursor value waiting for every part of the last run to be published
         bool advancePending;
+        bool urgentSent;               // an err onset was reported at once at urgentAtS (uptime)
+        uint64_t urgentAtS;
         JobSnapshot stats;
     };
     static JobState _states[JOBS_MAX] = {};
@@ -935,7 +937,16 @@ namespace Collector
         }
         HealthChange change = healthOnRun(&js.stats.health, failed, failed ? (code ? code : "NO_DATA") : code, _run.detail[0] ? _run.detail : nullptr, nowUtc);
         bool changed = change != HealthChange::NONE;
-        _noteHealth(changed, change == HealthChange::URGENT);
+        // At most one err onset per job is reported at once per 300 s, so a flapping fast job
+        // does not report on every run; the rest is coalesced.
+        bool urgent = change == HealthChange::URGENT;
+        uint64_t upS = _uptimeS();
+        if (urgent && js.urgentSent && upS - js.urgentAtS < HEALTH_REPORT_INTERVAL_S) urgent = false;
+        if (urgent) {
+            js.urgentSent = true;
+            js.urgentAtS = upS;
+        }
+        _noteHealth(changed, urgent);
         // A failing job runs again every interval: warn when its health changes, not on every run.
         if (failed && changed) {
             LOG_WARNING("Collector job %s run %u failed: %s", job.id, (unsigned)_run.seq, code ? code : "NO_DATA");
@@ -1355,6 +1366,7 @@ namespace Collector
         uint64_t best = UINT64_MAX;
         for (uint8_t i = 0; i < _active.table->jobCount; i++) {
             if (!_active.table->jobs[i].enabled) continue;
+            if (_active.table->jobs[i].usesCursor && _states[i].advancePending) continue; // step() skips it until its parts drain
             uint64_t due = _states[i].nextS * 1000;
             if (due < best) best = due;
         }

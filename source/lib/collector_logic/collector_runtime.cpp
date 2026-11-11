@@ -20,6 +20,7 @@ using GatewayLogic::Module;
 namespace {
 constexpr uint32_t FIRST_SLOT_SPREAD_MAX_S = 60;
 constexpr uint32_t BACKOFF_CAP_S = 3600;
+constexpr uint32_t BACKOFF_CAP_SLOTS = 60;
 } // namespace
 
 uint64_t firstSlotS(uint64_t nowS, uint32_t intervalS, uint32_t randomDelayS) {
@@ -33,7 +34,10 @@ uint64_t nextSlotS(uint64_t t0S, uint32_t intervalS, uint64_t nowS) {
 }
 
 uint64_t backoffDelayS(uint32_t intervalS, uint32_t failures) {
-    uint64_t cap = intervalS > BACKOFF_CAP_S ? intervalS : BACKOFF_CAP_S;
+    // 3600 s from a 60 s interval up, scaled down for fast jobs.
+    uint64_t scaled = (uint64_t)intervalS * BACKOFF_CAP_SLOTS;
+    uint64_t cap = scaled < BACKOFF_CAP_S ? scaled : BACKOFF_CAP_S;
+    if (cap < intervalS) cap = intervalS;
     uint64_t delay = intervalS;
     for (uint32_t i = 0; i < failures && delay < cap; i++) delay *= 2; // at most ~16 doublings before the cap
     return delay < cap ? delay : cap;

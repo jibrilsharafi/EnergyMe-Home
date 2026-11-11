@@ -25,8 +25,21 @@ static void test_backoff_growth_and_cap(void) {
     TEST_ASSERT_EQUAL_UINT64(2400, backoffDelayS(300, 3));
     TEST_ASSERT_EQUAL_UINT64(3600, backoffDelayS(300, 4));
     TEST_ASSERT_EQUAL_UINT64(3600, backoffDelayS(300, 40));
-    TEST_ASSERT_EQUAL_UINT64(7200, backoffDelayS(7200, 3)); // cap is max(interval, 3600)
+    TEST_ASSERT_EQUAL_UINT64(7200, backoffDelayS(7200, 3)); // cap is max(interval, min(3600, 60 * interval))
     TEST_ASSERT_EQUAL_UINT64(120, backoffDelayS(60, 1));
+    TEST_ASSERT_EQUAL_UINT64(3600, backoffDelayS(60, 10)); // 60 * 60
+    TEST_ASSERT_EQUAL_UINT64(3600, backoffDelayS(120, 10));
+    TEST_ASSERT_EQUAL_UINT64(86400, backoffDelayS(86400, 1));
+}
+
+static void test_backoff_fast_job_cap(void) {
+    // A 10 s job caps at 60 intervals (600 s), not 3600 s.
+    TEST_ASSERT_EQUAL_UINT64(20, backoffDelayS(10, 1));
+    TEST_ASSERT_EQUAL_UINT64(40, backoffDelayS(10, 2));
+    TEST_ASSERT_EQUAL_UINT64(320, backoffDelayS(10, 5));
+    TEST_ASSERT_EQUAL_UINT64(600, backoffDelayS(10, 6));
+    TEST_ASSERT_EQUAL_UINT64(600, backoffDelayS(10, 1000));
+    TEST_ASSERT_EQUAL_UINT64(1800, backoffDelayS(30, 20));
 }
 
 static void test_first_slot_spread(void) {
@@ -982,6 +995,7 @@ static void test_report_coalescing(void) {
 
 void run_collector_runtime_tests(void) {
     RUN_TEST(test_backoff_growth_and_cap);
+    RUN_TEST(test_backoff_fast_job_cap);
     RUN_TEST(test_first_slot_spread);
     RUN_TEST(test_no_burst_after_pause);
     RUN_TEST(test_window_normal_advance_with_overlap);

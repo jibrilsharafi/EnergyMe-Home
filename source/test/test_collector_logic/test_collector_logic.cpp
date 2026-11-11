@@ -264,7 +264,7 @@ static void test_one_invalid_job_rejects_set(void) {
     reset();
     std::string a = job("a1", "modbus_tcp", "192.168.1.60", 502, R"([{"id":"u1","args":{"address":"u1/hr0","count":2}}])");
     std::string b = replace(job("b2", "modbus_tcp", "192.168.1.61", 502, R"([{"id":"u1","args":{"address":"u1/hr0","count":2}}])"),
-                            R"("interval_s":60)", R"("interval_s":30)");
+                            R"("interval_s":60)", R"("interval_s":9)");
     std::string c = job("c3", "modbus_tcp", "192.168.1.62", 502, R"([{"id":"u1","args":{"address":"u1/hr0","count":2}}])");
     expectError(set(a + "," + b + "," + c), "BAD_JOB", "b2", "interval_s");
 }
@@ -318,6 +318,39 @@ static void test_field_ranges(void) {
     expectError(set(replace(MODBUS_JOB, R"("id":"u4")", R"("id":"u3")")), "BAD_JOB", "mb_meters", "id");
     expectError(set(std::string(MODBUS_JOB) + "," + MODBUS_JOB), "BAD_JOB", "mb_meters", "id");
     expectError(set(replace(MODBUS_JOB, R"("interval_s":60)", R"("interval_s":60.0)")), "BAD_JOB", "mb_meters", "interval_s");
+}
+
+static void test_ten_second_job(void) {
+    reset();
+    const char *mb = R"([{"id":"u1","args":{"address":"u1/hr0","count":2}}])";
+    std::string fast = replace(job("f", "modbus_tcp", "192.168.1.60", 502, mb), R"("interval_s":60)", R"("interval_s":10)");
+    expectValid(set(fast));
+    TEST_ASSERT_EQUAL_UINT32(10, table.jobs[0].intervalS);
+    TEST_ASSERT_EQUAL_UINT32(5, table.jobs[0].deadlineS); // min(60, interval/2)
+    TEST_ASSERT_EQUAL_UINT32(0, table.jobs[0].jitterS);
+    expectValid(set(replace(fast, R"("interval_s":10)", R"("interval_s":10,"jitter_s":5,"deadline_s":5)")));
+    expectError(set(replace(fast, R"("interval_s":10)", R"("interval_s":10,"jitter_s":6)")), "BAD_JOB", "f", "jitter_s");
+    expectError(set(replace(fast, R"("interval_s":10)", R"("interval_s":10,"deadline_s":6)")), "BAD_JOB", "f", "deadline_s");
+    expectError(set(replace(fast, R"("interval_s":10)", R"("interval_s":9)")), "BAD_JOB", "f", "interval_s");
+    expectValid(set(replace(fast, R"("interval_s":10)", R"("interval_s":11)")));
+    TEST_ASSERT_EQUAL_UINT32(5, table.jobs[0].deadlineS);
+    // Below 60 s every step must fit the deadline even when each one times out.
+    const char *two = R"([{"id":"u1","args":{"address":"u1/hr0","count":2}},{"id":"u2","args":{"address":"u2/hr0","count":2}}])";
+    std::string pair = replace(job("f2", "modbus_tcp", "192.168.1.60", 502, two), R"("interval_s":60)", R"("interval_s":10)");
+    expectError(set(pair), "BAD_JOB", "f2", "step_timeout_ms");
+    expectValid(set(replace(pair, R"("interval_s":10)", R"("interval_s":10,"step_timeout_ms":2500)")));
+    expectError(set(replace(pair, R"("interval_s":10)", R"("interval_s":10,"step_timeout_ms":2501)")), "BAD_JOB", "f2", "step_timeout_ms");
+    // A per-step timeout counts too; from 60 s up the rule does not apply.
+    std::string slow = R"([{"id":"u1","timeout_ms":4500,"args":{"address":"u1/hr0","count":2}},{"id":"u2","timeout_ms":1000,"args":{"address":"u2/hr0","count":2}}])";
+    expectError(set(replace(job("f3", "modbus_tcp", "192.168.1.60", 502, slow), R"("interval_s":60)", R"("interval_s":10)")), "BAD_JOB", "f3",
+                "step_timeout_ms");
+    expectValid(set(job("f4", "modbus_tcp", "192.168.1.60", 502, two, R"(,"deadline_s":5)")));
+    // A UDP step waits wait_ms for its reply whatever the step timeout.
+    const char *udp = R"([{"id":"q1","args":{"payload_b64":"AQI=","wait_ms":3000}},{"id":"q2","args":{"payload_b64":"AQI=","wait_ms":3000}}])";
+    std::string u = replace(job("u", "udp", "192.168.1.70", 9000, udp, R"(,"step_timeout_ms":100)"), R"("interval_s":60)", R"("interval_s":10)");
+    expectError(set(u), "BAD_JOB", "u", "step_timeout_ms");
+    expectValid(set(replace(u, R"("wait_ms":3000}},{"id":"q2","args":{"payload_b64":"AQI=","wait_ms":3000)",
+                            R"("wait_ms":2500}},{"id":"q2","args":{"payload_b64":"AQI=","wait_ms":2500)")));
 }
 
 static void test_step_and_var_quotas(void) {
@@ -574,7 +607,7 @@ static void test_module_unavailable_and_order(void) {
     std::string badTemplate = job("bt", "http", "192.168.1.50", 80, httpStep("GET", "/${bogus}"));
     expectError(set(https + "," + badTemplate), "BAD_TEMPLATE", "bt", "steps[0]");
     // BAD_JOB in a later job before BAD_TEMPLATE in an earlier one.
-    std::string badJob = replace(job("bj", "http", "192.168.1.51", 80, httpStep("GET", "/")), R"("interval_s":60)", R"("interval_s":59)");
+    std::string badJob = replace(job("bj", "http", "192.168.1.51", 80, httpStep("GET", "/")), R"("interval_s":60)", R"("interval_s":9)");
     expectError(set(badTemplate + "," + badJob), "BAD_JOB", "bj", "interval_s");
     // https needs cert_sha256.
     httpsAvailable = true;
@@ -758,6 +791,7 @@ int main(int, char **) {
     RUN_TEST(test_run_larger_than_queue);
     RUN_TEST(test_deadline_longer_than_half_interval);
     RUN_TEST(test_field_ranges);
+    RUN_TEST(test_ten_second_job);
     RUN_TEST(test_step_and_var_quotas);
     RUN_TEST(test_capture_schema);
     RUN_TEST(test_xweb_needs_no_grant);
