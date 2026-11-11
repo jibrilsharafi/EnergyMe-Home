@@ -34,7 +34,7 @@ uint64_t nextSlotS(uint64_t t0S, uint32_t intervalS, uint64_t nowS) {
 }
 
 uint64_t backoffDelayS(uint32_t intervalS, uint32_t failures) {
-    // max(interval, min(3600, 60 * interval)): 3600 from 60 s up, scaled down for fast jobs.
+    // 3600 s from a 60 s interval up, scaled down for fast jobs.
     uint64_t scaled = (uint64_t)intervalS * BACKOFF_CAP_SLOTS;
     uint64_t cap = scaled < BACKOFF_CAP_S ? scaled : BACKOFF_CAP_S;
     if (cap < intervalS) cap = intervalS;

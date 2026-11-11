@@ -25,7 +25,7 @@ static void test_backoff_growth_and_cap(void) {
     TEST_ASSERT_EQUAL_UINT64(2400, backoffDelayS(300, 3));
     TEST_ASSERT_EQUAL_UINT64(3600, backoffDelayS(300, 4));
     TEST_ASSERT_EQUAL_UINT64(3600, backoffDelayS(300, 40));
-    TEST_ASSERT_EQUAL_UINT64(7200, backoffDelayS(7200, 3)); // cap is max(interval, 3600)
+    TEST_ASSERT_EQUAL_UINT64(7200, backoffDelayS(7200, 3)); // cap is max(interval, min(3600, 60 * interval))
     TEST_ASSERT_EQUAL_UINT64(120, backoffDelayS(60, 1));
     TEST_ASSERT_EQUAL_UINT64(3600, backoffDelayS(60, 10)); // 60 * 60
     TEST_ASSERT_EQUAL_UINT64(3600, backoffDelayS(120, 10));
