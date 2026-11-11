@@ -1102,6 +1102,7 @@ namespace Mqtt
             }
             _lastConnectedState = connectedNow;
             Tunnel::setCloudConnected(connectedNow);
+            if (!connectedNow) Collector::setCloudConnected(false); // link or TCP gone between loops; true comes from _handleConnectedState
             _checkOfflineEnergyCapture(connectedNow);
             _checkCloudOutageRestart(linkUp, connectedNow);
 
@@ -1131,6 +1132,7 @@ namespace Mqtt
         _clientMqtt.disconnect();
         _lastConnectedState = false;
         Tunnel::setCloudConnected(false); // cloud services off: the tunnel's reconnect grace starts now
+        Collector::setCloudConnected(false);
         LOG_DEBUG("MQTT task stopping");
         _taskHandle = nullptr;
         vTaskDelete(nullptr);
