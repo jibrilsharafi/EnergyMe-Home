@@ -220,7 +220,7 @@
                 <strong>Inverter</strong>: DC-coupled hybrid (PV + Battery share one inverter). Both signs are kept.<br>
                 <strong>Bidirectional</strong>: a circuit that can draw or feed back (e.g. a sub-panel with its own generation). Both signs are kept, and it is counted with the loads.
             </div></span>`;
-        const CHANNELS = 16;
+        let CHANNELS = 16; // read from the meter at boot (17 on some boards)
 
         const S = { pick: {}, checking: {}, step: 1, cloud: true, vp: 1, supply: 'single', circuits: [], open: null, channels: [], poll: null };
         const $ = id => document.getElementById(id);
@@ -279,12 +279,13 @@
                 used.add(ct.channel);
                 const base = byIndex.get(ct.channel) || {};
                 out.push({
-                    ...base, index: ct.channel, active: true, label: ct.label || (c.cts.length > 1 ? `${c.name} L${ct.phase}` : c.name),
+                    ...base, index: ct.channel, active: true, label: c.cts.length > 1 ? `${c.name} L${ct.phase}` : c.name, // always generated: the line apply relabels <name> L<n>
                     phase: ct.phase, groupLabel: c.name, role: c.role,
                     ctSpecification: { ...(base.ctSpecification || { voltageOutput: 0.333, scalingFraction: 0 }), currentRating: c.ct },
                 });
             }));
-            for (let i = 0; i < CHANNELS; i++) if (!used.has(i)) out.push({ ...(byIndex.get(i) || {}), index: i, active: i === 0 });
+            // Unused channels go back to their default names, so a leftover group name never joins (or blocks) a circuit.
+            for (let i = 0; i < CHANNELS; i++) if (!used.has(i)) out.push({ ...(byIndex.get(i) || {}), index: i, active: i === 0, label: `Channel ${i}`, groupLabel: `Group ${i}` });
             return out.sort((a, b) => a.index - b.index);
         }
 
@@ -467,19 +468,24 @@
                     const c = S.last.singles.find(x => x.index === +key.slice(1)), o = c.options[+idx];
                     const base = S.channels.find(x => x.index === c.index) || { index: c.index };
                     await api.put('ade7953/channels', [{ ...base, phase: o.phase, reverse: o.reverse }]);
-                    Object.assign(base, { phase: o.phase, reverse: o.reverse });
                 } else {
                     const line = S.last.lines.find(l => l.lowestChannel === +key), cand = line.candidates[+idx];
                     await api.post('ade7953/phase-check/apply', { lowestChannel: line.lowestChannel, generation: line.generation, channels: line.channels.map(c => c.index), phases: cand.phases, reverse: cand.reverse });
                 }
                 delete S.pick[key];
                 S.checking[key] = Date.now();
+                await reloadChannels(); // Back then Next must save what was applied, not the old phases
                 setTimeout(pollLines, CHECKING_MS + 50);
             } catch (err) { toastError('The proposal changed. Check it again.'); }
             finally { S.applying = false; pollLines(); }
         }
         $('lines').addEventListener('click', onCheckClick);
         $('singles').addEventListener('click', onCheckClick);
+
+        async function reloadChannels() {
+            S.channels = await api.get('ade7953/channel');
+            S.circuits = circuitsFromChannels(S.channels);
+        }
 
         async function pollLines() {
             try { renderLines(await api.get('ade7953/phase-check')); }
@@ -546,6 +552,7 @@
                 S.cloud = !!cloud.enabled;
                 S.vp = vp.voltagePhase || 1;
                 S.channels = chans;
+                CHANNELS = chans.length || CHANNELS;
                 S.circuits = circuitsFromChannels(chans);
                 S.open = S.circuits.length ? 0 : null;
                 S.supply = supplyFrom(chans, S.vp);
