@@ -41,9 +41,9 @@
 
 ## 6. Cloud default
 
-- [ ] 6.1 `getBool` default `!globalCommunityMode`, no write-back of an absent key, explicit setter always persists; static stays false
-- [ ] 6.2 Check that the LAN gateway and tunnel defaults stay off
-- [ ] 6.3 Hold cloud services until setup completes or is skipped; `setup/complete` stores the choice and starts them
+- [x] 6.1 `getBool` default `!globalCommunityMode`, no write-back of an absent key, explicit setter always persists; static stays false
+- [x] 6.2 Check that the LAN gateway and tunnel defaults stay off
+- [x] 6.3 Hold cloud services until setup completes or is skipped; `setup/complete` stores the choice and starts them
 
 ## 7. Review and verification
 

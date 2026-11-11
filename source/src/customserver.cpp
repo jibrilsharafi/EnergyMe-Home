@@ -3,6 +3,7 @@
 
 #include "customserver.h"
 #include "bootrecovery.h"
+#include "setupcheck.h"
 #include "collector.h"
 #include "gateway.h"
 #include "gateway_executor.h"
@@ -120,6 +121,7 @@ namespace CustomServer
     static void _serveAuthEndpoints();
     static void _serveOtaEndpoints();
     static void _serveAde7953Endpoints();
+    static void _serveSetupEndpoints();
     static void _serveCustomMqttEndpoints();
     static void _serveInfluxDbEndpoints();
     static void _serveCrashEndpoints();
@@ -908,10 +910,111 @@ namespace CustomServer
         return true;
     }
 
+    // Setup state and the setup phase check (openspec change add-phase-check)
+    static void _serveSetupEndpoints()
+    {
+        server.on("/api/v1/setup/status", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            doc["setupDone"] = SetupCheck::isSetupDone();
+            doc["checkWindow"] = SetupCheck::isWindowOpen();
+            _sendJsonResponse(request, doc);
+        });
+
+        server.on("/api/v1/setup/start", HTTP_POST, [](AsyncWebServerRequest *request)
+                  {
+            if (!_validateRequest(request, "POST")) return;
+            SetupCheck::startRerun();
+            _sendSuccessResponse(request, "Setup started: the phase check runs for up to 2 hours or until setup completes");
+        });
+
+        static AsyncCallbackJsonWebHandler *setupCompleteHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/setup/complete",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (!_validateRequest(request, "POST", HTTP_MAX_CONTENT_LENGTH_SETUP_COMPLETE)) return;
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
+                doc.set(json);
+                if (!doc.is<JsonObject>() || (!doc["cloudServices"].isNull() && !doc["cloudServices"].is<bool>())) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid JSON structure. Expected: {\"cloudServices\": true/false}");
+                    return;
+                }
+                const bool first = SetupCheck::completeSetup();
+                // The cloud was held during setup: store the choice made there and start it.
+                if (!globalCommunityMode) {
+                    const bool cloud = doc["cloudServices"].is<bool>() ? doc["cloudServices"].as<bool>() : Mqtt::isCloudServicesEnabled();
+                    Mqtt::setCloudServicesEnabled(cloud);
+                }
+                LOG_INFO("Setup %s via API", first ? "completed" : "completed again");
+                _sendSuccessResponse(request, "Setup completed");
+            });
+        server.addHandler(setupCompleteHandler);
+
+        server.on("/api/v1/ade7953/phase-check", HTTP_GET, [](AsyncWebServerRequest *request)
+                  {
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            SetupCheck::toJson(doc);
+            _sendJsonResponse(request, doc);
+        });
+
+        static AsyncCallbackJsonWebHandler *phaseCheckApplyHandler = new AsyncCallbackJsonWebHandler(
+            "/api/v1/ade7953/phase-check/apply",
+            [](AsyncWebServerRequest *request, JsonVariant &json)
+            {
+                if (!_validateRequest(request, "POST", HTTP_MAX_CONTENT_LENGTH_PHASE_CHECK_APPLY)) return;
+                SpiRamAllocator allocator;
+                JsonDocument doc(&allocator);
+                doc.set(json);
+                JsonArrayConst channels = doc["channels"], phases = doc["phases"], reverse = doc["reverse"];
+                if (!doc["lowestChannel"].is<uint8_t>() || !doc["generation"].is<uint32_t>() ||
+                    channels.size() != 3 || phases.size() != 3 || reverse.size() != 3) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST,
+                        "Expected: {lowestChannel, generation, channels: [3], phases: [3], reverse: [3]}");
+                    return;
+                }
+                uint8_t ch[3], ph[3];
+                bool rv[3];
+                for (int i = 0; i < 3; i++) {
+                    if (!channels[i].is<uint8_t>() || !phases[i].is<uint8_t>() || !reverse[i].is<bool>()) {
+                        _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "channels and phases must be integers, reverse booleans");
+                        return;
+                    }
+                    ch[i] = channels[i];
+                    ph[i] = phases[i];
+                    rv[i] = reverse[i];
+                }
+                // Serialized by the API mutex taken in _validateRequest: concurrent applies run one after the other.
+                const SetupCheck::ApplyResult r = SetupCheck::apply(doc["lowestChannel"], doc["generation"], ch, ph, rv);
+                switch (r) {
+                    case SetupCheck::ApplyResult::Applied:
+                    case SetupCheck::ApplyResult::NoChange:
+                        _sendSuccessResponse(request, SetupCheck::applyResultMessage(r));
+                        break;
+                    case SetupCheck::ApplyResult::Stale:
+                    case SetupCheck::ApplyResult::NotOffered:
+                        _sendErrorResponse(request, HTTP_CODE_CONFLICT, SetupCheck::applyResultMessage(r));
+                        break;
+                    case SetupCheck::ApplyResult::NotFound:
+                        _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, SetupCheck::applyResultMessage(r));
+                        break;
+                    case SetupCheck::ApplyResult::WindowClosed:
+                        _sendErrorResponse(request, HTTP_CODE_CONFLICT, SetupCheck::applyResultMessage(r));
+                        break;
+                    default:
+                        _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, SetupCheck::applyResultMessage(r));
+                }
+            });
+        server.addHandler(phaseCheckApplyHandler);
+    }
+
     static void _serveApi()
     {
         // Group endpoints by functionality
         _serveSystemEndpoints();
+        _serveSetupEndpoints();
         _serveIssueEndpoints();
         _serveNetworkEndpoints();
         _serveLoggingEndpoints();
@@ -1000,10 +1103,12 @@ namespace CustomServer
         static char gateEtag[MD5_BUFFER_SIZE + 16] = {0};
         static char dashEtag[MD5_BUFFER_SIZE + 16] = {0};
         static char wifiEtag[MD5_BUFFER_SIZE + 16] = {0};
+        static char setupEtag[MD5_BUFFER_SIZE + 16] = {0};
 
         char* buffer;
         if (strcmp(variant, "gate") == 0) buffer = gateEtag;
         else if (strcmp(variant, "dash") == 0) buffer = dashEtag;
+        else if (strcmp(variant, "setup") == 0) buffer = setupEtag;
         else buffer = wifiEtag;
 
         if (buffer[0] == '\0') {
@@ -1185,6 +1290,7 @@ namespace CustomServer
         const char* wifiEtag = _getVariantEtag("wifi");
         const char* gateEtag = _getVariantEtag("gate");
         const char* dashEtag = _getVariantEtag("dash");
+        const char* setupEtag = _getVariantEtag("setup");
 
         server.on("/", HTTP_GET, [wifiEtag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/html", EMBEDDED(wifi_setup_html), wifiEtag);
@@ -1203,8 +1309,19 @@ namespace CustomServer
             _sendStaticWithEtag(request, "text/html", EMBEDDED(password_setup_html), gateEtag);
         }).setFilter([](AsyncWebServerRequest *request) { (void)request; return _usingDefaultPassword; });
 
+        // Then, once the password is changed, a device that never completed setup lands on
+        // the setup page; finishing or skipping it makes "/" the dashboard for good.
+        server.on("/", HTTP_GET, [setupEtag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", EMBEDDED(setup_html), setupEtag);
+        }).setFilter([](AsyncWebServerRequest *request) { (void)request; return !SetupCheck::isSetupDone(); });
+
         server.on("/", HTTP_GET, [dashEtag](AsyncWebServerRequest *request) {
             _sendStaticWithEtag(request, "text/html", EMBEDDED(index_html), dashEtag);
+        });
+
+        // By name too, for "Run setup again" from the configuration page.
+        server.on("/setup", HTTP_GET, [etag](AsyncWebServerRequest *request) {
+            _sendStaticWithEtag(request, "text/html", EMBEDDED(setup_html), etag);
         });
 
         // Also reachable by name, so a provisioned device can be re-pointed at another
@@ -3454,20 +3571,16 @@ namespace CustomServer
                     return;
                 }
 
-                // Update all channels - let setChannelDataFromJson handle all validation
-                SpiRamAllocator channelAllocator;
-                JsonDocument channelDoc(&channelAllocator);
-                for (JsonDocument channelDoc : doc.as<JsonArrayConst>()) {
-                    bool roleChanged = false;
-                    if (!Ade7953::setChannelDataFromJson(channelDoc, false, &roleChanged)) {
-                        _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid channel configuration in array");
-                        return;
-                    }
-                    if (roleChanged) {
-                        uint8_t idx = channelDoc["index"].as<uint8_t>();
-                        Ade7953::resetChannelEnergyValues(idx);
-                        LOG_INFO("Auto-reset energy and cleared history for channel %u due to role change", idx);
-                    }
+                // Validated as a whole against the configuration it leads to, then written
+                uint32_t roleChanged = 0;
+                if (!Ade7953::setAllChannelDataFromJson(doc.as<JsonArrayConst>(), &roleChanged)) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid channel configuration in array");
+                    return;
+                }
+                for (uint8_t idx = 0; idx < MAX_CHANNEL_COUNT; idx++) {
+                    if (!(roleChanged & (1UL << idx))) continue;
+                    Ade7953::resetChannelEnergyValues(idx);
+                    LOG_INFO("Auto-reset energy and cleared history for channel %u due to role change", idx);
                 }
 
                 LOG_INFO("Bulk updated %u ADE7953 channels via API", doc.size());
@@ -3883,11 +3996,11 @@ namespace CustomServer
             "/api/v1/mqtt/cloud-services",
             [](AsyncWebServerRequest *request, JsonVariant &json)
             {
-                if (globalCommunityMode) {
+                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_MQTT_CLOUD_SERVICES)) return;
+                if (globalCommunityMode) { // after the mutex is taken: _sendErrorResponse releases it
                     _sendErrorResponse(request, HTTP_CODE_FORBIDDEN, "Cloud services are not available in community mode");
                     return;
                 }
-                if (!_validateRequest(request, "PUT", HTTP_MAX_CONTENT_LENGTH_MQTT_CLOUD_SERVICES)) return;
 
                 SpiRamAllocator allocator;
                 JsonDocument doc(&allocator);

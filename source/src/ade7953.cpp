@@ -3368,22 +3368,28 @@ namespace Ade7953
         return true;
     }
 
+    // While a bulk write validates and applies, the group/role rule is checked against the
+    // configuration the whole array leads to, not the half-applied one: otherwise changing a
+    // group's role fails on its first channel, after earlier channels were already written.
+    static ChannelData *_bulkEndState = nullptr;
+
     bool _validateGroupRoleConsistency(const char* groupLabel, uint8_t channelIndex, ChannelRole role) {
         // Acquire mutex to safely read other channels
         if (!acquireMutex(&_channelDataMutex)) {
             LOG_ERROR("Failed to acquire mutex for group validation");
             return false;
         }
+        const ChannelData *view = _bulkEndState ? _bulkEndState : _channelData;
 
         // Check all other channels with same groupLabel
         for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
             if (i == channelIndex) continue;  // Skip self
 
             // If another channel has same groupLabel, roles must match
-            if (strcmp(_channelData[i].groupLabel, groupLabel) == 0) {
-                if (_channelData[i].role != role) {
+            if (strcmp(view[i].groupLabel, groupLabel) == 0) {
+                if (view[i].role != role) {
                     LOG_WARNING("Group '%s' role mismatch: channel %u is %s, but channel %u would be %s",
-                               groupLabel, i, channelRoleToString(_channelData[i].role),
+                               groupLabel, i, channelRoleToString(view[i].role),
                                channelIndex, channelRoleToString(role));
                     releaseMutex(&_channelDataMutex);
                     return false;
@@ -3393,6 +3399,51 @@ namespace Ade7953
 
         releaseMutex(&_channelDataMutex);
         return true;
+    }
+
+    bool setAllChannelDataFromJson(JsonArrayConst channels, uint32_t *roleChangedMask) {
+        if (roleChangedMask) *roleChangedMask = 0;
+        static ChannelData *endState = nullptr;  // web server task only; PSRAM, allocated once
+        if (!endState) {
+            void *mem = heap_caps_malloc(sizeof(ChannelData) * MAX_CHANNEL_COUNT, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            if (!mem) return false;
+            endState = new (mem) ChannelData[MAX_CHANNEL_COUNT];
+        }
+        if (!acquireMutex(&_channelDataMutex)) return false;
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) endState[i] = _channelData[i];
+        releaseMutex(&_channelDataMutex);
+
+        // Pass 1: shape and index of every element, and the end state they lead to.
+        for (JsonVariantConst element : channels) {
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            doc.set(element);
+            if (!doc["index"].is<uint8_t>() || !isChannelValid(doc["index"].as<uint8_t>())) return false;
+            channelDataFromJson(doc, endState[doc["index"].as<uint8_t>()], false);
+        }
+        // Pass 2: validate every element against that end state, before anything is written.
+        _bulkEndState = endState;
+        bool valid = true;
+        for (JsonVariantConst element : channels) {
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            doc.set(element);
+            valid = valid && _validateChannelDataJson(doc, false);
+        }
+        // Pass 3: apply.
+        bool applied = valid;
+        for (JsonVariantConst element : channels) {
+            if (!applied) break;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            doc.set(element);
+            bool roleChanged = false;
+            applied = setChannelDataFromJson(doc, false, &roleChanged);
+            if (roleChanged && roleChangedMask) *roleChangedMask |= (1UL << doc["index"].as<uint8_t>());
+        }
+        _bulkEndState = nullptr;
+        if (!valid) LOG_WARNING("Bulk channel write refused: an element is invalid, nothing was written");
+        return applied;
     }
 
     bool _validateChannelDataJson(const JsonDocument &jsonDocument, bool partial) {
