@@ -29,15 +29,15 @@
 
 ## 4. REST
 
-- [ ] 4.1 `GET /api/v1/ade7953/phase-check` (window flag, per-line generation, currents, candidates with readings, single-phase checks), `POST .../apply` (channel-keyed, serialized, idempotent); `GET /api/v1/setup/status`, `POST /api/v1/setup/start`, `POST /api/v1/setup/complete`; error envelope; swagger, api-client, mock server
+- [x] 4.1 `GET /api/v1/ade7953/phase-check` (window flag, per-line generation, currents, candidates with readings, single-phase checks), `POST .../apply` (channel-keyed, serialized, idempotent); `GET /api/v1/setup/status`, `POST /api/v1/setup/start`, `POST /api/v1/setup/complete`; error envelope; swagger, api-client, mock server
 
 ## 5. Web UI
 
-- [ ] 5.1 `/setup` page from the prototype in `source/html/setup.html` (cloud, supply, circuits, phase check), reusing shared styles, toasts and tooltips; skip link; resume on the phase check
-- [ ] 5.2 `/` fourth twin with its ETag variant; setup-done flag in NVS, set on upgrade when the password is non-default, restored with backups
-- [ ] 5.3 Configuration page: "Run setup again" calls `setup/start` and opens `/setup`
-- [ ] 5.4 Channel page: per-phase preview with no best row
-- [ ] 5.5 Info icon more visible on every page (`css/tooltip.css`)
+- [x] 5.1 `/setup` page from the prototype in `source/html/setup.html` (cloud, supply, circuits, phase check), reusing shared styles, toasts and tooltips; skip link; resume on the phase check
+- [x] 5.2 `/` fourth twin with its ETag variant; setup-done flag in NVS, set on upgrade when the password is non-default, restored with backups
+- [x] 5.3 Configuration page: "Run setup again" calls `setup/start` and opens `/setup`
+- [x] 5.4 Channel page: per-phase preview with no best row
+- [x] 5.5 Info icon more visible on every page (`css/tooltip.css`)
 
 ## 6. Cloud default
 

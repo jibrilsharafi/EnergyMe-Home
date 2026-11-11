@@ -449,14 +449,12 @@
         }
         if (res.state === 'clamped') return; // transient, keep last preview
 
-        const bestPhase = [1, 2, 3].reduce((best, c) =>
-            res.candidates[c].pf > res.candidates[best].pf ? c : best, 1);
+        // No row is marked as the best: with reverse free the rows are 60 degrees apart and
+        // the highest PF is often the wrong one. The setup page's phase check verifies phases.
         el.innerHTML = [1, 2, 3].map(c => {
             const cand = res.candidates[c];
-            // Show |power|: the sign is always flippable via the reverse flag, so it
-            // carries no information about which phase is correct - PF magnitude does.
-            const text = `L${c}: ${Math.abs(cand.power).toFixed(1)} W (PF ${cand.pf.toFixed(2)})`;
-            return c === bestPhase ? `<strong>${text}</strong>` : text;
+            // Show |power|: the sign is always flippable via the reverse flag.
+            return `L${c}: ${Math.abs(cand.power).toFixed(1)} W (PF ${cand.pf.toFixed(2)})`;
         }).join('<br>');
     }
 
