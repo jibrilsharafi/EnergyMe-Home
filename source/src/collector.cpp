@@ -1355,6 +1355,7 @@ namespace Collector
         uint64_t best = UINT64_MAX;
         for (uint8_t i = 0; i < _active.table->jobCount; i++) {
             if (!_active.table->jobs[i].enabled) continue;
+            if (_active.table->jobs[i].usesCursor && _states[i].advancePending) continue; // step() skips it until its parts drain
             uint64_t due = _states[i].nextS * 1000;
             if (due < best) best = due;
         }
