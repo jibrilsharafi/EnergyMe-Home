@@ -14,11 +14,14 @@
 - [x] 3.1 Err onset reported at once at most once per job per 300 s
 - [x] 3.2 Cursor job draining its parts left out of `nextWaitMs()`
 - [x] 3.2a The MQTT task reports every disconnected iteration and its stop to the collector (cursor `OFFLINE` pause)
-- [ ] 3.3 `pio run` for `esp32s3-dev` and `esp32s3-dev-pro`
+- [x] 3.3 `pio run` for `esp32s3-dev` and `esp32s3-dev-pro`
 
 ## 4. Review and bench (dev only: Home .174 and Home Pro .80, each polling the other's Modbus TCP server)
 
-- [ ] 4.1 Code-review agents (one adversarial) and a simplification agent; triage, re-run tests
-- [ ] 4.2 A 10 s job publishes every ~10 s on both benches (raw bucket `collector/`)
-- [ ] 4.3 A 10 s job on an unreachable target backs off 20, 40, ... and caps at 600 s
-- [ ] 4.4 Record results here
+- [x] 4.1 Code-review agents (one adversarial) and a simplification agent; triage, re-run tests
+  - Accepted: cloud loss reported on every disconnected MQTT iteration (pre-existing), comment trims. Unit tests 69/69.
+- [x] 4.2 A 10 s job publishes every ~10 s on both benches (raw bucket `collector/`)
+  - 2026-11-11, .174 polling .80 and .80 polling .174, three 10 s jobs each (two-step per_step, one-step batch with `jitter_s` 5, one unreachable target): about 130 parts per step in 22 min, gaps 10.0 s +- 1 s (batch 5-15 s with jitter). One `TIMEOUT` from the peer gave a header-only part, the run stopped, 20 s backoff, then back on slot. Budget untouched (about 2.09 MB of 2.10 MB tokens left), no queue drops.
+- [x] 4.3 A 10 s job on an unreachable target backs off 20, 40, ... and caps at 600 s
+  - Both benches: gaps 22, 42, 82, 162, 322, 602 s (backoff plus the 2 s step timeout).
+- [x] 4.4 Record results here
