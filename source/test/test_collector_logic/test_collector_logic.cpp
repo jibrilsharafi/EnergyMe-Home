@@ -334,6 +334,17 @@ static void test_ten_second_job(void) {
     expectError(set(replace(fast, R"("interval_s":10)", R"("interval_s":9)")), "BAD_JOB", "f", "interval_s");
     expectValid(set(replace(fast, R"("interval_s":10)", R"("interval_s":11)")));
     TEST_ASSERT_EQUAL_UINT32(5, table.jobs[0].deadlineS);
+    // Below 60 s every step must fit the deadline even when each one times out.
+    const char *two = R"([{"id":"u1","args":{"address":"u1/hr0","count":2}},{"id":"u2","args":{"address":"u2/hr0","count":2}}])";
+    std::string pair = replace(job("f2", "modbus_tcp", "192.168.1.60", 502, two), R"("interval_s":60)", R"("interval_s":10)");
+    expectError(set(pair), "BAD_JOB", "f2", "step_timeout_ms");
+    expectValid(set(replace(pair, R"("interval_s":10)", R"("interval_s":10,"step_timeout_ms":2500)")));
+    expectError(set(replace(pair, R"("interval_s":10)", R"("interval_s":10,"step_timeout_ms":2501)")), "BAD_JOB", "f2", "step_timeout_ms");
+    // A per-step timeout counts too; from 60 s up the rule does not apply.
+    std::string slow = R"([{"id":"u1","timeout_ms":4500,"args":{"address":"u1/hr0","count":2}},{"id":"u2","timeout_ms":1000,"args":{"address":"u2/hr0","count":2}}])";
+    expectError(set(replace(job("f3", "modbus_tcp", "192.168.1.60", 502, slow), R"("interval_s":60)", R"("interval_s":10)")), "BAD_JOB", "f3",
+                "step_timeout_ms");
+    expectValid(set(job("f4", "modbus_tcp", "192.168.1.60", 502, two, R"(,"deadline_s":5)")));
 }
 
 static void test_step_and_var_quotas(void) {
