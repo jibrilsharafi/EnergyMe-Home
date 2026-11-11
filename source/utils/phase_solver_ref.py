@@ -1,4 +1,4 @@
-"""Reference model of the on-device phase check (openspec change add-phase-commissioning).
+"""Reference model of the setup phase check (openspec change add-phase-check).
 
 Pure Python, no dependencies. The firmware solver must reproduce these decisions;
 the host tests use the same cases. Angles in degrees, IEC frame of phase_utils.h:
@@ -24,20 +24,22 @@ ROLE_BAND = {
     "grid": (-50.0, 75.0),
     "pv": (-65.0, 35.0),
 }
-# Only PV has an angle tight enough to choose between 60-degree neighbours: loads
-# range from capacitive feeders (-35) to motors (+60), so a load prior picks wrong.
-ROLE_TARGET = {"pv": -10.0}
-PRIOR_MARGIN = 15.0
-PHASE_MARGIN = 2  # fewest-phase-changes wins only by at least this many
 MIN_PAIRS = 2  # evaluable pairs needed: one pair cannot see the third channel
 SIGNED_ROLES = {"battery", "inverter", "bidirectional"}
 
 PAIR_TOL = 40.0  # max |mean pair difference| for a consistent hypothesis
-MIN_CH_WH = 50.0  # apparent energy per channel before it is evaluable
-MIN_PAIR_MIN = 60.0  # co-conducting minutes per pair before it is evaluable
 GATE_FRAC = 0.03  # conduction gate for angle evidence, fraction of CT rating
-HALF_LIFE_MIN = 3 * 24 * 60
 NOMINAL_V = 230.0
+
+# The check runs only during setup and is advice: the installer applies a proposal or
+# not. Fleet replay (21 verified lines, installs started in working hours, design D10):
+# median 4 min to an answer, p90 19 min, no false alarm on a correct install.
+MIN_CH_WH = 1.0  # apparent energy per channel before it is evaluable
+MIN_PAIR_MIN = 2.0  # co-conducting minutes per pair before it is evaluable
+STABLE = 2  # same answer on this many consecutive minute evaluations before it is shown
+# Ranking of options: the typical angle of a correct channel. The true wiring ranks
+# first in about 80% of fleet cases with phases to change (60% on synthetic loads).
+LIKELY_ANGLE = {"load": 20.0, "grid": 20.0, "pv": -10.0}
 
 
 def signed_role(role: str) -> bool:
@@ -90,16 +92,7 @@ class GroupEvidence:
 
     def add_minute(self, raw: dict[int, complex | None]) -> None:
         """raw[k] = time-averaged raw phasor (VA) of channel k over the minute, or
-        None when the channel was not read. Decays first, then accumulates."""
-        f = 0.5 ** (1.0 / HALF_LIFE_MIN)
-        for c in self.ch.values():
-            c.e *= f
-            c.e_axial *= f
-            c.minutes *= f
-        for p in self.pairs.values():
-            p.d *= f
-            p.weight *= f
-            p.minutes *= f
+        None when the channel was not read. Plain sums: the check lasts minutes."""
         conducting: dict[int, complex] = {}
         for k, v in raw.items():
             if v is None or k not in self.ch:
@@ -128,12 +121,11 @@ class Hypothesis:
 
 @dataclass
 class Result:
-    state: str  # collecting | verified | mismatch | ambiguous | inconsistent
+    state: str  # collecting | verified | fix | choose
     configured: Hypothesis
     proposals: list[Hypothesis]
     angles: list[float]  # stored-frame angle per channel under the configuration
     spread: float | None  # max |pair diff| under the configuration
-    reverse_only: bool = False
     note: str = ""
 
 
@@ -164,6 +156,9 @@ def _eval(g: GroupEvidence, vp: int, role: str, h: Hypothesis, ev_pairs) -> tupl
 
 
 def evaluate(g: GroupEvidence, vp: int, role: str, configured: Hypothesis) -> Result:
+    """One minute evaluation. `fix` is a single reverse-only proposal (the phases stay);
+    any phase change is `choose`: every hypothesis that fits, most likely first, and the
+    installer picks. Nothing is ever applied by the device."""
     if any(abs(g.ch[k].e) < MIN_CH_WH for k in g.channels):
         return Result("collecting", configured, [], [], None, note="channel evidence")
     ev_pairs = [k for k, p in g.pairs.items() if p.minutes >= MIN_PAIR_MIN]
@@ -172,51 +167,60 @@ def evaluate(g: GroupEvidence, vp: int, role: str, configured: Hypothesis) -> Re
     ok, spread, psis = _eval(g, vp, role, configured, ev_pairs)
     if ok:
         return Result("verified", configured, [], psis, spread)
-    # The phases agree with each other and only the role band fails: a uniform
-    # error and an unusual load (low-PF lighting, a capacitive feeder) look the
-    # same, so the configuration stays one of the options and nothing is proposed.
-    # Only when the configured power is positive: a negative reading is a plain error.
-    pair_only = spread <= PAIR_TOL and not signed_role(role) and all(math.cos(math.radians(x)) > 0 for x in psis)
     signed = role in SIGNED_ROLES
     revs = [configured.reverse] if signed else list(itertools.product([False, True], repeat=3))
     consistent = []
-    best_spread = None
     for perm in itertools.permutations((1, 2, 3)):
         for rv in revs:
             h = Hypothesis(perm, tuple(rv))
-            hok, hs, hp = _eval(g, vp, role, h, ev_pairs)
-            best_spread = hs if best_spread is None else min(best_spread, hs)
-            if hok:
-                consistent.append((hs, h, hp))
+            if _eval(g, vp, role, h, ev_pairs)[0]:
+                consistent.append(h)
     if not consistent:
-        return Result("inconsistent", configured, [], psis, spread, note=f"best spread {best_spread:.0f}")
-    # Tie-break 1: trust the labelled phases over CT orientation. Among consistent
-    # hypotheses keep those changing the fewest labelled phases, when they win by
-    # PHASE_MARGIN. Reverse flags never count (orientation errors are common, and
-    # existing flags may be detector-made). Known, accepted limit: a line whose
-    # labels are cyclically rotated (written L1-L2-L3, wired L2-L3-L1) is read as
-    # a reverse pattern 60 degrees away and gets a wrong reverse-only fix.
-    def phase_changes(h: Hypothesis) -> int:
-        return sum(a != b for a, b in zip(h.phase, configured.phase))
+        # No hypothesis fits: an unbalanced feeder or a CT on the wrong cable. Keep
+        # measuring; the page shows the current per channel so the installer can see why.
+        return Result("collecting", configured, [], psis, spread, note="no hypothesis fits")
+    ranked = rank(g, vp, role, consistent)
+    # The phases agree with each other and only the role band fails: a uniform error
+    # and an unusual load (low-PF lighting, a capacitive feeder) look the same, so the
+    # configuration stays the first option. Only when the configured power is positive.
+    if spread <= PAIR_TOL and not signed and all(math.cos(math.radians(x)) > 0 for x in psis):
+        return Result("choose", configured, [configured] + ranked, psis, spread, note="angle outside role band")
+    # A reverse-only change is proposed alone only when it is the single reverse-only
+    # hypothesis and also the most likely one. Labels written L1-L2-L3 but wired
+    # L2-L3-L1 read like "all CTs reversed" 60 degrees away; ranking second there, the
+    # flip becomes one option of a choice instead of a wrong fix.
+    reverse_only = [h for h in consistent if h.phase == configured.phase]
+    if len(reverse_only) == 1 and ranked[0] == reverse_only[0]:
+        return Result("fix", configured, reverse_only, psis, spread)
+    return Result("choose", configured, ranked, psis, spread)
 
-    consistent.sort(key=lambda t: phase_changes(t[1]))
-    low = phase_changes(consistent[0][1])
-    if len(consistent) > 1 and all(phase_changes(t[1]) - low >= PHASE_MARGIN for t in consistent if phase_changes(t[1]) != low):
-        consistent = [t for t in consistent if phase_changes(t[1]) == low]
-    # Tie-break 2: role prior, only where the role pins the angle (PV), with margin.
-    if len(consistent) > 1 and role in ROLE_TARGET:
-        target = ROLE_TARGET[role]
 
-        def dist(t) -> float:
-            mean = ang(sum(rot(x) for x in t[2]))
-            return abs(wrap(mean - target))
+def rank(g: GroupEvidence, vp: int, role: str, options: list[Hypothesis]) -> list[Hypothesis]:
+    """Options ordered most likely first: mean channel angle closest to the role's typical
+    angle. Ordering only; the installer still picks one."""
+    if role not in LIKELY_ANGLE:
+        return options
+    target = LIKELY_ANGLE[role]
 
-        consistent.sort(key=dist)
-        if dist(consistent[1]) - dist(consistent[0]) >= PRIOR_MARGIN:
-            consistent = consistent[:1]
-    if pair_only:
-        return Result("ambiguous", configured, [configured] + [t[1] for t in consistent], psis, spread, note="angle outside role band")
-    if len(consistent) == 1:
-        h = consistent[0][1]
-        return Result("mismatch", configured, [h], psis, spread, reverse_only=h.phase == configured.phase)
-    return Result("ambiguous", configured, [t[1] for t in consistent], psis, spread)
+    def dist(h: Hypothesis) -> float:
+        psis = [wrap(ang(g.ch[k].e) + shift(vp, h.phase[i]) + 180.0 * h.reverse[i]) for i, k in enumerate(g.channels)]
+        return abs(wrap(ang(sum(rot(x) for x in psis)) - target))
+
+    return sorted(options, key=dist)
+
+
+def check_single(e: complex, vp: int, role: str, phase: int, reverse: bool) -> tuple[str, list[tuple[int, bool]]]:
+    """Single-phase channel on a three-phase supply, advice only: 'ok' when the configured
+    angle is inside the role band, else 'suspect' with the (phase, reverse) options that fit,
+    most likely first. Fleet replay: no false alarm on correct channels, a wrong phase is
+    flagged with the right option offered; a wrong phase plus a reversed CT (60 degrees)
+    passes unnoticed half the time, which only a three-phase line can catch."""
+    if role not in ROLE_BAND or not e:
+        return "ok", []
+    lo, hi = ROLE_BAND[role]
+    under = lambda p, r: wrap(ang(e) + shift(vp, p) + 180.0 * r)  # noqa: E731
+    fits = [(p, r) for p in (1, 2, 3) for r in (False, True) if lo <= under(p, r) <= hi]
+    if (phase, reverse) in fits:
+        return "ok", []
+    target = LIKELY_ANGLE.get(role, 0.0)
+    return "suspect", sorted(fits, key=lambda h: abs(wrap(under(*h) - target)))
