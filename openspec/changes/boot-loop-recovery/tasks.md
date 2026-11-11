@@ -16,7 +16,7 @@
 
 ## 3. Bench
 
-Run over OTA on the Home dev (.174, 2026-11-11) with `keepWifi=1&noRollback=1`, checked through the boot history. Still to do on a clean board with USB serial: the power cycle, the LED, a real wipe of WiFi, and the rollback branch.
+Run over OTA on the Home dev (.174, 2026-11-11) with `keepWifi=1&noRollback=1`, checked through the boot history. The clean-board USB run (3.2 power cycle, 3.6) was dropped on 2026-11-11 and the change merged on the remote run alone.
 
 - [x] 3.1 Boot crash armed until Minimal: the ladder walks Normal, Wiped, Recovery, Minimal, with one factory reset (9 panics, 1 wipe)
 - [ ] 3.2 Power cycle in Recovery boots straight into Recovery (software restart in Minimal verified sticky; power cycle pending)
