@@ -19,7 +19,7 @@ namespace {
 
 using PhaseCheck::Complex;
 
-constexpr uint8_t MAX_CHANNELS = 16;
+constexpr uint8_t MAX_CHANNELS = MAX_CHANNEL_COUNT;
 constexpr uint8_t MAX_LINES = MAX_CHANNELS / 3;
 
 struct LineSlot {
@@ -29,6 +29,7 @@ struct LineSlot {
     PhaseCheck::LineEvidence evidence;
     PhaseCheck::MinuteBucket bucket[3];
     PhaseCheck::StableVerdict verdict;
+    uint32_t evaluatedGeneration;  // the line generation the shown verdict was computed for
 };
 
 struct SingleSlot {
@@ -62,11 +63,15 @@ struct ConfigSnapshot {
 
 SemaphoreHandle_t _mutex = nullptr;
 Runtime *_rt = nullptr;
-bool _setupDone = true;
-uint64_t _rerunUntil = 0;
+volatile bool _setupDone = true;
+uint64_t _rerunUntil = 0;           // written by the web task, read by the meter task: under _windowMux
+portMUX_TYPE _windowMux = portMUX_INITIALIZER_UNLOCKED;
 volatile bool _holdFlips = false;
-volatile bool _pendingWrite = true;
+volatile bool _pendingWrite = true;  // under _mutex, like _dirty and _generation
+uint32_t _dirty = 0xFFFFFFFFu;       // channels written since the last rebuild (bit per channel)
 uint32_t _generation[MAX_CHANNELS] = {};
+// The meter task never waits long on the web task: losing one reading or one tick is harmless.
+constexpr uint32_t METER_TASK_LOCK_MS = 5;
 float _current[MAX_CHANNELS] = {};
 
 // Configuration copies (16 channels, a few KB) kept in PSRAM, one per calling task:
@@ -84,7 +89,22 @@ ConfigSnapshot *snapshotBuffer(uint8_t which) {
 constexpr uint8_t METER_TASK = 0;
 constexpr uint8_t WEB_TASK = 1;
 
-bool windowOpenAt(uint64_t now) { return !_setupDone || (_rerunUntil != 0 && now < _rerunUntil); }
+bool windowOpenAt(uint64_t now) {
+    taskENTER_CRITICAL(&_windowMux);
+    const uint64_t until = _rerunUntil;
+    taskEXIT_CRITICAL(&_windowMux);
+    return !_setupDone || (until != 0 && now < until);
+}
+
+void setRerunUntil(uint64_t until) {
+    taskENTER_CRITICAL(&_windowMux);
+    _rerunUntil = until;
+    taskEXIT_CRITICAL(&_windowMux);
+}
+
+uint32_t channelBits(const PhaseCheck::LineId &id) {
+    return (1UL << id.ch[0]) | (1UL << id.ch[1]) | (1UL << id.ch[2]);
+}
 
 void takeSnapshot(ConfigSnapshot &s) {
     s.count = min<uint8_t>(globalHwProfile->totalChannelCount, MAX_CHANNELS);
@@ -167,11 +187,16 @@ void rebuildLocked(const ConfigSnapshot &s) {
     _rt->singleCount = m;
 }
 
-// Evaluates every line and single-phase channel on the evidence summed so far.
-void evaluateLocked(const ConfigSnapshot &s, bool afterConfigWrite) {
+// Evaluates the lines whose channels were written (shown at once) and, when a minute closed,
+// every line (shown once two consecutive minutes agree). A line touched by neither keeps its
+// verdict: re-evaluating unchanged evidence would count as a second agreeing minute.
+void evaluateLocked(const ConfigSnapshot &s, uint32_t dirty, bool minuteClosed) {
     for (uint8_t k = 0; k < _rt->lineCount; k++) {
         LineSlot &l = _rt->lines[k];
-        l.verdict.push(PhaseCheck::evaluate(l.evidence, s.voltagePhase, l.role, configuredOf(s, l.id)), afterConfigWrite);
+        const bool written = (dirty & channelBits(l.id)) != 0;
+        if (!written && !minuteClosed) continue;
+        l.verdict.push(PhaseCheck::evaluate(l.evidence, s.voltagePhase, l.role, configuredOf(s, l.id)), written);
+        l.evaluatedGeneration = lineGeneration(l.id);
     }
     for (uint8_t k = 0; k < _rt->singleCount; k++) {
         SingleSlot &c = _rt->singles[k];
@@ -238,7 +263,7 @@ void lineJson(JsonObject o, const LineSlot &l, const ConfigSnapshot &s) {
     o["groupLabel"] = s.ch[l.id.ch[0]].groupLabel;
     o["role"] = Ade7953::channelRoleToString(l.role);
     o["state"] = PhaseCheck::stateName(r.state);
-    o["generation"] = lineGeneration(l.id);
+    o["generation"] = l.evaluatedGeneration;
     JsonArray chans = o["channels"].to<JsonArray>();
     bool evidence = true;
     for (int i = 0; i < 3; i++) {
@@ -323,17 +348,23 @@ void begin(bool firstBootThisBoot) {
 
 bool isSetupDone() { return _setupDone; }
 
-bool completeSetup() {
+bool completeSetup(bool &firstSetup) {
     const bool first = !_setupDone;
+    firstSetup = first;
     Preferences prefs;
-    if (prefs.begin(PREFERENCES_NAMESPACE_GENERAL, false)) {
-        prefs.putBool(PREFERENCES_SETUP_DONE_KEY, true);
+    bool stored = prefs.begin(PREFERENCES_NAMESPACE_GENERAL, false);
+    if (stored) {
+        stored = prefs.putBool(PREFERENCES_SETUP_DONE_KEY, true) > 0;
         prefs.end();
-    } else {
+    }
+    if (!stored) {
+        // Nothing changes: a completion that is not stored would come back after a reboot and
+        // reset the energy a second time.
         LOG_ERROR("Setup state: cannot store completion");
+        return false;
     }
     _setupDone = true;
-    _rerunUntil = 0;
+    setRerunUntil(0);
     if (first) {
         // The install starts from zero: bench tests and a wrong configuration during the
         // visit leave nothing behind. Before cloud services start, so the cloud never sees a drop.
@@ -342,12 +373,12 @@ bool completeSetup() {
     } else {
         LOG_INFO("Setup completed again");
     }
-    return first;
+    return true;
 }
 
 void startRerun() {
-    _rerunUntil = millis64() + SETUP_RERUN_WINDOW_MS;
-    _pendingWrite = true;
+    setRerunUntil(millis64() + SETUP_RERUN_WINDOW_MS);
+    onConfigWrite(0xFF);  // fresh verdicts on every line
     LOG_INFO("Setup run again: phase check window open for %llu minutes", SETUP_RERUN_WINDOW_MS / 60000ULL);
 }
 
@@ -362,8 +393,10 @@ void onConfigWrite(uint8_t channelIndex) {
     }
     if (channelIndex == 0xFF) {
         for (uint32_t &g : _generation) g++;
+        _dirty = 0xFFFFFFFFu;
     } else if (channelIndex < MAX_CHANNELS) {
         _generation[channelIndex]++;
+        _dirty |= 1UL << channelIndex;
     }
     _pendingWrite = true;
     releaseMutex(&_mutex);
@@ -371,7 +404,7 @@ void onConfigWrite(uint8_t channelIndex) {
 
 void onReading(uint8_t channelIndex, float rawActivePower, float rawReactivePower, uint64_t deltaMillis, float currentRms) {
     if (!_rt || channelIndex >= MAX_CHANNELS) return;  // unlocked read: _rt only changes in onTick, same task
-    if (!acquireMutex(&_mutex)) return;
+    if (!acquireMutex(&_mutex, METER_TASK_LOCK_MS)) return;
     _current[channelIndex] = currentRms;
     const Complex va{rawActivePower, rawReactivePower};
     for (uint8_t k = 0; k < _rt->lineCount; k++) {
@@ -397,8 +430,23 @@ void onTick(uint64_t now) {
     ConfigSnapshot *snapPtr = snapshotBuffer(METER_TASK);
     if (!snapPtr) return;
     ConfigSnapshot &snap = *snapPtr;
+    // Consume the pending write BEFORE the snapshot: a write landing after this point sets it
+    // again and is rebuilt on the next tick, never against a snapshot that predates it.
+    if (!acquireMutex(&_mutex, METER_TASK_LOCK_MS)) return;
+    bool write = _pendingWrite;
+    uint32_t dirty = _dirty;
+    _pendingWrite = false;
+    _dirty = 0;
+    releaseMutex(&_mutex);
     if (open) takeSnapshot(snap);
-    if (!acquireMutex(&_mutex)) return;
+    _holdFlips = open && snap.threePhase;  // also when the runtime cannot be allocated
+    if (!acquireMutex(&_mutex, METER_TASK_LOCK_MS)) {
+        if (write) {  // retried on the next tick
+            _pendingWrite = true;
+            _dirty |= dirty;
+        }
+        return;
+    }
     if (!open) {
         freeRuntimeLocked();
         _holdFlips = false;
@@ -411,17 +459,15 @@ void onTick(uint64_t now) {
             return;
         }
         _rt->minuteStart = now;
-        _pendingWrite = true;
+        write = true;
+        dirty = 0xFFFFFFFFu;
     }
-    _holdFlips = snap.threePhase;
     if (minuteDue) {
         closeMinuteLocked();
         _rt->minuteStart = now;
     }
-    const bool write = _pendingWrite;
-    _pendingWrite = false;
     if (write) rebuildLocked(snap);
-    if (write || minuteDue) evaluateLocked(snap, write);
+    if (write || minuteDue) evaluateLocked(snap, dirty, minuteDue);
     releaseMutex(&_mutex);
 }
 
@@ -478,8 +524,8 @@ ApplyResult apply(uint8_t lowestChannel, uint32_t generation, const uint8_t chan
     ApplyResult result = ApplyResult::Applied;
     if (h == configuredOf(snap, line->id)) {
         result = ApplyResult::NoChange;  // already applied: a repeat changes nothing
-    } else if (generation != lineGeneration(line->id)) {
-        result = ApplyResult::Stale;
+    } else if (_pendingWrite || generation != line->evaluatedGeneration || generation != lineGeneration(line->id)) {
+        result = ApplyResult::Stale;  // the proposal was computed for another configuration
     } else {
         bool offered = false;
         const PhaseCheck::Result &r = line->verdict.shown();

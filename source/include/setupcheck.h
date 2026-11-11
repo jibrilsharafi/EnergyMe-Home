@@ -27,8 +27,9 @@ void begin(bool firstBootThisBoot);
 
 bool isSetupDone();
 // Completes (or skips) setup: closes the window and, on the first setup only, resets the
-// energy counters so the install starts from zero. Returns true when this was the first setup.
-bool completeSetup();
+// energy counters so the install starts from zero. False (and nothing changed) when the
+// completion cannot be stored; `firstSetup` tells whether this was the first setup.
+bool completeSetup(bool &firstSetup);
 // "Run setup again": opens the check window for SETUP_RERUN_WINDOW_MS (RAM only).
 void startRerun();
 bool isWindowOpen();

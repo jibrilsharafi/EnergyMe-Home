@@ -941,7 +941,11 @@ namespace CustomServer
                     _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid JSON structure. Expected: {\"cloudServices\": true/false}");
                     return;
                 }
-                const bool first = SetupCheck::completeSetup();
+                bool first = false;
+                if (!SetupCheck::completeSetup(first)) {
+                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Could not store the setup completion");
+                    return;
+                }
                 // The cloud was held during setup: store the choice made there and start it.
                 if (!globalCommunityMode) {
                     const bool cloud = doc["cloudServices"].is<bool>() ? doc["cloudServices"].as<bool>() : Mqtt::isCloudServicesEnabled();
