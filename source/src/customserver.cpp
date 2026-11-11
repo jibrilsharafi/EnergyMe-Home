@@ -3168,7 +3168,13 @@ namespace CustomServer
                 _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "untilStage must be 0 (disarm) to 3");
                 return;
             }
-            if (!BootRecovery::setBootCrashThreshold((uint8_t)untilStage)) {
+            // keepWifi/noRollback: walk the whole ladder without losing the network or
+            // bailing out onto the previous image, so it can run without a serial console
+            auto flag = [request](const char *name) {
+                auto p = request->getParam(name);
+                return p && strcmp(p->value().c_str(), "1") == 0;
+            };
+            if (!BootRecovery::setBootCrashThreshold((uint8_t)untilStage, flag("keepWifi"), flag("noRollback"))) {
                 _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to store the boot crash threshold");
                 return;
             }

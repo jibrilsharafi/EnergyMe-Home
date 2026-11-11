@@ -21,7 +21,10 @@
 #define BOOT_RECOVERY_UNSTABLE_KEY "unstable"
 #define BOOT_RECOVERY_FIRMWARE_KEY "fw"
 #define BOOT_RECOVERY_AUTO_ROLLBACK_KEY "rb_auto" // An automatic rollback happened since the last stable boot
+#define BOOT_RECOVERY_HISTORY_KEY "hist" // Last HISTORY_CAPACITY boots as the ladder saw them
 #define BOOT_RECOVERY_DEBUG_CRASH_KEY "dbg_crash" // Dev builds only: abort after LittleFS while stage < value
+#define BOOT_RECOVERY_DEBUG_KEEP_WIFI_KEY "dbg_keepwifi" // Dev builds only: the ladder wipe keeps WiFi
+#define BOOT_RECOVERY_DEBUG_NO_ROLLBACK_KEY "dbg_norb" // Dev builds only: the ladder never rolls back
 #define BOOT_RECOVERY_FIRMWARE_ID_BYTES 8 // Prefix of app_elf_sha256, ample to tell builds apart
 #define BOOT_RECOVERY_FIRMWARE_ID_BUFFER_SIZE (BOOT_RECOVERY_FIRMWARE_ID_BYTES * 2 + 1)
 
@@ -59,6 +62,8 @@ namespace BootRecovery
 #ifdef ENV_DEV
     // Aborts while the current stage is below the armed threshold (bench aid).
     void injectBootCrashIfArmed();
-    bool setBootCrashThreshold(uint8_t untilStage);
+    // keepWifi keeps the device on its network through the wipe and noRollback
+    // walks the ladder even with a valid passive image, so it can run remotely
+    bool setBootCrashThreshold(uint8_t untilStage, bool keepWifi, bool noRollback);
 #endif
 }

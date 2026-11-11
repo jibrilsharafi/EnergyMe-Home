@@ -717,6 +717,34 @@ paths:
                   cloudDisabled:
                     type: boolean
                     example: false
+                  history:
+                    type: array
+                    description: Last 12 boots as the ladder saw them, oldest first
+                    items:
+                      type: object
+                      properties:
+                        resetReason:
+                          type: integer
+                          description: esp_reset_reason_t of the boot before this one
+                          example: 4
+                        deliberate:
+                          type: boolean
+                          example: false
+                        newFirmware:
+                          type: boolean
+                          example: false
+                        from:
+                          type: string
+                          enum: [normal, wiped, recovery, minimal]
+                        to:
+                          type: string
+                          enum: [normal, wiped, recovery, minimal]
+                        unstableBoots:
+                          type: integer
+                          example: 3
+                        action:
+                          type: string
+                          enum: [boot, rollback, factory_reset]
 
   /api/v1/system/recovery/exit:
     post:

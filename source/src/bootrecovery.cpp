@@ -58,7 +58,35 @@ namespace BootRecovery
         }
     }
 
-    static bool _rollbackAllowed(bool autoRollbackDone) {
+    static bool _debugFlag(Preferences &prefs, const char *key) {
+#ifdef ENV_DEV
+        return prefs.getBool(key, false);
+#else
+        (void)prefs;
+        (void)key;
+        return false;
+#endif
+    }
+
+    static uint8_t _readHistory(Preferences &prefs, BootRecoveryLogic::HistoryEntry *entries) {
+        size_t length = prefs.getBytesLength(BOOT_RECOVERY_HISTORY_KEY);
+        if (length == 0 || length % sizeof(BootRecoveryLogic::HistoryEntry) != 0 ||
+            length > sizeof(BootRecoveryLogic::HistoryEntry) * BootRecoveryLogic::HISTORY_CAPACITY) return 0;
+        prefs.getBytes(BOOT_RECOVERY_HISTORY_KEY, entries, length);
+        return (uint8_t)(length / sizeof(BootRecoveryLogic::HistoryEntry));
+    }
+
+    static void _appendHistory(Preferences &prefs, const BootRecoveryLogic::HistoryEntry &entry) {
+        BootRecoveryLogic::HistoryEntry entries[BootRecoveryLogic::HISTORY_CAPACITY] = {};
+        uint8_t count = BootRecoveryLogic::pushHistory(entries, _readHistory(prefs, entries), entry);
+        prefs.putBytes(BOOT_RECOVERY_HISTORY_KEY, entries, count * sizeof(BootRecoveryLogic::HistoryEntry));
+    }
+
+    static bool _rollbackAllowed(bool autoRollbackDone, bool debugNoRollback) {
+        if (debugNoRollback) {
+            Serial.println("[BootRecovery] Automatic rollback disabled by the debug boot crash");
+            return false;
+        }
         if (autoRollbackDone || !Update.canRollBack()) return false;
         ImageDescriptor::Verdict verdict =
             AppImageDescriptor::validatePartition(esp_ota_get_next_update_partition(NULL), false);
@@ -101,12 +129,14 @@ namespace BootRecovery
         Stage storedStage = BootRecoveryLogic::stageFromByte(prefs.getUChar(BOOT_RECOVERY_STAGE_KEY, 0));
         uint8_t storedUnstable = prefs.getUChar(BOOT_RECOVERY_UNSTABLE_KEY, 0);
         bool autoRollbackDone = prefs.getBool(BOOT_RECOVERY_AUTO_ROLLBACK_KEY, false);
+        bool debugNoRollback = firmwareMatches && _debugFlag(prefs, BOOT_RECOVERY_DEBUG_NO_ROLLBACK_KEY);
+        bool debugKeepWifi = firmwareMatches && _debugFlag(prefs, BOOT_RECOVERY_DEBUG_KEEP_WIFI_KEY);
 
         BootRecoveryLogic::Input input = {
             storedStage, storedUnstable, firmwareMatches, _classifyReset(reason), deliberate, false
         };
         Decision decision = BootRecoveryLogic::decide(input);
-        if (decision.action == Action::FactoryReset && _rollbackAllowed(autoRollbackDone)) {
+        if (decision.action == Action::FactoryReset && _rollbackAllowed(autoRollbackDone, debugNoRollback)) {
             input.rollbackAllowed = true;
             decision = BootRecoveryLogic::decide(input);
         }
@@ -118,7 +148,10 @@ namespace BootRecovery
 
         if (!firmwareMatches) {
             prefs.putString(BOOT_RECOVERY_FIRMWARE_KEY, firmwareId);
-            prefs.remove(BOOT_RECOVERY_DEBUG_CRASH_KEY); // A reflash always gets a bench device back
+            // A reflash always gets a bench device back
+            prefs.remove(BOOT_RECOVERY_DEBUG_CRASH_KEY);
+            prefs.remove(BOOT_RECOVERY_DEBUG_KEEP_WIFI_KEY);
+            prefs.remove(BOOT_RECOVERY_DEBUG_NO_ROLLBACK_KEY);
         }
         if (!firmwareMatches || decision.stage != storedStage) prefs.putUChar(BOOT_RECOVERY_STAGE_KEY, (uint8_t)decision.stage);
         if (!firmwareMatches || decision.unstableBoots != storedUnstable) prefs.putUChar(BOOT_RECOVERY_UNSTABLE_KEY, decision.unstableBoots);
@@ -126,8 +159,16 @@ namespace BootRecovery
         _stage = decision.stage;
         _unstableBoots = decision.unstableBoots;
 
+        BootRecoveryLogic::HistoryEntry entry = {
+            (uint8_t)reason, deliberate, !firmwareMatches, (uint8_t)storedStage,
+            (uint8_t)decision.stage, decision.unstableBoots, (uint8_t)decision.action
+        };
+        // A rollback that fails falls back to a wipe below and records that instead
+        if (decision.action != Action::RollBack) _appendHistory(prefs, entry);
+
         if (decision.action == Action::RollBack) {
             prefs.putBool(BOOT_RECOVERY_AUTO_ROLLBACK_KEY, true);
+            _appendHistory(prefs, entry);
             prefs.end();
             Serial.println("[BootRecovery] Boot loop: rolling back to the previous firmware");
             if (Update.rollBack()) _restartDeliberately();
@@ -136,13 +177,17 @@ namespace BootRecovery
             prefs.putUChar(BOOT_RECOVERY_STAGE_KEY, (uint8_t)Stage::Wiped);
             _stage = Stage::Wiped;
             decision.action = Action::FactoryReset;
+            entry.toStage = (uint8_t)Stage::Wiped;
+            entry.action = (uint8_t)Action::FactoryReset;
+            _appendHistory(prefs, entry);
         }
 
         prefs.end();
 
         if (decision.action == Action::FactoryReset) {
             Serial.println("[BootRecovery] Boot loop: factory reset");
-            factoryResetAtBoot();
+            if (debugKeepWifi) Serial.println("[BootRecovery] Debug boot crash: the wipe keeps WiFi");
+            factoryResetAtBoot(debugKeepWifi);
             _restartDeliberately();
         }
 
@@ -215,6 +260,24 @@ namespace BootRecovery
         doc["degraded"] = isDegraded();
         doc["meterPassive"] = meterPassive();
         doc["cloudDisabled"] = cloudDisabled();
+
+        // Oldest first: the boots that led here, readable after the fact without a serial console
+        JsonArray history = doc["history"].to<JsonArray>();
+        Preferences prefs;
+        if (!prefs.begin(PREFERENCES_NAMESPACE_RECOVERY, true)) return;
+        BootRecoveryLogic::HistoryEntry entries[BootRecoveryLogic::HISTORY_CAPACITY] = {};
+        uint8_t count = _readHistory(prefs, entries);
+        prefs.end();
+        for (uint8_t i = 0; i < count; i++) {
+            JsonObject item = history.add<JsonObject>();
+            item["resetReason"] = entries[i].resetReason;
+            item["deliberate"] = entries[i].deliberate != 0;
+            item["newFirmware"] = entries[i].newFirmware != 0;
+            item["from"] = BootRecoveryLogic::stageToString(BootRecoveryLogic::stageFromByte(entries[i].fromStage));
+            item["to"] = BootRecoveryLogic::stageToString(BootRecoveryLogic::stageFromByte(entries[i].toStage));
+            item["unstableBoots"] = entries[i].unstableBoots;
+            item["action"] = BootRecoveryLogic::actionToString((Action)entries[i].action);
+        }
     }
 
 #ifdef ENV_DEV
@@ -230,11 +293,20 @@ namespace BootRecovery
         abort();
     }
 
-    bool setBootCrashThreshold(uint8_t untilStage) {
+    bool setBootCrashThreshold(uint8_t untilStage, bool keepWifi, bool noRollback) {
         Preferences prefs;
         if (!prefs.begin(PREFERENCES_NAMESPACE_RECOVERY, false)) return false;
-        bool ok = untilStage == 0 ? (prefs.remove(BOOT_RECOVERY_DEBUG_CRASH_KEY) || !prefs.isKey(BOOT_RECOVERY_DEBUG_CRASH_KEY))
-                                  : prefs.putUChar(BOOT_RECOVERY_DEBUG_CRASH_KEY, untilStage) > 0;
+        bool ok;
+        if (untilStage == 0) {
+            prefs.remove(BOOT_RECOVERY_DEBUG_CRASH_KEY);
+            prefs.remove(BOOT_RECOVERY_DEBUG_KEEP_WIFI_KEY);
+            prefs.remove(BOOT_RECOVERY_DEBUG_NO_ROLLBACK_KEY);
+            ok = !prefs.isKey(BOOT_RECOVERY_DEBUG_CRASH_KEY);
+        } else {
+            ok = prefs.putUChar(BOOT_RECOVERY_DEBUG_CRASH_KEY, untilStage) > 0 &&
+                 prefs.putBool(BOOT_RECOVERY_DEBUG_KEEP_WIFI_KEY, keepWifi) > 0 &&
+                 prefs.putBool(BOOT_RECOVERY_DEBUG_NO_ROLLBACK_KEY, noRollback) > 0;
+        }
         prefs.end();
         return ok;
     }
