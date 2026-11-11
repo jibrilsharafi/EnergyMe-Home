@@ -74,6 +74,21 @@ void test_minute_accumulation_matches_reference_model(void) {
     }
 }
 
+void test_minute_bucket_is_not_biased_by_read_rate(void) {
+    // Same power, channel 0 read every 200 ms, a multiplexed channel every 800 ms.
+    MinuteBucket fast, slow;
+    const Complex va{1500.0, 400.0};
+    fast.add(va, 0);  // first reading only sets the base
+    for (int i = 0; i < 300; i++) fast.add(va, 200);
+    for (int i = 0; i < 75; i++) slow.add(va, 800);
+    TEST_ASSERT_TRUE(fast.read() && slow.read());
+    assertClose(fast.average(), slow.average(), "average");
+    assertClose(va, fast.average(), "value");
+    MinuteBucket none;
+    none.add(va, 0);
+    TEST_ASSERT_FALSE(none.read());
+}
+
 static Result fixResult(uint8_t phase0) {
     Result r{};
     r.state = State::Fix;
@@ -158,6 +173,7 @@ int main(int, char **) {
     RUN_TEST(test_line_decisions_match_reference_model);
     RUN_TEST(test_single_decisions_match_reference_model);
     RUN_TEST(test_minute_accumulation_matches_reference_model);
+    RUN_TEST(test_minute_bucket_is_not_biased_by_read_rate);
     RUN_TEST(test_stable_verdict_needs_two_agreeing_minutes);
     RUN_TEST(test_stable_verdict_after_config_write_is_immediate);
     RUN_TEST(test_stable_verdict_collecting_is_immediate);

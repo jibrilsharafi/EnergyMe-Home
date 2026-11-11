@@ -35,7 +35,8 @@ constexpr double MIN_CH_WH = 1.0;        // apparent energy per channel before i
 constexpr double MIN_PAIR_MIN = 2.0;     // co-conducting minutes per pair before it is evaluable
 constexpr uint8_t MIN_PAIRS = 2;         // one pair cannot see the third channel
 constexpr uint8_t STABLE_EVALUATIONS = 2; // same answer on consecutive minute evaluations before it is shown
-constexpr uint8_t MAX_PROPOSALS = 48;    // 6 permutations x 8 reverse sets
+constexpr uint8_t MAX_FITTING = 48;      // 6 permutations x 8 reverse sets
+constexpr uint8_t MAX_PROPOSALS = 8;     // shown candidates; the fleet never had more than 3
 
 enum class State : uint8_t { Collecting, Verified, Fix, Choose };
 enum class SingleState : uint8_t { Collecting, Ok, Suspect };
@@ -74,6 +75,23 @@ struct LineEvidence {
     // the minute; read[i] false when the channel was not read in it. A channel conducts
     // when its minute apparent power passes the gate.
     void addMinute(const Complex avgVa[3], const bool read[3]);
+};
+
+// Time-weighted minute average of one channel's raw phasor. Each reading adds its power
+// (VA, raw frame) times the elapsed time since the channel's previous reading, so channel 0
+// (read every window) and a multiplexed channel read every few windows average alike.
+// Readings with no elapsed time (the first one, a discarded or rebased one) add nothing.
+struct MinuteBucket {
+    Complex sumVaMs{0.0, 0.0};
+    double ms = 0.0;
+    void add(const Complex &va, uint64_t deltaMs) {
+        if (deltaMs == 0) return;
+        sumVaMs += va * static_cast<double>(deltaMs);
+        ms += static_cast<double>(deltaMs);
+    }
+    bool read() const { return ms > 0.0; }
+    Complex average() const { return ms > 0.0 ? sumVaMs / ms : Complex{0.0, 0.0}; }
+    void clear() { *this = MinuteBucket(); }
 };
 
 // Single channel outside any line: same accumulation, no pairs.

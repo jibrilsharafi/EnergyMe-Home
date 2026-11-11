@@ -163,7 +163,7 @@ Result evaluate(const LineEvidence &g, Phase vp, ChannelRole role, const Hypothe
         return res;
     }
     const bool signedRole = isSignedRole(role);
-    Hypothesis fitting[MAX_PROPOSALS];
+    Hypothesis fitting[MAX_FITTING];
     uint8_t n = 0;
     for (const auto &perm : PERMS) {
         for (int rv = 0; rv < 8; rv++) {

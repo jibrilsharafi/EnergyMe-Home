@@ -644,6 +644,9 @@ namespace Ade7953
     bool getChannelData(ChannelData &channelData, uint8_t channelIndex);
     bool setChannelData(const ChannelData &channelData, uint8_t channelIndex, bool* roleChanged = nullptr, bool armTransients = true);
     bool resetChannelData(uint8_t channelIndex);
+    // Setup phase check apply: phase and reverse of a line's three channels in one step, persisted
+    // with rollback; generated labels (<group> L<n>) follow the phase. False when nothing changed.
+    bool applyLineConfiguration(const uint8_t channelIndices[3], const Phase phases[3], const bool reverses[3]);
 
     // Channel data management - JSON operations
     bool getChannelDataAsJson(JsonDocument &jsonDocument, uint8_t channelIndex);

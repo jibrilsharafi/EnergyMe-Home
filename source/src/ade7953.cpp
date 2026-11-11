@@ -3,6 +3,7 @@
 
 #include "ade7953.h"
 #include "bootrecovery.h"
+#include "setupcheck.h"
 #include "taskprofiler.h"
 #include "duration_format.h"
 #include "grid_frequency.h"
@@ -792,6 +793,7 @@ namespace Ade7953
             deferred = true;
         }
         releaseMutex(&_configMutex);
+        SetupCheck::onConfigWrite(0xFF);
 
         if (deferred) {
             LOG_ERROR("Voltage phase %u applied, CT polarity re-arm deferred to the next reading", static_cast<unsigned>(voltagePhase));
@@ -949,6 +951,7 @@ namespace Ade7953
         _updateChannelData(channelIndex);
         _saveChannelDataToPreferences(channelIndex);
         if (!globalCommunityMode) Mqtt::requestChannelPublish();
+        SetupCheck::onConfigWrite(channelIndex);
 
         // Detect role change
         bool detected = (oldRole != channelData.role);
@@ -960,6 +963,67 @@ namespace Ade7953
 
         LOG_DEBUG("Successfully set channel data for channel %lu", channelIndex);
         return true;
+    }
+
+    bool applyLineConfiguration(const uint8_t channelIndices[3], const Phase phases[3], const bool reverses[3]) {
+        if (_refusedWhilePassive()) return false;
+        for (int i = 0; i < 3; i++) {
+            if (!isChannelValid(channelIndices[i]) || !PhaseUtils::isValidVoltagePhase(phases[i])) return false;
+        }
+        // Lock order as setVoltagePhase: config, then channel data. All three channels change
+        // in one step, so no intermediate configuration is ever read or persisted.
+        if (!acquireMutex(&_configMutex)) {
+            LOG_ERROR("Failed to acquire config mutex for a line apply");
+            return false;
+        }
+        if (!acquireMutex(&_channelDataMutex)) {
+            releaseMutex(&_configMutex);
+            LOG_ERROR("Failed to acquire channel data mutex for a line apply");
+            return false;
+        }
+        ChannelData old[3];
+        for (int i = 0; i < 3; i++) old[i] = _channelData[channelIndices[i]];
+        for (int i = 0; i < 3; i++) {
+            ChannelData &c = _channelData[channelIndices[i]];
+            // A generated label (<group> L<phase>) follows the new phase; any other label is kept.
+            char generated[NAME_BUFFER_SIZE];
+            snprintf(generated, sizeof(generated), "%s L%u", c.groupLabel, static_cast<unsigned>(c.phase));
+            if (strcmp(c.label, generated) == 0 && c.phase != phases[i]) {
+                snprintf(c.label, sizeof(c.label), "%s L%u", c.groupLabel, static_cast<unsigned>(phases[i]));
+            }
+            const bool reverseChanged = c.reverse != reverses[i];
+            const bool phaseChanged = c.phase != phases[i];
+            c.phase = phases[i];
+            c.reverse = reverses[i];
+            // Same rule as setChannelData: an explicit reverse is trusted, a phase change re-arms.
+            if (reverseChanged) _armPolarityLocked(channelIndices[i], false);
+            else if (phaseChanged) _armPolarityLocked(channelIndices[i], true);
+        }
+        _recalculateWeights();
+        releaseMutex(&_channelDataMutex);
+
+        bool saved = true;
+        for (int i = 0; i < 3 && saved; i++) saved = _saveChannelDataToPreferences(channelIndices[i]);
+        if (!saved) {
+            LOG_ERROR("Line apply on channels %u, %u, %u failed to persist, rolling back",
+                      channelIndices[0], channelIndices[1], channelIndices[2]);
+            if (acquireMutex(&_channelDataMutex)) {
+                for (int i = 0; i < 3; i++) _channelData[channelIndices[i]] = old[i];
+                _recalculateWeights();
+                releaseMutex(&_channelDataMutex);
+            }
+            for (int i = 0; i < 3; i++) _saveChannelDataToPreferences(channelIndices[i]);
+        }
+        releaseMutex(&_configMutex);
+        if (!globalCommunityMode) Mqtt::requestChannelPublish();
+        for (int i = 0; i < 3; i++) SetupCheck::onConfigWrite(channelIndices[i]);
+        if (saved) {
+            LOG_INFO("Phase check applied to channels %u, %u, %u: phases %u %u %u, reverse %d %d %d",
+                     channelIndices[0], channelIndices[1], channelIndices[2],
+                     static_cast<unsigned>(phases[0]), static_cast<unsigned>(phases[1]), static_cast<unsigned>(phases[2]),
+                     reverses[0], reverses[1], reverses[2]);
+        }
+        return saved;
     }
 
     bool resetChannelData(uint8_t channelIndex) {
@@ -1256,7 +1320,9 @@ namespace Ade7953
         preferences.end();
 
         for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
-            _saveEnergyToPreferences(i);
+            // Forced: a plain save only writes once a counter rises ENERGY_SAVE_THRESHOLD above
+            // the last saved (pre-reset) value, so a reboot before that brought the old counters back.
+            _saveEnergyToPreferences(i, true);
             _clearStartMeasuring(i);
         }
 
@@ -2136,6 +2202,9 @@ namespace Ade7953
         
         // Always process channel 0 as it is on a separate ADE7953 channel
         _processChannelReading(0, linecycUnix);
+
+        // Setup phase check: closes its minutes on the monotonic clock (setup must not wait for NTP)
+        SetupCheck::onTick(millis64());
     }
 
     void _pollWaveformSamples() { // TODO: this could become something related to a websocket for real time visualization and similar
@@ -4093,6 +4162,13 @@ namespace Ade7953
             return false;
         }
 
+        // Setup phase check evidence: the raw pair against V1, before reverse, rotation, the
+        // off-phase no-load gate, the PF zeroing and the load/PV clamp, all of which depend on
+        // the configured phase. Only consumed while the setup check window is open.
+        if (deltaHoursSampleTime > 0.0f) {
+            SetupCheck::onReading(channelIndex, rawActiveEnergy / deltaHoursSampleTime, rawReactiveEnergy / deltaHoursSampleTime, deltaMillis, currentRms);
+        }
+
         // Synthetic no-load for the whole off-phase reading. The chip gates P1 and Q1
         // independently against V1, so after the rotation neither gate maps onto this
         // line's own P or Q; a sub-threshold current is offset noise. Zeroing the
@@ -4203,7 +4279,12 @@ namespace Ade7953
         bool conducting = MeterLogic::isConductingReading(
             activePower, current, minCurrentConducting);
 
-        if (_channelData[channelIndex]._pendingPolarityCheck && conducting) {
+        // During the setup phase check on a three-phase install the sign vote waits: a wrong
+        // phase reads negative, and a flip would turn it into a plausible 60-degree error the
+        // check can no longer see. The arm and its counters are kept for after setup.
+        const bool polarityHeld = SetupCheck::holdPolarityFlips() &&
+            (channelData.role == CHANNEL_ROLE_LOAD || channelData.role == CHANNEL_ROLE_PV);
+        if (_channelData[channelIndex]._pendingPolarityCheck && conducting && !polarityHeld) {
             bool flipped = false;
             bool newReverse = false;
             if (acquireMutex(&_channelDataMutex)) {

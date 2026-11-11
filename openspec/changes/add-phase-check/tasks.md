@@ -17,13 +17,13 @@
 
 ## 3. Meter integration
 
-- [ ] 3.1 Check window (D2): open while setup is not done or for 2 hours after `setup/start`; closed by `setup/complete`, timeout, reboot of a `setup/start` window; evidence dropped at close
-- [ ] 3.2 Line detection from group label, role, active, non-split and three phases; identity keyed on label + channel set
-- [ ] 3.3 Evidence tap after the RMS witness in `_readMeterValues` (raw pair x deltaMillis, double, 3% gate, signed axial, pre-clamp RMS current), minute pairs; only inside the window
-- [ ] 3.4 Evaluation at each closed minute and after any configuration write to a line, in the meter task; snapshot with generation under `_channelDataMutex`
-- [ ] 3.5 Detector hold (D6): no flip of load/PV channels on three-phase devices while the window is open; arms and counters kept
-- [ ] 3.6 Atomic line apply with rollback (D5); generated labels follow the phase
-- [ ] 3.7 Energy reset of every channel on the first `setup/complete`, before cloud services start
+- [x] 3.1 Check window (D2): open while setup is not done or for 2 hours after `setup/start`; closed by `setup/complete`, timeout, reboot of a `setup/start` window; evidence dropped at close
+- [x] 3.2 Line detection from group label, role, active, non-split and three phases; identity keyed on label + channel set
+- [x] 3.3 Evidence tap after the RMS witness in `_readMeterValues` (raw pair x deltaMillis, double, 3% gate, signed axial, pre-clamp RMS current), minute pairs; only inside the window
+- [x] 3.4 Evaluation at each closed minute and after any configuration write to a line, in the meter task; snapshot with generation under `_channelDataMutex`
+- [x] 3.5 Detector hold (D6): no flip of load/PV channels on three-phase devices while the window is open; arms and counters kept
+- [x] 3.6 Atomic line apply with rollback (D5); generated labels follow the phase
+- [x] 3.7 Energy reset of every channel on the first `setup/complete`, before cloud services start
 - [ ] 3.8 RAM and meter-loop timing before/after (task profiler)
 - [ ] 3.9 Keep V1 unscaled and apply the split-phase 2x to a channel's own readings only; drop the channel 0 split-phase coercion, validators and channel page filter
 
