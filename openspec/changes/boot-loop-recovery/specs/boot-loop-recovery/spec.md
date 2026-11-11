@@ -51,7 +51,7 @@ In Recovery the device SHALL keep the meter passive (no ADE7953 communication, i
 
 ### Requirement: The stage is sticky per firmware and can be exited
 
-The stage SHALL persist across restarts and power cycles while the running firmware (app ELF SHA-256) is unchanged, and SHALL reset to Normal, together with the unstable-boot count, when the firmware changes. A stable boot SHALL drop Wiped back to Normal; Recovery and Minimal stay until the firmware changes or the recovery is exited. `GET /api/v1/system/recovery` SHALL report the stage, the unstable-boot count and whether the boot is degraded. `POST /api/v1/system/recovery/exit` SHALL set the stage to Wiped and restart, so a normal boot is retried and a repeated failure returns to Recovery without a second factory reset.
+The stage SHALL persist across restarts and power cycles while the running firmware (app ELF SHA-256) is unchanged, and SHALL reset to Normal, together with the unstable-boot count, when the firmware changes. A stable boot SHALL drop Wiped back to Normal; Recovery and Minimal stay until the firmware changes or the recovery is exited. `GET /api/v1/system/recovery` SHALL report the stage, the unstable-boot count, whether the boot is degraded, and the last boots as the ladder saw them (reset reason, deliberate, new firmware, stage before and after, action), kept in the recovery namespace so they survive the wipe. `POST /api/v1/system/recovery/exit` SHALL set the stage to Wiped and restart, so a normal boot is retried and a repeated failure returns to Recovery without a second factory reset.
 
 #### Scenario: Power cut in Recovery
 - **WHEN** a device in Recovery loses power and comes back
@@ -63,7 +63,7 @@ The stage SHALL persist across restarts and power cycles while the running firmw
 
 ### Requirement: The ladder can be exercised on development builds only
 
-Development builds SHALL provide `POST /api/v1/debug/boot-crash` with a stage threshold from 0 (disarm) to 3 (Minimal), so the device always ends up serving its web server. While armed, every boot SHALL abort right after LittleFS mounts as long as the current stage is below the threshold. The setting SHALL live in the recovery namespace so it survives the ladder's factory reset, and SHALL be cleared when the firmware changes. Production builds SHALL contain neither the endpoint nor the crash.
+Development builds SHALL provide `POST /api/v1/debug/boot-crash` with a stage threshold from 0 (disarm) to 3 (Minimal), so the device always ends up serving its web server. While armed, every boot SHALL abort right after LittleFS mounts as long as the current stage is below the threshold. The setting SHALL live in the recovery namespace so it survives the ladder's factory reset, and SHALL be cleared when the firmware changes. Two options let the ladder run without a serial console: `keepWifi` keeps the WiFi credentials and network settings through the wipe, and `noRollback` skips the rollback so the ladder walks every stage. Production builds SHALL contain neither the endpoint nor the crash.
 
 #### Scenario: Whole ladder on the bench
 - **WHEN** the boot crash is armed with threshold Minimal on a dev build

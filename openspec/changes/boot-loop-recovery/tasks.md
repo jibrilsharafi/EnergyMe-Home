@@ -12,10 +12,15 @@
 - [x] 2.6 `GET /api/v1/system/recovery`, `POST /api/v1/system/recovery/exit`, dev-only `POST /api/v1/debug/boot-crash`, swagger
 - [x] 2.7 `pio test -e native`, `pio run` for Home and Pro dev and prod
 
-## 3. Bench (dev Home over USB with serial first, pre-network boot code)
+- [x] 2.8 Boot history in `recovery_ns`, reported by `GET /api/v1/system/recovery`; dev boot crash takes `keepWifi` and `noRollback` so the ladder runs over the network
 
-- [ ] 3.1 Boot crash armed until Minimal: the ladder walks Normal, Wiped, Recovery, Minimal, with one factory reset
-- [ ] 3.2 Power cycle in Recovery boots straight into Recovery
-- [ ] 3.3 Recovery boot: SoftAP or STA and the web server up, meter passive, issue raised, LED purple
-- [ ] 3.4 `recovery/exit` re-enters at Wiped; an OTA clears the stage
-- [ ] 3.5 Ten deliberate restarts in a row change nothing
+## 3. Bench
+
+Run over OTA on the Home dev (.174, 2026-11-11) with `keepWifi=1&noRollback=1`, checked through the boot history. Still to do on a clean board with USB serial: the power cycle, the LED, a real wipe of WiFi, and the rollback branch.
+
+- [x] 3.1 Boot crash armed until Minimal: the ladder walks Normal, Wiped, Recovery, Minimal, with one factory reset (9 panics, 1 wipe)
+- [ ] 3.2 Power cycle in Recovery boots straight into Recovery (software restart in Minimal verified sticky; power cycle pending)
+- [x] 3.3 Recovery boot: STA and the web server up, meter passive (readings and writes refused), issue raised (LED not checked remotely)
+- [x] 3.4 `recovery/exit` re-enters at Wiped and returns to Recovery, then Minimal, with no second wipe; an OTA clears the stage
+- [x] 3.5 Ten deliberate restarts in a row change nothing
+- [ ] 3.6 Clean board over USB: power cycle, purple LED, wipe without `keepWifi` brings up the SoftAP, rollback branch without `noRollback`

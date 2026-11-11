@@ -31,6 +31,7 @@ Known limits:
 - On the first release with the ladder, an automatic rollback can only land on a release without it. If that older image also loops before its own crash monitor starts, it stays there.
 - Loops of deliberate restarts longer than 60 s (a health check that keeps failing) are left to safe mode and are not counted.
 - If NVS cannot be opened, the ladder is disabled for that boot.
+- The OTA restart from a release without the ladder is not flagged as deliberate, so the first boot of the ladder counts one unstable boot. A stable boot clears it.
 
 ## Capabilities
 
