@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: No sign-vote flips during the phase check
-On a device with three-phase channels, the CT-reversal sign-vote detector SHALL NOT flip any load or PV channel while the phase check window is open (`phase-check`): a channel on the wrong phase reads negative, and a flip turns it into a 60-degree error that looks plausible. Pending arms and vote counters SHALL be kept, so the detector resumes when the window closes. A device with no three-phase channels SHALL keep the detector unchanged.
+On a device with three-phase channels, the CT-reversal sign-vote detector SHALL NOT flip any load or PV channel while the phase check window is open (`phase-check`): a channel on the wrong phase reads negative, and a flip turns it into a 60-degree error that looks plausible. Pending arms and vote counters SHALL be kept, so the detector resumes when the window closes; while held, an armed channel SHALL get no read-scheduling boost and its clamped readings SHALL NOT count as reverse-flag mismatch evidence. A device with no three-phase channels SHALL keep the detector unchanged.
 
 #### Scenario: Wrong phase does not trigger a flip during setup
 - **WHEN** a load channel of a line is configured on the wrong phase and reads steadily negative while the installer is on the setup page

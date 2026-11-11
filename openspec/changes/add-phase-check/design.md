@@ -88,6 +88,7 @@ Earlier rules, tried and replaced:
 ### D6. Detector hold
 - On a device with three-phase channels, no sign-vote flip of a load/PV channel while the window is open: a wrong phase reads negative, and a flip makes it a 60-degree error the check can no longer see (the single-phase replay showed half the wrong phases hidden this way, the Roncade sequence). The candidates are on the page instead.
 - Arms and counters are kept, so the detector resumes at close; a still-wrong channel is then handled as today.
+- While held, an armed channel gets no WDRR boost (it cannot vote) and its clamped readings are not counted as `channel_polarity_mismatch` evidence.
 - Single-phase devices keep the detector unchanged.
 
 ### D7. Energy reset at first setup
@@ -132,7 +133,7 @@ The single-phase check, on the same channels taken one at a time: no false alarm
 
 ## Migration Plan
 
-1. Firmware release. Upgraded devices with a non-default password count as set up: no window, no check, no energy reset, detector unchanged.
+1. Firmware release. Upgraded devices (the first-boot flag set by earlier firmware, or energy already stored) count as set up: no window, no check, no energy reset, detector unchanged.
 2. Cloud-side checking is a separate `energyme-infra` change.
 
 Rollback: older firmware ignores the setup flag.

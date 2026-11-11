@@ -168,7 +168,7 @@ After Wi-Fi provisioning and the password change, the device SHALL serve a setup
 
 Errors SHALL be shown as toasts. Reloading the page, or opening it from another device, before setup completes SHALL resume on the phase check step when the device has lines or checked single-phase channels. The installer SHALL be able to finish at any time; finishing while a line is `collecting`, `fix` or `choose`, or a single-phase channel is `suspect`, SHALL ask for confirmation, naming them. The installer SHALL also be able to skip the setup from its first step, which completes it with the defaults.
 
-The device SHALL expose `GET /api/v1/setup/status`, `POST /api/v1/setup/start` and `POST /api/v1/setup/complete` (taking the cloud services choice), behind the web password. Completing or skipping the first setup SHALL reset the energy counters of every channel, so the install starts from zero; completing a setup run again SHALL NOT. The device decides where `/` leads: on a device that has never completed setup, to this page once the password is no longer the default, and to the dashboard afterwards. The configuration page SHALL offer to run the setup again; it starts from the current configuration on the first step and resets nothing. A device upgraded with a non-default password SHALL count as already set up.
+The device SHALL expose `GET /api/v1/setup/status`, `POST /api/v1/setup/start` and `POST /api/v1/setup/complete` (taking the cloud services choice), behind the web password. Completing or skipping the first setup SHALL reset the energy counters of every channel, so the install starts from zero; completing a setup run again SHALL NOT. The device decides where `/` leads: on a device that has never completed setup, to this page once the password is no longer the default, and to the dashboard afterwards. The configuration page SHALL offer to run the setup again; it starts from the current configuration on the first step and resets nothing. A device that booted earlier firmware, or that already holds stored energy, SHALL count as already set up; it never sees the setup page, never has its cloud held and never has its energy reset.
 
 #### Scenario: Installer finishes with nothing running
 - **WHEN** the installer finishes the setup while two lines are `collecting` and confirms
@@ -195,5 +195,5 @@ The device SHALL expose `GET /api/v1/setup/status`, `POST /api/v1/setup/start` a
 - **THEN** nothing is saved, a toast names the circuit and the circuit opens
 
 #### Scenario: Upgraded device not redirected
-- **WHEN** a device with a changed password is updated to this firmware
+- **WHEN** a device in service is updated to this firmware
 - **THEN** `/` serves the dashboard, not the setup page

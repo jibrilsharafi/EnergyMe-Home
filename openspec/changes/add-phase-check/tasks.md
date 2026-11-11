@@ -34,7 +34,7 @@
 ## 5. Web UI
 
 - [x] 5.1 `/setup` page from the prototype in `source/html/setup.html` (cloud, supply, circuits, phase check), reusing shared styles, toasts and tooltips; skip link; resume on the phase check
-- [x] 5.2 `/` fourth twin with its ETag variant; setup-done flag in NVS, set on upgrade when the password is non-default, restored with backups
+- [x] 5.2 `/` fourth twin with its ETag variant; setup-done flag in NVS, set on upgrade when the first-boot flag or stored energy shows a device in service, restored with backups
 - [x] 5.3 Configuration page: "Run setup again" calls `setup/start` and opens `/setup`
 - [x] 5.4 Channel page: per-phase preview with no best row
 - [x] 5.5 Info icon more visible on every page (`css/tooltip.css`)
