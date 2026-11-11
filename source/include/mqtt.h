@@ -271,6 +271,7 @@ namespace Mqtt
     // Public methods for pushing data to queues
     void pushLog(const LogEntry& entry);
     void pushMeter(const PayloadMeter& payload);
+    void discardQueuedMeterData(); // drops meter points queued while cloud services were held during setup
     void pushGrid(const PayloadGridPoint& point);
 
     // Queues a high-priority alarm and wakes the MQTT task (requestImmediatePublish).

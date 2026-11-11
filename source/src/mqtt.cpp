@@ -559,6 +559,11 @@ namespace Mqtt
         xQueueSend(_logQueue, &entry, pdMS_TO_TICKS(QUEUE_WAIT_TIMEOUT));
     }
 
+    void discardQueuedMeterData()
+    {
+        if (_meterQueue != nullptr) xQueueReset(_meterQueue);
+    }
+
     void pushMeter(const PayloadMeter& payload)
     {
         if (!_initializeMeterQueue()) return;

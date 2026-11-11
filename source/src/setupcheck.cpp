@@ -157,6 +157,7 @@ void rebuildLocked(const ConfigSnapshot &s) {
             slot.evidence = old.evidence;
             memcpy(slot.bucket, old.bucket, sizeof(slot.bucket));
             slot.verdict = old.verdict;
+            slot.evaluatedGeneration = old.evaluatedGeneration;
         }
         for (int i = 0; i < 3; i++) slot.evidence.ch[i].ratingA = slot.ratingA[i];
         _rt->lines[k] = slot;
@@ -338,8 +339,18 @@ void begin(bool firstBootThisBoot) {
         _setupDone = prefs.getBool(PREFERENCES_SETUP_DONE_KEY, true);
     } else {
         // Absent key: a factory-fresh device starts the setup; a device that already booted
-        // older firmware is in service and counts as set up.
-        _setupDone = !firstBootThisBoot;
+        // older firmware is in service and counts as set up. Stored energy also marks a
+        // device in service (firmware older than the first-boot flag), so finishing a setup
+        // can never wipe a live meter's counters.
+        bool hasEnergy = false;
+        Preferences energy;
+        if (energy.begin(PREFERENCES_NAMESPACE_ENERGY, true)) {
+            char key[16];
+            snprintf(key, sizeof(key), ENERGY_ACTIVE_IMP_KEY, 0U);
+            hasEnergy = energy.isKey(key);
+            energy.end();
+        }
+        _setupDone = !firstBootThisBoot || hasEnergy;
         prefs.putBool(PREFERENCES_SETUP_DONE_KEY, _setupDone);
         LOG_INFO("Setup state initialised: %s", _setupDone ? "done (existing device)" : "pending (new device)");
     }
@@ -369,6 +380,7 @@ bool completeSetup(bool &firstSetup) {
         // The install starts from zero: bench tests and a wrong configuration during the
         // visit leave nothing behind. Before cloud services start, so the cloud never sees a drop.
         Ade7953::resetEnergyValues();
+        if (!globalCommunityMode) Mqtt::discardQueuedMeterData();  // queued while held, before the reset
         LOG_INFO("First setup completed: energy counters reset");
     } else {
         LOG_INFO("Setup completed again");
