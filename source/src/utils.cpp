@@ -46,7 +46,7 @@ static char _pendingRestartReason[STATUS_BUFFER_SIZE] = {0};
 static TaskHeartbeat _maintenanceHeartbeat;
 
 // Static function declarations
-static void _factoryReset();
+static void _factoryReset(bool keepWifi = false);
 static void _restartTask(void* parameter);
 static void _failsafeRestartCallback(void* parameter);
 static void _startFailsafeTimer(uint32_t timeoutMs);
@@ -1143,12 +1143,12 @@ void statisticsToJson(Statistics& statistics, JsonDocument &jsonDocument) {
 // Helper functions
 // -----------------------------
 
-static void _factoryReset() { // No logger here it is likely destroyed already
+static void _factoryReset(bool keepWifi) { // No logger here it is likely destroyed already
     Serial.println("[WARNING] Factory reset requested");
 
     Led::blinkRedFast(Led::PRIO_CRITICAL); // The critical layer carries its own brightness floor
 
-    clearAllPreferences();
+    clearAllPreferences(keepWifi);
 
     // clearAllPreferences() shares its exclusion list with backup/restore, where the web
     // password must never travel. A factory reset is the opposite case: it has to hand the
@@ -1176,7 +1176,7 @@ static void _factoryReset() { // No logger here it is likely destroyed already
     // (nvs.net80211 - the same store CustomWifi::_hasStoredCredentials() reads and
     // resetWifi() erases via this same call). Without this, a factory reset left the
     // device rejoining its old network on the next boot instead of coming up unprovisioned.
-    esp_err_t err = esp_wifi_restore();
+    esp_err_t err = keepWifi ? ESP_OK : esp_wifi_restore();
     if (err == ESP_ERR_WIFI_NOT_INIT) {
         // The boot-loop ladder wipes before WiFi exists: erase the driver's store directly
         nvs_handle_t handle;
@@ -1209,8 +1209,8 @@ static void _factoryReset() { // No logger here it is likely destroyed already
     // Removed ESP.restart() call since the factory reset must be called only from the restart task
 }
 
-void factoryResetAtBoot() {
-    _factoryReset();
+void factoryResetAtBoot(bool keepWifi) {
+    _factoryReset(keepWifi);
 }
 
 bool isFirstBootDone() {
@@ -1248,7 +1248,7 @@ void createAllNamespaces() {
     LOG_DEBUG("All namespaces created");
 }
 
-void clearAllPreferences() {
+void clearAllPreferences(bool keepWifi) {
     // Clear all app namespaces during factory reset, skipping only critical ones
     // Critical namespaces: factory-provisioned data (certs, calibration) and device-specific data
     const char* excludedNamespaces[] = {EXCLUDED_NVS_NAMESPACES_LIST};
@@ -1278,7 +1278,7 @@ void clearAllPreferences() {
         }
 
         // Check if this namespace should be skipped (critical data)
-        bool isExcluded = false;
+        bool isExcluded = keepWifi && strcmp(info.namespace_name, PREFERENCES_NAMESPACE_WIFI) == 0;
         for (const char* excluded : excludedNamespaces) {
             if (strcmp(info.namespace_name, excluded) == 0) {
                 isExcluded = true;
