@@ -2,6 +2,7 @@
 // Copyright (C) 2025 Jibril Sharafi
 
 #include "mqtt.h"
+#include "setupcheck.h"
 #include "issueregistry.h"
 #include "bootrecovery.h"
 #include "crashmonitor.h"
@@ -431,8 +432,11 @@ namespace Mqtt
             LOG_ERROR("Failed to load device certificates in begin(). Cloud services will not connect.");
         }
 
-        if (_cloudServicesEnabled && _certificatesLoaded) _startTask();
+        // Held until setup completes: no cloud update can restart the meter while the
+        // installer is still configuring it. setup/complete stores the choice and starts it.
+        if (_cloudServicesEnabled && _certificatesLoaded && SetupCheck::isSetupDone()) _startTask();
         else if (_cloudServicesEnabled && !_certificatesLoaded) LOG_WARNING("Cloud services enabled but certificates not loaded - reprovision required");
+        else if (_cloudServicesEnabled) LOG_INFO("Cloud services held until setup completes");
         else LOG_DEBUG("Cloud services are disabled, MQTT task will not start");
 
         LOG_DEBUG("MQTT client setup complete");
@@ -489,8 +493,12 @@ namespace Mqtt
         }
 
         if (_cloudServicesEnabled == enabled) {
-            LOG_DEBUG("Cloud services already set to %s, skipping", enabled ? "enabled" : "disabled");
+            // An explicit choice is always stored, so a default that was never written
+            // becomes the user's choice; a task held during setup starts now.
+            _saveCloudServicesEnabledToPreferences(enabled);
+            if (enabled && _certificatesLoaded && SetupCheck::isSetupDone()) _startTask();
             releaseMutex(&_configMutex);
+            LOG_DEBUG("Cloud services already %s, choice stored", enabled ? "enabled" : "disabled");
             return;
         }
 
@@ -502,7 +510,7 @@ namespace Mqtt
         _saveCloudServicesEnabledToPreferences(enabled);
         if (!enabled) OfflineEnergy::clear();
 
-        if (_cloudServicesEnabled && _certificatesLoaded) _startTask();
+        if (_cloudServicesEnabled && _certificatesLoaded && SetupCheck::isSetupDone()) _startTask();
         else if (_cloudServicesEnabled && !_certificatesLoaded) LOG_WARNING("Cannot start MQTT task: device certificates not loaded - reprovision required");
         
         releaseMutex(&_configMutex);
@@ -842,7 +850,9 @@ namespace Mqtt
         Preferences prefs;
         prefs.begin(PREFERENCES_NAMESPACE_MQTT, true);
 
-        _cloudServicesEnabled = prefs.getBool(MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY, DEFAULT_CLOUD_SERVICES_ENABLED);
+        // No stored value: on by default outside community mode, and NOT written back, so
+        // only an explicit choice is ever stored and devices that booted older firmware keep theirs.
+        _cloudServicesEnabled = prefs.getBool(MQTT_PREFERENCES_IS_CLOUD_SERVICES_ENABLED_KEY, !globalCommunityMode);
         _sendPowerDataEnabled = prefs.getBool(MQTT_PREFERENCES_SEND_POWER_DATA_KEY, DEFAULT_SEND_POWER_DATA_ENABLED);
         _sendGridDataEnabled = prefs.getBool(MQTT_PREFERENCES_SEND_GRID_DATA_KEY, DEFAULT_SEND_GRID_DATA_ENABLED);
         _meterPublishThresholdBytes = prefs.getUInt(MQTT_PREFERENCES_METER_PUBLISH_THRESHOLD_KEY, MQTT_METER_PUBLISH_THRESHOLD_BYTES_DEFAULT);
@@ -868,7 +878,7 @@ namespace Mqtt
 
     static void _saveConfigToPreferences()
     {
-        _saveCloudServicesEnabledToPreferences(_cloudServicesEnabled);
+        // Cloud services are stored only by setCloudServicesEnabled (an explicit choice).
         _saveSendPowerDataEnabledToPreferences(_sendPowerDataEnabled);
         _saveSendGridDataEnabledToPreferences(_sendGridDataEnabled);
         _saveMeterPublishThresholdBytesToPreferences(_meterPublishThresholdBytes);
