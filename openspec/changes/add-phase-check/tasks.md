@@ -25,7 +25,7 @@
 - [x] 3.6 Atomic line apply with rollback (D5); generated labels follow the phase
 - [x] 3.7 Energy reset of every channel on the first `setup/complete`, before cloud services start
 - [ ] 3.8 RAM and meter-loop timing before/after (task profiler)
-- [ ] 3.9 Keep V1 unscaled and apply the split-phase 2x to a channel's own readings only; drop the channel 0 split-phase coercion, validators and channel page filter
+- [x] 3.9 Keep V1 unscaled and apply the split-phase 2x to a channel's own readings only; drop the channel 0 split-phase coercion, validators and channel page filter
 
 ## 4. REST
 

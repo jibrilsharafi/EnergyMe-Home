@@ -692,8 +692,9 @@ namespace Ade7953
     float getAggregatedReactiveEnergyExportedByRole(ChannelRole role);
     float getAggregatedApparentEnergyByRole(ChannelRole role);
 
-    // Grid frequency
+    // Grid frequency and the device voltage (V1, unscaled)
     float getGridFrequency();
+    float getV1Voltage();
 
     // Issue registry facts (RAM-only, safe to call cross-task)
     bool getChannelIssueFacts(uint8_t channelIndex, ChannelIssueFacts &facts);

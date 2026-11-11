@@ -100,6 +100,7 @@ namespace Ade7953
     static SemaphoreHandle_t _spiOperationMutex = NULL; // To handle full SPI operations (like read with verification, which is 2 SPI operations)
     static SemaphoreHandle_t _ade7953InterruptSemaphore = NULL;
     static SemaphoreHandle_t _configMutex = NULL;
+    static volatile float _v1Voltage = 0.0f; // V1 RMS, never scaled by a channel's split-phase multiplier
     static SemaphoreHandle_t _meterValuesMutex = NULL;
     static SemaphoreHandle_t _channelDataMutex = NULL;
 
@@ -896,16 +897,6 @@ namespace Ade7953
             _channelData[channelIndex].active = true;
         } else {
             _channelData[channelIndex] = channelData;
-        }
-
-        // Last line of defence for channel 0, which supplies V1 to every channel (see
-        // _isValidChannel0Phase). The JSON validators reject this at the API, but a device
-        // that already stored it in NVS restores through here with armTransients=false, so
-        // coerce rather than reject: the alternative is a boot loop on a config the user
-        // cannot see.
-        if (channelIndex == 0 && _channelData[0].phase == PHASE_SPLIT_240) {
-            LOG_WARNING("Channel 0 supplies V1 to every channel and cannot be split-phase 240V, coercing to phase 1");
-            _channelData[0].phase = PHASE_1;
         }
 
         // Arm transient flags on inactive->active transition. Polarity check runs for
@@ -1824,6 +1815,8 @@ namespace Ade7953
     // Grid frequency
     // ==============
 
+    float getV1Voltage() { return _v1Voltage; }
+
     float getGridFrequency() {
         // Filtered EMA once seeded; raw fallback until then (and if ZXV never fires)
         if (_gridFreqEma.seeded) return GridFrequency::frequencyHz(_gridFreqEma, _gridFreqCfg);
@@ -2341,7 +2334,7 @@ namespace Ade7953
         }
 
         LOG_ERROR("Blackout detected: grid power lost (count=%llu, last known voltage=%.1fV)",
-                  statistics.ade7953ZxtoInterrupts, _meterValues[0].voltage);
+                  statistics.ade7953ZxtoInterrupts, _v1Voltage);
     }
 
     // Tasks
@@ -2587,12 +2580,12 @@ namespace Ade7953
             if (updateCount == lastSeenUpdateCount) continue; // EMA frozen (no ZXV since last emit)
             lastSeenUpdateCount = updateCount;
 
-            // Cached channel-0 RMS voltage (at most ~_sampleTime old); aligned float
+            // Cached V1 RMS voltage (at most ~_sampleTime old); aligned float
             // read is atomic, keeping the sampler off the SPI bus
             PayloadGridPoint point(
                 CustomTime::getUnixTimeMilliseconds(),
                 getGridFrequency(),
-                _meterValues[0].voltage
+                _v1Voltage
             );
             Mqtt::pushGrid(point);
         }
@@ -3333,22 +3326,6 @@ namespace Ade7953
         return true;
     }
 
-    /*
-    Channel 0's reading supplies V1 to every channel: its voltage, stored in
-    _meterValues[0], is what every other channel reuses and what MQTT, Modbus and
-    the issue registry report as the device voltage. Split-phase 240 V is not a
-    rotation but a 2x voltage multiplier, so on channel 0 it would double the voltage
-    every channel and integration reads. (The rotation base is the voltage phase
-    setting, not channel 0's phase.)
-    */
-    bool _isValidChannel0Phase(uint8_t channelIndex, uint8_t phase) {
-        if (channelIndex == 0 && phase == PHASE_SPLIT_240) {
-            LOG_WARNING("Channel 0 supplies V1 to every channel and cannot be split-phase 240V");
-            return false;
-        }
-        return true;
-    }
-
     bool _isValidPhase(uint8_t phase) {
         return (phase == PHASE_1 ||
                 phase == PHASE_2 ||
@@ -3465,7 +3442,6 @@ namespace Ade7953
                     LOG_WARNING("Invalid phase value: %u (valid: 1-4)", phase);
                     return false;
                 }
-                if (!_isValidChannel0Phase(channelIndex, phase)) return false;
                 hasValidField = true;
             }
 
@@ -3578,7 +3554,6 @@ namespace Ade7953
                 LOG_WARNING("Invalid phase value: %u (valid: 1-4)", phase);
                 return false;
             }
-            if (!_isValidChannel0Phase(jsonDocument["index"].as<uint8_t>(), phase)) return false;
 
             // CT Specification validation with ranges
             if (!jsonDocument["ctSpecification"].is<JsonObjectConst>()) {
@@ -4122,13 +4097,16 @@ namespace Ade7953
         // Since the voltage measurement is only one in any case, it makes sense to just re-use the same value
         // as channel 0 (sampled just before) instead of reading it again. It will be at worst _sampleTime old.
         if (channelIndex == 0) {
-            voltage = float(_readVoltageRms()) * _voltPerLsb * voltageMultiplier;
+            // V1 is the voltage every channel is integrated against and the device voltage:
+            // stored unscaled, so a split-phase 240 V circuit on channel 0 doubles only its own readings.
+            _v1Voltage = float(_readVoltageRms()) * _voltPerLsb;
+            voltage = _v1Voltage * voltageMultiplier;
 
             // Update grid frequency during channel 0 reading
             float newGridFrequency = _readGridFrequency();
             if (_validateGridFrequency(newGridFrequency)) _gridFrequency = newGridFrequency;
         } else {
-            voltage = _meterValues[0].voltage * voltageMultiplier;
+            voltage = _v1Voltage * voltageMultiplier;
         }
 
         // We use sample time instead of _deltaMillis because the energy readings are over whole line cycles (defined by the sample time)
@@ -4683,7 +4661,7 @@ namespace Ade7953
     detection (as armTransients=false for channels).
     */
     void _setVoltagePhaseFromPreferences() {
-        const Phase channel0Phase = _channelData[0].phase; // already coerced off split-phase 240 V by setChannelData; meter task not started yet
+        const Phase channel0Phase = _channelData[0].phase; // may be split-phase 240 V: resolveVoltagePhase then falls back to PHASE_1; meter task not started yet
 
         Preferences preferences;
         const bool opened = preferences.begin(PREFERENCES_NAMESPACE_ADE7953, false);

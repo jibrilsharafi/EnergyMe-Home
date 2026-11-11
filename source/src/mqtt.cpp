@@ -2755,7 +2755,7 @@ namespace Mqtt
         if (Ade7953::getMeterValues(meterValuesZeroChannel, 0) && meterValuesZeroChannel.lastUnixTimeMilliseconds > 0) {
             JsonObject voltageObj = doc.add<JsonObject>();
             voltageObj["unixTime"] = meterValuesZeroChannel.lastUnixTimeMilliseconds;
-            voltageObj["voltage"] = meterValuesZeroChannel.voltage;
+            voltageObj["voltage"] = Ade7953::getV1Voltage();
         }
 
         for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
@@ -2928,7 +2928,7 @@ namespace Mqtt
 
         MeterValues voltageValues;
         if (Ade7953::getMeterValues(voltageValues, 0)) {
-            doc["voltage"] = roundToDecimals(voltageValues.voltage, MQTT_GRID_VOLTAGE_PAYLOAD_DECIMALS);
+            doc["voltage"] = roundToDecimals(Ade7953::getV1Voltage(), MQTT_GRID_VOLTAGE_PAYLOAD_DECIMALS);
         }
 
         JsonArray channels = doc["channels"].to<JsonArray>();

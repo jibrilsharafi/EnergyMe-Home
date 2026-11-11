@@ -275,7 +275,6 @@
             box.className = 'section-box';
             box.style.textAlign = 'center';
 
-            // Channel 0 supplies the voltage reading of every channel, so it cannot be split-phase
             const isChannel0 = index == 0;
             const phaseOptions = [
                 { value: 1, label: '1' },
@@ -283,7 +282,6 @@
                 { value: 3, label: '3' },
                 { value: 4, label: '240V (Split Phase)' }
             ]
-                .filter(p => !(isChannel0 && p.value === 4))
                 .map(p => `<option value="${p.value}" ${p.value === channel.phase ? 'selected' : ''}>${p.label}</option>`)
                 .join('');
 
