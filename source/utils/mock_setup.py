@@ -38,8 +38,7 @@ STATE = {
     "setupDone": False,
     "startedAt": None,  # setup/start ("Run setup again") opens a 2-hour check window
     "savedAt": None,
-    "generation": 1,
-    "lineGen": {},
+    "chanGen": {},  # channel index -> write count; a line's generation is the sum over its channels
     "resolved": {},  # lowestChannel -> apply time; ("single", index) -> True once applied
     "energyResets": 0,
 }
@@ -50,9 +49,13 @@ def _window_open():
     return not STATE["setupDone"] or (STATE["startedAt"] is not None and time.time() - STATE["startedAt"] < WINDOW_S)
 
 
-def _gen(low):
-    """Per-line generation: any channel save, or an apply to this line, moves it."""
-    return STATE["generation"] * 1000 + STATE["lineGen"].get(low, 0)
+def _gen(chans):
+    """Line generation, as on the device: moves on a write to one of its own channels only."""
+    return sum(STATE["chanGen"].get(c["index"], 0) for c in chans)
+
+
+def _bump(index):
+    STATE["chanGen"][index] = STATE["chanGen"].get(index, 0) + 1
 
 
 def _lines():
@@ -84,7 +87,7 @@ def _line_view(order, chans):
     good = [_reading(role, k) for k in (1.0, 0.98, 1.02)]
     base = {
         "lowestChannel": low, "groupLabel": chans[0]["groupLabel"], "role": role,
-        "generation": _gen(low), "candidates": [],
+        "generation": _gen(chans), "candidates": [],
         "channels": [{"index": c["index"], "label": c["label"], "phase": c["phase"], "reverse": c["reverse"],
                       "current": _amps(good[i])} for i, c in enumerate(chans)],
     }
@@ -162,7 +165,8 @@ def handle(method, path, body):
         else:  # the circuits step: every check starts over
             STATE["savedAt"] = time.time()
             STATE["resolved"] = {}
-        STATE["generation"] += 1
+        for c in body:
+            _bump(int(c["index"]))
         return {"success": True}, 200
     if path == "/api/v1/mqtt/cloud-services":
         if method == "PUT":
@@ -190,7 +194,7 @@ def handle(method, path, body):
                     return {"error": "invalid_value", "message": "channels must be the line's channels"}, 400
                 if all((c["phase"], c["reverse"]) == want[c["index"]] for c in l):
                     return {"success": True}, 200  # already applied: a repeat changes nothing
-                if body.get("generation") != _gen(low):
+                if body.get("generation") != _gen(l):
                     return {"error": "stale", "message": "The proposal changed, reload it"}, 409
                 for c in l:
                     ph, rv = want[c["index"]]
@@ -200,7 +204,8 @@ def handle(method, path, body):
                     ch["phase"] = ph
                     STATE["channels"][c["index"]]["reverse"] = rv
                 STATE["resolved"][low] = time.time()
-                STATE["lineGen"][low] = STATE["lineGen"].get(low, 0) + 1
+                for c in l:
+                    _bump(c["index"])
                 return {"success": True}, 200
         return {"error": "not_found", "message": "No such line"}, 404
     if path == "/api/v1/setup/status" and method == "GET":
@@ -218,6 +223,6 @@ def handle(method, path, body):
         return {"success": True}, 200
     if path == "/api/v1/mock/setup-reset" and method == "POST":
         STATE.update(channels=_factory_channels(), cloud=True, voltagePhase=1, setupDone=False, startedAt=None, savedAt=None,
-                     resolved={}, lineGen={}, energyResets=0)
+                     resolved={}, chanGen={}, energyResets=0)
         return {"success": True}, 200
     return None
