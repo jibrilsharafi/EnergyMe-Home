@@ -37,7 +37,7 @@ Ranking by PF picks the shift closest to 0. That is wrong for every inductive lo
 ### D3. Evidence
 **Tap point.** In `_readMeterValues` right after the RMS witness check, on `rawActiveEnergy` and `rawReactiveEnergy` and the RMS current. That is before `toChannelFrame`, the off-phase no-load gate, the `MINIMUM_POWER_FACTOR` zeroing and the clamp: all of these depend on the configured phase.
 
-**Gate.** Raw current ≥ 3% of the CT rating. At the conducting gate (0.03%) the angle is offset noise, and PV standby at night reads about -90 degrees.
+**Gate.** Per minute: average raw apparent power ≥ 3% of the CT rating × 230 V (the reference model's gate). At the conducting gate (0.03%) the angle is offset noise, and PV standby at night reads about -90 degrees.
 
 **Weighting.** Each reading adds `(P1 + jQ1) × deltaMillis / windowMillis`, i.e. power × elapsed time, so channel 0 (read every window) and multiplexed channels accumulate alike. Accumulators are `double`.
 

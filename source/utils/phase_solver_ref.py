@@ -210,13 +210,16 @@ def rank(g: GroupEvidence, vp: int, role: str, options: list[Hypothesis]) -> lis
 
 
 def check_single(e: complex, vp: int, role: str, phase: int, reverse: bool) -> tuple[str, list[tuple[int, bool]]]:
-    """Single-phase channel on a three-phase supply, advice only: 'ok' when the configured
+    """Single-phase channel on a three-phase supply, advice only: 'collecting' under the line
+    minimum of energy, 'ok' when the configured
     angle is inside the role band, else 'suspect' with the (phase, reverse) options that fit,
     most likely first. Fleet replay: no false alarm on correct channels, a wrong phase is
     flagged with the right option offered; a wrong phase plus a reversed CT (60 degrees)
     passes unnoticed half the time, which only a three-phase line can catch."""
-    if role not in ROLE_BAND or not e:
+    if role not in ROLE_BAND:
         return "ok", []
+    if abs(e) < MIN_CH_WH:
+        return "collecting", []
     lo, hi = ROLE_BAND[role]
     under = lambda p, r: wrap(ang(e) + shift(vp, p) + 180.0 * r)  # noqa: E731
     fits = [(p, r) for p in (1, 2, 3) for r in (False, True) if lo <= under(p, r) <= hi]

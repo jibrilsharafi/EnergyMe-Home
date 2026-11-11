@@ -11,9 +11,9 @@
 
 ## 2. Pure solver library (host-tested)
 
-- [ ] 2.1 `source/lib/phase_utils/phase_check.h/.cpp`: line detection, hypothesis evaluation, ranking, states, two-agreeing-evaluations filter, single-phase check; constants as in the reference model
-- [ ] 2.2 `source/test/test_phase_check`: port every reference test (synthetic fixtures only); `pio test -e native` from WSL
-- [ ] 2.3 A fixture generator script that emits the reference model's results as C arrays, so the two cannot drift
+- [x] 2.1 `source/lib/phase_check/phase_check.h/.cpp`: line detection, hypothesis evaluation, ranking, states, two-agreeing-evaluations filter, single-phase check; constants as in the reference model
+- [x] 2.2 `source/test/test_phase_check`: port every reference test (synthetic fixtures only); `pio test -e native` from WSL
+- [x] 2.3 A fixture generator script that emits the reference model's results as C arrays, so the two cannot drift
 
 ## 3. Meter integration
 
