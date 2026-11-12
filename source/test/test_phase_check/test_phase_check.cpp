@@ -26,6 +26,42 @@ static void assertClose(const Complex &want, const Complex &got, const char *wha
     TEST_ASSERT_TRUE_MESSAGE(std::abs(want - got) <= tol, msg);
 }
 
+// Feeds one minute to a single channel and steps its jump run, as the device does.
+static bool feedMinute(ChannelEvidence &c, uint8_t &run, double va, double deg, bool read = true) {
+    const ChannelEvidence before = c;
+    const Complex v = std::polar(va, deg * M_PI / 180.0);
+    addMinuteSingle(c, v, read);
+    return jumped(run, before, c, v);
+}
+
+void test_ct_flipped_by_hand_restarts_after_two_minutes(void) {
+    ChannelEvidence c{};
+    c.ratingA = 30.0f;
+    uint8_t run = 0;
+    for (int i = 0; i < 5; i++) TEST_ASSERT_FALSE(feedMinute(c, run, 700.0, 5.0));
+    TEST_ASSERT_FALSE(feedMinute(c, run, 700.0, 185.0));  // one far minute is not enough
+    TEST_ASSERT_TRUE(feedMinute(c, run, 700.0, 185.0));
+}
+
+void test_jump_run_needs_consecutive_conducting_minutes(void) {
+    ChannelEvidence c{};
+    c.ratingA = 30.0f;
+    uint8_t run = 0;
+    for (int i = 0; i < 5; i++) feedMinute(c, run, 700.0, 5.0);
+    TEST_ASSERT_FALSE(feedMinute(c, run, 700.0, 185.0));
+    TEST_ASSERT_FALSE(feedMinute(c, run, 10.0, 185.0));    // below the gate: the run holds
+    TEST_ASSERT_FALSE(feedMinute(c, run, 0.0, 0.0, false)); // no reading: the run holds
+    TEST_ASSERT_TRUE(feedMinute(c, run, 700.0, 185.0));
+    run = 0;
+    ChannelEvidence d{};
+    d.ratingA = 30.0f;
+    for (int i = 0; i < 5; i++) feedMinute(d, run, 700.0, 5.0);
+    TEST_ASSERT_FALSE(feedMinute(d, run, 700.0, 185.0));
+    TEST_ASSERT_FALSE(feedMinute(d, run, 700.0, 30.0));    // back near the evidence: the run resets
+    TEST_ASSERT_FALSE(feedMinute(d, run, 700.0, 185.0));
+    TEST_ASSERT_FALSE(feedMinute(d, run, 700.0, 80.0));    // within 90 degrees: not far
+}
+
 void test_line_decisions_match_reference_model(void) {
     const size_t n = sizeof(LINE_FIXTURES) / sizeof(LINE_FIXTURES[0]);
     for (size_t i = 0; i < n; i++) {
@@ -181,5 +217,7 @@ int main(int, char **) {
     RUN_TEST(test_line_needs_three_phases_and_one_role);
     RUN_TEST(test_line_survives_a_phase_swap_one_channel_at_a_time);
     RUN_TEST(test_line_dissolves_when_a_channel_leaves);
+    RUN_TEST(test_ct_flipped_by_hand_restarts_after_two_minutes);
+    RUN_TEST(test_jump_run_needs_consecutive_conducting_minutes);
     return UNITY_END();
 }

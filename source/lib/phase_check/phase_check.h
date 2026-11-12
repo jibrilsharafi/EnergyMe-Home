@@ -93,6 +93,18 @@ struct MinuteBucket {
 // Single channel outside any line: same accumulation, no pairs.
 void addMinuteSingle(ChannelEvidence &ch, const Complex &avgVa, bool read);
 
+// A CT moved or flipped by hand while the page is open: its new minutes read far from the
+// evidence gathered before. Two such minutes in a row (JUMP_MINUTES, more than JUMP_DEG away)
+// say the evidence is stale, so the caller restarts it. Load and PV only: on the fleet replay
+// they never restart falsely, while a grid or battery phasor swings with the PV and load
+// balance (and their reverse flags are never inferred, so a flip by hand changes no proposal).
+constexpr double JUMP_DEG = 90.0;
+constexpr uint8_t JUMP_MINUTES = 2;
+
+// Updates a channel's jump run after a minute was added (`before` is the evidence before it,
+// `after` with it); true when the run says the evidence is stale.
+bool jumped(uint8_t &run, const ChannelEvidence &before, const ChannelEvidence &after, const Complex &avgVa);
+
 struct Hypothesis {
     uint8_t phase[3];   // 1..3, the phase each line channel is assigned to
     bool reverse[3];

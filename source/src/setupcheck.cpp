@@ -222,26 +222,7 @@ void evaluateLocked(const ConfigSnapshot &s, uint32_t dirty, bool minuteClosed) 
     }
 }
 
-// A CT moved or flipped by hand while the page is open: its new minutes read far from the
-// evidence gathered before. Two such minutes in a row restart that line's evidence, so the
-// old wiring stops deciding the verdict. Load and PV only: on the fleet replay they never
-// restart falsely, while a grid or battery phasor swings with the PV and load balance (and
-// their reverse flags are never inferred, so a flip by hand changes no proposal).
-constexpr double JUMP_DEG = 90.0;
-constexpr uint8_t JUMP_MINUTES = 2;
-
-// Updates a channel's jump run after a minute; true when the run says the evidence is stale.
-bool jumped(uint8_t &run, const PhaseCheck::ChannelEvidence &before, const PhaseCheck::ChannelEvidence &after, const Complex &avg) {
-    if (after.minutes == before.minutes) return false;  // not conducting this minute: the run holds
-    bool far = false;
-    if (before.minutes >= JUMP_MINUTES && std::abs(avg) > 0.0) {
-        double d = std::fabs(std::arg(avg) - std::arg(before.e)) * (180.0 / M_PI);
-        if (d > 180.0) d = 360.0 - d;
-        far = d > JUMP_DEG;
-    }
-    run = far ? static_cast<uint8_t>(run + 1) : 0;
-    return run >= JUMP_MINUTES;
-}
+using PhaseCheck::jumped;
 
 void closeMinuteLocked() {
     for (uint8_t k = 0; k < _rt->lineCount; k++) {

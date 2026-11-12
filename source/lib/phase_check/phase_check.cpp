@@ -140,6 +140,14 @@ void LineEvidence::addMinute(const Complex avgVa[3], const bool read[3]) {
 
 void addMinuteSingle(ChannelEvidence &ch, const Complex &avgVa, bool read) { addTo(ch, avgVa, read); }
 
+bool jumped(uint8_t &run, const ChannelEvidence &before, const ChannelEvidence &after, const Complex &avgVa) {
+    if (after.minutes == before.minutes) return false;  // not conducting this minute: the run holds
+    const bool far = before.minutes >= JUMP_MINUTES && std::abs(avgVa) > 0.0 &&
+                     std::fabs(wrap(ang(avgVa) - ang(before.e))) > JUMP_DEG;
+    run = far ? static_cast<uint8_t>(run + 1) : 0;
+    return run >= JUMP_MINUTES;
+}
+
 double channelAngleDeg(const ChannelEvidence &c, Phase vp, uint8_t phase, bool reverse) {
     return wrap(ang(c.e) + shift(vp, phase) + 180.0 * reverse);
 }
