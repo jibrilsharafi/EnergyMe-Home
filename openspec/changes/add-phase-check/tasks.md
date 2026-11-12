@@ -24,7 +24,7 @@
 - [x] 3.5 Detector hold (D6): no flip of load/PV channels on three-phase devices while the window is open; arms and counters kept
 - [x] 3.6 Atomic line apply with rollback (D5); generated labels follow the phase
 - [x] 3.7 Energy reset of every channel on the first `setup/complete`, before cloud services start
-- [ ] 3.8 RAM and meter-loop timing before/after (task profiler)
+- [x] 3.8 RAM and meter-loop timing before/after (task profiler): on 2.8.1-phasecheck2 an open window takes ~8.7 KB PSRAM, no internal heap, freed on close; reading rate unchanged (152 per 30 s, 0 failures)
 - [x] 3.9 Keep V1 unscaled and apply the split-phase 2x to a channel's own readings only; drop the channel 0 split-phase coercion, validators and channel page filter
 
 ## 4. REST
