@@ -51,7 +51,7 @@
 - [ ] 7.2 Bench gate: known swaps, one reversed CT, all reversed, cyclic relabel, one CT unclamped; states and proposals equal the reference model fed the dumped minute data
 - [ ] 7.3 Cloud default on the dev meter: fresh NVS on, older-firmware NVS kept, community off
 - [ ] 7.4 Manual: setup page and line detection; three-phase section rewritten
-- [ ] 7.5 Release notes: setup page, cloud on for new devices, energy reset at first setup, detector hold during setup
+- [x] 7.5 Release notes: setup page, cloud on for new devices, energy reset at first setup, detector hold during setup
 
 ## 8. Rollout
 
