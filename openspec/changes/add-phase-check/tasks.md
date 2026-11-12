@@ -47,7 +47,7 @@
 
 ## 7. Review and verification
 
-- [ ] 7.1 Code-review agents on the diff (one adversarial on the tap point, locking and apply rollback) plus a simplification agent; triage every finding
+- [x] 7.1 Code-review agents on the diff (one adversarial on the tap point, locking and apply rollback) plus a simplification agent; triage every finding
 - [ ] 7.2 Bench gate: known swaps, one reversed CT, all reversed, cyclic relabel, one CT unclamped; states and proposals equal the reference model fed the dumped minute data
 - [ ] 7.3 Cloud default on the dev meter: fresh NVS on, older-firmware NVS kept, community off
 - [ ] 7.4 Manual: setup page and line detection; three-phase section rewritten
