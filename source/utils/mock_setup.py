@@ -132,7 +132,7 @@ def _singles():
         return []
     age = (time.time() - STATE["savedAt"]) if STATE["savedAt"] else 0
     out = []
-    singles = [c for c in act if c["index"] not in in_lines and c["role"] in ("load", "grid", "pv")]
+    singles = [c for c in act if c["index"] not in in_lines and c["role"] in ("load", "pv")]
     for n, c in enumerate(singles):
         r = _reading(c["role"])
         view = {"index": c["index"], "label": c["label"], "groupLabel": c["groupLabel"], "role": c["role"],

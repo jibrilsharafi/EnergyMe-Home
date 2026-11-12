@@ -163,3 +163,13 @@ if __name__ == "__main__":
         if name.startswith("test_"):
             fn()
             print("ok", name)
+
+
+def test_exporting_grid_line_is_verified_never_reversed():
+    # PV export: a correctly wired grid line reads ~180 degrees
+    r = ps.evaluate(group(185), VP, "grid", H((1, 2, 3)))
+    assert r.state == "verified"
+    # swapped phases on an exporting grid line are a choice that keeps the reverse flags
+    r = ps.evaluate(group(185), VP, "grid", H((2, 1, 3)))
+    assert r.state == "choose"
+    assert all(p.reverse == (False, False, False) for p in r.proposals)

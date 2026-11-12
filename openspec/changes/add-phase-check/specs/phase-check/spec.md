@@ -75,7 +75,7 @@ A state other than `collecting` SHALL be reported only once two consecutive minu
 - **THEN** the line stays `collecting` and nothing is proposed
 
 ### Requirement: Hypotheses and proposals
-For a line with a clamped role (load, PV) the device SHALL consider every assignment of its three channels to phases 1, 2, 3, combined with every reverse setting of each channel. Angles SHALL be expressed in the channel frame: raw angle plus `angle(phase) - angle(voltage phase)` plus 180 degrees when reversed. A hypothesis SHALL fit when every evaluable pair agrees within 40 degrees and every channel's angle is inside its role band (load and grid: -50 to +75 degrees; PV: -65 to +35 degrees). Fitting hypotheses SHALL be ranked by how close their mean channel angle is to the role's typical angle (20 degrees lagging for load and grid, 10 degrees leading for PV), most likely first.
+For a line with a clamped role (load, PV) the device SHALL consider every assignment of its three channels to phases 1, 2, 3, combined with every reverse setting of each channel. Angles SHALL be expressed in the channel frame: raw angle plus `angle(phase) - angle(voltage phase)` plus 180 degrees when reversed. A hypothesis SHALL fit when every evaluable pair agrees within 40 degrees and every channel's angle is inside its role band (load: -50 to +75 degrees; PV: -65 to +35 degrees). Fitting hypotheses SHALL be ranked by how close their mean channel angle is to the role's typical angle (20 degrees lagging for load, 10 degrees leading for PV), most likely first.
 
 When the configuration is not verified:
 1. if its pairs agree, every channel reads positive power and only the role band fails, the line SHALL be `choose` with the configuration first and the fitting hypotheses after it, because a uniform error and an unusual load (low-PF lighting, a capacitive feeder) look the same;
@@ -117,7 +117,7 @@ The configured phases SHALL be the installer's labels. A proposal SHALL be descr
 - **THEN** the reverse flags stay as configured
 
 ### Requirement: Single-phase channel check
-On a device with three-phase channels, each active load, grid or PV channel outside any line SHALL get an advisory check inside the check window, with the same minimums as a line: the device SHALL report it `suspect` when its angle under the configured phase and reverse flag falls outside its role band, with the phase and reverse options that fit, most likely first, and `ok` otherwise. A wrong phase combined with a reversed CT is 60 degrees off and can pass unnoticed; only a three-phase line can catch it.
+On a device with three-phase channels, each active load or PV channel outside any line SHALL get an advisory check inside the check window, with the same minimums as a line: the device SHALL report it `suspect` when its angle under the configured phase and reverse flag falls outside its role band, with the phase and reverse options that fit, most likely first, and `ok` otherwise. A wrong phase combined with a reversed CT is 60 degrees off and can pass unnoticed; only a three-phase line can catch it.
 
 #### Scenario: Single-phase load on the wrong phase
 - **WHEN** an oven wired on L2 is configured on L1

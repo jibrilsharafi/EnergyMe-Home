@@ -44,12 +44,9 @@ enum class SingleState : uint8_t { Collecting, Ok, Suspect };
 const char *stateName(State state);
 const char *singleStateName(SingleState state);
 
-// Signed roles keep both power signs: angles are axial (mod 180) and reverse is never
-// inferred. Load, grid and PV have a role band.
-bool isSignedRole(ChannelRole role);
+// Load and PV have a role band. Grid, battery, inverter and bidirectional are signed:
+// angles are axial (mod 180) and reverse is never inferred.
 bool hasRoleBand(ChannelRole role);
-void roleBand(ChannelRole role, double &lo, double &hi);
-double likelyAngleDeg(ChannelRole role); // typical angle of a correct channel, for ranking
 
 struct ChannelEvidence {
     double ratingA = 0.0;
@@ -60,7 +57,6 @@ struct ChannelEvidence {
 
 struct PairEvidence {
     Complex d{0.0, 0.0};
-    double weight = 0.0;
     double minutes = 0.0;     // co-conducting minutes
 };
 
@@ -107,8 +103,6 @@ struct Result {
     State state = State::Collecting;
     uint8_t proposalCount = 0;
     Hypothesis proposals[MAX_PROPOSALS];  // most likely first
-    double angles[3] = {0.0, 0.0, 0.0};   // channel angles under the configuration (valid unless collecting on minimums)
-    bool noFit = false;                   // collecting because no hypothesis fits (not because of minimums)
 };
 
 Result evaluate(const LineEvidence &g, Phase voltagePhase, ChannelRole role, const Hypothesis &configured);
@@ -135,14 +129,11 @@ public:
     // Returns true when `r` is now the shown result.
     bool push(const Result &r, bool afterConfigWrite);
     const Result &shown() const { return _shown; }
-    void reset() { *this = StableVerdict(); }
 private:
     Result _shown{};
     Result _last{};
     uint8_t _run = 0;
 };
-
-bool sameVerdict(const Result &a, const Result &b);
 
 // ---- line detection ----------------------------------------------------------------
 

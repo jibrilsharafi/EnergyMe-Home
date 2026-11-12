@@ -11,6 +11,18 @@ namespace PhaseCheck {
 
 namespace {
 
+bool isSignedRole(ChannelRole role) {
+    // Grid is signed: a correct grid line exports (180 degrees) whenever PV produces
+    return role == CHANNEL_ROLE_GRID || role == CHANNEL_ROLE_BATTERY || role == CHANNEL_ROLE_INVERTER || role == CHANNEL_ROLE_BIDIRECTIONAL;
+}
+
+void roleBand(ChannelRole role, double &lo, double &hi) {
+    if (role == CHANNEL_ROLE_PV) { lo = -65.0; hi = 35.0; return; }
+    lo = -50.0; hi = 75.0;
+}
+
+double likelyAngleDeg(ChannelRole role) { return role == CHANNEL_ROLE_PV ? -10.0 : 20.0; }
+
 constexpr double RAD_TO_DEG_D = 57.295779513082320876;
 constexpr double DEG_TO_RAD_D = 0.017453292519943295769;
 
@@ -103,20 +115,10 @@ const char *singleStateName(SingleState s) {
     }
 }
 
-bool isSignedRole(ChannelRole role) {
-    return role == CHANNEL_ROLE_BATTERY || role == CHANNEL_ROLE_INVERTER || role == CHANNEL_ROLE_BIDIRECTIONAL;
-}
-
 bool hasRoleBand(ChannelRole role) {
-    return role == CHANNEL_ROLE_LOAD || role == CHANNEL_ROLE_GRID || role == CHANNEL_ROLE_PV;
+    return role == CHANNEL_ROLE_LOAD || role == CHANNEL_ROLE_PV;
 }
 
-void roleBand(ChannelRole role, double &lo, double &hi) {
-    if (role == CHANNEL_ROLE_PV) { lo = -65.0; hi = 35.0; return; }
-    lo = -50.0; hi = 75.0;
-}
-
-double likelyAngleDeg(ChannelRole role) { return role == CHANNEL_ROLE_PV ? -10.0 : 20.0; }
 
 bool Hypothesis::operator==(const Hypothesis &o) const {
     for (int i = 0; i < 3; i++) if (phase[i] != o.phase[i] || reverse[i] != o.reverse[i]) return false;
@@ -132,7 +134,6 @@ void LineEvidence::addMinute(const Complex avgVa[3], const bool read[3]) {
         const Complex &va = avgVa[a], &vb = avgVa[b];
         const double w = std::min(std::abs(va), std::abs(vb)) / 60.0;
         pair[k].d += w * (va / std::abs(va)) * std::conj(vb / std::abs(vb));
-        pair[k].weight += w;
         pair[k].minutes += 1.0;
     }
 }
@@ -157,7 +158,6 @@ Result evaluate(const LineEvidence &g, Phase vp, ChannelRole role, const Hypothe
     if (evCount < MIN_PAIRS) return res;
 
     const Eval cfg = evalHypothesis(g, vp, role, configured, evPair);
-    std::memcpy(res.angles, cfg.psis, sizeof(res.angles));
     if (cfg.ok) {
         res.state = State::Verified;
         return res;
@@ -178,8 +178,7 @@ Result evaluate(const LineEvidence &g, Phase vp, ChannelRole role, const Hypothe
         }
     }
     if (n == 0) {
-        res.noFit = true;  // unbalanced feeder, crosstalk or a CT on the wrong cable: keep measuring
-        return res;
+        return res;  // unbalanced feeder, crosstalk or a CT on the wrong cable: keep measuring
     }
     if (hasRoleBand(role)) {
         std::stable_sort(fitting, fitting + n, [&](const Hypothesis &a, const Hypothesis &b) {
@@ -243,7 +242,7 @@ SingleResult checkSingle(const ChannelEvidence &c, Phase vp, ChannelRole role, u
     return res;
 }
 
-bool sameVerdict(const Result &a, const Result &b) {
+static bool sameVerdict(const Result &a, const Result &b) {
     if (a.state != b.state || a.proposalCount != b.proposalCount) return false;
     for (uint8_t i = 0; i < a.proposalCount; i++) if (!(a.proposals[i] == b.proposals[i])) return false;
     return true;

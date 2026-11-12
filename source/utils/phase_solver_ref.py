@@ -21,11 +21,10 @@ PHASE_ANGLE = {1: 0.0, 2: -120.0, 3: 120.0}
 # the wrong quadrant) whatever its power sign.
 ROLE_BAND = {
     "load": (-50.0, 75.0),
-    "grid": (-50.0, 75.0),
     "pv": (-65.0, 35.0),
 }
 MIN_PAIRS = 2  # evaluable pairs needed: one pair cannot see the third channel
-SIGNED_ROLES = {"battery", "inverter", "bidirectional"}
+SIGNED_ROLES = {"grid", "battery", "inverter", "bidirectional"}  # a grid line exports with PV
 
 PAIR_TOL = 40.0  # max |mean pair difference| for a consistent hypothesis
 GATE_FRAC = 0.03  # conduction gate for angle evidence, fraction of CT rating
@@ -39,7 +38,7 @@ MIN_PAIR_MIN = 2.0  # co-conducting minutes per pair before it is evaluable
 STABLE = 2  # same answer on this many consecutive minute evaluations before it is shown
 # Ranking of options: the typical angle of a correct channel. The true wiring ranks
 # first in about 80% of fleet cases with phases to change (60% on synthetic loads).
-LIKELY_ANGLE = {"load": 20.0, "grid": 20.0, "pv": -10.0}
+LIKELY_ANGLE = {"load": 20.0, "pv": -10.0}
 
 
 def signed_role(role: str) -> bool:
@@ -76,7 +75,6 @@ class ChannelEvidence:
 @dataclass
 class PairEvidence:
     d: complex = 0j
-    weight: float = 0.0
     minutes: float = 0.0
 
 
@@ -109,7 +107,6 @@ class GroupEvidence:
                 va, vb = conducting[a], conducting[b]
                 w = min(abs(va), abs(vb)) / 60.0
                 p.d += w * (va / abs(va)) * (vb / abs(vb)).conjugate()
-                p.weight += w
                 p.minutes += 1
 
 

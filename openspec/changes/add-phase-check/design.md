@@ -56,9 +56,9 @@ Ranking by PF picks the shift closest to 0. That is wrong for every inductive lo
 | Constant | Value |
 |---|---|
 | `PAIR_TOL` | 40° |
-| Load / grid band | -50 to +75° |
+| Load band | -50 to +75° (grid is signed: it exports with PV) |
 | PV band | -65 to +35° |
-| Typical angle (ranking) | load, grid 20°; PV -10° |
+| Typical angle (ranking) | load 20°; PV -10° |
 | Minimum per channel | 1 Wh |
 | Minimum per pair | 2 co-conducting minutes, on 2 pairs |
 | Agreeing evaluations | 2 |
