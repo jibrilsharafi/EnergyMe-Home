@@ -31,7 +31,7 @@ The device SHALL detect three-phase lines automatically, with no installer actio
 - **THEN** they are detected as a line, no hypothesis makes their angles agree, the line stays `collecting`, and nothing is proposed
 
 ### Requirement: Evidence is kept in the raw frame
-The device SHALL accumulate the evidence of each channel of a line, and of each channel under the single-phase check, from the voltage-to-current energy pair as the meter measures it against V1, taken after the reading passed the meter's validity checks but before reverse, phase rotation and the load/PV clamp, so that the evidence does not depend on the channel's phase or reverse setting. Each reading SHALL be weighted by its elapsed time, not by how often the multiplexer read the channel, into a minute average, and a minute SHALL count only when that average apparent power is at least 3% of the CT rating at 230 V. For each pair of channels in a line the device SHALL accumulate the per-minute angle difference over minutes in which both conducted, weighted by the smaller of the two. Evidence SHALL start when the window opens or the line forms, SHALL be kept in RAM only, and SHALL be dropped when the window closes and when a channel's CT rating or role changes. Phase and reverse writes SHALL NOT reset it. For each such channel the device SHALL also keep its latest RMS current taken at the same point, before the clamp, so a reversed CT on a load channel still shows its current.
+The device SHALL accumulate the evidence of each channel of a line, and of each channel under the single-phase check, from the voltage-to-current energy pair as the meter measures it against V1, taken after the reading passed the meter's validity checks but before reverse, phase rotation and the load/PV clamp, so that the evidence does not depend on the channel's phase or reverse setting. Each reading SHALL be weighted by its elapsed time, not by how often the multiplexer read the channel, into a minute average, and a minute SHALL count only when that average apparent power is at least 3% of the CT rating at 230 V. For each pair of channels in a line the device SHALL accumulate the per-minute angle difference over minutes in which both conducted, weighted by the smaller of the two. Evidence SHALL start when the window opens or the line forms, SHALL be kept in RAM only, and SHALL be dropped when the window closes, when "Run setup again" is used, and when a channel's CT rating or role changes. Phase and reverse writes SHALL NOT reset it. When a channel's minute angle differs from its evidence by more than 90 degrees (doubled angles for signed roles) for 2 consecutive conducting minutes, the device SHALL restart the evidence of its line or single-phase check: a CT moved or flipped by hand must not be judged on the readings taken before. For each such channel the device SHALL also keep its latest RMS current taken at the same point, before the clamp, so a reversed CT on a load channel still shows its current.
 
 #### Scenario: Clamped readings still count
 - **WHEN** a load channel's configured reading is negative and stored as 0 W and 0 A while its CT carries 8 A
@@ -40,6 +40,10 @@ The device SHALL accumulate the evidence of each channel of a line, and of each 
 #### Scenario: Read-rate does not bias the evidence
 - **WHEN** channel 0 is read every window and a multiplexed channel of the same line every fourth window, both carrying the same power
 - **THEN** both channels accumulate the same evidence per minute
+
+#### Scenario: A CT flipped by hand is measured again
+- **WHEN** the installer turns a CT round by hand instead of applying the proposed reverse
+- **THEN** after 2 minutes of load the line's evidence restarts, and its verdict comes from the new wiring only
 
 #### Scenario: Applying a candidate keeps the evidence
 - **WHEN** a candidate is applied to a line

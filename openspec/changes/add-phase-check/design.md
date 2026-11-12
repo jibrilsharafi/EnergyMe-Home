@@ -45,7 +45,7 @@ Ranking by PF picks the shift closest to 0. That is wrong for every inductive lo
 
 **Pairs.** At each minute boundary, for each pair of a line in which both channels passed the gate in that minute, the minute phasors give `D_ab += min(|Sa|, |Sb|) × e^{j(θa - θb)}` (doubled angles for signed roles).
 
-**No decay.** The check lasts minutes; plain sums.
+**No decay.** The check lasts minutes; plain sums. A physical change shows as a jump instead: 2 consecutive conducting minutes more than 90° from a channel's evidence restart that line's evidence, so a CT flipped by hand is never judged on the old wiring.
 
 **Current.** The latest pre-clamp RMS current per checked channel, for the page's waiting view. The stored reading of a reversed load CT is 0 A (the clamp zeroes current too, `ade7953.cpp` around line 4261), so the page would otherwise read a reversed CT as an unclamped one.
 
