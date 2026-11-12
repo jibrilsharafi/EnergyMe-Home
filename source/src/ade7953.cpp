@@ -3419,6 +3419,7 @@ namespace Ade7953
 
     bool setAllChannelDataFromJson(JsonArrayConst channels, uint32_t *roleChangedMask) {
         if (roleChangedMask) *roleChangedMask = 0;
+        if (_refusedWhilePassive()) return false;
         static ChannelData *endState = nullptr;  // web server task only; PSRAM, allocated once
         if (!endState) {
             void *mem = heap_caps_malloc(sizeof(ChannelData) * MAX_CHANNEL_COUNT, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);

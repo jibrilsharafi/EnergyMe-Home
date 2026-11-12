@@ -9,6 +9,7 @@
 #include <new>
 
 #include "ade7953.h"
+#include "bootrecovery.h"
 #include "constants.h"
 #include "phase_check.h"
 #include "utils.h"
@@ -329,6 +330,11 @@ void singleJson(JsonObject o, const SingleSlot &c, const ConfigSnapshot &s) {
 
 void begin(bool firstBootThisBoot) {
     createMutexIfNeeded(&_mutex);
+    // A recovery boot leaves the meter passive: no setup page, no window, nothing written
+    if (BootRecovery::meterPassive()) {
+        _setupDone = true;
+        return;
+    }
     Preferences prefs;
     if (!prefs.begin(PREFERENCES_NAMESPACE_GENERAL, false)) {
         LOG_ERROR("Setup state: cannot open %s, treating the device as set up", PREFERENCES_NAMESPACE_GENERAL);
