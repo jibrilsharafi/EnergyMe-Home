@@ -224,25 +224,22 @@ void evaluateLocked(const ConfigSnapshot &s, uint32_t dirty, bool minuteClosed) 
 
 // A CT moved or flipped by hand while the page is open: its new minutes read far from the
 // evidence gathered before. Two such minutes in a row restart that line's evidence, so the
-// old wiring stops deciding the verdict. Signed roles compare doubled angles, as their
-// evidence does.
+// old wiring stops deciding the verdict. Load and PV only: on the fleet replay they never
+// restart falsely, while a grid or battery phasor swings with the PV and load balance (and
+// their reverse flags are never inferred, so a flip by hand changes no proposal).
 constexpr double JUMP_DEG = 90.0;
 constexpr uint8_t JUMP_MINUTES = 2;
 
-bool farFromEvidence(const PhaseCheck::ChannelEvidence &before, const Complex &avg, bool signedRole) {
-    if (before.minutes < JUMP_MINUTES || std::abs(avg) <= 0.0) return false;
-    const double now = signedRole ? std::arg(avg * avg) : std::arg(avg);
-    const double past = std::arg(signedRole ? before.axial : before.e);
-    double d = std::fabs(now - past) * (180.0 / M_PI);
-    if (d > 180.0) d = 360.0 - d;
-    return d > JUMP_DEG;
-}
-
 // Updates a channel's jump run after a minute; true when the run says the evidence is stale.
-bool jumped(uint8_t &run, const PhaseCheck::ChannelEvidence &before, const PhaseCheck::ChannelEvidence &after, const Complex &avg,
-            bool signedRole) {
+bool jumped(uint8_t &run, const PhaseCheck::ChannelEvidence &before, const PhaseCheck::ChannelEvidence &after, const Complex &avg) {
     if (after.minutes == before.minutes) return false;  // not conducting this minute: the run holds
-    run = farFromEvidence(before, avg, signedRole) ? static_cast<uint8_t>(run + 1) : 0;
+    bool far = false;
+    if (before.minutes >= JUMP_MINUTES && std::abs(avg) > 0.0) {
+        double d = std::fabs(std::arg(avg) - std::arg(before.e)) * (180.0 / M_PI);
+        if (d > 180.0) d = 360.0 - d;
+        far = d > JUMP_DEG;
+    }
+    run = far ? static_cast<uint8_t>(run + 1) : 0;
     return run >= JUMP_MINUTES;
 }
 
@@ -259,9 +256,9 @@ void closeMinuteLocked() {
         PhaseCheck::ChannelEvidence before[3];
         for (int i = 0; i < 3; i++) before[i] = l.evidence.ch[i];
         l.evidence.addMinute(avg, read);
-        const bool signedRole = !PhaseCheck::hasRoleBand(l.role);
+        if (!PhaseCheck::hasRoleBand(l.role)) continue;  // signed roles: no jump rule
         bool restart = false;
-        for (int i = 0; i < 3; i++) restart = jumped(l.jumpRun[i], before[i], l.evidence.ch[i], avg[i], signedRole) || restart;
+        for (int i = 0; i < 3; i++) restart = jumped(l.jumpRun[i], before[i], l.evidence.ch[i], avg[i]) || restart;
         if (!restart) continue;
         LOG_INFO("Setup phase check: readings of line %u changed, measuring again", l.id.ch[0]);
         l.evidence = PhaseCheck::LineEvidence();
@@ -279,7 +276,7 @@ void closeMinuteLocked() {
         const bool read = c.bucket.read();
         c.bucket.clear();
         PhaseCheck::addMinuteSingle(c.evidence, avg, read);
-        if (!jumped(c.jumpRun, before, c.evidence, avg, false)) continue;
+        if (!jumped(c.jumpRun, before, c.evidence, avg)) continue;
         c.evidence = PhaseCheck::ChannelEvidence();
         c.evidence.ratingA = c.ratingA;
         c.jumpRun = 0;
