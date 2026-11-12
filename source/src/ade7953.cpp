@@ -314,6 +314,12 @@ namespace Ade7953
 
     // A recovery boot leaves the meter passive: nothing was loaded from NVS, so a
     // write would persist defaults over the user's configuration, channels or energy
+    // The sign vote of load and PV channels waits while the setup phase check runs on a
+    // three-phase install (SetupCheck::holdPolarityFlips)
+    static bool _polarityHeld(ChannelRole role) {
+        return SetupCheck::holdPolarityFlips() && (role == CHANNEL_ROLE_LOAD || role == CHANNEL_ROLE_PV);
+    }
+
     static bool _refusedWhilePassive() {
         if (!BootRecovery::meterPassive()) return false;
         LOG_WARNING("Recovery boot: meter is passive, change refused");
@@ -1007,8 +1013,12 @@ namespace Ade7953
                 }
                 _recalculateWeights();
                 releaseMutex(&_channelDataMutex);
+                for (int i = 0; i < 3; i++) _saveChannelDataToPreferences(channelIndices[i]);
+            } else {
+                // No rollback: the new values are live, so report what is true once they are stored
+                saved = true;
+                for (int i = 0; i < 3; i++) saved = _saveChannelDataToPreferences(channelIndices[i]) && saved;
             }
-            for (int i = 0; i < 3; i++) _saveChannelDataToPreferences(channelIndices[i]);
         }
         releaseMutex(&_configMutex);
         if (!globalCommunityMode) Mqtt::requestChannelPublish();
@@ -4123,6 +4133,7 @@ namespace Ade7953
         Ade7953Channel ade7953Channel = (channelIndex == 0) ? Ade7953Channel::A : Ade7953Channel::B;
 
         float voltage = 0.0f;
+        float v1 = 0.0f;  // channel 0 only: published as _v1Voltage once this reading is committed
         float current = 0.0f;
         float activePower = 0.0f;
         float reactivePower = 0.0f;
@@ -4168,8 +4179,8 @@ namespace Ade7953
         if (channelIndex == 0) {
             // V1 is the voltage every channel is integrated against and the device voltage:
             // stored unscaled, so a split-phase 240 V circuit on channel 0 doubles only its own readings.
-            _v1Voltage = float(_readVoltageRms()) * _voltPerLsb;
-            voltage = _v1Voltage * voltageMultiplier;
+            v1 = float(_readVoltageRms()) * _voltPerLsb;
+            voltage = v1 * voltageMultiplier;
 
             // Update grid frequency during channel 0 reading
             float newGridFrequency = _readGridFrequency();
@@ -4331,8 +4342,7 @@ namespace Ade7953
         // During the setup phase check on a three-phase install the sign vote waits: a wrong
         // phase reads negative, and a flip would turn it into a plausible 60-degree error the
         // check can no longer see. The arm and its counters are kept for after setup.
-        const bool polarityHeld = SetupCheck::holdPolarityFlips() &&
-            (channelData.role == CHANNEL_ROLE_LOAD || channelData.role == CHANNEL_ROLE_PV);
+        const bool polarityHeld = _polarityHeld(channelData.role);
         if (_channelData[channelIndex]._pendingPolarityCheck && conducting && !polarityHeld) {
             bool flipped = false;
             bool newReverse = false;
@@ -4438,6 +4448,7 @@ namespace Ade7953
         if (currentBase != lastMillis) deltaMillis = 0;
 
         _meterValues[channelIndex].voltage = voltage;
+        if (channelIndex == 0) _v1Voltage = v1;  // a discarded V1 read never reaches the other channels
         _meterValues[channelIndex].current = current;
         _meterValues[channelIndex].activePower = activePower;
         _meterValues[channelIndex].reactivePower = reactivePower;
@@ -5104,8 +5115,7 @@ namespace Ade7953
             inputs[i].activePower = _meterValues[i].activePower;
             inputs[i].variability = _powerVariability[i];
             // A held arm (setup phase check on a three-phase install) gets no boost: it cannot vote.
-            inputs[i].armed = _channelData[i]._pendingPolarityCheck &&
-                !(SetupCheck::holdPolarityFlips() && (_channelData[i].role == CHANNEL_ROLE_LOAD || _channelData[i].role == CHANNEL_ROLE_PV));
+            inputs[i].armed = _channelData[i]._pendingPolarityCheck && !_polarityHeld(_channelData[i].role);
             inputs[i].role = _channelData[i].role;
             inputs[i].conducting = _lastConducting[i];
         }
