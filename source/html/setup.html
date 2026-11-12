@@ -63,11 +63,6 @@
         .ct-line { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
         .ct-line .seg { flex: 1; }
         .ct-line select.in { width: 5.5rem; height: 40px; flex: none; }
-        .ct-row { padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
-        .ct-row:last-of-type { border-bottom: none; }
-        .ct-top { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
-        .ct-top .in { height: 40px; }
-        .ct-top select.in { width: 7.5rem; flex: none; }
         .row-actions { display: flex; gap: 8px; margin-top: 10px; }
         .del-btn { background-color: #dc3545 !important; border-color: #dc3545 !important; color: #fff !important; font-size: .85em; padding: 6px 12px; }
         .skip-link { display: block; margin: 14px auto 0; background: none; border: none; color: #808080; font: inherit; font-size: .9rem; text-decoration: underline; cursor: pointer; }
@@ -81,15 +76,9 @@
         .b-verified { background: var(--green); }
         .b-fix, .b-choose { background: #f0a500; }
         .b-collecting { background: #b9bfc6; }
-        .phases { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
-        .phases div { background: #f5f6f8; border-radius: 10px; padding: 8px; font-size: .85rem; }
-        .phases b { display: block; font-size: .75rem; color: #808080; }
         .bad { color: #c0392b; font-weight: bold; }
-        .bar { height: 6px; background: #eceff2; border-radius: 3px; overflow: hidden; margin-top: 10px; }
-        .bar div { height: 100%; background: var(--logo-green); transition: width .5s; }
         .choice.option { display: block; padding: 10px; }
         .option .t { display: flex; gap: 10px; align-items: center; font-weight: bold; font-size: .9rem; }
-        .sub-label { font-size: .8rem; color: #808080; margin-top: 8px; }
         .inline-btn { width: 100%; margin-top: 10px; }
         .inline-btn:disabled { background-color: #eef0f2; color: #b6bbc1; box-shadow: none; } /* like the disabled channel chips */
         .cmp { display: grid; grid-template-columns: auto 1fr 1fr; gap: 4px 8px; margin-top: 8px; font-size: .85rem; align-items: center; }
@@ -229,14 +218,30 @@
         const toastError = text => showStatus(text, 'error'); // api-client.js toast
 
         // ---- circuits <-> channels ------------------------------------------------
+        // A three-phase line (three channels of one group on three phases) is one circuit; any
+        // other channel is a circuit of its own, so groups of single-phase channels are kept.
+        // Each CT keeps its rating, label and group unless the installer changes them.
         function circuitsFromChannels(chans) {
             const groups = new Map();
             chans.filter(c => c.active).forEach(c => {
                 const key = c.groupLabel || c.label;
-                if (!groups.has(key)) { const ct = Math.round(c.ctSpecification?.currentRating || 30); groups.set(key, { name: key, role: c.role || 'load', ct, customCt: !CT_SIZES.includes(ct), cts: [] }); }
-                groups.get(key).cts.push({ channel: c.index, phase: c.phase || 1, label: c.label });
+                if (!groups.has(key)) groups.set(key, []);
+                groups.get(key).push(c);
             });
-            return [...groups.values()];
+            const circuit = (name, group, list) => {
+                const ct = Math.round(list[0].ctSpecification?.currentRating || 30);
+                return {
+                    name, origName: name, group, role: list[0].role || 'load', ct, origCt: ct, customCt: !CT_SIZES.includes(ct),
+                    cts: list.map(c => ({ channel: c.index, phase: c.phase || 1, origPhase: c.phase || 1, label: c.label, rating: c.ctSpecification?.currentRating })),
+                };
+            };
+            const out = [];
+            groups.forEach((list, key) => {
+                const line = list.length === 3 && new Set(list.map(c => c.phase)).size === 3 && list.every(c => c.role === list[0].role);
+                if (line) out.push(circuit(key, key, list));
+                else list.forEach(c => out.push(circuit(c.label, key, [c])));
+            });
+            return out;
         }
         // No stored supply type: derive it from the channels, single-phase by default.
         function supplyFrom(chans, vp) {
@@ -271,6 +276,7 @@
             for (let k = 0; k < CHANNELS; k++) { const i = (from + k) % CHANNELS; if (!used.has(i)) return i; }
             return null;
         }
+        const groupOf = c => c.cts.length > 1 || !c.group ? c.name : c.group;
         function channelsFromCircuits() {
             const out = [];
             const byIndex = new Map(S.channels.map(c => [c.index, c]));
@@ -278,10 +284,13 @@
             S.circuits.forEach(c => c.cts.forEach((ct, i) => {
                 used.add(ct.channel);
                 const base = byIndex.get(ct.channel) || {};
+                const multi = c.cts.length > 1;
+                // A generated label (<name> L<n>, which the line apply also follows) is regenerated; a custom one is kept
+                const wasGenerated = !ct.label || ct.label === (multi ? `${c.origName} L${ct.origPhase}` : c.origName) || c.name !== c.origName;
                 out.push({
-                    ...base, index: ct.channel, active: true, label: c.cts.length > 1 ? `${c.name} L${ct.phase}` : c.name, // always generated: the line apply relabels <name> L<n>
-                    phase: ct.phase, groupLabel: c.name, role: c.role,
-                    ctSpecification: { ...(base.ctSpecification || { voltageOutput: 0.333, scalingFraction: 0 }), currentRating: c.ct },
+                    ...base, index: ct.channel, active: true, label: wasGenerated ? (multi ? `${c.name} L${ct.phase}` : c.name) : ct.label,
+                    phase: ct.phase, groupLabel: groupOf(c), role: c.role,
+                    ctSpecification: { ...(base.ctSpecification || { voltageOutput: 0.333, scalingFraction: 0 }), currentRating: c.ct !== c.origCt || ct.rating == null ? c.ct : ct.rating },
                 });
             }));
             // Unused channels go back to their default names, so a leftover group name never joins (or blocks) a circuit.
@@ -299,7 +308,7 @@
         function renderCircuits() {
             $('circuitsHint').textContent = { single: 'One circuit per breaker.', three: '', split: 'One circuit per breaker.' }[S.supply];
             $('circuits').innerHTML = S.circuits.map((c, ci) => {
-                const tri = c.cts.length === 3 && new Set(c.cts.map(t => t.phase)).size === 3;
+                const tri = c.cts.length === 3 && !badTriple(c);
                 const open = S.open === ci;
                 const volts = S.supply === 'split' ? (c.cts[0].phase === 4 ? ' · 240 V' : ' · 120 V') : '';
                 const meta = `${c.role}${volts} · ${c.ct} A · channel ${c.cts.map(t => t.channel).join(', ')}`;
@@ -345,6 +354,8 @@
         const currentHtml = l => changesHtml(l, { phases: l.channels.map(c => c.phase), reverse: l.channels.map(c => c.reverse), readings: l.readings }, false);
         const BADGE = { verified: ['b-verified', '✓ OK'], ok: ['b-verified', '✓ OK'], fix: ['b-fix', 'Fix found'], choose: ['b-choose', 'Choose'], suspect: ['b-choose', 'Check phase'], collecting: ['b-collecting', 'Waiting for load'], checking: ['b-collecting', 'Validating'] };
         const CHECKING_MS = 2500; // after an apply: the meter re-evaluates at once, the page shows it settling
+        const isChecking = key => Date.now() - (S.checking[key] || 0) < CHECKING_MS;
+        const disableApply = () => document.querySelectorAll('#lines [data-apply], #singles [data-apply]').forEach(b => b.disabled = true);
         const wave = text => `<div class="listen"><div class="wave"><span></span><span></span><span></span></div><span>${text}</span></div>`;
         // Waiting view: each channel's current, taken by the meter before the load clamp,
         // so a reversed CT still shows it and a CT that carries nothing stands out.
@@ -365,7 +376,7 @@
             + `<button class="buttonForm inline-btn" data-apply="${key}:${S.pick[key] ?? -1}" ${S.pick[key] === undefined ? 'disabled' : ''}>Apply</button>`;
 
         function lineHtml(l) {
-            const state = Date.now() - (S.checking[l.lowestChannel] || 0) < CHECKING_MS ? 'checking' : l.state;
+            const state = isChecking(l.lowestChannel) ? 'checking' : l.state;
             const h = head(l.groupLabel, l.channels, state);
             if (state === 'checking') return `<div class="line">${h}${wave('Validating the new settings')}</div>`;
             if (state === 'collecting') return `<div class="line">${h}${wave('Measuring')}${ampsHtml(l.channels)}</div>`;
@@ -379,19 +390,19 @@
         const singleCands = c => c.options.map(o => ({ phases: [o.phase], reverse: [o.reverse], readings: [{ power: o.power, pf: o.pf }] }));
         function singleHtml(c) {
             const key = `s${c.index}`;
-            const state = Date.now() - (S.checking[key] || 0) < CHECKING_MS ? 'checking' : c.state;
+            const state = isChecking(key) ? 'checking' : c.state;
             const h = head(c.groupLabel || c.label, [c], state);
             if (state === 'checking') return `<div class="line">${h}${wave('Validating the new settings')}</div>`;
             return `<div class="line">${h}${options(key, asLine(c), singleCands(c))}</div>`;
         }
 
         function renderLines(res) {
-            const lines = res.lines || [], singles = (res.singles || []).filter(c => c.state === 'suspect' || Date.now() - (S.checking[`s${c.index}`] || 0) < CHECKING_MS);
+            const lines = res.lines || [], singles = (res.singles || []).filter(c => c.state === 'suspect' || isChecking(`s${c.index}`));
             $('noLines').style.display = lines.length || singles.length ? 'none' : '';
             $('lines').innerHTML = lines.map(lineHtml).join('');
             $('singles').innerHTML = singles.length ? `<h3 class="sub-title">Single-phase circuits</h3>${singles.map(singleHtml).join('')}` : '';
             S.last = res;
-            if (S.applying) document.querySelectorAll('#lines [data-apply], #singles [data-apply]').forEach(b => b.disabled = true);
+            if (S.applying) disableApply();
         }
 
         function render(scroll = false) {
@@ -461,7 +472,7 @@
             const t = e.target.closest('[data-apply]');
             if (!t || t.disabled || S.applying) return;
             S.applying = true;
-            document.querySelectorAll('#lines [data-apply], #singles [data-apply]').forEach(b => b.disabled = true);
+            disableApply();
             const [key, idx] = t.dataset.apply.split(':');
             try {
                 if (key.startsWith('s')) { // a single-phase option is an ordinary channel write
@@ -497,8 +508,8 @@
             // Step 1 saves nothing: the cloud choice goes with setup/complete, so a cloud update cannot restart the meter mid-setup.
             if (step === 2) await api.put('ade7953/voltage-phase', { voltagePhase: S.vp });
             if (step === 3) {
-                const names = S.circuits.map(c => c.name);
-                if (new Set(names).size !== names.length) throw new Error('Two circuits have the same name.');
+                // A group the page creates (a line or a new circuit) must not be shared with any other circuit
+                if (S.circuits.some(c => (c.cts.length > 1 || !c.group) && S.circuits.some(o => o !== c && groupOf(o) === groupOf(c)))) throw new Error('Two circuits have the same name.');
                 const bad = S.circuits.findIndex(badTriple);
                 if (bad >= 0) { S.open = bad; renderCircuits(); throw new Error(`${S.circuits[bad].name}: the three CTs must be on L1, L2 and L3.`); }
                 S.channels = channelsFromCircuits();
@@ -518,7 +529,7 @@
                         const msg = [todo.length ? `To fix: ${names(todo)}.` : '', waiting.length ? `Not checked yet: ${names(waiting)}.` : ''].filter(Boolean).join(' ');
                         if (msg && !confirm(`${msg} The check stops when you finish. Finish anyway?`)) return;
                     }
-                    if (S.step === 3) await saveStep(3);
+                    await saveStep(S.step);
                     await api.post('setup/complete', { cloudServices: S.cloud });
                     window.location.href = '/';
                     return;
