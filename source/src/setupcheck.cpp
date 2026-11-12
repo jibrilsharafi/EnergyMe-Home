@@ -181,7 +181,7 @@ void rebuildLocked(const ConfigSnapshot &s) {
     }
     _rt->lineCount = static_cast<uint8_t>(n);
 
-    // Single-phase checks: load, grid and PV channels outside lines, on a three-phase install.
+    // Single-phase checks: load and PV channels outside lines, on a three-phase install.
     SingleSlot *oldSingles = _rt->oldSingles;
     const uint8_t oldSingleCount = _rt->singleCount;
     memcpy(oldSingles, _rt->singles, sizeof(SingleSlot) * oldSingleCount);
@@ -314,7 +314,10 @@ void readingJson(JsonObject o, const PhaseCheck::ChannelEvidence &e, Phase vp, u
     const double s = std::abs(e.e) / e.minutes * 60.0;
     const double a = PhaseCheck::channelAngleDeg(e, vp, phase, reverse) * DEG_TO_RAD;
     o["power"] = static_cast<int32_t>(lround(s * cos(a)));
-    o["pf"] = roundf(static_cast<float>(fabs(cos(a)) * (sin(a) >= 0 ? 1.0 : -1.0)) * 100.0f) / 100.0f;
+    // Signed by the reactive part (negative = leading); a unity reading carries no sign, so a
+    // resistive load never shows as "PF -1.00".
+    const float pf = roundf(static_cast<float>(fabs(cos(a))) * 100.0f) / 100.0f;
+    o["pf"] = (pf >= 1.0f || sin(a) >= 0) ? pf : -pf;
 }
 
 void lineJson(JsonObject o, const LineSlot &l, const ConfigSnapshot &s) {
