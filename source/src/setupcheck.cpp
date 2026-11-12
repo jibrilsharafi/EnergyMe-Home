@@ -31,6 +31,7 @@ struct LineSlot {
     PhaseCheck::MinuteBucket bucket[3];
     PhaseCheck::StableVerdict verdict;
     uint32_t evaluatedGeneration;  // the line generation the shown verdict was computed for
+    uint8_t jumpRun[3];            // consecutive minutes a channel read far from its evidence
 };
 
 struct SingleSlot {
@@ -40,6 +41,7 @@ struct SingleSlot {
     PhaseCheck::ChannelEvidence evidence;
     PhaseCheck::MinuteBucket bucket;
     PhaseCheck::SingleResult result;
+    uint8_t jumpRun;
 };
 
 // Allocated in PSRAM when the window opens, freed when it closes.
@@ -68,9 +70,13 @@ volatile bool _setupDone = true;
 uint64_t _rerunUntil = 0;           // written by the web task, read by the meter task: under _windowMux
 portMUX_TYPE _windowMux = portMUX_INITIALIZER_UNLOCKED;
 volatile bool _holdFlips = false;
-volatile bool _pendingWrite = true;  // under _mutex, like _dirty and _generation
-uint32_t _dirty = 0xFFFFFFFFu;       // channels written since the last rebuild (bit per channel)
+// Written by any task (web, MQTT, meter) without our mutex, so a write is never lost to a
+// lock timeout: an atomic bit per channel written since the last rebuild (non-zero = rebuild
+// due) and atomic per-channel write counters.
+uint32_t _dirty = 0xFFFFFFFFu;
 uint32_t _generation[MAX_CHANNELS] = {};
+uint32_t _rebuildGeneration[MAX_CHANNELS] = {};  // under _mutex: the counters the last snapshot was taken at
+bool _restart = false;                            // atomic: drop the evidence on the next tick ("Run setup again")
 // The meter task never waits long on the web task: losing one reading or one tick is harmless.
 constexpr uint32_t METER_TASK_LOCK_MS = 5;
 float _current[MAX_CHANNELS] = {};
@@ -78,11 +84,15 @@ float _current[MAX_CHANNELS] = {};
 // Configuration copies (16 channels, a few KB) kept in PSRAM, one per calling task:
 // the meter task (onTick) and the web server task (toJson, apply), which never run the same
 // one concurrently.
+void *allocPreferPsram(size_t size) {
+    void *mem = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return mem ? mem : heap_caps_malloc(size, MALLOC_CAP_8BIT);
+}
+
 ConfigSnapshot *snapshotBuffer(uint8_t which) {
     static ConfigSnapshot *buffers[2] = {nullptr, nullptr};
     if (!buffers[which]) {
-        void *mem = heap_caps_malloc(sizeof(ConfigSnapshot), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-        if (!mem) mem = heap_caps_malloc(sizeof(ConfigSnapshot), MALLOC_CAP_8BIT);
+        void *mem = allocPreferPsram(sizeof(ConfigSnapshot));
         if (mem) buffers[which] = new (mem) ConfigSnapshot();
     }
     return buffers[which];
@@ -126,8 +136,14 @@ PhaseCheck::Hypothesis configuredOf(const ConfigSnapshot &s, const PhaseCheck::L
     return h;
 }
 
-uint32_t lineGeneration(const PhaseCheck::LineId &id) {
-    return _generation[id.ch[0]] + _generation[id.ch[1]] + _generation[id.ch[2]];
+uint32_t generationOf(const uint32_t *gen, const PhaseCheck::LineId &id) {
+    return gen[id.ch[0]] + gen[id.ch[1]] + gen[id.ch[2]];
+}
+
+uint32_t liveGeneration(const PhaseCheck::LineId &id) {
+    uint32_t g = 0;
+    for (int i = 0; i < 3; i++) g += __atomic_load_n(&_generation[id.ch[i]], __ATOMIC_ACQUIRE);
+    return g;
 }
 
 // Rebuilds lines and single-phase checks from the configuration, keeping the evidence of
@@ -198,12 +214,36 @@ void evaluateLocked(const ConfigSnapshot &s, uint32_t dirty, bool minuteClosed) 
         const bool written = (dirty & channelBits(l.id)) != 0;
         if (!written && !minuteClosed) continue;
         l.verdict.push(PhaseCheck::evaluate(l.evidence, s.voltagePhase, l.role, configuredOf(s, l.id)), written);
-        l.evaluatedGeneration = lineGeneration(l.id);
+        l.evaluatedGeneration = generationOf(_rebuildGeneration, l.id);
     }
     for (uint8_t k = 0; k < _rt->singleCount; k++) {
         SingleSlot &c = _rt->singles[k];
         c.result = PhaseCheck::checkSingle(c.evidence, s.voltagePhase, c.role, static_cast<uint8_t>(s.ch[c.channel].phase), s.ch[c.channel].reverse);
     }
+}
+
+// A CT moved or flipped by hand while the page is open: its new minutes read far from the
+// evidence gathered before. Two such minutes in a row restart that line's evidence, so the
+// old wiring stops deciding the verdict. Signed roles compare doubled angles, as their
+// evidence does.
+constexpr double JUMP_DEG = 90.0;
+constexpr uint8_t JUMP_MINUTES = 2;
+
+bool farFromEvidence(const PhaseCheck::ChannelEvidence &before, const Complex &avg, bool signedRole) {
+    if (before.minutes < JUMP_MINUTES || std::abs(avg) <= 0.0) return false;
+    const double now = signedRole ? std::arg(avg * avg) : std::arg(avg);
+    const double past = std::arg(signedRole ? before.axial : before.e);
+    double d = std::fabs(now - past) * (180.0 / M_PI);
+    if (d > 180.0) d = 360.0 - d;
+    return d > JUMP_DEG;
+}
+
+// Updates a channel's jump run after a minute; true when the run says the evidence is stale.
+bool jumped(uint8_t &run, const PhaseCheck::ChannelEvidence &before, const PhaseCheck::ChannelEvidence &after, const Complex &avg,
+            bool signedRole) {
+    if (after.minutes == before.minutes) return false;  // not conducting this minute: the run holds
+    run = farFromEvidence(before, avg, signedRole) ? static_cast<uint8_t>(run + 1) : 0;
+    return run >= JUMP_MINUTES;
 }
 
 void closeMinuteLocked() {
@@ -216,12 +256,34 @@ void closeMinuteLocked() {
             read[i] = l.bucket[i].read();
             l.bucket[i].clear();
         }
+        PhaseCheck::ChannelEvidence before[3];
+        for (int i = 0; i < 3; i++) before[i] = l.evidence.ch[i];
         l.evidence.addMinute(avg, read);
+        const bool signedRole = !PhaseCheck::hasRoleBand(l.role);
+        bool restart = false;
+        for (int i = 0; i < 3; i++) restart = jumped(l.jumpRun[i], before[i], l.evidence.ch[i], avg[i], signedRole) || restart;
+        if (!restart) continue;
+        LOG_INFO("Setup phase check: readings of line %u changed, measuring again", l.id.ch[0]);
+        l.evidence = PhaseCheck::LineEvidence();
+        for (int i = 0; i < 3; i++) {
+            l.evidence.ch[i].ratingA = l.ratingA[i];
+            l.jumpRun[i] = 0;
+        }
+        l.evidence.addMinute(avg, read);
+        l.verdict = PhaseCheck::StableVerdict();
     }
     for (uint8_t k = 0; k < _rt->singleCount; k++) {
         SingleSlot &c = _rt->singles[k];
-        PhaseCheck::addMinuteSingle(c.evidence, c.bucket.average(), c.bucket.read());
+        const PhaseCheck::ChannelEvidence before = c.evidence;
+        const Complex avg = c.bucket.average();
+        const bool read = c.bucket.read();
         c.bucket.clear();
+        PhaseCheck::addMinuteSingle(c.evidence, avg, read);
+        if (!jumped(c.jumpRun, before, c.evidence, avg, false)) continue;
+        c.evidence = PhaseCheck::ChannelEvidence();
+        c.evidence.ratingA = c.ratingA;
+        c.jumpRun = 0;
+        PhaseCheck::addMinuteSingle(c.evidence, avg, read);
     }
 }
 
@@ -234,8 +296,7 @@ void freeRuntimeLocked() {
 }
 
 bool allocRuntimeLocked() {
-    void *mem = heap_caps_malloc(sizeof(Runtime), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (!mem) mem = heap_caps_malloc(sizeof(Runtime), MALLOC_CAP_8BIT);
+    void *mem = allocPreferPsram(sizeof(Runtime));
     if (!mem) {
         LOG_ERROR("Setup phase check: no memory for %u bytes", static_cast<unsigned>(sizeof(Runtime)));
         return false;
@@ -368,6 +429,7 @@ bool isSetupDone() { return _setupDone; }
 bool completeSetup(bool &firstSetup) {
     const bool first = !_setupDone;
     firstSetup = first;
+    if (BootRecovery::meterPassive()) return false;  // nothing is written on a recovery boot
     Preferences prefs;
     bool stored = prefs.begin(PREFERENCES_NAMESPACE_GENERAL, false);
     if (stored) {
@@ -394,10 +456,15 @@ bool completeSetup(bool &firstSetup) {
     return true;
 }
 
-void startRerun() {
+bool startRerun() {
+    if (BootRecovery::meterPassive()) return false;
+    // Fresh evidence: the meter task, which alone frees and allocates the runtime, drops a
+    // runtime left from an earlier run on its next tick
+    __atomic_store_n(&_restart, true, __ATOMIC_RELEASE);
     setRerunUntil(millis64() + SETUP_RERUN_WINDOW_MS);
     onConfigWrite(0xFF);  // fresh verdicts on every line
     LOG_INFO("Setup run again: phase check window open for %llu minutes", SETUP_RERUN_WINDOW_MS / 60000ULL);
+    return true;
 }
 
 bool isWindowOpen() { return windowOpenAt(millis64()); }
@@ -405,19 +472,14 @@ bool isWindowOpen() { return windowOpenAt(millis64()); }
 bool holdPolarityFlips() { return _holdFlips; }
 
 void onConfigWrite(uint8_t channelIndex) {
-    if (!acquireMutex(&_mutex)) {
-        _pendingWrite = true;
-        return;
-    }
+    // Counter first, then the dirty bit: a rebuild that consumes the bit reads the new counter
     if (channelIndex == 0xFF) {
-        for (uint32_t &g : _generation) g++;
-        _dirty = 0xFFFFFFFFu;
+        for (uint32_t &g : _generation) __atomic_add_fetch(&g, 1, __ATOMIC_ACQ_REL);
+        __atomic_store_n(&_dirty, 0xFFFFFFFFu, __ATOMIC_RELEASE);
     } else if (channelIndex < MAX_CHANNELS) {
-        _generation[channelIndex]++;
-        _dirty |= 1UL << channelIndex;
+        __atomic_add_fetch(&_generation[channelIndex], 1, __ATOMIC_ACQ_REL);
+        __atomic_fetch_or(&_dirty, 1UL << channelIndex, __ATOMIC_RELEASE);
     }
-    _pendingWrite = true;
-    releaseMutex(&_mutex);
 }
 
 void onReading(uint8_t channelIndex, float rawActivePower, float rawReactivePower, uint64_t deltaMillis, float currentRms) {
@@ -425,13 +487,18 @@ void onReading(uint8_t channelIndex, float rawActivePower, float rawReactivePowe
     if (!acquireMutex(&_mutex, METER_TASK_LOCK_MS)) return;
     _current[channelIndex] = currentRms;
     const Complex va{rawActivePower, rawReactivePower};
-    for (uint8_t k = 0; k < _rt->lineCount; k++) {
+    bool done = false;  // a channel is in one line or one single check, never both
+    for (uint8_t k = 0; k < _rt->lineCount && !done; k++) {
         for (int i = 0; i < 3; i++) {
-            if (_rt->lines[k].id.ch[i] == channelIndex) _rt->lines[k].bucket[i].add(va, deltaMillis);
+            if (_rt->lines[k].id.ch[i] != channelIndex) continue;
+            _rt->lines[k].bucket[i].add(va, deltaMillis);
+            done = true;
         }
     }
-    for (uint8_t k = 0; k < _rt->singleCount; k++) {
-        if (_rt->singles[k].channel == channelIndex) _rt->singles[k].bucket.add(va, deltaMillis);
+    for (uint8_t k = 0; k < _rt->singleCount && !done; k++) {
+        if (_rt->singles[k].channel != channelIndex) continue;
+        _rt->singles[k].bucket.add(va, deltaMillis);
+        done = true;
     }
     releaseMutex(&_mutex);
 }
@@ -443,34 +510,30 @@ void onTick(uint64_t now) {
         return;
     }
     const bool minuteDue = _rt && now - _rt->minuteStart >= SETUP_CHECK_MINUTE_MS;
-    if (open && _rt && !_pendingWrite && !minuteDue) return;  // the common case, every meter cycle
+    if (open && _rt && __atomic_load_n(&_dirty, __ATOMIC_ACQUIRE) == 0 && !minuteDue) return;  // the common case, every meter cycle
 
     ConfigSnapshot *snapPtr = snapshotBuffer(METER_TASK);
     if (!snapPtr) return;
     ConfigSnapshot &snap = *snapPtr;
-    // Consume the pending write BEFORE the snapshot: a write landing after this point sets it
-    // again and is rebuilt on the next tick, never against a snapshot that predates it.
-    if (!acquireMutex(&_mutex, METER_TASK_LOCK_MS)) return;
-    bool write = _pendingWrite;
-    uint32_t dirty = _dirty;
-    _pendingWrite = false;
-    _dirty = 0;
-    releaseMutex(&_mutex);
+    // Consume the dirty bits and read the counters BEFORE the snapshot: a write landing after
+    // this point sets its bit again and is rebuilt on the next tick, and its counter makes an
+    // apply against this evaluation stale.
+    uint32_t dirty = __atomic_exchange_n(&_dirty, 0, __ATOMIC_ACQ_REL);
+    uint32_t gen[MAX_CHANNELS];
+    for (uint8_t i = 0; i < MAX_CHANNELS; i++) gen[i] = __atomic_load_n(&_generation[i], __ATOMIC_ACQUIRE);
     if (open) takeSnapshot(snap);
     _holdFlips = open && snap.threePhase;  // also when the runtime cannot be allocated
     if (!acquireMutex(&_mutex, METER_TASK_LOCK_MS)) {
-        if (write) {  // retried on the next tick
-            _pendingWrite = true;
-            _dirty |= dirty;
-        }
+        if (dirty) __atomic_fetch_or(&_dirty, dirty, __ATOMIC_RELEASE);  // retried on the next tick
         return;
     }
+    if (!open || __atomic_exchange_n(&_restart, false, __ATOMIC_ACQ_REL)) freeRuntimeLocked();
     if (!open) {
-        freeRuntimeLocked();
-        _holdFlips = false;
         releaseMutex(&_mutex);
         return;
     }
+    bool write = dirty != 0;
+    if (write) memcpy(_rebuildGeneration, gen, sizeof(gen));
     if (!_rt) {
         if (!allocRuntimeLocked()) {
             releaseMutex(&_mutex);
@@ -479,6 +542,7 @@ void onTick(uint64_t now) {
         _rt->minuteStart = now;
         write = true;
         dirty = 0xFFFFFFFFu;
+        memcpy(_rebuildGeneration, gen, sizeof(gen));
     }
     if (minuteDue) {
         closeMinuteLocked();
@@ -514,7 +578,6 @@ ApplyResult apply(uint8_t lowestChannel, uint32_t generation, const uint8_t chan
     takeSnapshot(snap);
     uint8_t idx[3];
     Phase newPhase[3];
-    bool newReverse[3];
     if (!acquireMutex(&_mutex)) return ApplyResult::Failed;
     const LineSlot *line = nullptr;
     for (uint8_t k = 0; _rt && k < _rt->lineCount; k++) {
@@ -537,12 +600,12 @@ ApplyResult apply(uint8_t lowestChannel, uint32_t generation, const uint8_t chan
         h.reverse[i] = reverse[found];
         idx[i] = line->id.ch[i];
         newPhase[i] = static_cast<Phase>(h.phase[i]);
-        newReverse[i] = h.reverse[i];
     }
     ApplyResult result = ApplyResult::Applied;
     if (h == configuredOf(snap, line->id)) {
         result = ApplyResult::NoChange;  // already applied: a repeat changes nothing
-    } else if (_pendingWrite || generation != line->evaluatedGeneration || generation != lineGeneration(line->id)) {
+    } else if ((__atomic_load_n(&_dirty, __ATOMIC_ACQUIRE) & channelBits(line->id)) != 0 ||
+               generation != line->evaluatedGeneration || generation != liveGeneration(line->id)) {
         result = ApplyResult::Stale;  // the proposal was computed for another configuration
     } else {
         bool offered = false;
@@ -552,7 +615,7 @@ ApplyResult apply(uint8_t lowestChannel, uint32_t generation, const uint8_t chan
     }
     releaseMutex(&_mutex);
     if (result != ApplyResult::Applied) return result;
-    return Ade7953::applyLineConfiguration(idx, newPhase, newReverse) ? ApplyResult::Applied : ApplyResult::Failed;
+    return Ade7953::applyLineConfiguration(idx, newPhase, h.reverse) ? ApplyResult::Applied : ApplyResult::Failed;
 }
 
 const char *applyResultMessage(ApplyResult r) {

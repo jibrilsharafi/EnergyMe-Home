@@ -12,6 +12,7 @@
 #include "sha256_hex.h"
 #include "version_compare.h"
 #include "bootrecovery.h"
+#include "setupcheck.h"
 
 #include <esp_random.h>
 #include <esp_wifi.h>
@@ -2658,6 +2659,16 @@ void performNvsRestore() {
 
     // Perform restore
     bool success = restoreNvsFromJson(doc);
+
+    // A backup from firmware without the setup flag is of a meter in service: never show the
+    // setup page (and its first-setup energy reset) over the counters just restored.
+    if (doc["nvs"][PREFERENCES_NAMESPACE_GENERAL][PREFERENCES_SETUP_DONE_KEY].isNull()) {
+        Preferences general;
+        if (general.begin(PREFERENCES_NAMESPACE_GENERAL, false)) {
+            general.putBool(PREFERENCES_SETUP_DONE_KEY, true);
+            general.end();
+        }
+    }
 
     // Clean up restore file
     LittleFS.remove("/restore/nvs_restore.json");

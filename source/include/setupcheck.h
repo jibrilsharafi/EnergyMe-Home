@@ -28,10 +28,12 @@ void begin(bool firstBootThisBoot);
 bool isSetupDone();
 // Completes (or skips) setup: closes the window and, on the first setup only, resets the
 // energy counters so the install starts from zero. False (and nothing changed) when the
-// completion cannot be stored; `firstSetup` tells whether this was the first setup.
+// completion cannot be stored or the meter is passive (recovery boot); `firstSetup` tells
+// whether this was the first setup.
 bool completeSetup(bool &firstSetup);
-// "Run setup again": opens the check window for SETUP_RERUN_WINDOW_MS (RAM only).
-void startRerun();
+// "Run setup again": opens the check window for SETUP_RERUN_WINDOW_MS with fresh evidence
+// (RAM only). False on a recovery boot, where the meter is passive.
+bool startRerun();
 bool isWindowOpen();
 
 // Meter task hooks.

@@ -925,7 +925,10 @@ namespace CustomServer
         server.on("/api/v1/setup/start", HTTP_POST, [](AsyncWebServerRequest *request)
                   {
             if (!_validateRequest(request, "POST")) return;
-            SetupCheck::startRerun();
+            if (!SetupCheck::startRerun()) {
+                _sendErrorResponse(request, HTTP_CODE_CONFLICT, "Recovery boot: the meter is passive, setup is not available");
+                return;
+            }
             _sendSuccessResponse(request, "Setup started: the phase check runs for up to 2 hours or until setup completes");
         });
 
@@ -939,6 +942,10 @@ namespace CustomServer
                 doc.set(json);
                 if (!doc.is<JsonObject>() || (!doc["cloudServices"].isNull() && !doc["cloudServices"].is<bool>())) {
                     _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "Invalid JSON structure. Expected: {\"cloudServices\": true/false}");
+                    return;
+                }
+                if (BootRecovery::meterPassive()) {
+                    _sendErrorResponse(request, HTTP_CODE_CONFLICT, "Recovery boot: the meter is passive, setup is not available");
                     return;
                 }
                 bool first = false;
@@ -999,13 +1006,11 @@ namespace CustomServer
                         break;
                     case SetupCheck::ApplyResult::Stale:
                     case SetupCheck::ApplyResult::NotOffered:
+                    case SetupCheck::ApplyResult::WindowClosed:
                         _sendErrorResponse(request, HTTP_CODE_CONFLICT, SetupCheck::applyResultMessage(r));
                         break;
                     case SetupCheck::ApplyResult::NotFound:
                         _sendErrorResponse(request, HTTP_CODE_NOT_FOUND, SetupCheck::applyResultMessage(r));
-                        break;
-                    case SetupCheck::ApplyResult::WindowClosed:
-                        _sendErrorResponse(request, HTTP_CODE_CONFLICT, SetupCheck::applyResultMessage(r));
                         break;
                     default:
                         _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, SetupCheck::applyResultMessage(r));
