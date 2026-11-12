@@ -45,7 +45,7 @@ Ranking by PF picks the shift closest to 0. That is wrong for every inductive lo
 
 **Pairs.** At each minute boundary, for each pair of a line in which both channels passed the gate in that minute, the minute phasors give `D_ab += min(|Sa|, |Sb|) × e^{j(θa - θb)}` (doubled angles for signed roles).
 
-**No decay.** The check lasts minutes; plain sums. A physical change shows as a jump instead: 2 consecutive conducting minutes more than 90° from a channel's evidence restart that line's evidence, so a CT flipped by hand is never judged on the old wiring.
+**No decay.** The check lasts minutes; plain sums. A physical change shows as a jump instead: 2 consecutive conducting minutes more than 90° from a channel's evidence restart that line's evidence, so a CT flipped by hand is never judged on the old wiring. Load and PV only: on the fleet replay (10 starts per line, 60 min) load and PV lines never restarted falsely, signed lines did in 12% of windows (grid and battery swing with the PV/load balance), and a hand flip of a signed role changes no proposal.
 
 **Current.** The latest pre-clamp RMS current per checked channel, for the page's waiting view. The stored reading of a reversed load CT is 0 A (the clamp zeroes current too, `ade7953.cpp` around line 4261), so the page would otherwise read a reversed CT as an unclamped one.
 
@@ -111,13 +111,13 @@ The 22 of those lines with enough working-hour data. Each was configured in ever
 | Configured | Right answer alone | Choose, truth first | Choose, truth lower | Truth missing | Wrong | Still measuring at 60 min |
 |---|---|---|---|---|---|---|
 | As wired | 92.7% verified | 1.8% (configuration) | 0% | 0% | 0% | 5.5% |
-| CTs reversed (1, 2 or 3) | 80.0% fix | 0% | 11.9% | 1.9% | 0% | 6.2% |
-| Two labels swapped | 0% | 79.5% | 12.4% | 1.9% | 0% | 6.2% |
-| Labels rotated | 0% | 70.8% | 10.2% | 0.9% | 6.0% fix, 5.9% verified | 6.1% |
+| CTs reversed (1, 2 or 3) | 78.5% fix | 0% | 14.6% | 3.1% | 0% | 3.8% |
+| Two labels swapped | 0% | 76.5% | 16.5% | 2.8% | 0% | 4.2% |
+| Labels rotated | 0% | 63.9% | 10.8% | 1.4% | 7.1% fix, 12.6% verified | 4.2% |
 
 - Time to an answer: median 3 minutes, p90 25 minutes. The wait is for the load to run.
 - Choices have 2 options (median), 3 at most.
-- "Verified" on rotated labels is rotated labels plus every CT reversed: a uniform 60-degree shift no angle rule can see.
+- Grid is a signed role (an exporting grid line reads 180 degrees), so a grid line's reverse flags are never proposed and its rotated labels cannot be seen; with grid signed the "verified" on rotated labels rose from 5.9% to 12.6%. The rest are rotated labels plus every CT reversed, a uniform 60-degree shift no angle rule can see. The cloud check covers both.
 - The ranking is in-sample (the typical angle was chosen on these lines). On synthetic loads spread evenly from -35 to 60 degrees, the truth comes first about 60% of the time. Real loads cluster, so the order helps, but the installer chooses.
 
 The single-phase check, on the same channels taken one at a time: no false alarm on correct channels; a wrong phase flagged 96% of the time, with the truth first 82% of the time; a wrong phase plus a reversed CT passes unnoticed half the time (the 60-degree case).

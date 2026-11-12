@@ -1,8 +1,8 @@
 ## Setup page
 
 - **Guided setup on new devices:** a factory-fresh device opens a setup page at `/` that walks through cloud services, supply type, circuits and a phase check. Devices already in service are never sent to it after the update.
-- **Phase check:** while the setup page is open, the device checks every three-phase circuit for CTs on the wrong phase or clamped the wrong way round. It shows the live current per CT, proposes a fix when only the direction is wrong, and otherwise lists the possible phase arrangements for the installer to pick. It never changes the configuration on its own and stops when setup is finished (or after 2 hours).
-- **Run setup again:** a new Setup Wizard section in Configuration reopens the setup page on a device already in service. Energy history and settings are kept.
+- **Phase check:** while the setup page is open, the device checks every three-phase circuit for CTs on the wrong phase or clamped the wrong way round. It shows the live current per CT, proposes a fix when only the direction is wrong, and otherwise lists the possible phase arrangements for the installer to pick. If a CT is moved or turned round by hand while the page is open, the check notices within a couple of minutes and measures again. Grid lines are checked for wrong phases only, so a grid line exporting solar power is never reported as reversed. It never changes the configuration on its own and stops when setup is finished (or after 2 hours).
+- **Run setup again:** a new Setup Wizard section in Configuration reopens the setup page on a device already in service. Energy history and settings are kept, including each CT's size and custom names. A device restored from a backup of older firmware is treated as already set up.
 
 ## Cloud and energy
 
