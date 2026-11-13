@@ -125,6 +125,14 @@ ModbusParse parseModbusResponse(const uint8_t *frame, size_t len, uint16_t trans
                                 uint8_t fc, uint16_t expectedCount, uint16_t *outValues, size_t outCap,
                                 size_t *outCount, uint8_t *exceptionCode);
 
+// Connection reuse across the Modbus steps of one collector run: the held
+// connection serves the next request only when it is open and on the same endpoint.
+bool modbusMayReuse(bool open, const uint8_t heldIp[4], uint16_t heldPort, const uint8_t ip[4], uint16_t port);
+// A read on a reused connection that failed before any reply byte (the send
+// failed, or the peer had closed) is retried once on a fresh connection. Never
+// a write, and never a timeout, which has spent the step deadline.
+bool modbusRetryOnFresh(bool reused, bool write, bool sendFailed, bool closedBeforeReply);
+
 // ---------------------------------------------------------------------------
 // Scan range
 // ---------------------------------------------------------------------------

@@ -436,6 +436,14 @@ size_t modbusFrameLength(const uint8_t *header, size_t len) {
     return 6 + remaining;
 }
 
+bool modbusMayReuse(bool open, const uint8_t heldIp[4], uint16_t heldPort, const uint8_t ip[4], uint16_t port) {
+    return open && heldIp != nullptr && ip != nullptr && heldPort == port && memcmp(heldIp, ip, 4) == 0;
+}
+
+bool modbusRetryOnFresh(bool reused, bool write, bool sendFailed, bool closedBeforeReply) {
+    return reused && !write && (sendFailed || closedBeforeReply);
+}
+
 ModbusParse parseModbusResponse(const uint8_t *frame, size_t len, uint16_t transactionId, uint8_t unit,
                                 uint8_t fc, uint16_t expectedCount, uint16_t *outValues, size_t outCap,
                                 size_t *outCount, uint8_t *exceptionCode) {
