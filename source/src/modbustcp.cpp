@@ -194,7 +194,7 @@ namespace ModbusTcp
                                     LOG_WARNING("Failed to get meter values for channel 0. Returning default 0");
                                     return 0;
                                 }
-                                return _getFloatBits(roundToDecimals(meterValuesZeroChannel.voltage, VOLTAGE_DECIMALS), true);
+                                return _getFloatBits(roundToDecimals(Ade7953::getV1Voltage(), VOLTAGE_DECIMALS), true);
                             }
                 case 101: {
                                 MeterValues meterValuesZeroChannel;
@@ -202,7 +202,7 @@ namespace ModbusTcp
                                     LOG_WARNING("Failed to get meter values for channel 0. Returning default 0");
                                     return 0;
                                 }
-                                return _getFloatBits(roundToDecimals(meterValuesZeroChannel.voltage, VOLTAGE_DECIMALS), false);
+                                return _getFloatBits(roundToDecimals(Ade7953::getV1Voltage(), VOLTAGE_DECIMALS), false);
                             }
 
                 // Grid frequency

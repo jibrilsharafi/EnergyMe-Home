@@ -463,7 +463,7 @@ namespace IssueRegistry
         // --- voltage_out_of_range (channel 0 carries the only voltage measurement)
         MeterValues meterValues;
         float voltage = 0.0f;
-        if (Ade7953::getMeterValues(meterValues, 0)) voltage = meterValues.voltage;
+        if (Ade7953::getMeterValues(meterValues, 0)) voltage = Ade7953::getV1Voltage();
         IssueLogic::Evidence voltageEv = IssueLogic::voltageEvidence(voltage, ISSUE_VOLTAGE_TOLERANCE_FRACTION);
         _voltageStreak = IssueLogic::updateStreak(_voltageStreak, voltageEv);
         bool voltageBad = (_voltageStreak >= ISSUE_STREAK_TO_RAISE);

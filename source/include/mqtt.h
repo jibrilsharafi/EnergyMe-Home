@@ -89,7 +89,7 @@
 // publish limit
 #define CRASH_PUBLISH_COREDUMP_FIELD_OVERHEAD sizeof(",\"coreDump\":\"\"")
 
-#define DEFAULT_CLOUD_SERVICES_ENABLED false // Always off by default, and enabled only explicitly by the user
+#define DEFAULT_CLOUD_SERVICES_ENABLED false // Value before the boot load; with no stored value the load uses !globalCommunityMode (cloud-services-default)
 #define DEFAULT_SEND_POWER_DATA_ENABLED true // Send all the data by default
 #define DEFAULT_SEND_GRID_DATA_ENABLED false // Off by default; the cloud enables it per device
 #define DEFAULT_MQTT_LOG_LEVEL_INT 2 // Default minimum log level for MQTT publishing (INFO = 2)
@@ -271,6 +271,7 @@ namespace Mqtt
     // Public methods for pushing data to queues
     void pushLog(const LogEntry& entry);
     void pushMeter(const PayloadMeter& payload);
+    void discardQueuedMeterData(); // drops meter points queued while cloud services were held during setup
     void pushGrid(const PayloadGridPoint& point);
 
     // Queues a high-priority alarm and wakes the MQTT task (requestImmediatePublish).

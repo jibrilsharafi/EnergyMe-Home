@@ -3470,6 +3470,184 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  /api/v1/ade7953/phase-check:
+    get:
+      summary: Get the setup phase check
+      description: |
+        The phase check of three-phase lines (three active, non-split channels sharing a group label and role on three different phases) and of single-phase load, grid and PV channels on a three-phase install.
+        It runs only during setup (the check window): `window` is false otherwise and the lists are empty.
+        It advises and never changes the configuration: `fix` is a single proposal that flips reverse flags only, `choose` lists two or more candidates, most likely first, for a person to pick.
+        `current` is each channel's latest RMS current before the load/PV clamp, so a reversed CT still shows it.
+      tags:
+        - ADE7953
+      responses:
+        '200':
+          description: Phase check state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  window:
+                    type: boolean
+                  lines:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        lowestChannel: { type: integer }
+                        groupLabel: { type: string }
+                        role: { type: string }
+                        state: { type: string, enum: [collecting, verified, fix, choose] }
+                        generation:
+                          type: integer
+                          description: Changes on any configuration write to one of the line's channels, and on nothing else. Required by apply.
+                        channels:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              index: { type: integer }
+                              label: { type: string }
+                              phase: { type: integer }
+                              reverse: { type: boolean }
+                              current: { type: number, description: A }
+                        readings:
+                          type: array
+                          nullable: true
+                          description: Active power (W) and power factor of each channel under the configuration, null while collecting.
+                          items:
+                            $ref: '#/components/schemas/PhaseCheckReading'
+                        candidates:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              phases: { type: array, items: { type: integer } }
+                              reverse: { type: array, items: { type: boolean } }
+                              readings: { type: array, items: { $ref: '#/components/schemas/PhaseCheckReading' } }
+                  singles:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        index: { type: integer }
+                        label: { type: string }
+                        groupLabel: { type: string }
+                        role: { type: string }
+                        phase: { type: integer }
+                        reverse: { type: boolean }
+                        current: { type: number }
+                        state: { type: string, enum: [collecting, ok, suspect] }
+                        reading:
+                          nullable: true
+                          allOf:
+                            - $ref: '#/components/schemas/PhaseCheckReading'
+                        options:
+                          type: array
+                          description: Phase and reverse settings that fit, most likely first. Apply one with an ordinary channel write.
+                          items:
+                            type: object
+                            properties:
+                              phase: { type: integer }
+                              reverse: { type: boolean }
+                              power: { type: number }
+                              pf: { type: number }
+
+  /api/v1/ade7953/phase-check/apply:
+    post:
+      summary: Apply a phase check candidate to a line
+      description: |
+        Writes the phase and reverse flag of a line's three channels in one step, persisted with rollback. A label `<group> L<n>` follows the new phase; any other label is kept.
+        Applies run one after the other. Repeating an apply that already succeeded returns success and changes nothing.
+      tags:
+        - ADE7953
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lowestChannel, generation, channels, phases, reverse]
+              properties:
+                lowestChannel: { type: integer }
+                generation: { type: integer }
+                channels: { type: array, minItems: 3, maxItems: 3, items: { type: integer } }
+                phases: { type: array, minItems: 3, maxItems: 3, items: { type: integer, minimum: 1, maximum: 3 } }
+                reverse: { type: array, minItems: 3, maxItems: 3, items: { type: boolean } }
+      responses:
+        '200':
+          description: Applied, or already applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: No such line, or channels that are not the line's
+        '409':
+          description: The generation changed, the candidate is not offered, or the check window is closed
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/setup/status:
+    get:
+      summary: Get the setup state
+      description: Whether setup was ever completed (or skipped), and whether the phase check window is open. A device that booted firmware older than the setup counts as set up.
+      tags:
+        - System
+      responses:
+        '200':
+          description: Setup state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  setupDone: { type: boolean }
+                  checkWindow: { type: boolean }
+
+  /api/v1/setup/start:
+    post:
+      summary: Run setup again
+      description: Opens the phase check window for 2 hours, or until setup completes or the device restarts. Resets nothing.
+      tags:
+        - System
+      responses:
+        '200':
+          description: Window open
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+
+  /api/v1/setup/complete:
+    post:
+      summary: Complete or skip the setup
+      description: |
+        Closes the phase check window and stores the cloud services choice, starting cloud services (held until now) when on.
+        On the first setup only, resets the energy counters of every channel so the install starts from zero.
+      tags:
+        - System
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cloudServices: { type: boolean }
+      responses:
+        '200':
+          description: Setup completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /api/v1/ade7953/channel:
     get:
       summary: Get channel configuration
@@ -4727,6 +4905,11 @@ components:
       description: Electrical phase assignment (1=Phase A, 2=Phase B, 3=Phase C, 4=240V Split Phase), labelled relative to the voltage phase (`/api/v1/ade7953/voltage-phase`). A channel's phase rotates that channel only, channel 0 included. Channel 0 cannot be 4, since its reading supplies the voltage to every channel.
       example: 1
 
+    PhaseCheckReading:
+      type: object
+      properties:
+        power: { type: number, description: Active power (W) the channel would read }
+        pf: { type: number, description: "Power factor, positive when inductive (lagging), negative when capacitive (leading); 1 carries no sign" }
     VoltagePhase:
       type: integer
       enum: [1, 2, 3]
@@ -4884,4 +5067,4 @@ components:
           type: number
           format: float
           description: Accumulated apparent energy in VAh
-          example: 12356.8
+          example: 12356.8

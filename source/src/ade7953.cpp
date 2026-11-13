@@ -3,6 +3,7 @@
 
 #include "ade7953.h"
 #include "bootrecovery.h"
+#include "setupcheck.h"
 #include "taskprofiler.h"
 #include "duration_format.h"
 #include "grid_frequency.h"
@@ -99,6 +100,7 @@ namespace Ade7953
     static SemaphoreHandle_t _spiOperationMutex = NULL; // To handle full SPI operations (like read with verification, which is 2 SPI operations)
     static SemaphoreHandle_t _ade7953InterruptSemaphore = NULL;
     static SemaphoreHandle_t _configMutex = NULL;
+    static volatile float _v1Voltage = 0.0f; // V1 RMS, never scaled by a channel's split-phase multiplier
     static SemaphoreHandle_t _meterValuesMutex = NULL;
     static SemaphoreHandle_t _channelDataMutex = NULL;
 
@@ -312,6 +314,12 @@ namespace Ade7953
 
     // A recovery boot leaves the meter passive: nothing was loaded from NVS, so a
     // write would persist defaults over the user's configuration, channels or energy
+    // The sign vote of load and PV channels waits while the setup phase check runs on a
+    // three-phase install (SetupCheck::holdPolarityFlips)
+    static bool _polarityHeld(ChannelRole role) {
+        return SetupCheck::holdPolarityFlips() && (role == CHANNEL_ROLE_LOAD || role == CHANNEL_ROLE_PV);
+    }
+
     static bool _refusedWhilePassive() {
         if (!BootRecovery::meterPassive()) return false;
         LOG_WARNING("Recovery boot: meter is passive, change refused");
@@ -792,6 +800,7 @@ namespace Ade7953
             deferred = true;
         }
         releaseMutex(&_configMutex);
+        SetupCheck::onConfigWrite(0xFF);
 
         if (deferred) {
             LOG_ERROR("Voltage phase %u applied, CT polarity re-arm deferred to the next reading", static_cast<unsigned>(voltagePhase));
@@ -896,16 +905,6 @@ namespace Ade7953
             _channelData[channelIndex] = channelData;
         }
 
-        // Last line of defence for channel 0, which supplies V1 to every channel (see
-        // _isValidChannel0Phase). The JSON validators reject this at the API, but a device
-        // that already stored it in NVS restores through here with armTransients=false, so
-        // coerce rather than reject: the alternative is a boot loop on a config the user
-        // cannot see.
-        if (channelIndex == 0 && _channelData[0].phase == PHASE_SPLIT_240) {
-            LOG_WARNING("Channel 0 supplies V1 to every channel and cannot be split-phase 240V, coercing to phase 1");
-            _channelData[0].phase = PHASE_1;
-        }
-
         // Arm transient flags on inactive->active transition. Polarity check runs for
         // every channel (including channel 0); the priority slot is meaningful only
         // for mux-routed channels (channel 0 bypasses the rotation entirely). Already
@@ -949,6 +948,7 @@ namespace Ade7953
         _updateChannelData(channelIndex);
         _saveChannelDataToPreferences(channelIndex);
         if (!globalCommunityMode) Mqtt::requestChannelPublish();
+        SetupCheck::onConfigWrite(channelIndex);
 
         // Detect role change
         bool detected = (oldRole != channelData.role);
@@ -960,6 +960,76 @@ namespace Ade7953
 
         LOG_DEBUG("Successfully set channel data for channel %lu", channelIndex);
         return true;
+    }
+
+    bool applyLineConfiguration(const uint8_t channelIndices[3], const Phase phases[3], const bool reverses[3]) {
+        if (_refusedWhilePassive()) return false;
+        for (int i = 0; i < 3; i++) {
+            if (!isChannelValid(channelIndices[i]) || !PhaseUtils::isValidVoltagePhase(phases[i])) return false;
+        }
+        // Lock order as setVoltagePhase: config, then channel data. All three channels change
+        // in one step, so no intermediate configuration is ever read or persisted.
+        if (!acquireMutex(&_configMutex)) {
+            LOG_ERROR("Failed to acquire config mutex for a line apply");
+            return false;
+        }
+        if (!acquireMutex(&_channelDataMutex)) {
+            releaseMutex(&_configMutex);
+            LOG_ERROR("Failed to acquire channel data mutex for a line apply");
+            return false;
+        }
+        ChannelData old[3];
+        for (int i = 0; i < 3; i++) old[i] = _channelData[channelIndices[i]];
+        for (int i = 0; i < 3; i++) {
+            ChannelData &c = _channelData[channelIndices[i]];
+            // A generated label (<group> L<phase>) follows the new phase; any other label is kept.
+            char generated[NAME_BUFFER_SIZE];
+            snprintf(generated, sizeof(generated), "%s L%u", c.groupLabel, static_cast<unsigned>(c.phase));
+            if (strcmp(c.label, generated) == 0 && c.phase != phases[i]) {
+                snprintf(c.label, sizeof(c.label), "%s L%u", c.groupLabel, static_cast<unsigned>(phases[i]));
+            }
+            const bool reverseChanged = c.reverse != reverses[i];
+            const bool phaseChanged = c.phase != phases[i];
+            c.phase = phases[i];
+            c.reverse = reverses[i];
+            // Same rule as setChannelData: an explicit reverse is trusted, a phase change re-arms.
+            if (reverseChanged) _armPolarityLocked(channelIndices[i], false);
+            else if (phaseChanged) _armPolarityLocked(channelIndices[i], true);
+        }
+        _recalculateWeights();
+        releaseMutex(&_channelDataMutex);
+
+        bool saved = true;
+        for (int i = 0; i < 3 && saved; i++) saved = _saveChannelDataToPreferences(channelIndices[i]);
+        if (!saved) {
+            LOG_ERROR("Line apply on channels %u, %u, %u failed to persist, rolling back",
+                      channelIndices[0], channelIndices[1], channelIndices[2]);
+            if (acquireMutex(&_channelDataMutex)) {
+                for (int i = 0; i < 3; i++) { // only the fields the apply changed: a concurrent write keeps the rest
+                    ChannelData &c = _channelData[channelIndices[i]];
+                    c.phase = old[i].phase;
+                    c.reverse = old[i].reverse;
+                    memcpy(c.label, old[i].label, sizeof(c.label));
+                }
+                _recalculateWeights();
+                releaseMutex(&_channelDataMutex);
+                for (int i = 0; i < 3; i++) _saveChannelDataToPreferences(channelIndices[i]);
+            } else {
+                // No rollback: the new values are live, so report what is true once they are stored
+                saved = true;
+                for (int i = 0; i < 3; i++) saved = _saveChannelDataToPreferences(channelIndices[i]) && saved;
+            }
+        }
+        releaseMutex(&_configMutex);
+        if (!globalCommunityMode) Mqtt::requestChannelPublish();
+        for (int i = 0; i < 3; i++) SetupCheck::onConfigWrite(channelIndices[i]);
+        if (saved) {
+            LOG_INFO("Phase check applied to channels %u, %u, %u: phases %u %u %u, reverse %d %d %d",
+                     channelIndices[0], channelIndices[1], channelIndices[2],
+                     static_cast<unsigned>(phases[0]), static_cast<unsigned>(phases[1]), static_cast<unsigned>(phases[2]),
+                     reverses[0], reverses[1], reverses[2]);
+        }
+        return saved;
     }
 
     bool resetChannelData(uint8_t channelIndex) {
@@ -1256,7 +1326,9 @@ namespace Ade7953
         preferences.end();
 
         for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
-            _saveEnergyToPreferences(i);
+            // Forced: a plain save only writes once a counter rises ENERGY_SAVE_THRESHOLD above
+            // the last saved (pre-reset) value, so a reboot before that brought the old counters back.
+            _saveEnergyToPreferences(i, true);
             _clearStartMeasuring(i);
         }
 
@@ -1758,6 +1830,8 @@ namespace Ade7953
     // Grid frequency
     // ==============
 
+    float getV1Voltage() { return _v1Voltage; }
+
     float getGridFrequency() {
         // Filtered EMA once seeded; raw fallback until then (and if ZXV never fires)
         if (_gridFreqEma.seeded) return GridFrequency::frequencyHz(_gridFreqEma, _gridFreqCfg);
@@ -2136,6 +2210,9 @@ namespace Ade7953
         
         // Always process channel 0 as it is on a separate ADE7953 channel
         _processChannelReading(0, linecycUnix);
+
+        // Setup phase check: closes its minutes on the monotonic clock (setup must not wait for NTP)
+        SetupCheck::onTick(millis64());
     }
 
     void _pollWaveformSamples() { // TODO: this could become something related to a websocket for real time visualization and similar
@@ -2272,7 +2349,7 @@ namespace Ade7953
         }
 
         LOG_ERROR("Blackout detected: grid power lost (count=%llu, last known voltage=%.1fV)",
-                  statistics.ade7953ZxtoInterrupts, _meterValues[0].voltage);
+                  statistics.ade7953ZxtoInterrupts, _v1Voltage);
     }
 
     // Tasks
@@ -2518,12 +2595,12 @@ namespace Ade7953
             if (updateCount == lastSeenUpdateCount) continue; // EMA frozen (no ZXV since last emit)
             lastSeenUpdateCount = updateCount;
 
-            // Cached channel-0 RMS voltage (at most ~_sampleTime old); aligned float
+            // Cached V1 RMS voltage (at most ~_sampleTime old); aligned float
             // read is atomic, keeping the sampler off the SPI bus
             PayloadGridPoint point(
                 CustomTime::getUnixTimeMilliseconds(),
                 getGridFrequency(),
-                _meterValues[0].voltage
+                _v1Voltage
             );
             Mqtt::pushGrid(point);
         }
@@ -3223,60 +3300,53 @@ namespace Ade7953
             return false;
         }
 
+        // Every write is checked: a line apply rolls back when one fails (Preferences returns
+        // the bytes written, 0 on failure; a string writes its length, so an empty one is 0).
+        bool ok = true;
+        auto put = [&ok](size_t written, size_t expected) { ok = ok && written == expected; };
+
         // Save channel data
         snprintf(key, sizeof(key), CHANNEL_ACTIVE_KEY, channelIndex);
-        preferences.putBool(key, channelData.active);
+        put(preferences.putBool(key, channelData.active), 1);
 
         snprintf(key, sizeof(key), CHANNEL_REVERSE_KEY, channelIndex);
-        preferences.putBool(key, channelData.reverse);
+        put(preferences.putBool(key, channelData.reverse), 1);
 
         snprintf(key, sizeof(key), CHANNEL_LABEL_KEY, channelIndex);
-        preferences.putString(key, channelData.label);
+        put(preferences.putString(key, channelData.label), strlen(channelData.label));
 
         snprintf(key, sizeof(key), CHANNEL_PHASE_KEY, channelIndex);
-        preferences.putUChar(key, (uint8_t)(channelData.phase));
+        put(preferences.putUChar(key, (uint8_t)(channelData.phase)), 1);
 
         // CT Specification
         snprintf(key, sizeof(key), CHANNEL_CT_CURRENT_RATING_KEY, channelIndex);
-        preferences.putFloat(key, channelData.ctSpecification.currentRating);
+        put(preferences.putFloat(key, channelData.ctSpecification.currentRating), sizeof(float));
 
         snprintf(key, sizeof(key), CHANNEL_CT_VOLTAGE_OUTPUT_KEY, channelIndex);
-        preferences.putFloat(key, channelData.ctSpecification.voltageOutput);
+        put(preferences.putFloat(key, channelData.ctSpecification.voltageOutput), sizeof(float));
 
         snprintf(key, sizeof(key), CHANNEL_CT_SCALING_FRACTION_KEY, channelIndex);
-        preferences.putFloat(key, channelData.ctSpecification.scalingFraction);
+        put(preferences.putFloat(key, channelData.ctSpecification.scalingFraction), sizeof(float));
 
         // Channel grouping
         snprintf(key, sizeof(key), CHANNEL_GROUP_LABEL_KEY, channelIndex);
-        preferences.putString(key, channelData.groupLabel);
+        put(preferences.putString(key, channelData.groupLabel), strlen(channelData.groupLabel));
 
         // Channel role
         snprintf(key, sizeof(key), CHANNEL_ROLE_KEY, channelIndex);
-        preferences.putUChar(key, static_cast<uint8_t>(channelData.role));
+        put(preferences.putUChar(key, static_cast<uint8_t>(channelData.role)), 1);
 
         // Device-reported reset boundary
         snprintf(key, sizeof(key), CHANNEL_START_MEASURING_KEY, channelIndex);
-        preferences.putULong64(key, channelData.startMeasuringUnixTimeMs);
+        put(preferences.putULong64(key, channelData.startMeasuringUnixTimeMs), sizeof(uint64_t));
 
         preferences.end();
 
-        LOG_DEBUG("Successfully saved channel data to Preferences for channel %lu", channelIndex);
-        return true;
-    }
-
-    /*
-    Channel 0's reading supplies V1 to every channel: its voltage, stored in
-    _meterValues[0], is what every other channel reuses and what MQTT, Modbus and
-    the issue registry report as the device voltage. Split-phase 240 V is not a
-    rotation but a 2x voltage multiplier, so on channel 0 it would double the voltage
-    every channel and integration reads. (The rotation base is the voltage phase
-    setting, not channel 0's phase.)
-    */
-    bool _isValidChannel0Phase(uint8_t channelIndex, uint8_t phase) {
-        if (channelIndex == 0 && phase == PHASE_SPLIT_240) {
-            LOG_WARNING("Channel 0 supplies V1 to every channel and cannot be split-phase 240V");
+        if (!ok) {
+            LOG_ERROR("Failed to write channel data to Preferences for channel %lu", channelIndex);
             return false;
         }
+        LOG_DEBUG("Successfully saved channel data to Preferences for channel %lu", channelIndex);
         return true;
     }
 
@@ -3322,22 +3392,30 @@ namespace Ade7953
         return true;
     }
 
+    // While a bulk write validates and applies, the group/role rule is checked against the
+    // configuration the whole array leads to, not the half-applied one: otherwise changing a
+    // group's role fails on its first channel, after earlier channels were already written.
+    static ChannelData *_bulkEndState = nullptr;
+    static TaskHandle_t _bulkTask = nullptr; // a concurrent write from another task (shadow) sees the live state
+
     bool _validateGroupRoleConsistency(const char* groupLabel, uint8_t channelIndex, ChannelRole role) {
         // Acquire mutex to safely read other channels
         if (!acquireMutex(&_channelDataMutex)) {
             LOG_ERROR("Failed to acquire mutex for group validation");
             return false;
         }
+        const ChannelData *view = (_bulkEndState && _bulkTask == xTaskGetCurrentTaskHandle()) ? _bulkEndState : _channelData;
 
         // Check all other channels with same groupLabel
         for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
             if (i == channelIndex) continue;  // Skip self
 
             // If another channel has same groupLabel, roles must match
-            if (strcmp(_channelData[i].groupLabel, groupLabel) == 0) {
-                if (_channelData[i].role != role) {
+            // Inactive channels carry leftover labels and never measure: they constrain nothing.
+            if (view[i].active && strcmp(view[i].groupLabel, groupLabel) == 0) {
+                if (view[i].role != role) {
                     LOG_WARNING("Group '%s' role mismatch: channel %u is %s, but channel %u would be %s",
-                               groupLabel, i, channelRoleToString(_channelData[i].role),
+                               groupLabel, i, channelRoleToString(view[i].role),
                                channelIndex, channelRoleToString(role));
                     releaseMutex(&_channelDataMutex);
                     return false;
@@ -3347,6 +3425,53 @@ namespace Ade7953
 
         releaseMutex(&_channelDataMutex);
         return true;
+    }
+
+    bool setAllChannelDataFromJson(JsonArrayConst channels, uint32_t *roleChangedMask) {
+        if (roleChangedMask) *roleChangedMask = 0;
+        if (_refusedWhilePassive()) return false;
+        static ChannelData *endState = nullptr;  // web server task only; PSRAM, allocated once
+        if (!endState) {
+            void *mem = heap_caps_malloc(sizeof(ChannelData) * MAX_CHANNEL_COUNT, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            if (!mem) return false;
+            endState = new (mem) ChannelData[MAX_CHANNEL_COUNT];
+        }
+        if (!acquireMutex(&_channelDataMutex)) return false;
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) endState[i] = _channelData[i];
+        releaseMutex(&_channelDataMutex);
+
+        // Pass 1: shape and index of every element, and the end state they lead to.
+        for (JsonVariantConst element : channels) {
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            doc.set(element);
+            if (!doc["index"].is<uint8_t>() || !isChannelValid(doc["index"].as<uint8_t>())) return false;
+            channelDataFromJson(doc, endState[doc["index"].as<uint8_t>()], false);
+        }
+        // Pass 2: validate every element against that end state, before anything is written.
+        _bulkTask = xTaskGetCurrentTaskHandle();
+        _bulkEndState = endState;
+        bool valid = true;
+        for (JsonVariantConst element : channels) {
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            doc.set(element);
+            valid = valid && _validateChannelDataJson(doc, false);
+        }
+        // Pass 3: apply.
+        bool applied = valid;
+        for (JsonVariantConst element : channels) {
+            if (!applied) break;
+            SpiRamAllocator allocator;
+            JsonDocument doc(&allocator);
+            doc.set(element);
+            bool roleChanged = false;
+            applied = setChannelDataFromJson(doc, false, &roleChanged);
+            if (roleChanged && roleChangedMask) *roleChangedMask |= (1UL << doc["index"].as<uint8_t>());
+        }
+        _bulkEndState = nullptr;
+        if (!valid) LOG_WARNING("Bulk channel write refused: an element is invalid, nothing was written");
+        return applied;
     }
 
     bool _validateChannelDataJson(const JsonDocument &jsonDocument, bool partial) {
@@ -3396,7 +3521,6 @@ namespace Ade7953
                     LOG_WARNING("Invalid phase value: %u (valid: 1-4)", phase);
                     return false;
                 }
-                if (!_isValidChannel0Phase(channelIndex, phase)) return false;
                 hasValidField = true;
             }
 
@@ -3509,7 +3633,6 @@ namespace Ade7953
                 LOG_WARNING("Invalid phase value: %u (valid: 1-4)", phase);
                 return false;
             }
-            if (!_isValidChannel0Phase(jsonDocument["index"].as<uint8_t>(), phase)) return false;
 
             // CT Specification validation with ranges
             if (!jsonDocument["ctSpecification"].is<JsonObjectConst>()) {
@@ -4010,6 +4133,7 @@ namespace Ade7953
         Ade7953Channel ade7953Channel = (channelIndex == 0) ? Ade7953Channel::A : Ade7953Channel::B;
 
         float voltage = 0.0f;
+        float v1 = 0.0f;  // channel 0 only: published as _v1Voltage once this reading is committed
         float current = 0.0f;
         float activePower = 0.0f;
         float reactivePower = 0.0f;
@@ -4053,13 +4177,16 @@ namespace Ade7953
         // Since the voltage measurement is only one in any case, it makes sense to just re-use the same value
         // as channel 0 (sampled just before) instead of reading it again. It will be at worst _sampleTime old.
         if (channelIndex == 0) {
-            voltage = float(_readVoltageRms()) * _voltPerLsb * voltageMultiplier;
+            // V1 is the voltage every channel is integrated against and the device voltage:
+            // stored unscaled, so a split-phase 240 V circuit on channel 0 doubles only its own readings.
+            v1 = float(_readVoltageRms()) * _voltPerLsb;
+            voltage = v1 * voltageMultiplier;
 
             // Update grid frequency during channel 0 reading
             float newGridFrequency = _readGridFrequency();
             if (_validateGridFrequency(newGridFrequency)) _gridFrequency = newGridFrequency;
         } else {
-            voltage = _meterValues[0].voltage * voltageMultiplier;
+            voltage = _v1Voltage * voltageMultiplier;
         }
 
         // We use sample time instead of _deltaMillis because the energy readings are over whole line cycles (defined by the sample time)
@@ -4092,6 +4219,15 @@ namespace Ade7953
             _recordFailure();
             return false;
         }
+
+        // Setup phase check evidence: the raw pair against V1, before reverse, rotation, the
+        // off-phase no-load gate, the PF zeroing and the load/PV clamp, all of which depend on
+        // the configured phase. Only consumed while the setup check window is open.
+        // Held here and handed over once the reading is committed (end of this function), so a
+        // reading discarded later never counts and its gap is not booked twice.
+        const float phaseCheckActive = deltaHoursSampleTime > 0.0f ? rawActiveEnergy / deltaHoursSampleTime : 0.0f;
+        const float phaseCheckReactive = deltaHoursSampleTime > 0.0f ? rawReactiveEnergy / deltaHoursSampleTime : 0.0f;
+        const float phaseCheckCurrent = currentRms;
 
         // Synthetic no-load for the whole off-phase reading. The chip gates P1 and Q1
         // independently against V1, so after the rotation neither gate maps onto this
@@ -4203,7 +4339,11 @@ namespace Ade7953
         bool conducting = MeterLogic::isConductingReading(
             activePower, current, minCurrentConducting);
 
-        if (_channelData[channelIndex]._pendingPolarityCheck && conducting) {
+        // During the setup phase check on a three-phase install the sign vote waits: a wrong
+        // phase reads negative, and a flip would turn it into a plausible 60-degree error the
+        // check can no longer see. The arm and its counters are kept for after setup.
+        const bool polarityHeld = _polarityHeld(channelData.role);
+        if (_channelData[channelIndex]._pendingPolarityCheck && conducting && !polarityHeld) {
             bool flipped = false;
             bool newReverse = false;
             if (acquireMutex(&_channelDataMutex)) {
@@ -4274,7 +4414,9 @@ namespace Ade7953
         if (MeterLogic::shouldClampNegative(activePower, channelData.role)) {
             // An evidence reading that gets clamped is polarity-mismatch evidence for
             // the issue registry (reverse flag and physical CT orientation disagree)
-            if (mismatchEvidence) _factClampedEvidenceReads[channelIndex] = _factClampedEvidenceReads[channelIndex] + 1;
+            // Not while the setup check holds flips: a wrong phase reads negative too, and the
+            // phase check (not a reverse-flag mismatch) is the diagnosis there.
+            if (mismatchEvidence && !polarityHeld) _factClampedEvidenceReads[channelIndex] = _factClampedEvidenceReads[channelIndex] + 1;
             LOG_DEBUG(
                 "%s (%d): clamping negative reading (%.1fW) to 0 (role=%s)",
                 channelData.label,
@@ -4306,6 +4448,7 @@ namespace Ade7953
         if (currentBase != lastMillis) deltaMillis = 0;
 
         _meterValues[channelIndex].voltage = voltage;
+        if (channelIndex == 0) _v1Voltage = v1;  // a discarded V1 read never reaches the other channels
         _meterValues[channelIndex].current = current;
         _meterValues[channelIndex].activePower = activePower;
         _meterValues[channelIndex].reactivePower = reactivePower;
@@ -4377,6 +4520,7 @@ namespace Ade7953
         if (millisRead > currentBase) _meterValues[channelIndex].lastMillis = millisRead;
         _meterValues[channelIndex].lastUnixTimeMilliseconds = linecycUnixTimeMillis;
         releaseMutex(&_meterValuesMutex);
+        SetupCheck::onReading(channelIndex, phaseCheckActive, phaseCheckReactive, deltaMillis, phaseCheckCurrent);
         return true;
     }
 
@@ -4602,7 +4746,7 @@ namespace Ade7953
     detection (as armTransients=false for channels).
     */
     void _setVoltagePhaseFromPreferences() {
-        const Phase channel0Phase = _channelData[0].phase; // already coerced off split-phase 240 V by setChannelData; meter task not started yet
+        const Phase channel0Phase = _channelData[0].phase; // may be split-phase 240 V: resolveVoltagePhase then falls back to PHASE_1; meter task not started yet
 
         Preferences preferences;
         const bool opened = preferences.begin(PREFERENCES_NAMESPACE_ADE7953, false);
@@ -4970,7 +5114,8 @@ namespace Ade7953
             inputs[i].active = _channelData[i].active;
             inputs[i].activePower = _meterValues[i].activePower;
             inputs[i].variability = _powerVariability[i];
-            inputs[i].armed = _channelData[i]._pendingPolarityCheck;
+            // A held arm (setup phase check on a three-phase install) gets no boost: it cannot vote.
+            inputs[i].armed = _channelData[i]._pendingPolarityCheck && !_polarityHeld(_channelData[i].role);
             inputs[i].role = _channelData[i].role;
             inputs[i].conducting = _lastConducting[i];
         }

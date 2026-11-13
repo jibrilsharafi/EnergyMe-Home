@@ -26,6 +26,7 @@ import urllib.request
 import urllib.error
 
 from _device_auth import add_device_args, resolve_credentials
+import mock_setup
 
 PORT = 8081
 PROXY_TARGET = None
@@ -335,11 +336,32 @@ class MockHandler(http.server.SimpleHTTPRequestHandler):
         except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
             pass  # Client disconnected, ignore
     
+    def _mock_setup(self, method):
+        """Stateful first-setup / phase-check mock (mock_setup.py). True when handled."""
+        if PROXY_TARGET:
+            return False
+        path = urlparse(self.path).path
+        body = None
+        if method in ('POST', 'PUT'):
+            length = int(self.headers.get('Content-Length', 0))
+            raw = self.rfile.read(length) if length > 0 else b''
+            try:
+                body = json.loads(raw) if raw else None
+            except ValueError:
+                body = None
+        result = mock_setup.handle(method, path, body)
+        if result is None:
+            return False
+        self.send_json(result[0], result[1])
+        return True
+
     def do_OPTIONS(self):
         self.send_response(200)
         self.end_headers()
     
     def do_POST(self):
+        if self._mock_setup('POST'):
+            return
         parsed_path = urlparse(self.path)
         path = parsed_path.path
         
@@ -357,6 +379,8 @@ class MockHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
     
     def do_PUT(self):
+        if self._mock_setup('PUT'):
+            return
         parsed_path = urlparse(self.path)
         path = parsed_path.path
         
@@ -452,6 +476,9 @@ class MockHandler(http.server.SimpleHTTPRequestHandler):
         if PROXY_TARGET and path.startswith('/api/'):
             self.proxy_request('GET')
             return
+
+        if path.startswith('/api/') and self._mock_setup('GET'):
+            return
         
         # Mock mode: load from JSON files
         if path.startswith('/api/'):
@@ -528,6 +555,8 @@ class MockHandler(http.server.SimpleHTTPRequestHandler):
         # HTML page routing
         if path == '/' or path == '/index':
             self.serve_html_file('html/index.html')
+        elif path == '/setup':
+            self.serve_html_file('html/setup.html')
         elif path == '/info':
             self.serve_html_file('html/info.html')
         elif path == '/configuration':

@@ -644,11 +644,16 @@ namespace Ade7953
     bool getChannelData(ChannelData &channelData, uint8_t channelIndex);
     bool setChannelData(const ChannelData &channelData, uint8_t channelIndex, bool* roleChanged = nullptr, bool armTransients = true);
     bool resetChannelData(uint8_t channelIndex);
+    // Setup phase check apply: phase and reverse of a line's three channels in one step, persisted
+    // with rollback; generated labels (<group> L<n>) follow the phase. False when nothing changed.
+    bool applyLineConfiguration(const uint8_t channelIndices[3], const Phase phases[3], const bool reverses[3]);
 
     // Channel data management - JSON operations
     bool getChannelDataAsJson(JsonDocument &jsonDocument, uint8_t channelIndex);
     bool getAllChannelDataAsJson(JsonDocument &jsonDocument);
     bool setChannelDataFromJson(const JsonDocument &jsonDocument, bool partial = false, bool* roleChanged = nullptr);
+    // Every element validated against the configuration the whole array leads to, before any is written.
+    bool setAllChannelDataFromJson(JsonArrayConst channels, uint32_t *roleChangedMask = nullptr);
     void channelDataToJson(const ChannelData &channelData, JsonDocument &jsonDocument);
     void channelDataFromJson(const JsonDocument &jsonDocument, ChannelData &channelData, bool partial = false);
 
@@ -689,8 +694,9 @@ namespace Ade7953
     float getAggregatedReactiveEnergyExportedByRole(ChannelRole role);
     float getAggregatedApparentEnergyByRole(ChannelRole role);
 
-    // Grid frequency
+    // Grid frequency and the device voltage (V1, unscaled)
     float getGridFrequency();
+    float getV1Voltage();
 
     // Issue registry facts (RAM-only, safe to call cross-task)
     bool getChannelIssueFacts(uint8_t channelIndex, ChannelIssueFacts &facts);

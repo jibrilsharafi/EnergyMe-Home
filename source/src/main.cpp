@@ -38,6 +38,7 @@
 #include "multiplexer.h"
 #include "customlog.h"
 #include "taskprofiler.h"
+#include "setupcheck.h"
 
 // Global variables
 // --------------------
@@ -137,7 +138,8 @@ void setup()
     if (BootRecovery::cloudDisabled()) globalCommunityMode = true; // Minimal: the cloud stack stays down
   }
 
-  if (!isFirstBootDone())
+  const bool firstBootThisBoot = !isFirstBootDone(); // read before it is set: a factory-fresh device starts the setup
+  if (firstBootThisBoot)
   {
     setFirstBootDone();
     createAllNamespaces();
@@ -161,6 +163,9 @@ void setup()
     performNvsRestore();
     LOG_INFO("Configuration restore process completed");
   }
+
+  // Setup state before any service reads it (cloud hold, `/` redirect, phase check window)
+  SetupCheck::begin(firstBootThisBoot);
 
   Led::setYellow(Led::PRIO_NORMAL);
   AdvancedLogger::begin(LOG_PATH);

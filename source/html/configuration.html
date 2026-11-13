@@ -483,6 +483,13 @@
     </div>
 
     <div class="section-box">
+        <h2>Setup Wizard</h2>
+        <p><i>Walks you again through the channel configuration and checks that every CT is on the right phase and
+                in the right direction. Energy history and settings are kept.</i></p>
+        <button class="buttonForm" onclick="runSetupAgain()" id="runSetupAgainButton">🧭 Run setup again</button>
+    </div>
+
+    <div class="section-box">
         <h2>Factory Reset</h2>
         <p><i>This will reset the device to its factory settings. Useful if you are having issues with the device or
                 want to start fresh.</i></p>
@@ -1091,6 +1098,16 @@
                 .finally(() => {
                     setFieldLoading("cloudServices", "cloudServicesSpinner", false);
                 });
+        }
+
+        // Opens the setup on the current configuration; the phase check runs while it is open.
+        async function runSetupAgain() {
+            try {
+                await window.energyApi.post('setup/start');
+                window.location.href = '/setup';
+            } catch (err) {
+                showStatus('Could not start the setup. Try again.', 'error');
+            }
         }
 
         async function setCloudServices() {

@@ -781,7 +781,7 @@ class EnergyMeAPI {
      * @param {Array} channels - Array of channel configurations
      */
     async updateAllChannels(channels) {
-        return this.put('ade7953/channels', { channels });
+        return this.put('ade7953/channels', channels); // the endpoint takes a bare array
     }
 
     /**
