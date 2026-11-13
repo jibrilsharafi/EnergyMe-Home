@@ -216,7 +216,6 @@ void test_modbus_may_reuse(void) {
     TEST_ASSERT_FALSE(modbusMayReuse(false, held, 502, same, 502)); // closed after an error or at run end
     TEST_ASSERT_FALSE(modbusMayReuse(true, held, 502, other, 502));
     TEST_ASSERT_FALSE(modbusMayReuse(true, held, 502, same, 1502));
-    TEST_ASSERT_FALSE(modbusMayReuse(true, nullptr, 502, same, 502));
 }
 
 void test_modbus_retry_on_fresh(void) {

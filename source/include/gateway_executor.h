@@ -36,8 +36,7 @@ namespace GatewayExec
     inline constexpr size_t HEADER_BLOCK_MAX = 2048;
     inline constexpr uint32_t UDP_REPLY_MAX = 1460;
 
-    // A Modbus TCP connection a caller holds across requests (the steps of one
-    // collector run). The holder closes it when it is done with the endpoint.
+    // A Modbus TCP connection a caller holds across requests (the steps of one collector run).
     struct ModbusSession {
         GatewayNet::Connection connection;
         uint8_t octets[4] = {};

@@ -437,7 +437,7 @@ size_t modbusFrameLength(const uint8_t *header, size_t len) {
 }
 
 bool modbusMayReuse(bool open, const uint8_t heldIp[4], uint16_t heldPort, const uint8_t ip[4], uint16_t port) {
-    return open && heldIp != nullptr && ip != nullptr && heldPort == port && memcmp(heldIp, ip, 4) == 0;
+    return open && heldPort == port && memcmp(heldIp, ip, 4) == 0;
 }
 
 bool modbusRetryOnFresh(bool reused, bool write, bool sendFailed, bool closedBeforeReply) {
