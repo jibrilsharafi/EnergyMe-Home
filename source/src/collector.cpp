@@ -907,7 +907,13 @@ namespace Collector
         js.stats.nextRunS = js.nextS;
     }
 
+    // The Modbus steps of one run share one connection: some gateways (Sungrow WiNet-S)
+    // refuse a fourth fresh connection opened right after three short-lived ones.
+    // Gateway task only; closed at every run end.
+    static GatewayExec::ModbusSession _modbusSession;
+
     static void _endRun(bool abandoned) {
+        _modbusSession.connection.close();
         if (!_run.active) return;
         uint8_t jobIndex = _run.job;
         const Job& job = _active.table->jobs[jobIndex];
@@ -1172,6 +1178,7 @@ namespace Collector
         _buildRequest(job, step, rq, headers);
         rq.resolvers = chain;
         rq.resolverCount = 2;
+        if (job.module == GatewayLogic::Module::MODBUS_TCP) rq.session = &_modbusSession;
         GatewayExec::Result result;
         GatewayExec::run(rq, result);
 
