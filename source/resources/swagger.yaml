@@ -4909,7 +4909,7 @@ components:
       type: object
       properties:
         power: { type: number, description: Active power (W) the channel would read }
-        pf: { type: number, description: Power factor, positive inductive }
+        pf: { type: number, description: "Power factor, positive when inductive (lagging), negative when capacitive (leading); 1 carries no sign" }
     VoltagePhase:
       type: integer
       enum: [1, 2, 3]
