@@ -179,6 +179,7 @@ static void test_modbus_example(void) {
     const Job &j = table.jobs[0];
     TEST_ASSERT_TRUE(j.module == Module::MODBUS_TCP);
     TEST_ASSERT_TRUE(j.batch);
+    TEST_ASSERT_FALSE(j.connPerStep); // conn defaults to "run"
     TEST_ASSERT_FALSE(j.usesTime);
     TEST_ASSERT_FALSE(j.hasSession);
     TEST_ASSERT_EQUAL_UINT8(3, j.stepCount);
@@ -304,6 +305,13 @@ static void test_field_ranges(void) {
     expectError(set(job("r", "modbus_tcp", "192.168.1.60", 502, mb, R"(,"step_timeout_ms":50)")), "BAD_JOB", "r", "step_timeout_ms");
     expectError(set(job("r", "modbus_tcp", "192.168.1.60", 502, mb, R"(,"max_bytes":0)")), "BAD_JOB", "r", "max_bytes");
     expectError(set(job("r", "modbus_tcp", "192.168.1.60", 502, mb, R"(,"publish":"later")")), "BAD_JOB", "r", "publish");
+    expectError(set(job("r", "modbus_tcp", "192.168.1.60", 502, mb, R"(,"conn":"job")")), "BAD_JOB", "r", "conn");
+    expectError(set(job("r", "modbus_tcp", "192.168.1.60", 502, mb, R"(,"conn":1)")), "BAD_JOB", "r", "conn");
+    expectError(set(job("r", "http", "192.168.1.60", 80, httpStep("GET", "/"), R"(,"conn":"run")")), "BAD_JOB", "r", "conn");
+    expectValid(set(job("r", "modbus_tcp", "192.168.1.60", 502, mb, R"(,"conn":"step")")));
+    TEST_ASSERT_TRUE(table.jobs[0].connPerStep);
+    expectValid(set(job("r", "modbus_tcp", "192.168.1.60", 502, mb, R"(,"conn":"run")")));
+    TEST_ASSERT_FALSE(table.jobs[0].connPerStep);
     expectError(set(job("r", "nope", "192.168.1.60", 502, mb)), "BAD_JOB", "r", "module");
     expectError(set(job("r", "modbus_tcp", "192.168.1.600", 502, mb)), "BAD_JOB", "r", "target");
     expectError(set(job("Bad", "modbus_tcp", "192.168.1.60", 502, mb)), "BAD_JOB", "", "id");

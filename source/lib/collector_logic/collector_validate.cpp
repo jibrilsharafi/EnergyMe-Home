@@ -196,7 +196,8 @@ const char *unknownKey(JsonObjectConst object, const char *const *allowed, size_
 
 const char *const TOP_KEYS[] = {"v", "budget_bytes_h", "jobs"};
 const char *const JOB_KEYS[] = {"id",          "rev",        "enabled",   "source_id", "target", "module",  "interval_s", "jitter_s",
-                                "step_timeout_ms", "deadline_s", "max_bytes", "vars",      "session", "steps", "publish"};
+                                "step_timeout_ms", "deadline_s", "max_bytes", "vars",      "session", "steps", "publish",
+                                "conn"};
 const char *const TARGET_KEYS[] = {"ip", "port", "mac"};
 const char *const SESSION_KEYS[] = {"login", "ttl_s", "expiry"};
 const char *const EXPIRY_KEYS[] = {"status", "marker"};
@@ -669,6 +670,17 @@ bool parseJob(Validation &v, size_t index, JsonVariantConst value) {
             job.batch = true;
         } else if (strcmp(text, "per_step") != 0) {
             return fail(v.error, BAD_JOB, job.id, "publish");
+        }
+    }
+
+    JsonVariantConst conn = object["conn"];
+    if (!conn.isNull()) {
+        if (job.module != GatewayLogic::Module::MODBUS_TCP || getString(conn, 1, 8, &text, &length) != Got::OK)
+            return fail(v.error, BAD_JOB, job.id, "conn");
+        if (strcmp(text, "step") == 0) {
+            job.connPerStep = true;
+        } else if (strcmp(text, "run") != 0) {
+            return fail(v.error, BAD_JOB, job.id, "conn");
         }
     }
 

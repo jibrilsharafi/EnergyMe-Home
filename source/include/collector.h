@@ -65,6 +65,7 @@ namespace Collector
     uint32_t nextWaitMs(uint32_t maxMs); // until the next due job, at most maxMs
     void step();                          // adopts a pending set, then runs at most one step
     void noteCommandMs(uint32_t ms);      // command time excluded from run deadlines
+    void closeConnection();               // the run's held Modbus connection; the next step reconnects
 
     // Set by the MQTT layer (OTA download or reboot pending).
     void setOtaBusy(bool busy);

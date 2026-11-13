@@ -43,6 +43,7 @@ namespace GatewayNet
         // within `waitMs`, CLOSED at EOF, TIMEOUT once the deadline has passed.
         Status read(uint8_t* buffer, size_t capacity, size_t* got, uint32_t deadline, uint32_t waitMs);
         void close();
+        bool isOpen() const { return _fd >= 0; }
 
     private:
         static int _send(void* ctx, const unsigned char* buf, size_t len);

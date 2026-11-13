@@ -1510,6 +1510,7 @@ namespace Gateway
             Request request;
             if (xQueueReceive(_queue, &request, pdMS_TO_TICKS(Collector::nextWaitMs(GATEWAY_QUEUE_WAIT_MS))) == pdTRUE) {
                 uint64_t startMs = millis64();
+                Collector::closeConnection(); // a connection-limited target may need the slot for this command
                 _run(request);
                 free(request.args);
                 Collector::noteCommandMs((uint32_t)(millis64() - startMs));
@@ -1517,6 +1518,7 @@ namespace Gateway
             if (ulTaskNotifyTake(pdTRUE, 0) > 0) shouldRun = false;
             else Collector::step();
         }
+        Collector::closeConnection();
         LOG_DEBUG("Gateway task stopping");
         _taskHandle = nullptr;
         vTaskDelete(NULL);

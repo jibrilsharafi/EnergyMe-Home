@@ -36,6 +36,13 @@ namespace GatewayExec
     inline constexpr size_t HEADER_BLOCK_MAX = 2048;
     inline constexpr uint32_t UDP_REPLY_MAX = 1460;
 
+    // A Modbus TCP connection a caller holds across requests (the steps of one collector run).
+    struct ModbusSession {
+        GatewayNet::Connection connection;
+        uint8_t octets[4] = {};
+        uint16_t port = 0;
+    };
+
     struct Request {
         Module module = Module::HTTP;
         const char* ip = nullptr;
@@ -73,6 +80,9 @@ namespace GatewayExec
         size_t valueCount = 0;
         bool writeMultiple = false;
         bool verify = false;
+        // Optional: run on this held connection (opened when needed, left open
+        // after an OK result, closed on any failure). Null: one connection per request.
+        ModbusSession* session = nullptr;
 
         // tcp, udp
         const char* payload = nullptr; // tcp text, templated

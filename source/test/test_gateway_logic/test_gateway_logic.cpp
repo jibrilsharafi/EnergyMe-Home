@@ -208,6 +208,24 @@ void test_modbus_frame_length(void) {
     TEST_ASSERT_EQUAL_size_t(0, modbusFrameLength(hdr, 5));
 }
 
+void test_modbus_may_reuse(void) {
+    const uint8_t held[4] = {192, 168, 0, 29};
+    const uint8_t same[4] = {192, 168, 0, 29};
+    const uint8_t other[4] = {192, 168, 0, 30};
+    TEST_ASSERT_TRUE(modbusMayReuse(true, held, 502, same, 502));
+    TEST_ASSERT_FALSE(modbusMayReuse(false, held, 502, same, 502)); // closed after an error or at run end
+    TEST_ASSERT_FALSE(modbusMayReuse(true, held, 502, other, 502));
+    TEST_ASSERT_FALSE(modbusMayReuse(true, held, 502, same, 1502));
+}
+
+void test_modbus_retry_on_fresh(void) {
+    TEST_ASSERT_TRUE(modbusRetryOnFresh(true, false, true, false));  // stale socket, send failed
+    TEST_ASSERT_TRUE(modbusRetryOnFresh(true, false, false, true));  // peer closed before replying
+    TEST_ASSERT_FALSE(modbusRetryOnFresh(false, false, true, true)); // fresh connection: no retry
+    TEST_ASSERT_FALSE(modbusRetryOnFresh(true, true, true, true));   // writes never repeat
+    TEST_ASSERT_FALSE(modbusRetryOnFresh(true, false, false, false)); // timeout or bad frame
+}
+
 void test_modbus_parse_registers(void) {
     const uint8_t resp[] = {0x12, 0x34, 0x00, 0x00, 0x00, 0x07, 0x01, 0x03, 0x04, 0x00, 0x2A, 0xFF, 0xFF};
     uint16_t values[4];
@@ -500,6 +518,8 @@ int main(int, char **) {
     RUN_TEST(test_modbus_build_write_single);
     RUN_TEST(test_modbus_build_write_multiple);
     RUN_TEST(test_modbus_frame_length);
+    RUN_TEST(test_modbus_may_reuse);
+    RUN_TEST(test_modbus_retry_on_fresh);
     RUN_TEST(test_modbus_parse_registers);
     RUN_TEST(test_modbus_parse_bits);
     RUN_TEST(test_modbus_parse_exception);
