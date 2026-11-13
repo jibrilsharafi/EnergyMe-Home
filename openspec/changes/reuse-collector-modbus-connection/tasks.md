@@ -14,7 +14,10 @@
 
 ## 3. Review and bench (dev only: Home .174 and Home Pro .80 polling a logging Modbus TCP server on the PC)
 
-- [ ] 3.1 Code-review agents (one adversarial) and a simplification agent; triage, re-run tests
-- [ ] 3.2 Six-step job: one connection, `reqs=6`, per run on both benches; with `conn: "step"`, six connections of one request
-- [ ] 3.3 Server closing after three requests: two connections of three requests, all six steps `OK`
-- [ ] 3.4 Server restarted between runs: the next run works
+- [x] 3.1 Code-review agents (one adversarial) and a simplification agent; triage, re-run tests
+  - Accepted: ARP miss on a kept connection falls back to a new connect; a retry that runs out of time is the per-step `TIMEOUT`; held connection closed before interleaved commands and at task stop; spec wording of the retry; dead null checks and comments trimmed. Unit tests 1059/1059.
+- [x] 3.2 Six-step job: one connection, `reqs=6`, per run on both benches; with `conn: "step"`, six connections of one request
+- [x] 3.3 Server closing after three requests: two connections of three requests, all six steps `OK`
+  - 2026-11-13, both benches, final build: c1/c2 `reqs=3` each per run, health `ok`, 66 bytes (all 33 registers), 0 fails.
+- [x] 3.4 Server restarted between runs: the next run works
+  - Server restarted three times during the bench; every following run ended `ok`. 3.2: .174 `conn` run, one connection `reqs=6` per run (4 runs); .80 `conn` step, six connections `reqs=1` per run (3 runs).
