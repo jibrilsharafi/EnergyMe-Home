@@ -81,7 +81,25 @@ From **Connect it to WiFi**, the device scans for nearby networks and lists them
 
 ### 4.5 Configure each channel
 
-Now you map each physical CT to a meaningful name and role in the UI. Go to **Channels** in the top menu and configure each channel that has a CT connected.
+Now you map each physical CT to a meaningful name and role in the UI.
+
+#### Guided setup (recommended)
+
+On a new device (firmware 2.9.0 or later), the first page after the password is a **guided setup** in four steps:
+
+1. **Cloud.** Keep cloud services on (automatic updates, remote access, the EnergyMe Portal) or run local only. The device does not connect to the cloud until you finish the setup.
+2. **Supply.** Single-phase, three-phase or North American split-phase. On a three-phase supply, also pick the phase the device's own L wire is connected to ([§3.2](01-installation.md#32-connect-the-power-supply-l-and-n)).
+3. **Circuits.** One entry per circuit: name, role, CT size, and for a three-phase load its three CTs and their phases. The page fills in the channels, labels and groups for you.
+4. **Phase check.** On a three-phase supply, switch the circuits on and the device checks that every CT is on the right phase and the right way round, in a few minutes. See **[Appendix B.5](appendices.md#b5-phase-check)**.
+
+Press **Finish** to save. **Skip setup** on the first step stores only the cloud choice and opens the dashboard; the channels can then be set by hand as below. Either way, on a new device the energy counters start from zero at that moment, so nothing measured during the installation is counted.
+
+> **ⓘ NOTE: Running the setup again**  
+> **Configuration → Setup Wizard → Run setup again** reopens the guided setup on a device already in use, for example after adding circuits. It starts from the current configuration and keeps each CT's size and custom names; energy history and the other settings are kept, and the counters are **not** reset. A device updated from an older firmware, or restored from a backup made by one, is treated as already set up and never sent to the guided setup on its own.
+
+#### Configuring channels by hand
+
+Go to **Channels** in the top menu and configure each channel that has a CT connected.
 
 Each channel has the following fields:
 
@@ -89,7 +107,7 @@ Each channel has the following fields:
 | --- | --- |
 | **Label** | A free-text name (e.g., "Grid", "Kitchen", "EV charger"). It's the name that will appear on the dashboard |
 | **Phase** | The AC phase the CT is clamped on, on the same numbering as the **Supply phase** selector at the top of the Channels page, which you set to the line of the device's own L wire ([§3.2](01-installation.md#32-connect-the-power-supply-l-and-n); 1 on a new device, Channel 0's former phase on a device upgraded from a firmware older than 2.8.0). Use `1` for European single-phase and for standard 120 V North American loads. Use `2` or `3` for the other two phases of a three-phase system (see [Appendix B](appendices.md#appendix-b-three-phase-configuration)). Channel 0 is set like any other channel, except that it cannot be `240V (Split Phase)`. Use **`240V (Split Phase)`** for a North American 240 V circuit that spans both legs L1-L2 (see [Appendix B.3](appendices.md#b3-north-american-120240-v-split-phase)); the firmware automatically applies a 2× voltage multiplier because the voltage reference is line-to-neutral (≈120 V) while the circuit is line-to-line (240 V). |
-| **Reverse** | Flips the sign of a channel. Normally you won't need this: EnergyMe auto-detects reversed CTs on first activation and corrects them automatically. Manual toggle is available if needed (e.g., a channel role changes). Flips the sign instantly, no need to reopen the panel |
+| **Reverse** | Flips the sign of a channel. Normally you won't need this: EnergyMe auto-detects reversed CTs on first activation and corrects them automatically (on a three-phase device it waits for `Load` and `PV` channels while the guided setup is open, so a CT on the wrong phase is left to the [phase check](appendices.md#b5-phase-check) instead of being "fixed" by flipping it). Manual toggle is available if needed (e.g., a channel role changes). Flips the sign instantly, no need to reopen the panel |
 | **Active** | Enables the channel. Untick for unused channels. **Channel 0 is the exception:** it's always active and this can't be unticked, even if you never clamped a CT on it (see [§3.3](01-installation.md#33-install-the-ct-on-channel-0-main-line)) |
 | **Grouping** | Channels sharing the same group label are combined into one card on the home dashboard. Use this for multi-phase loads: set all three phase CTs of your oven to "Oven" and the dashboard will show total power for the whole appliance |
 | **Role** | What the channel represents (see table below) |
@@ -185,7 +203,7 @@ Repeat for every channel that uses a non-standard CT.
 > Most reversed CTs are auto-corrected by EnergyMe on first activation. But if a channel ever reads with the wrong sign (e.g., shows -8 W when you expect +8 W), you don't need to reopen the panel. Just tick **Reverse** for that channel in [§4.5](#45-configure-each-channel); the sign flips instantly.
 
 > **ⓘ NOTE: Three-phase installs — a low power factor can mean a wrong Phase setting**  
-> See the power-factor check in **[Appendix B.1](appendices.md#b1-three-phase-main-supply)** if a channel's numbers look plausible but off.
+> The [phase check](appendices.md#b5-phase-check) in the guided setup catches this for you. Without it, see the power-factor check in **[Appendix B.1](appendices.md#b1-three-phase-main-supply)** if a channel's numbers look plausible but off.
 
 > **✅ TIP: The "kettle test" (instant verification)**  
 > Turn on a single high-power load on a known circuit (e.g., a kettle in the kitchen). You should see the instantaneous power increase **on that one branch channel** and on Channel 0 by approximately the same amount.
@@ -199,7 +217,7 @@ Repeat for every channel that uses a non-standard CT.
 > **✅ Always keep the device on the latest firmware.** Updates aren't only new features: past releases have shipped fixes for measurement accuracy, security (the mandatory password gate and login lockout in [§4.4](#44-change-the-default-password) were both added this way), and stability. Check **[GitHub Releases](https://github.com/jibrilsharafi/EnergyMe-Home/releases/latest)** for what changed in each version.
 
 > **✅ TIP: Let the device update itself**  
-> On an EnergyMe device (not a community/self-built one), enable **Cloud Services** in **Configuration**. Once enabled, new firmware is fetched and installed automatically in the background, no bell icon to watch for and no manual step on the Update page.
+> On an EnergyMe device (not a community/self-built one), keep **Cloud Services** on in **Configuration** (on by default on devices set up with firmware 2.9.0 or later, unless you chose local only in the guided setup). Once enabled, new firmware is fetched and installed automatically in the background, no bell icon to watch for and no manual step on the Update page.
 
 > **⚠ WARNING: An EnergyMe device with Cloud Services off gets no update notification at all**  
 > Updates on these devices are assumed to be handled through the cloud, so the bell icon below only ever appears on **community (self-built)** devices. If you keep Cloud Services disabled, check [GitHub Releases](https://github.com/jibrilsharafi/EnergyMe-Home/releases/latest) yourself now and then, since nothing on the device will tell you a new version exists.

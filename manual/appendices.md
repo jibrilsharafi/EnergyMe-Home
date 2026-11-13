@@ -44,7 +44,7 @@ Fill in during installation (where known), take a photo before closing the panel
 
 #### Software
 
-In **Channels** ([§4.5](02-setup.md#45-configure-each-channel)), set up the three channels like this:
+The [guided setup](02-setup.md#guided-setup-recommended) builds this for you from one three-phase circuit. By hand, in **Channels** ([§4.5](02-setup.md#45-configure-each-channel)), set up the three channels like this:
 
 | Channel | Label | Phase | Active | Grouping | Role |
 | --- | --- | --- | --- | --- | --- |
@@ -57,7 +57,7 @@ The three channels share the same **Grouping** value (`Grid`), so the dashboard 
 > **ⓘ Override the default group.** The Grouping field is pre-filled with `Group 0`, `Group 1`, `Group 2`, etc., by default. For three-phase grouping you must **replace** the default value with the shared group name (e.g., `Grid`) on each of the three channels.
 
 > **✅ TIP: Use power factor to catch a wrong phase assignment**  
-> A channel with the wrong `Phase` setting still shows plausible-looking numbers, just wrong ones, so it's easy to miss. The fast check: put a purely resistive load on the circuit (a kettle, a resistive heater) and look at its power factor. A resistive load should read **close to 100% PF**. If it instead reads **close to 50% PF**, that channel is very likely on the wrong phase (each phase is 120° apart, and being 120° off collapses a 100% PF load to almost exactly 50%). Try the other phase settings and watch the power factor climb back towards 100%.
+> A channel with the wrong `Phase` setting still shows plausible-looking numbers, just wrong ones, so it's easy to miss. The [phase check](#b5-phase-check) in the guided setup catches it for you. By hand, the fast check: put a purely resistive load on the circuit (a kettle, a resistive heater) and look at its power factor. A resistive load should read **close to 100% PF**. If it instead reads **close to 50% PF**, that channel is very likely on the wrong phase (each phase is 120° apart, and being 120° off collapses a 100% PF load to almost exactly 50%). Try the other phase settings and watch the power factor climb back towards 100%.
 
 > **ⓘ NOTE: Accuracy on L2 and L3**  
 > The device only measures the voltage of the phase it is powered from. Channels on the other two phases are computed assuming the three voltages have the same amplitude and are exactly 120° apart, so expect them to be slightly less accurate than the channels on the device's own phase (typically within 1-2%, depending on how balanced your supply is).
@@ -173,6 +173,34 @@ Instead of one CT per breaker, you can bundle two (or more) breaker **output** w
 
 > **ⓘ NOTE: This is different from the software Grouping field**  
 > [Grouping](02-setup.md#45-configure-each-channel) combines **already-separate channels** on the dashboard: each CT still measures its own breaker independently, and the device adds the numbers together in software after the fact. Summing at the clamp is a **hardware-level sum**: the CT itself only ever sees one merged current, before the device measures anything. There is no internal-calculation bug either way, Modbus, the API, and the dashboard all report a correct total for that channel. What you lose by summing at the clamp is the ability to see the bundled breakers individually: the device never measured them separately, so it cannot un-sum them afterwards.
+
+### B.5 Phase check
+
+A CT on the wrong phase, or clamped the wrong way round, still gives plausible-looking numbers, so it is the most common mistake on a three-phase install. While the [guided setup](02-setup.md#guided-setup-recommended) is open (firmware 2.9.0 or later), the device checks for it on its own.
+
+**What is checked.** Only on a three-phase supply (at least one channel on phase 2 or 3):
+
+- **Three-phase lines:** three channels with the same group and role on phases 1, 2 and 3, like the examples in [B.1](#b1-three-phase-main-supply) and [B.2](#b2-three-phase-branch-load-eg-ev-charger-heat-pump-oven). The device compares the three CTs with each other, so it can tell which CT sits on which phase.
+- **Single-phase circuits:** any other `Load` or `PV / Solar` channel. A single CT can only be compared with the expected power factor of its role, so a load with an unusual power factor (around 0.5) can pass with a wrong setting; the PF check in [B.1](#b1-three-phase-main-supply) still applies.
+- **Grid lines** are checked for the phases only, never for the direction: a grid line exporting solar power reads negative by design. Battery, inverter and bidirectional lines are checked the same way; on their own they are not checked.
+
+**How to use it.** Switch the circuits on, at least a few hundred watts each, and wait a few minutes on the **Phase check** step. Each channel shows its live current, active power and power factor. Each circuit shows one of:
+
+| State | Meaning | What to do |
+| --- | --- | --- |
+| **Waiting for load** | Not enough current yet | Switch the load on and wait |
+| **✓ OK** | The current settings fit the readings | Nothing |
+| **Fix found** | Only the direction is wrong: one or more CTs of a line are reversed | Press **Apply** |
+| **Choose** | The phases of a line look wrong and more than one setting fits the readings | Pick one (the first, **Most likely**, is the best fit; check the PF it would give) and press **Apply** |
+| **Check phase** | A single-phase circuit does not fit its settings | Pick one of the proposed settings (the first is the most likely) and press **Apply**; a load with a genuinely low power factor can show this too |
+| **Validating** | Settings just applied | Wait a moment |
+
+Nothing changes until you press **Apply**, and the device never changes the configuration on its own. After Apply, the circuit is measured again with the new settings. If you move or turn a CT by hand while the page is open, the device notices within a couple of minutes and measures that circuit again.
+
+The check runs only while the guided setup is open and stops when you press **Finish** or after 2 hours (on a device already in use, also when it restarts). It uses no data outside the device.
+
+> **ⓘ NOTE: Phases are relative to the device's own phase**  
+> With a single voltage input, the device can only tell how the CTs are arranged relative to the phase it is powered from, not which panel busbar is "L1". If all three phases of a line are rotated by the same step, the readings are identical; that is why the supply phase step in the setup matters ([B.1](#b1-three-phase-main-supply)).
 
 ---
 
