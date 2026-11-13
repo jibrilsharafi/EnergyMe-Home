@@ -117,6 +117,7 @@ struct Job {
     uint32_t deadlineS;
     uint32_t maxBytes;
     bool batch;               // publish: batch
+    bool connPerStep;         // modbus_tcp conn: "step" (a connection per step) instead of "run" (one per run)
     // Reserved vars, with defaults applied.
     uint32_t overlapS;
     uint32_t backfillS;
