@@ -155,14 +155,14 @@ namespace GatewayExec
 
     // `closed` is set when the peer closed the connection before `length` bytes arrived.
     static bool _readExact(GatewayNet::Connection& connection, uint8_t* buffer, size_t length, const Prepared& prepared, Result& result,
-                           bool* closed) {
+                           bool* closed = nullptr) {
         size_t got = 0;
-        *closed = false;
+        if (closed != nullptr) *closed = false;
         for (uint32_t loops = 0; got < length && loops < MAX_FRAME_READ_LOOPS; loops++) {
             size_t n = 0;
             GatewayNet::Status status = connection.read(buffer + got, length - got, &n, prepared.deadline, READ_WAIT_MS);
             if (status != GatewayNet::Status::OK) {
-                *closed = status == GatewayNet::Status::CLOSED;
+                if (closed != nullptr) *closed = status == GatewayNet::Status::CLOSED;
                 break;
             }
             if (n > 0 && result.firstByteMs == 0) result.firstByteMs = elapsedSince(prepared.start);
@@ -196,7 +196,7 @@ namespace GatewayExec
         }
         size_t responseLength = modbusFrameLength(response, MODBUS_LENGTH_PREFIX);
         if (responseLength == 0 ||
-            !_readExact(connection, response + MODBUS_LENGTH_PREFIX, responseLength - MODBUS_LENGTH_PREFIX, prepared, result, &closed)) {
+            !_readExact(connection, response + MODBUS_LENGTH_PREFIX, responseLength - MODBUS_LENGTH_PREFIX, prepared, result)) {
             return Exchange::BAD_FRAME;
         }
         ModbusParse parsed = parseModbusResponse(response, responseLength, transactionId, rq.address.unit, fc, (uint16_t)count, decoded,
@@ -224,15 +224,21 @@ namespace GatewayExec
         return true;
     }
 
-    // Opens `connection`, or keeps it when `reuse` (the MAC compare still runs
-    // before the first byte). False with `result` set on failure.
-    static bool _openModbus(GatewayNet::Connection& connection, const Prepared& prepared, Result& result, bool reuse) {
-        if (!reuse) {
-            connection.close();
-            return connectAndSend(connection, prepared, result, false, nullptr, 0);
+    // Keeps `connection` when `*reuse` and the MAC compare passes, else opens a new
+    // one and clears `*reuse`. False with `result` set on failure.
+    static bool _openModbus(GatewayNet::Connection& connection, const Prepared& prepared, Result& result, bool* reuse) {
+        if (*reuse) {
+            if (checkMacBeforeFirstByte(prepared, result, false)) {
+                result.connected = true; // established: a timeout is a per-step result, not a connect failure
+                return true;
+            }
+            // Nothing was sent since the connect, so an ARP entry evicted meanwhile (an
+            // interleaved scan) reads as a mismatch: a new connect refreshes it and decides.
+            setOutcome(result, Status::OK, "");
+            *reuse = false;
         }
-        result.connected = true; // established: a timeout is a per-step result, not a connect failure
-        return checkMacBeforeFirstByte(prepared, result, false);
+        connection.close();
+        return connectAndSend(connection, prepared, result, false, nullptr, 0);
     }
 
     static void _runModbusOn(GatewayNet::Connection& connection, bool reuse, const Prepared& prepared, Result& result) {
@@ -249,7 +255,7 @@ namespace GatewayExec
             setOutcome(result, Status::FAILED, "NO_MEMORY", "Could not allocate the decode buffer");
             return;
         }
-        if (!_openModbus(connection, prepared, result, reuse)) {
+        if (!_openModbus(connection, prepared, result, &reuse)) {
             result.release();
             return;
         }
@@ -259,7 +265,14 @@ namespace GatewayExec
                                       result.registers, &decodedCount, &exception);
         if (modbusRetryOnFresh(reuse, rq.modbusWrite, exchange == Exchange::SEND_FAILED, exchange == Exchange::CLOSED)) {
             result.connected = false; // a failed reconnect stops the run like any connect failure
-            if (!_openModbus(connection, prepared, result, false)) {
+            bool fresh = false;
+            if (!_openModbus(connection, prepared, result, &fresh)) {
+                // Out of time because the peer closed late (an RTU unit not answering):
+                // the per-step timeout a fresh connection would have reported.
+                if (strcmp(result.reasonCode, "TIMEOUT") == 0) {
+                    result.connected = true;
+                    setOutcome(result, Status::FAILED, "TIMEOUT", "No Modbus response within timeout_ms");
+                }
                 result.release();
                 return;
             }
@@ -300,7 +313,7 @@ namespace GatewayExec
     void runModbus(const Prepared& prepared, Result& result) {
         ModbusSession* session = prepared.request->session;
         if (session == nullptr) {
-            GatewayNet::Connection connection; // one-shot: closed on return
+            GatewayNet::Connection connection;
             _runModbusOn(connection, false, prepared, result);
             return;
         }
