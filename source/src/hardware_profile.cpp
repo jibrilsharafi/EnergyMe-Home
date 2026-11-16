@@ -371,19 +371,20 @@ static ProductLine buildFallbackProduct() {
 
 // Select the profile used in community (unprovisioned) mode: scoped to the build's
 // fallback product, honouring the optional PCB_VERSION_FALLBACK compile-time flag,
-// otherwise that product's latest profile.
+// otherwise that product's original revision (see communityFallbackVersion).
 static const HardwareProfile* pickCommunityFallback() {
     ProductLine product = buildFallbackProduct();
+    uint8_t overrideVersion = 0;
 #ifdef PCB_VERSION_FALLBACK
-    const HardwareProfile* p = ProfileSelection::find(PCB_PROFILES, PCB_PROFILES_COUNT, product, static_cast<uint8_t>(PCB_VERSION_FALLBACK));
-    if (p != nullptr) {
-        LOG_INFO("Community mode: using PCB_VERSION_FALLBACK=v%u (%s)", p->version, productLineToString(product));
-        return p;
+    overrideVersion = static_cast<uint8_t>(PCB_VERSION_FALLBACK);
+    if (ProfileSelection::find(PCB_PROFILES, PCB_PROFILES_COUNT, product, overrideVersion) == nullptr) {
+        LOG_WARNING("PCB_VERSION_FALLBACK=%d does not match any known %s profile - using the default fallback",
+                    (int)PCB_VERSION_FALLBACK, productLineToString(product));
     }
-    LOG_WARNING("PCB_VERSION_FALLBACK=%d does not match any known %s profile - using that product's latest",
-                (int)PCB_VERSION_FALLBACK, productLineToString(product));
 #endif
-    return ProfileSelection::latestForProduct(PCB_PROFILES, PCB_PROFILES_COUNT, product);
+    const HardwareProfile* p = ProfileSelection::communityFallback(PCB_PROFILES, PCB_PROFILES_COUNT, product, overrideVersion);
+    LOG_INFO("Community mode: using %s v%u", productLineToString(product), p->version);
+    return p;
 }
 
 // Sanity-check the whole table once, so a typo in any entry is logged whichever profile
