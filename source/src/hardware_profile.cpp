@@ -386,7 +386,23 @@ static const HardwareProfile* pickCommunityFallback() {
     return ProfileSelection::latestForProduct(PCB_PROFILES, PCB_PROFILES_COUNT, product);
 }
 
+// Sanity-check the whole table once, so a typo in any entry is logged whichever profile
+// (provisioned or community fallback) ends up selected.
+static void validateProfileTable() {
+    for (size_t i = 0; i < PCB_PROFILES_COUNT; i++) {
+        const HardwareProfile& p = PCB_PROFILES[i];
+        if (!HardwareLogic::muxMapIsValid(p.muxChannelMap, p.muxChannelCount, p.muxChipChannels)) {
+            LOG_ERROR("Hardware profile %s v%u has an invalid mux channel map", productLineToString(p.product), p.version);
+        }
+        if (!HardwareLogic::pgaRegisterIsValid(p.pgaIb)) {
+            LOG_ERROR("Hardware profile %s v%u has an invalid pgaIb %u", productLineToString(p.product), p.version, p.pgaIb);
+        }
+    }
+}
+
 void initHardwareProfile() {
+    validateProfileTable();
+
 #ifdef FORCE_COMMUNITY_MODE
     globalCommunityMode = true;
     globalHwProfile = pickCommunityFallback();
@@ -436,9 +452,6 @@ void initHardwareProfile() {
         return;
     }
 
-    if (!HardwareLogic::muxMapIsValid(profile->muxChannelMap, profile->muxChannelCount, profile->muxChipChannels)) {
-        LOG_ERROR("Hardware profile %s v%u has an invalid mux channel map", productLineToString(product), version);
-    }
     globalHwProfile = profile;
     globalCommunityMode = false;
     LOG_INFO("Hardware profile selected: %s v%u (pcb_revision=\"%s\")",
