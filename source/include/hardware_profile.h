@@ -52,6 +52,13 @@ struct HardwareProfile {
     float voltageDividerR1;
     float voltageDividerR2;
 
+    // PGA_IB register value (ADE7953 Table 6: 0 = x1, 1 = x2, ...) for current channel B,
+    // which reads every multiplexed CT. Omitted (0 = x1) on profiles without an input
+    // divider. Home v6.2 / Pro v1.1 put a 1:2 divider on each mux input and set 1 (x2),
+    // so the net gain from jack to ADC stays 1 and the CT scale factors are unchanged.
+    // Channel A (direct CT0, no divider) always runs at PGA_IA = DEFAULT_PGA_REGISTER.
+    uint8_t pgaIb;
+
     // Total physical channels on the mux chip (e.g. 16 for 74HC4067, 8 for 74HC4051).
     // Used as the runtime upper bound in Multiplexer::setChannel().
     // muxChannelMap is sized to HW_PROFILE_MAX_MUX_CHANNELS (compile-time max across all versions).

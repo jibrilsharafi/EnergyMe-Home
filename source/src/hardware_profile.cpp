@@ -9,6 +9,7 @@
 
 #include "constants.h"
 #include "factory_keys.h"
+#include "hardware_logic.h"
 
 // Known PCB hardware profiles.
 // To add support for a new PCB version: add a new entry above the older entries of
@@ -47,6 +48,9 @@ const HardwareProfile PCB_PROFILES[] = {
         // Voltage sensing: same network as Pro v1.0
         .voltageDividerR1 = 153000.0f,
         .voltageDividerR2 = 180.0f,
+
+        // 1:2 divider on every mux input, so PGA_IB = x2 keeps the net gain at 1
+        .pgaIb = 1,
 
         // 11 mux channels wired (CT1-CT11) + 1 direct ADE7953 input (CT0) = 12 channels.
         // Y3-Y7 are grounded/unused. The CT-to-Y routing differs from Pro v1.0.
@@ -174,6 +178,9 @@ const HardwareProfile PCB_PROFILES[] = {
         // Voltage sensing (same network as v6.1)
         .voltageDividerR1 = 153000.0f,
         .voltageDividerR2 = 180.0f,
+
+        // 1:2 divider on every mux input, so PGA_IB = x2 keeps the net gain at 1
+        .pgaIb = 1,
 
         // 15 mux channels (Y0, Y2-Y15) + 1 direct ADE7953 input = 16 channels.
         .muxChipChannels   = 16,
@@ -429,6 +436,9 @@ void initHardwareProfile() {
         return;
     }
 
+    if (!HardwareLogic::muxMapIsValid(profile->muxChannelMap, profile->muxChannelCount, profile->muxChipChannels)) {
+        LOG_ERROR("Hardware profile %s v%u has an invalid mux channel map", productLineToString(product), version);
+    }
     globalHwProfile = profile;
     globalCommunityMode = false;
     LOG_INFO("Hardware profile selected: %s v%u (pcb_revision=\"%s\")",

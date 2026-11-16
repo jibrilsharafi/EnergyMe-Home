@@ -7,6 +7,7 @@
 #include "taskprofiler.h"
 #include "duration_format.h"
 #include "grid_frequency.h"
+#include "hardware_logic.h"
 #include "mqtt.h"
 #include "shadow_logic.h"
 
@@ -1906,7 +1907,14 @@ namespace Ade7953
     {
         _setPgaGain(DEFAULT_PGA_REGISTER, Ade7953Channel::A, MeasurementType::VOLTAGE);
         _setPgaGain(DEFAULT_PGA_REGISTER, Ade7953Channel::A, MeasurementType::CURRENT);
-        _setPgaGain(DEFAULT_PGA_REGISTER, Ade7953Channel::B, MeasurementType::CURRENT);
+        // Channel B carries the multiplexed CTs. Profiles with an input divider raise its PGA to
+        // keep the net gain at 1, so the LSB scaling in _calculateLsbValues holds for both channels.
+        uint8_t pgaIb = globalHwProfile->pgaIb;
+        if (!HardwareLogic::pgaRegisterIsValid(pgaIb)) {
+            LOG_ERROR("Invalid pgaIb %u in hardware profile, using the default PGA", pgaIb);
+            pgaIb = DEFAULT_PGA_REGISTER;
+        }
+        _setPgaGain(pgaIb, Ade7953Channel::B, MeasurementType::CURRENT);
 
         writeRegister(DISNOLOAD_8, BIT_8, DEFAULT_DISNOLOAD_REGISTER);
 
