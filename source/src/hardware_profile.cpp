@@ -16,7 +16,70 @@
 // first entry of a product is that product's "latest" (community fallback).
 const HardwareProfile PCB_PROFILES[] = {
     {
-        // EnergyMe Home Pro v1.0 (ESP32-S3-WROOM-1U-N16R8, W5500 Ethernet, 12 channels).
+        // EnergyMe Home Pro v1.1 (ESP32-S3-WROOM-1U-N16R8, W5500 Ethernet, 12 channels).
+        // Adds a 1k/1k divider on every multiplexed CT input (mux crosstalk fix, issue #255).
+        // Pinout and mux map read from the PCB netlist (energyme-home-pro-pcb, tag v1.1).
+        .product = ProductLine::HOMEPRO,
+        .version = 11, // v1.1
+
+        // RGB LED
+        .ledRedPin   = 40,
+        .ledGreenPin = 41,
+        .ledBluePin  = 39,
+
+        // Button
+        .buttonPin = 0,
+
+        // Analog multiplexer (74HC4067) select lines - same as Pro v1.0
+        .muxS0Pin = 21,
+        .muxS1Pin = 47,
+        .muxS2Pin = 48,
+        .muxS3Pin = 38,
+
+        // ADE7953 SPI
+        .ade7953SsPin        = 10,
+        .ade7953SckPin       = 13,
+        .ade7953MisoPin      = 12,
+        .ade7953MosiPin      = 11,
+        .ade7953ResetPin     = 9,
+        .ade7953InterruptPin = 14,
+
+        // Voltage sensing: same network as Pro v1.0
+        .voltageDividerR1 = 153000.0f,
+        .voltageDividerR2 = 180.0f,
+
+        // 11 mux channels wired (CT1-CT11) + 1 direct ADE7953 input (CT0) = 12 channels.
+        // Y3-Y7 are grounded/unused. The CT-to-Y routing differs from Pro v1.0.
+        .muxChipChannels   = 16,
+        .muxChannelCount   = 11,
+        .totalChannelCount = 12,
+        .muxChannelMap = {
+            //  logical  physical  CT label
+            15, //   0       Y15    CT1
+            14, //   1       Y14    CT2
+            13, //   2       Y13    CT3
+            12, //   3       Y12    CT4
+            11, //   4       Y11    CT5
+            0,  //   5       Y0     CT6
+            10, //   6       Y10    CT7
+            1,  //   7       Y1     CT8
+            9,  //   8       Y9     CT9
+            2,  //   9       Y2     CT10
+            8,  //  10       Y8     CT11
+            0, 0, 0, 0, 0, // unused padding to HW_PROFILE_MAX_MUX_CHANNELS
+        },
+
+        // W5500 Ethernet on a dedicated SPI bus (unchanged from v1.0)
+        .hasEthernet = true,
+        .ethCsPin    = 16,
+        .ethIrqPin   = 5,
+        .ethRstPin   = 4,
+        .ethSckPin   = 15,
+        .ethMisoPin  = 7,
+        .ethMosiPin  = 6,
+    },
+    {
+        // EnergyMe Home Pro v1.0(ESP32-S3-WROOM-1U-N16R8, W5500 Ethernet, 12 channels).
         // Pinout extracted from the PCB netlist (energyme-home-pro-pcb, 2026-08-31);
         // to be verified on hardware at bring-up.
         .product = ProductLine::HOMEPRO,
@@ -77,6 +140,64 @@ const HardwareProfile PCB_PROFILES[] = {
         .ethSckPin   = 15,
         .ethMisoPin  = 7,
         .ethMosiPin  = 6,
+    },
+    {
+        // EnergyMe Home v6.2: v6.1 plus a 1k/1k divider on every multiplexed CT input
+        // (mux crosstalk fix, issue #255). Y1 is now tied to GND. Y8/Y9 carry CT10/CT9,
+        // swapped against v6.1 for routing. Software numbering keeps the v6.1 convention
+        // (no CT2, CT3 is software channel 2).
+        .product = ProductLine::HOME,
+        .version = 62, // v6.2
+
+        // RGB LED
+        .ledRedPin   = 40,
+        .ledGreenPin = 41,
+        .ledBluePin  = 39,
+
+        // Button
+        .buttonPin = 0,
+
+        // Analog multiplexer (74HC4067) select lines
+        .muxS0Pin = 48,
+        .muxS1Pin = 38,
+        .muxS2Pin = 21,
+        .muxS3Pin = 47,
+
+        // ADE7953 SPI
+        .ade7953SsPin        = 10,
+        .ade7953SckPin       = 13,
+        .ade7953MisoPin      = 12,
+        .ade7953MosiPin      = 11,
+        .ade7953ResetPin     = 9,
+        .ade7953InterruptPin = 14,
+
+        // Voltage sensing (same network as v6.1)
+        .voltageDividerR1 = 153000.0f,
+        .voltageDividerR2 = 180.0f,
+
+        // 15 mux channels (Y0, Y2-Y15) + 1 direct ADE7953 input = 16 channels.
+        .muxChipChannels   = 16,
+        .muxChannelCount   = 15,
+        .totalChannelCount = 16,
+        .muxChannelMap = {
+            //  logical  physical  CT label
+            0,  //   0       Y0     CT1
+            2,  //   1       Y2     CT3
+            3,  //   2       Y3     CT4
+            4,  //   3       Y4     CT5
+            5,  //   4       Y5     CT6
+            6,  //   5       Y6     CT7
+            7,  //   6       Y7     CT8
+            9,  //   7       Y9     CT9  (swapped with Y8 versus v6.1)
+            8,  //   8       Y8     CT10 (swapped with Y9 versus v6.1)
+            10, //   9       Y10    CT11
+            11, //  10       Y11    CT12
+            12, //  11       Y12    CT13
+            13, //  12       Y13    CT14
+            14, //  13       Y14    CT15
+            15, //  14       Y15    CT16
+            0,  //  15       (unused padding to reach HW_PROFILE_MAX_MUX_CHANNELS)
+        },
     },
     {
         .product = ProductLine::HOME,
