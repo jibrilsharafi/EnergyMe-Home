@@ -142,7 +142,10 @@ All design files (PCB layouts, BOMs, Gerber files, Pick-and-Place files) are gro
 
 Firmware 2.0.0 selects its hardware profile at runtime from the NVS key `factory_ns::pcb_revision`, matched against the entries in `source/src/hardware_profile.cpp::PCB_PROFILES[]`.
 
-- **v6.1** (current production): 16 channels (1 direct + 15 multiplexed via 74HC4067), ZMPT107-1 voltage transformer.
+- **Home v6.2**: v6.1 plus a 1k/1k divider on every multiplexed CT input (fixes mux crosstalk); the firmware runs PGA_IB at x2 so the net gain is unchanged. 16 channels, CT9 and CT10 swapped on the mux versus v6.1.
+- **Home Pro v1.1**: Home Pro v1.0 with the same input dividers and PGA_IB x2, new mux routing. 12 channels.
+- **Home Pro v1.0**: 12 channels (1 direct + 11 multiplexed), W5500 Ethernet.
+- **Home v6.1** (current production): 16 channels (1 direct + 15 multiplexed via 74HC4067), ZMPT107-1 voltage transformer.
 - **v5 and earlier**: not supported by 2.0.x firmware. Existing v5 devices stay on the 1.x line; critical fixes are cherry-picked to the `legacy/v5` branch.
 - **Community / self-built boards** (no factory NVS provisioning): the firmware falls back to the profile selected by the `-DPCB_VERSION_FALLBACK` build flag in `platformio.ini` (or to `PCB_PROFILES[0]` if unset) and starts in **community mode**: cloud services are disabled, all local integrations (REST API, Modbus TCP, custom MQTT, InfluxDB) remain fully functional.
 
