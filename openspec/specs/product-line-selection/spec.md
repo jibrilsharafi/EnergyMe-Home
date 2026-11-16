@@ -38,12 +38,12 @@ Profile lookup SHALL be keyed by the pair (product, PCB version). Product lines 
 
 ### Requirement: Fallback profile follows the build's product
 
-When no profile can be selected (no factory NVS, missing or malformed `pcb_revision`, unknown product), the system SHALL fall back to the latest profile of the build's fallback product in community mode. The fallback product defaults to Home; every Home Pro build - production included - SHALL pin its fallback product to Home Pro, so a Pro binary never falls back to a Home pinout. Community builds targeting other hardware SHALL pin their product and version explicitly, via build-time fallback defines or by writing the factory NVS keys.
+When no profile can be selected (no factory NVS, missing or malformed `pcb_revision`, unknown product), the system SHALL fall back to the original revision of the build's fallback product in community mode (Home v6.1, Home Pro v1.0), never to the newer divider-equipped revisions (Home v6.2, Home Pro v1.1), which run PGA_IB at x2 and misread a board without the input divider. A build-time `PCB_VERSION_FALLBACK` naming a known profile of the product SHALL override that default. The fallback product defaults to Home; every Home Pro build - production included - SHALL pin its fallback product to Home Pro, so a Pro binary never falls back to a Home pinout. Community builds targeting other hardware SHALL pin their product and version explicitly, via build-time fallback defines or by writing the factory NVS keys.
 
 #### Scenario: Community device with no factory NVS
 
 - **WHEN** a self-built device boots a Home build with no factory namespace
-- **THEN** the latest Home profile is used in community mode, as today
+- **THEN** the Home v6.1 profile is used in community mode, not the latest revision
 
 #### Scenario: Unprovisioned Home Pro bench board
 
@@ -53,7 +53,7 @@ When no profile can be selected (no factory NVS, missing or malformed `pcb_revis
 #### Scenario: Pro production device with damaged factory NVS
 
 - **WHEN** a Pro production build boots and `pcb_revision` is malformed or `product_line` is unreadable
-- **THEN** the device enters community mode on the latest Home Pro profile - never a Home pinout - because the binary's product is known at compile time
+- **THEN** the device enters community mode on the Home Pro v1.0 profile - never a Home pinout - because the binary's product is known at compile time
 
 ### Requirement: Channel count follows the selected profile
 

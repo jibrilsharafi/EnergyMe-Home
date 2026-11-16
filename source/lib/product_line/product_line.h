@@ -78,6 +78,28 @@ const Profile* latestForProduct(const Profile* profiles, size_t count, ProductLi
     return &profiles[0];
 }
 
+// PCB version a board with no usable factory NVS falls back to. Deliberately the original
+// revision, not the latest: community and DIY boards are overwhelmingly that hardware, and
+// the newer revisions (Home v6.2, Pro v1.1) run PGA_IB at x2 behind an input divider, which
+// reads 2x on a board without it. Newer revisions are always provisioned via factory NVS, or
+// pinned explicitly with PCB_VERSION_FALLBACK.
+constexpr uint8_t communityFallbackVersion(ProductLine product) {
+    return product == ProductLine::HOMEPRO ? 10 : 61;
+}
+
+// Profile used in community mode: overrideVersion (PCB_VERSION_FALLBACK, 0 = unset) when it
+// names a known profile of the product, else communityFallbackVersion(), else the product's latest.
+template <typename Profile>
+const Profile* communityFallback(const Profile* profiles, size_t count, ProductLine product, uint8_t overrideVersion) {
+    if (overrideVersion != 0) {
+        const Profile* p = find(profiles, count, product, overrideVersion);
+        if (p != nullptr) return p;
+    }
+    const Profile* p = find(profiles, count, product, communityFallbackVersion(product));
+    if (p != nullptr) return p;
+    return latestForProduct(profiles, count, product);
+}
+
 // Resolve factory NVS strings (either may be nullptr = key absent) to a profile.
 // An absent/empty product_line means HOME. productOut/versionOut are filled as far
 // as parsing got, for logging; profileOut is set only on SELECTED.

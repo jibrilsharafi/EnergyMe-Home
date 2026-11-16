@@ -158,6 +158,41 @@ void test_latest_for_product(void) {
     TEST_ASSERT_EQUAL_PTR(&PROFILES[0], ProfileSelection::latestForProduct(PROFILES, 2, ProductLine::HOMEPRO));
 }
 
+
+// Stub table in the real ordering (newest first per product), with the divider revisions on top.
+static const StubProfile FALLBACK_PROFILES[] = {
+    {ProductLine::HOMEPRO, 11},
+    {ProductLine::HOMEPRO, 10},
+    {ProductLine::HOME, 62},
+    {ProductLine::HOME, 61},
+    {ProductLine::HOME, 60},
+};
+static const size_t FALLBACK_COUNT = sizeof(FALLBACK_PROFILES) / sizeof(FALLBACK_PROFILES[0]);
+
+void test_community_fallback_is_the_original_revision(void) {
+    // No factory NVS (select() reports NO_REVISION) -> old revision, never the newest
+    TEST_ASSERT_EQUAL((int)Result::NO_REVISION, (int)run("", nullptr).result);
+    TEST_ASSERT_EQUAL_UINT8(61, ProfileSelection::communityFallback(FALLBACK_PROFILES, FALLBACK_COUNT, ProductLine::HOME, 0)->version);
+    TEST_ASSERT_EQUAL_UINT8(10, ProfileSelection::communityFallback(FALLBACK_PROFILES, FALLBACK_COUNT, ProductLine::HOMEPRO, 0)->version);
+    TEST_ASSERT_EQUAL_UINT8(61, ProfileSelection::communityFallbackVersion(ProductLine::HOME));
+    TEST_ASSERT_EQUAL_UINT8(10, ProfileSelection::communityFallbackVersion(ProductLine::HOMEPRO));
+}
+
+void test_community_fallback_override_and_unknown(void) {
+    // An explicit PCB_VERSION_FALLBACK still wins when it names a known profile of the product
+    TEST_ASSERT_EQUAL_UINT8(62, ProfileSelection::communityFallback(FALLBACK_PROFILES, FALLBACK_COUNT, ProductLine::HOME, 62)->version);
+    TEST_ASSERT_EQUAL_UINT8(11, ProfileSelection::communityFallback(FALLBACK_PROFILES, FALLBACK_COUNT, ProductLine::HOMEPRO, 11)->version);
+    // Wrong-product or unknown override falls back to the default, not to the latest
+    TEST_ASSERT_EQUAL_UINT8(61, ProfileSelection::communityFallback(FALLBACK_PROFILES, FALLBACK_COUNT, ProductLine::HOME, 11)->version);
+    TEST_ASSERT_EQUAL_UINT8(10, ProfileSelection::communityFallback(FALLBACK_PROFILES, FALLBACK_COUNT, ProductLine::HOMEPRO, 62)->version);
+    TEST_ASSERT_EQUAL_UINT8(61, ProfileSelection::communityFallback(FALLBACK_PROFILES, FALLBACK_COUNT, ProductLine::HOME, 99)->version);
+}
+
+void test_community_fallback_missing_default_uses_latest(void) {
+    // A table without the default revision still resolves to the product's latest entry
+    TEST_ASSERT_EQUAL_PTR(&FALLBACK_PROFILES[0], ProfileSelection::communityFallback(FALLBACK_PROFILES, 1, ProductLine::HOMEPRO, 0));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_artifact_home);
@@ -172,5 +207,8 @@ int main(int, char**) {
     RUN_TEST(test_select_is_keyed_by_product_and_version);
     RUN_TEST(test_select_community_reasons);
     RUN_TEST(test_latest_for_product);
+    RUN_TEST(test_community_fallback_is_the_original_revision);
+    RUN_TEST(test_community_fallback_override_and_unknown);
+    RUN_TEST(test_community_fallback_missing_default_uses_latest);
     return UNITY_END();
 }

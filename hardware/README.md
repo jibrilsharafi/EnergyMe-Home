@@ -147,7 +147,7 @@ Firmware 2.0.0 selects its hardware profile at runtime from the NVS key `factory
 - **Home Pro v1.0**: 12 channels (1 direct + 11 multiplexed), W5500 Ethernet.
 - **Home v6.1** (current production): 16 channels (1 direct + 15 multiplexed via 74HC4067), ZMPT107-1 voltage transformer.
 - **v5 and earlier**: not supported by 2.0.x firmware. Existing v5 devices stay on the 1.x line; critical fixes are cherry-picked to the `legacy/v5` branch.
-- **Community / self-built boards** (no factory NVS provisioning): the firmware falls back to the profile selected by the `-DPCB_VERSION_FALLBACK` build flag in `platformio.ini` (or to `PCB_PROFILES[0]` if unset) and starts in **community mode**: cloud services are disabled, all local integrations (REST API, Modbus TCP, custom MQTT, InfluxDB) remain fully functional.
+- **Community / self-built boards** (no factory NVS provisioning): the firmware falls back to the profile selected by the `-DPCB_VERSION_FALLBACK` build flag in `platformio.ini` (or to Home v6.1 / Home Pro v1.0 if unset) and starts in **community mode**: cloud services are disabled, all local integrations (REST API, Modbus TCP, custom MQTT, InfluxDB) remain fully functional.
 
 ## Safety Notes
 
