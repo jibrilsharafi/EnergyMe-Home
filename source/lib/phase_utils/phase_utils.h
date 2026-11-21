@@ -183,14 +183,10 @@ inline ActiveReactive toChannelFrame(float active, float reactive, bool reverse,
 }
 
 // What V1 is to a channel, applied to its raw pair before toChannelFrame. Split-phase
-// 240 V: V1 is one 120 V leg, so 2x. Supply without neutral (3x230 V): the meter's L is on
-// the voltage phase and its N on the line lagging it, so V1 is that pair's line-to-line
-// voltage, sqrt(3) times a line-to-neutral one and 30 deg ahead of the voltage phase. A
-// load between two lines reads against its own pair like any single-phase load (its phase
-// names the pair's first line), so it keeps 1x. A CT on one line of a three-wire circuit
-// (lineCurrent) is measured against the line-to-neutral voltage its line would have with a
-// neutral: 1/sqrt(3) and -30 deg. The rotations between lines and between pairs are the
-// same +-120 deg, so toChannelFrame needs nothing else.
+// 240 V: V1 is one 120 V leg, so 2x. Supply without neutral (3x230 V): the meter's N is on
+// the line lagging the voltage phase, so V1 is line-to-line, sqrt(3) times a line-to-neutral
+// voltage and 30 deg ahead of it. A line current (lineCurrent) then gets 1/sqrt(3) and
+// -30 deg; a load between two lines (its phase names the pair's first line) stays 1x.
 struct VoltageReference {
     float scale;
     float rotationDeg;

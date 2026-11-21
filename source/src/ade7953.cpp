@@ -3575,6 +3575,14 @@ namespace Ade7953
                 hasValidField = true;
             }
 
+            // Nor may a write reactivate a leftover split-phase channel
+            const bool active = jsonDocument["active"].is<bool>() ? jsonDocument["active"].as<bool>() : _channelData[channelIndex].active;
+            const uint8_t phase = jsonDocument["phase"].is<uint8_t>() ? jsonDocument["phase"].as<uint8_t>() : _channelData[channelIndex].phase;
+            if (_noNeutral && active && phase == PHASE_SPLIT_240) {
+                LOG_WARNING("Channel %u cannot be active at split-phase 240 V on a supply without neutral", channelIndex);
+                return false;
+            }
+
             // CT Specification validation with ranges
             if (jsonDocument["ctSpecification"].is<JsonObjectConst>()) {
                 if (jsonDocument["ctSpecification"]["currentRating"].is<float>()) {
@@ -4126,9 +4134,7 @@ namespace Ade7953
     Split-phase 240V channels are 180 deg from V1: only a sign (reverse) plus a 2x
     voltage multiplier, because V1 is a single 120V leg.
 
-    On a supply without neutral (3x230 V) V1 is line-to-line. A CT on one line of a
-    three-wire circuit (lineCurrent) gets 1/sqrt(3) and -30 deg on its raw pair, so
-    from there on it reads as on a supply with neutral (PhaseUtils::channelReference).
+    Supply without neutral: see PhaseUtils::channelReference.
     */
 
     /*
@@ -4200,6 +4206,7 @@ namespace Ade7953
 
         // Loaded once so one reading never mixes two values
         const Phase voltagePhase = _voltagePhase;
+        const bool noNeutral = _noNeutral;
 
         // Noise floors scale with the CT: a fixed threshold suited to a 30 A clamp is far
         // below the offset noise of a 100 A one (and too strict for a small one), so both
@@ -4208,9 +4215,8 @@ namespace Ade7953
         float minCurrentValidation = channelData.ctSpecification.currentRating * MINIMUM_CURRENT_RATIO_VALIDATION;   // validation discard: a reading invalid at this current is a real failure
         float minCurrentConducting  = channelData.ctSpecification.currentRating * MINIMUM_CURRENT_RATIO_CONDUCTING;  // polarity-vote / WDRR-boost gate: lower, catches small real loads
 
-        // Split-phase 240 V: 2x on one 120 V leg. Line current on a supply without neutral: 1/sqrt(3) and -30 deg.
-        const PhaseUtils::VoltageReference reference = PhaseUtils::channelReference(channelData.phase, _noNeutral, channelData.lineCurrent);
-        // Channel 0 included, when its CT is on another line. A line current is rotated on any line.
+        const PhaseUtils::VoltageReference reference = PhaseUtils::channelReference(channelData.phase, noNeutral, channelData.lineCurrent);
+        // Channel 0 included, when its CT is on another line
         const bool isRotated = PhaseUtils::isOffPhase(voltagePhase, channelData.phase) || reference.rotationDeg != 0.0f;
         const float voltageMultiplier = reference.scale;
 
@@ -4283,8 +4289,7 @@ namespace Ade7953
             return false;
         }
 
-        // Setup phase check evidence: the raw pair against V1 (after the channel's voltage
-        // reference, so a line current reads as on a supply with neutral), before reverse, rotation, the
+        // Setup phase check evidence: the raw pair against V1 (after channelReference), before reverse, rotation, the
         // off-phase no-load gate, the PF zeroing and the load/PV clamp, all of which depend on
         // the configured phase. Only consumed while the setup check window is open.
         // Held here and handed over once the reading is committed (end of this function), so a
@@ -5446,9 +5451,10 @@ namespace Ade7953
         
         // Add phase information
         const Phase voltagePhase = getVoltagePhase();
+        const bool noNeutral = _noNeutral;
         Phase currentPhase = _channelData[_captureChannel].phase;
         const float phaseShift = PhaseUtils::channelShiftDeg(voltagePhase, currentPhase) +
-            PhaseUtils::channelReference(currentPhase, _noNeutral, _channelData[_captureChannel].lineCurrent).rotationDeg;
+            PhaseUtils::channelReference(currentPhase, noNeutral, _channelData[_captureChannel].lineCurrent).rotationDeg;
 
         jsonDocument["voltagePhase"] = static_cast<uint32_t>(voltagePhase);
         jsonDocument["currentPhase"] = static_cast<uint32_t>(currentPhase);
