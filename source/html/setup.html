@@ -150,7 +150,7 @@
         <p class="muted" id="neutralNote"><b>The meter's N always goes to neutral</b>, never to another phase. Split-phase: the centre neutral.</p>
         <div id="vpBox">
             <label class="muted"><input type="checkbox" id="noNeutral"> No neutral (3×230 V)</label>
-            <span class="field-label" id="vpLabel"></span>
+            <span class="field-label" id="vpLabel">The phase the meter's own L wire is connected to:</span>
             <div class="seg" id="vpSeg">
                 <button data-vp="1"></button><button data-vp="2"></button><button data-vp="3"></button>
             </div>
@@ -421,7 +421,7 @@
             $('vpBox').classList.toggle('hidden', S.supply !== 'three');
             $('noNeutral').checked = S.noNeutral;
             $('neutralNote').classList.toggle('hidden', S.noNeutral);
-            $('vpLabel').textContent = S.noNeutral ? "The two lines the meter's L and N wires are connected to:" : "The phase the meter's own L wire is connected to:";
+            $('vpLabel').textContent = S.noNeutral ? "The lines the meter's L and N wires are on:" : "The phase the meter's own L wire is connected to:";
             document.querySelectorAll('#vpSeg button').forEach(el => {
                 el.classList.toggle('on', +el.dataset.vp === S.vp);
                 el.textContent = S.noNeutral ? PAIR[el.dataset.vp] : `L${el.dataset.vp}`;
@@ -520,7 +520,8 @@
 
         async function saveStep(step) {
             // Step 1 saves nothing: the cloud choice goes with setup/complete, so a cloud update cannot restart the meter mid-setup.
-            if (step === 2) await api.put('ade7953/voltage-phase', { voltagePhase: S.vp, noNeutral: S.noNeutral });
+            // No neutral goes on only after the circuits, which drop any split-phase channel it refuses
+            if (step === 2) await api.put('ade7953/voltage-phase', S.noNeutral ? { voltagePhase: S.vp } : { voltagePhase: S.vp, noNeutral: false });
             if (step === 3) {
                 // A group the page creates (a line or a new circuit) must not be shared with any other circuit
                 if (S.circuits.some(c => (c.cts.length > 1 || !c.group) && S.circuits.some(o => o !== c && groupOf(o) === groupOf(c)))) throw new Error('Two circuits have the same name.');
@@ -528,6 +529,7 @@
                 if (bad >= 0) { S.open = bad; renderCircuits(); throw new Error(`${S.circuits[bad].name}: the three CTs must be on L1, L2 and L3.`); }
                 S.channels = channelsFromCircuits();
                 await api.put('ade7953/channels', S.channels);
+                if (S.noNeutral) await api.put('ade7953/voltage-phase', { voltagePhase: S.vp, noNeutral: true });
             }
         }
 
