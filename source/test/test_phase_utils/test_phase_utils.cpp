@@ -5,6 +5,7 @@
 // (On Windows the native toolchain is unreliable - run it from WSL.)
 
 #include <unity.h>
+#include <complex>
 #include <math.h>
 #include <stdio.h>
 #include "phase_utils.h"
@@ -866,6 +867,127 @@ void test_voltage_phase_change_turns_every_non_split_channel_alike(void) {
 }
 
 // ============================================================================
+// Supply without neutral (3x230 V): channelReference
+//
+// Physical model: line-to-neutral phasors of the lines as if a neutral existed, V1 between
+// the meter's L and N, the chip integrating V1 * I^* (P + jQ, Q > 0 inductive). The read
+// path is channelReference on the raw pair, then toChannelFrame.
+// ============================================================================
+
+typedef std::complex<double> Cplx;
+
+static const double LINE_TO_NEUTRAL_V = 230.0 / sqrt(3.0);
+
+static Cplx lineVoltage(Phase line) {
+    return std::polar(LINE_TO_NEUTRAL_V, PhaseUtils::phaseAngleDeg(line) * M_PI / 180.0);
+}
+
+static Cplx current(double amps, double angleDeg) { return std::polar(amps, angleDeg * M_PI / 180.0); }
+
+static PhaseUtils::ActiveReactive readPath(Cplx raw, Phase voltagePhase, Phase channelPhase, bool reverse,
+                                           bool noNeutral, bool lineCurrent) {
+    const PhaseUtils::VoltageReference ref = PhaseUtils::channelReference(channelPhase, noNeutral, lineCurrent);
+    const PhaseUtils::ActiveReactive r = PhaseUtils::rotateDeg(
+        float(raw.real()) * ref.scale, float(raw.imag()) * ref.scale, ref.rotationDeg);
+    return PhaseUtils::toChannelFrame(r.active, r.reactive, reverse, voltagePhase, channelPhase);
+}
+
+static void assertPower(Cplx expected, const PhaseUtils::ActiveReactive &got, const char *what) {
+    TEST_ASSERT_FLOAT_WITHIN_MESSAGE(0.5f, float(expected.real()), got.active, what);
+    TEST_ASSERT_FLOAT_WITHIN_MESSAGE(0.5f, float(expected.imag()), got.reactive, what);
+}
+
+static const double LOAD_ANGLES_DEG[] = {0.0, 25.0, 60.0, -38.0, -55.0};
+
+void test_reference_scale_and_rotation(void) {
+    for (Phase p : ROTATIONAL_PHASES) {
+        for (int nn = 0; nn < 2; nn++) {
+            const PhaseUtils::VoltageReference plain = PhaseUtils::channelReference(p, nn != 0, false);
+            TEST_ASSERT_EQUAL_FLOAT(1.0f, plain.scale);
+            TEST_ASSERT_EQUAL_FLOAT(0.0f, plain.rotationDeg);
+        }
+        const PhaseUtils::VoltageReference off = PhaseUtils::channelReference(p, false, true);
+        TEST_ASSERT_EQUAL_FLOAT(1.0f, off.scale);
+        TEST_ASSERT_EQUAL_FLOAT(0.0f, off.rotationDeg);
+        const PhaseUtils::VoltageReference line = PhaseUtils::channelReference(p, true, true);
+        TEST_ASSERT_FLOAT_WITHIN(1e-6f, 1.0f / sqrtf(3.0f), line.scale);
+        TEST_ASSERT_EQUAL_FLOAT(-30.0f, line.rotationDeg);
+    }
+    const PhaseUtils::VoltageReference split = PhaseUtils::channelReference(PHASE_SPLIT_240, true, true);
+    TEST_ASSERT_EQUAL_FLOAT(2.0f, split.scale);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, split.rotationDeg);
+}
+
+// A CT on one line of a three-wire circuit reads its line's own power (against the
+// line-to-neutral voltage), for every voltage phase, line and load angle.
+void test_no_neutral_line_current_reads_line_power(void) {
+    char what[96];
+    for (Phase base : ROTATIONAL_PHASES) {
+        const Cplx v1 = lineVoltage(base) - lineVoltage(PhaseUtils::getLaggingPhase(base));
+        for (Phase line : ROTATIONAL_PHASES) {
+            for (double phi : LOAD_ANGLES_DEG) {
+                const Cplx i = current(3.0, PhaseUtils::phaseAngleDeg(line) - phi);
+                snprintf(what, sizeof(what), "base %d line %d phi %.0f", int(base), int(line), phi);
+                assertPower(lineVoltage(line) * std::conj(i),
+                            readPath(v1 * std::conj(i), base, line, false, true, true), what);
+            }
+        }
+    }
+}
+
+// A single-phase load between two lines needs no correction: its phase names the pair's
+// first line (L1-L2 is phase 1), and the pairs are 120 deg apart like the lines.
+void test_no_neutral_load_between_lines_reads_pair_power(void) {
+    char what[96];
+    for (Phase base : ROTATIONAL_PHASES) {
+        const Cplx v1 = lineVoltage(base) - lineVoltage(PhaseUtils::getLaggingPhase(base));
+        for (Phase first : ROTATIONAL_PHASES) {
+            const Cplx pair = lineVoltage(first) - lineVoltage(PhaseUtils::getLaggingPhase(first));
+            for (double phi : LOAD_ANGLES_DEG) {
+                const Cplx i = current(1.5, std::arg(pair) * 180.0 / M_PI - phi);
+                snprintf(what, sizeof(what), "base %d pair %d phi %.0f", int(base), int(first), phi);
+                assertPower(pair * std::conj(i), readPath(v1 * std::conj(i), base, first, false, true, false), what);
+            }
+        }
+    }
+}
+
+// With the meter's L and N swapped, V1 is negated: the reverse flags absorb it, so no
+// further wiring option is needed.
+void test_no_neutral_swapped_meter_wires_are_a_reverse(void) {
+    const Cplx v1 = lineVoltage(PhaseUtils::getLaggingPhase(PHASE_3)) - lineVoltage(PHASE_3);
+    for (Phase line : ROTATIONAL_PHASES) {
+        const Cplx i = current(2.0, PhaseUtils::phaseAngleDeg(line) + 40.0);
+        assertPower(lineVoltage(line) * std::conj(i), readPath(v1 * std::conj(i), PHASE_3, line, true, true, true), "swapped");
+    }
+}
+
+// Field case 8856a682faac (office on 3x230 V, 20 Nov 2026, 19:32): what 2.9.0 published
+// for the three grid CTs (voltage phase 3, channels on phases 3, 1, 2), turned back into
+// the raw pair, read again with no neutral on, against the panel meter at the same time:
+// 754 W, -480 var, PF 0.82 / 0.62 / 0.86 capacitive on the lines of channels 0, 1, 2.
+void test_no_neutral_field_case_matches_panel_meter(void) {
+    const Phase phases[3] = {PHASE_3, PHASE_1, PHASE_2};
+    const float publishedP[3] = {361.7f, 605.3f, 621.1f};
+    const float publishedQ[3] = {-21.4f, -157.1f, 126.3f};
+    const float publishedS[3] = {375.4f, 695.6f, 686.2f};
+    const float panelPf[3] = {0.82f, 0.62f, 0.86f};
+    float totalP = 0.0f, totalQ = 0.0f;
+    for (int k = 0; k < 3; k++) {
+        const float shift = PhaseUtils::calculatePhaseShiftDeg(PHASE_3, phases[k]);
+        const PhaseUtils::ActiveReactive raw = PhaseUtils::rotateDeg(publishedP[k], publishedQ[k], -shift);
+        const PhaseUtils::ActiveReactive fixed = readPath(Cplx(raw.active, raw.reactive), PHASE_3, phases[k], false, true, true);
+        const float apparent = publishedS[k] * PhaseUtils::channelReference(phases[k], true, true).scale;
+        TEST_ASSERT_TRUE(fixed.reactive < 0.0f);
+        TEST_ASSERT_FLOAT_WITHIN(0.03f, panelPf[k], fixed.active / apparent);
+        totalP += fixed.active;
+        totalQ += fixed.reactive;
+    }
+    TEST_ASSERT_FLOAT_WITHIN(0.05f * 754.0f, 754.0f, totalP);
+    TEST_ASSERT_FLOAT_WITHIN(0.05f * 480.0f, -480.0f, totalQ);
+}
+
+// ============================================================================
 // runner
 // ============================================================================
 
@@ -939,6 +1061,12 @@ int main(int, char **) {
     RUN_TEST(test_field_channel0_ct_on_another_line_reversed);
     RUN_TEST(test_field_fix_table);
     RUN_TEST(test_voltage_phase_change_turns_every_non_split_channel_alike);
+
+    RUN_TEST(test_reference_scale_and_rotation);
+    RUN_TEST(test_no_neutral_line_current_reads_line_power);
+    RUN_TEST(test_no_neutral_load_between_lines_reads_pair_power);
+    RUN_TEST(test_no_neutral_swapped_meter_wires_are_a_reverse);
+    RUN_TEST(test_no_neutral_field_case_matches_panel_meter);
 
     return UNITY_END();
 }
