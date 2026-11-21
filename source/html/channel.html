@@ -147,7 +147,7 @@
                 <button class="info-tooltip-icon" onclick="toggleTooltip(this, event)" aria-label="More info about the supply phase">ⓘ</button>
                 <div class="info-tooltip-popover" role="tooltip">
                     The phase the device's power supply is connected to. Number each channel's phase the same way, channel 0 included. On a single-phase installation leave it at 1.<br><br>
-                    <strong>No neutral (3×230 V)</strong>: three-phase supply with 230 V between the lines. The device's L and N go on two lines: 1-2 means L on line 1, N on line 2.
+                    <strong>No neutral (3×230 V)</strong>: pick the two lines the device's L and N are on.
                 </div>
             </span>
         </div>
@@ -194,12 +194,15 @@
     var noNeutral = false;
     const PAIR_NAMES = { 1: '1-2', 2: '2-3', 3: '3-1' };
 
+    const supplyName = (vp, nn) => nn ? `${PAIR_NAMES[vp]} without neutral` : String(vp);
     const phaseSelectValue = ch => noNeutral && ch.lineCurrent ? `${ch.phase}l` : String(ch.phase);
 
     function phaseOptionsHtml(channel) {
+        const split = { value: '4', label: '240V (Split Phase)' };
         const options = noNeutral
             ? [1, 2, 3].map(p => ({ value: `${p}l`, label: String(p) })).concat([1, 2, 3].map(p => ({ value: String(p), label: PAIR_NAMES[p] })))
-            : [{ value: '1', label: '1' }, { value: '2', label: '2' }, { value: '3', label: '3' }, { value: '4', label: '240V (Split Phase)' }];
+                .concat(channel.phase === 4 ? [split] : []) // a leftover split channel is shown as it is, not rewritten
+            : [{ value: '1', label: '1' }, { value: '2', label: '2' }, { value: '3', label: '3' }, split];
         const selected = phaseSelectValue(channel);
         return options.map(o => `<option value="${o.value}" ${o.value === selected ? 'selected' : ''}>${o.label}</option>`).join('');
     }
@@ -233,8 +236,7 @@
         const nextNoNeutral = checkbox.checked;
         if (voltagePhase === null || (next === voltagePhase && nextNoNeutral === noNeutral)) return;
         voltagePhaseEditing = true;
-        const name = nextNoNeutral ? PAIR_NAMES[next] : next;
-        if (!confirm(`Change the supply to ${name}${nextNoNeutral ? ' without neutral' : ''}? Every channel reading will be recalculated.`)) {
+        if (!confirm(`Change the supply to ${supplyName(next, nextNoNeutral)}? Every channel reading will be recalculated.`)) {
             voltagePhaseEditing = false;
             select.value = String(voltagePhase);
             checkbox.checked = noNeutral;
@@ -253,7 +255,7 @@
         await refreshVoltagePhase(true);
         voltagePhaseEditing = false;
         if (!sent) return;
-        showStatus(`Supply set to ${noNeutral ? PAIR_NAMES[voltagePhase] + ' without neutral' : voltagePhase}`, 'success');
+        showStatus(`Supply set to ${supplyName(voltagePhase, noNeutral)}`, 'success');
         // The change re-runs the reversed-CT check, which may flip reverse: say where
         const reverseBefore = Object.fromEntries(Object.entries(channelData).map(([i, ch]) => [i, ch.reverse]));
         setTimeout(async () => {
@@ -328,7 +330,7 @@
                             <strong>Single-phase</strong>: leave everything on Phase 1.<br><br>
                             <strong>3-phase</strong>: phases are numbered from the supply phase at the top of this page. Assign each CT to its physical phase; channel 0 is set like any other channel. While the load is drawing power, the live preview below shows what each choice would read &ndash; the right one has PF close to 1 (the power sign is irrelevant, it just flips with the CT orientation).<br><br>
                             <strong>240V (Split Phase)</strong>: North American 240V circuits spanning both legs. A ×2 voltage multiplier is applied automatically, since the reference voltage is measured line-to-neutral (about 120&nbsp;V).<br><br>
-                            <strong>No neutral (3×230 V)</strong>: 1, 2, 3 for a CT on one line of a three-phase circuit (the supply, a three-phase load); 1-2, 2-3, 3-1 for a load between two lines.
+                            <strong>No neutral</strong>: 1, 2, 3 for a CT on one line of a three-phase circuit; 1-2, 2-3, 3-1 for a load between two lines.
                         </div>
                     </span>
                     <select id="phase${index}" onchange="queueChannelUpdate(${index})">

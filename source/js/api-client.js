@@ -677,7 +677,7 @@ class EnergyMeAPI {
      * Set the ADE7953 voltage phase (1-3) and, when given, the supply without neutral
      */
     async setAde7953VoltagePhase(voltagePhase, noNeutral) {
-        return this.put('ade7953/voltage-phase', noNeutral === undefined ? { voltagePhase } : { voltagePhase, noNeutral });
+        return this.put('ade7953/voltage-phase', { voltagePhase, noNeutral }); // an undefined noNeutral is dropped by JSON.stringify
     }
 
     /**
