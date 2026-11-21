@@ -7,7 +7,7 @@ A single-phase load in such a building sits between two lines, the same kind of 
 ## What Changes
 
 - **Device setting `noNeutral`** (default off), next to the voltage phase: the meter's L is on the voltage phase and its N on the next line (L1-L2, L2-L3 or L3-L1).
-- **Channel flag `lineCurrent`** (default off): the CT sits on one line of a three-wire circuit. With `noNeutral` on, such a channel is measured against the line-to-neutral voltage the lines would have with a neutral: its energies and voltage are scaled by 1/√3 and its pair is rotated by -30 degrees, before reverse, rotation and the phase check. Ignored while `noNeutral` is off, so existing installs read exactly as before.
+- **Channel flag `lineCurrent`** (default off): the CT sits on one line of a three-wire circuit. With `noNeutral` on it is measured against its line-to-neutral voltage (1/√3 and -30 degrees); ignored otherwise, so existing installs read exactly as before.
 - **Refused combinations**: `noNeutral` with any active split-phase 240 V channel, and split-phase 240 V on a channel while `noNeutral` is on.
 - **REST** `GET/PUT /api/v1/ade7953/voltage-phase` gain the optional `noNeutral` field; the `meter` shadow gains `no_neutral`; channel JSON gains `lineCurrent`.
 - **Setup page**: a "No neutral (3×230 V)" switch inside the three-phase supply choice. When on, the voltage phase and single-phase circuits show line pairs, and three-phase circuits are saved with `lineCurrent`. No new step or card.
