@@ -3436,6 +3436,8 @@ paths:
                 properties:
                   voltagePhase:
                     $ref: '#/components/schemas/VoltagePhase'
+                  noNeutral:
+                    $ref: '#/components/schemas/NoNeutral'
         '503':
           description: The voltage phase is not stored yet (the meter did not initialize, or the boot could not write it). Writing it with PUT stores it once the meter is initialized.
     put:
@@ -3458,6 +3460,8 @@ paths:
               properties:
                 voltagePhase:
                   $ref: '#/components/schemas/VoltagePhase'
+                noNeutral:
+                  $ref: '#/components/schemas/NoNeutral'
       responses:
         '200':
           description: Voltage phase updated successfully
@@ -4916,6 +4920,11 @@ components:
       description: Line the device's voltage input (its own L wire) is wired to (1=Phase A, 2=Phase B, 3=Phase C). Split-phase 240V is not a valid voltage phase.
       example: 1
 
+    NoNeutral:
+      type: boolean
+      description: "Three-phase supply without neutral (3x230 V): the device's N is on the line after the voltage phase (1-2, 2-3, 3-1), so the voltage input is line-to-line. Channels with `lineCurrent` are then measured against their line's line-to-neutral voltage; other channels are loads between two lines, their phase naming the pair's first line. Refused while a channel is split-phase 240V. Optional on PUT: absent keeps the stored value."
+      example: false
+
     CtSpecification:
       type: object
       required:
@@ -4976,6 +4985,10 @@ components:
           example: "Kitchen Circuit"
         phase:
           $ref: '#/components/schemas/Phase'
+        lineCurrent:
+          type: boolean
+          description: "The CT sits on one line of a three-phase circuit. Used only with `noNeutral` on: the channel is then measured against its line's line-to-neutral voltage (1/sqrt(3) and -30 degrees from the line-to-line input). Optional on writes: absent keeps the stored value."
+          example: false
         ctSpecification:
           $ref: '#/components/schemas/CtSpecification'
         groupLabel:
