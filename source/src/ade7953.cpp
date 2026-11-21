@@ -42,6 +42,8 @@ namespace Ade7953
     // Set when setVoltagePhase stored and applied a change but could not take _channelDataMutex:
     // the next reading re-arms CT polarity detection, rather than the setter writing the old value back.
     static volatile bool _voltagePhaseRearmPending = false;
+    // Supply without neutral: the meter's N is on the line lagging _voltagePhase. Same writers as _voltagePhase.
+    static volatile bool _noNeutral = false;
     static uint8_t _currentChannel = INVALID_CHANNEL; // By default, no channel is selected (except for channel 0 which is always active)
     // Dynamic channel scheduling state (Weighted Deficit Round-Robin)
     static float _channelWeight[MAX_CHANNEL_COUNT] = {};     // Computed dynamic weight per channel
@@ -237,7 +239,8 @@ namespace Ade7953
 
     // Voltage phase management
     static void _setVoltagePhaseFromPreferences();
-    static bool _saveVoltagePhaseToPreferences(Phase voltagePhase);
+    static bool _saveVoltagePhaseToPreferences(Phase voltagePhase, bool noNeutral);
+    static bool _hasActiveSplitChannelLocked();
     static uint8_t _rearmPolarityOnVoltagePhaseChangeLocked();
 
     // ADE7953 register reading functions
@@ -751,11 +754,15 @@ namespace Ade7953
         return _voltagePhase;
     }
 
+    bool getNoNeutral() {
+        return _noNeutral;
+    }
+
     bool isVoltagePhaseStored() {
         return _voltagePhasePersisted;
     }
 
-    bool setVoltagePhase(Phase voltagePhase) {
+    bool setVoltagePhase(Phase voltagePhase, bool noNeutral) {
         if (_refusedWhilePassive()) return false;
         if (!PhaseUtils::isValidVoltagePhase(voltagePhase)) {
             LOG_WARNING("Invalid voltage phase %lu (valid: 1-3)", static_cast<unsigned long>(voltagePhase));
@@ -775,20 +782,37 @@ namespace Ade7953
         }
 
         const Phase oldVoltagePhase = _voltagePhase;
-        if (voltagePhase == oldVoltagePhase) {
+        const bool oldNoNeutral = _noNeutral;
+        if (voltagePhase == oldVoltagePhase && noNeutral == oldNoNeutral) {
             // Same rotation, so nothing to re-arm. Store it only if the boot could not.
-            const bool stored = _voltagePhasePersisted || _saveVoltagePhaseToPreferences(voltagePhase);
+            const bool stored = _voltagePhasePersisted || _saveVoltagePhaseToPreferences(voltagePhase, noNeutral);
             releaseMutex(&_configMutex);
             LOG_DEBUG("Voltage phase already %u", static_cast<unsigned>(voltagePhase));
             return stored;
         }
 
+        // A split-phase 240 V channel has no place on a supply without neutral
+        if (noNeutral && !oldNoNeutral) {
+            bool split = true;
+            if (acquireMutex(&_channelDataMutex)) {
+                split = _hasActiveSplitChannelLocked();
+                releaseMutex(&_channelDataMutex);
+            }
+            if (split) {
+                releaseMutex(&_configMutex);
+                LOG_WARNING("Supply without neutral refused: a channel is split-phase 240 V (or the channels could not be read)");
+                return false;
+            }
+        }
+
         // Persist before applying: a failed write leaves NVS and RAM both on the old value
-        if (!_saveVoltagePhaseToPreferences(voltagePhase)) {
+        if (!_saveVoltagePhaseToPreferences(voltagePhase, noNeutral)) {
+            _saveVoltagePhaseToPreferences(oldVoltagePhase, oldNoNeutral); // one of the two keys may have been written
             releaseMutex(&_configMutex);
             return false;
         }
         _voltagePhase = voltagePhase;
+        _noNeutral = noNeutral;
 
         uint8_t rearmed = 0;
         bool deferred = false;
@@ -807,8 +831,9 @@ namespace Ade7953
             LOG_ERROR("Voltage phase %u applied, CT polarity re-arm deferred to the next reading", static_cast<unsigned>(voltagePhase));
         } else {
             LOG_INFO(
-                "Voltage phase changed from %u to %u, CT polarity detection re-armed on %u channels",
-                static_cast<unsigned>(oldVoltagePhase), static_cast<unsigned>(voltagePhase), static_cast<unsigned>(rearmed)
+                "Voltage phase changed from %u to %u (no neutral %d to %d), CT polarity detection re-armed on %u channels",
+                static_cast<unsigned>(oldVoltagePhase), static_cast<unsigned>(voltagePhase),
+                oldNoNeutral, noNeutral, static_cast<unsigned>(rearmed)
             );
         }
         return true;
@@ -877,6 +902,7 @@ namespace Ade7953
         bool wasInactive = !_channelData[channelIndex].active;
         bool oldReverse = _channelData[channelIndex].reverse;
         Phase oldPhase = _channelData[channelIndex].phase;
+        bool oldLineCurrent = _channelData[channelIndex].lineCurrent;
 
         // Baseline lastMillis on inactive->active BEFORE the channel can be scheduled:
         // otherwise its first read integrates P over the whole inactive span from the
@@ -920,7 +946,10 @@ namespace Ade7953
             bool reverseChanged = (oldReverse != _channelData[channelIndex].reverse);
             bool activated = (wasInactive && _channelData[channelIndex].active);
             bool roleChangedActive = (!wasInactive && _channelData[channelIndex].active && oldRole != _channelData[channelIndex].role);
-            bool phaseChangedActive = (!wasInactive && _channelData[channelIndex].active && oldPhase != _channelData[channelIndex].phase);
+            // A line current flag moves the rotation like a phase does (on a supply without neutral)
+            bool phaseChangedActive = (!wasInactive && _channelData[channelIndex].active &&
+                                       (oldPhase != _channelData[channelIndex].phase ||
+                                        (_noNeutral && oldLineCurrent != _channelData[channelIndex].lineCurrent)));
 
             if (reverseChanged) {
                 // A manual reverse change is the trusted value: disarm CT-reversal
@@ -1147,6 +1176,7 @@ namespace Ade7953
         jsonDocument["reverse"] = channelData.reverse;
         jsonDocument["label"] = JsonString(channelData.label); // Ensure it is not a dangling pointer
         jsonDocument["phase"] = channelData.phase;
+        jsonDocument["lineCurrent"] = channelData.lineCurrent;
 
         jsonDocument["ctSpecification"]["currentRating"] = channelData.ctSpecification.currentRating;
         jsonDocument["ctSpecification"]["voltageOutput"] = channelData.ctSpecification.voltageOutput;
@@ -1217,6 +1247,9 @@ namespace Ade7953
             // Channel role
             channelData.role = channelRoleFromString(jsonDocument["role"].as<const char*>());
         }
+
+        // Optional on both paths, so clients that predate it keep the stored value.
+        if (jsonDocument["lineCurrent"].is<bool>()) channelData.lineCurrent = jsonDocument["lineCurrent"].as<bool>();
 
         // Device-reported reset boundary. Applies to both the partial and full paths above:
         // channelData is always preloaded with the current value before this function runs (see
@@ -3222,6 +3255,9 @@ namespace Ade7953
         snprintf(key, sizeof(key), CHANNEL_PHASE_KEY, channelIndex);
         channelData.phase = static_cast<Phase>(preferences.getUChar(key, (uint8_t)(DEFAULT_CHANNEL_PHASE)));
 
+        snprintf(key, sizeof(key), CHANNEL_LINE_CURRENT_KEY, channelIndex);
+        channelData.lineCurrent = preferences.getBool(key, false);
+
         // Migrate legacy highPriority key (remove old NVS entry if present)
         snprintf(key, sizeof(key), CHANNEL_HIGHPRI_KEY_LEGACY, channelIndex);
         if (preferences.isKey(key)) {
@@ -3326,6 +3362,9 @@ namespace Ade7953
         snprintf(key, sizeof(key), CHANNEL_PHASE_KEY, channelIndex);
         put(preferences.putUChar(key, (uint8_t)(channelData.phase)), 1);
 
+        snprintf(key, sizeof(key), CHANNEL_LINE_CURRENT_KEY, channelIndex);
+        put(preferences.putBool(key, channelData.lineCurrent), 1);
+
         // CT Specification
         snprintf(key, sizeof(key), CHANNEL_CT_CURRENT_RATING_KEY, channelIndex);
         put(preferences.putFloat(key, channelData.ctSpecification.currentRating), sizeof(float));
@@ -3362,7 +3401,7 @@ namespace Ade7953
         return (phase == PHASE_1 ||
                 phase == PHASE_2 ||
                 phase == PHASE_3 ||
-                phase == PHASE_SPLIT_240);
+                (phase == PHASE_SPLIT_240 && !_noNeutral)); // no split-phase leg on a supply without neutral
     }
 
     bool _validateStringField(const char* fieldName, const char* value, size_t maxLength) {
@@ -3526,10 +3565,22 @@ namespace Ade7953
             if (jsonDocument["phase"].is<uint8_t>()) {
                 uint8_t phase = jsonDocument["phase"].as<uint8_t>();
                 if (!_isValidPhase(phase)) {
-                    LOG_WARNING("Invalid phase value: %u (valid: 1-4)", phase);
+                    LOG_WARNING("Invalid phase value: %u (valid: 1-4, 1-3 without neutral)", phase);
                     return false;
                 }
                 hasValidField = true;
+            }
+
+            if (jsonDocument["lineCurrent"].is<bool>()) {
+                hasValidField = true;
+            }
+
+            // Nor may a write reactivate a leftover split-phase channel
+            const bool active = jsonDocument["active"].is<bool>() ? jsonDocument["active"].as<bool>() : _channelData[channelIndex].active;
+            const uint8_t phase = jsonDocument["phase"].is<uint8_t>() ? jsonDocument["phase"].as<uint8_t>() : _channelData[channelIndex].phase;
+            if (_noNeutral && active && phase == PHASE_SPLIT_240) {
+                LOG_WARNING("Channel %u cannot be active at split-phase 240 V on a supply without neutral", channelIndex);
+                return false;
             }
 
             // CT Specification validation with ranges
@@ -3638,7 +3689,7 @@ namespace Ade7953
             }
             uint8_t phase = jsonDocument["phase"].as<uint8_t>();
             if (!_isValidPhase(phase)) {
-                LOG_WARNING("Invalid phase value: %u (valid: 1-4)", phase);
+                LOG_WARNING("Invalid phase value: %u (valid: 1-4, 1-3 without neutral)", phase);
                 return false;
             }
 
@@ -4082,6 +4133,8 @@ namespace Ade7953
 
     Split-phase 240V channels are 180 deg from V1: only a sign (reverse) plus a 2x
     voltage multiplier, because V1 is a single 120V leg.
+
+    Supply without neutral: see PhaseUtils::channelReference.
     */
 
     /*
@@ -4153,6 +4206,7 @@ namespace Ade7953
 
         // Loaded once so one reading never mixes two values
         const Phase voltagePhase = _voltagePhase;
+        const bool noNeutral = _noNeutral;
 
         // Noise floors scale with the CT: a fixed threshold suited to a 30 A clamp is far
         // below the offset noise of a 100 A one (and too strict for a small one), so both
@@ -4161,8 +4215,10 @@ namespace Ade7953
         float minCurrentValidation = channelData.ctSpecification.currentRating * MINIMUM_CURRENT_RATIO_VALIDATION;   // validation discard: a reading invalid at this current is a real failure
         float minCurrentConducting  = channelData.ctSpecification.currentRating * MINIMUM_CURRENT_RATIO_CONDUCTING;  // polarity-vote / WDRR-boost gate: lower, catches small real loads
 
-        const bool isOffPhase = PhaseUtils::isOffPhase(voltagePhase, channelData.phase); // channel 0 included, when its CT is on another line
-        float voltageMultiplier = (channelData.phase == PHASE_SPLIT_240) ? 2.0f : 1.0f; // the ADE7953 measures a single 120V leg
+        const PhaseUtils::VoltageReference reference = PhaseUtils::channelReference(channelData.phase, noNeutral, channelData.lineCurrent);
+        // Channel 0 included, when its CT is on another line
+        const bool isRotated = PhaseUtils::isOffPhase(voltagePhase, channelData.phase) || reference.rotationDeg != 0.0f;
+        const float voltageMultiplier = reference.scale;
 
         // No double-read guard needed anymore: with read-with-reset disabled (LCYCMODE
         // RSTREAD=0, see DEFAULT_LCYCMODE_REGISTER), the energy registers are non-destructive
@@ -4172,6 +4228,11 @@ namespace Ade7953
         float rawActiveEnergy = float(_readActiveEnergy(ade7953Channel)) * channelData.ctSpecification.whLsb * voltageMultiplier;
         float rawReactiveEnergy = float(_readReactiveEnergy(ade7953Channel)) * channelData.ctSpecification.varhLsb * voltageMultiplier;
         apparentEnergy = float(_readApparentEnergy(ade7953Channel)) * channelData.ctSpecification.vahLsb * voltageMultiplier;
+        if (reference.rotationDeg != 0.0f) {
+            const PhaseUtils::ActiveReactive turned = PhaseUtils::rotateDeg(rawActiveEnergy, rawReactiveEnergy, reference.rotationDeg);
+            rawActiveEnergy = turned.active;
+            rawReactiveEnergy = turned.reactive;
+        }
 
         // Reverse, and for an off-phase channel the rotation into its own line, applied to
         // the energy pair itself (the rotation is linear): the powers derived below follow,
@@ -4228,7 +4289,7 @@ namespace Ade7953
             return false;
         }
 
-        // Setup phase check evidence: the raw pair against V1, before reverse, rotation, the
+        // Setup phase check evidence: the raw pair against V1 (after channelReference), before reverse, rotation, the
         // off-phase no-load gate, the PF zeroing and the load/PV clamp, all of which depend on
         // the configured phase. Only consumed while the setup check window is open.
         // Held here and handed over once the reading is committed (end of this function), so a
@@ -4242,7 +4303,7 @@ namespace Ade7953
         // line's own P or Q; a sub-threshold current is offset noise. Zeroing the
         // energies too keeps the published contract "nonzero values are reliable" (the
         // web UI relies on it) and books nothing in the accumulators.
-        if (isOffPhase && currentRms < minCurrentThreePhaseNoLoad) {
+        if (isRotated && currentRms < minCurrentThreePhaseNoLoad) {
             current = 0.0f;
             activePower = 0.0f;
             reactivePower = 0.0f;
@@ -4766,11 +4827,12 @@ namespace Ade7953
         );
         _voltagePhase = PhaseUtils::resolveVoltagePhase(state, storedValue, channel0Phase);
         _voltagePhasePersisted = (state == PhaseUtils::StoredVoltagePhase::Valid);
+        _noNeutral = opened && preferences.getBool(CONFIG_NO_NEUTRAL_KEY, false);
         const unsigned voltagePhase = static_cast<unsigned>(_voltagePhase);
 
         switch (state) {
             case PhaseUtils::StoredVoltagePhase::Valid:
-                LOG_DEBUG("Loaded voltage phase %u from preferences", voltagePhase);
+                LOG_DEBUG("Loaded voltage phase %u (no neutral %d) from preferences", voltagePhase, static_cast<bool>(_noNeutral));
                 break;
             case PhaseUtils::StoredVoltagePhase::Absent:
                 LOG_INFO("Voltage phase migrated from channel 0: %u", voltagePhase);
@@ -4789,28 +4851,37 @@ namespace Ade7953
         if (opened) preferences.end();
 
         if (state == PhaseUtils::StoredVoltagePhase::Absent || state == PhaseUtils::StoredVoltagePhase::Invalid) {
-            _saveVoltagePhaseToPreferences(_voltagePhase);
+            _saveVoltagePhaseToPreferences(_voltagePhase, _noNeutral);
         }
         _voltagePhaseLoaded = true;
     }
 
-    // Persists the value and records that NVS holds it. The caller holds _configMutex, or is the boot load.
-    bool _saveVoltagePhaseToPreferences(Phase voltagePhase) {
+    // Persists both values and records that NVS holds them. The caller holds _configMutex, or is the boot load.
+    bool _saveVoltagePhaseToPreferences(Phase voltagePhase, bool noNeutral) {
         Preferences preferences;
         if (!preferences.begin(PREFERENCES_NAMESPACE_ADE7953, false)) {
             LOG_ERROR("Failed to open Preferences for saving the voltage phase");
             return false;
         }
         bool stored = preferences.putUChar(CONFIG_VOLTAGE_PHASE_KEY, static_cast<uint8_t>(voltagePhase)) == sizeof(uint8_t);
+        stored = stored && preferences.putBool(CONFIG_NO_NEUTRAL_KEY, noNeutral) == sizeof(bool);
         preferences.end();
 
         if (!stored) {
-            LOG_ERROR("Failed to store the voltage phase %u", static_cast<unsigned>(voltagePhase));
+            LOG_ERROR("Failed to store the voltage phase %u (no neutral %d)", static_cast<unsigned>(voltagePhase), noNeutral);
             return false;
         }
         _voltagePhasePersisted = true;
-        LOG_DEBUG("Saved voltage phase %u to preferences", static_cast<unsigned>(voltagePhase));
+        LOG_DEBUG("Saved voltage phase %u (no neutral %d) to preferences", static_cast<unsigned>(voltagePhase), noNeutral);
         return true;
+    }
+
+    // The caller holds _channelDataMutex.
+    bool _hasActiveSplitChannelLocked() {
+        for (uint8_t i = 0; i < globalHwProfile->totalChannelCount; i++) {
+            if (_channelData[i].active && _channelData[i].phase == PHASE_SPLIT_240) return true;
+        }
+        return false;
     }
 
     // Arms (or disarms) CT polarity detection from a clean vote count and asks for a priority
@@ -5380,8 +5451,10 @@ namespace Ade7953
         
         // Add phase information
         const Phase voltagePhase = getVoltagePhase();
+        const bool noNeutral = _noNeutral;
         Phase currentPhase = _channelData[_captureChannel].phase;
-        const float phaseShift = PhaseUtils::channelShiftDeg(voltagePhase, currentPhase);
+        const float phaseShift = PhaseUtils::channelShiftDeg(voltagePhase, currentPhase) +
+            PhaseUtils::channelReference(currentPhase, noNeutral, _channelData[_captureChannel].lineCurrent).rotationDeg;
 
         jsonDocument["voltagePhase"] = static_cast<uint32_t>(voltagePhase);
         jsonDocument["currentPhase"] = static_cast<uint32_t>(currentPhase);

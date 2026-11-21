@@ -158,6 +158,14 @@ struct ActiveReactive {
     float reactive;
 };
 
+// P + jQ multiplied by e^{j*deg}.
+inline ActiveReactive rotateDeg(float active, float reactive, float deg) {
+    const float a = deg * DEG_TO_RAD_F;
+    const float c = std::cos(a);
+    const float s = std::sin(a);
+    return ActiveReactive{active * c - reactive * s, reactive * c + active * s};
+}
+
 // One latched window (active, reactive energy as read, LSB-scaled) in the channel's own
 // line frame, as _readMeterValues publishes it. `reverse` negates both: a backwards CT is
 // a 180 deg flip of the current phasor. An off-phase channel is integrated against V1 as
@@ -171,11 +179,26 @@ inline ActiveReactive toChannelFrame(float active, float reactive, bool reverse,
     const float sign = reverse ? -1.0f : 1.0f;
     ActiveReactive out{active * sign, reactive * sign};
     if (!isOffPhase(basePhase, channelPhase)) return out;
+    return rotateDeg(out.active, out.reactive, calculatePhaseShiftDeg(basePhase, channelPhase));
+}
 
-    const float a = calculatePhaseShiftDeg(basePhase, channelPhase) * DEG_TO_RAD_F;
-    const float c = std::cos(a);
-    const float s = std::sin(a);
-    return ActiveReactive{out.active * c - out.reactive * s, out.reactive * c + out.active * s};
+// What V1 is to a channel, applied to its raw pair before toChannelFrame. Split-phase
+// 240 V: V1 is one 120 V leg, so 2x. Supply without neutral (3x230 V): the meter's N is on
+// the line lagging the voltage phase, so V1 is line-to-line, sqrt(3) times a line-to-neutral
+// voltage and 30 deg ahead of it. A line current (lineCurrent) then gets 1/sqrt(3) and
+// -30 deg; a load between two lines (its phase names the pair's first line) stays 1x.
+struct VoltageReference {
+    float scale;
+    float rotationDeg;
+};
+
+constexpr float INV_SQRT3_F = 0.57735026918962576451f;
+constexpr float NO_NEUTRAL_LINE_ROTATION_DEG = -30.0f;
+
+inline VoltageReference channelReference(Phase channelPhase, bool noNeutral, bool lineCurrent) {
+    if (channelPhase == PHASE_SPLIT_240) return {2.0f, 0.0f};
+    if (noNeutral && lineCurrent) return {INV_SQRT3_F, NO_NEUTRAL_LINE_ROTATION_DEG};
+    return {1.0f, 0.0f};
 }
 
 // ============================================================================

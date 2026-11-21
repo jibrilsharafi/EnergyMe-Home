@@ -178,7 +178,8 @@ def handle(method, path, body):
             if vp not in (1, 2, 3):
                 return {"error": "invalid_value", "message": "voltagePhase must be 1, 2 or 3"}, 400
             STATE["voltagePhase"] = vp
-        return {"voltagePhase": STATE["voltagePhase"]}, 200
+            STATE["noNeutral"] = bool((body or {}).get("noNeutral", STATE.get("noNeutral", False)))
+        return {"voltagePhase": STATE["voltagePhase"], "noNeutral": STATE.get("noNeutral", False)}, 200
     if path == "/api/v1/ade7953/phase-check" and method == "GET":
         if not _window_open():
             return {"window": False, "lines": [], "singles": []}, 200
@@ -222,7 +223,7 @@ def handle(method, path, body):
             STATE["cloud"] = bool(body["cloudServices"])
         return {"success": True}, 200
     if path == "/api/v1/mock/setup-reset" and method == "POST":
-        STATE.update(channels=_factory_channels(), cloud=True, voltagePhase=1, setupDone=False, startedAt=None, savedAt=None,
+        STATE.update(channels=_factory_channels(), cloud=True, voltagePhase=1, noNeutral=False, setupDone=False, startedAt=None, savedAt=None,
                      resolved={}, chanGen={}, energyResets=0)
         return {"success": True}, 200
     return None

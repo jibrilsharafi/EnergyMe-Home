@@ -3434,6 +3434,7 @@ namespace CustomServer
             JsonDocument doc(&allocator);
 
             doc["voltagePhase"] = static_cast<uint8_t>(Ade7953::getVoltagePhase());
+            doc["noNeutral"] = Ade7953::getNoNeutral();
 
             _sendJsonResponse(request, doc);
         });
@@ -3454,16 +3455,23 @@ namespace CustomServer
                     return;
                 }
 
-                Phase voltagePhase = static_cast<Phase>(doc["voltagePhase"].as<uint8_t>());
+                if (!doc["noNeutral"].isNull() && !doc["noNeutral"].is<bool>()) {
+                    _sendErrorResponse(request, HTTP_CODE_BAD_REQUEST, "noNeutral field must be a boolean");
+                    return;
+                }
 
-                // Validated above, so a failure means the meter is not initialized or the value could not be stored; nothing changed
-                if (Ade7953::setVoltagePhase(voltagePhase))
+                Phase voltagePhase = static_cast<Phase>(doc["voltagePhase"].as<uint8_t>());
+                bool noNeutral = doc["noNeutral"].is<bool>() ? doc["noNeutral"].as<bool>() : Ade7953::getNoNeutral();
+
+                // Validated above, so a failure means the meter is not initialized, a split-phase channel
+                // blocks no neutral, or the value could not be stored; nothing changed
+                if (Ade7953::setVoltagePhase(voltagePhase, noNeutral))
                 {
                     _sendSuccessResponse(request, "ADE7953 voltage phase updated successfully");
                 }
                 else
                 {
-                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Failed to store the voltage phase");
+                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Voltage phase not set (see the device log)");
                 }
             });
         server.addHandler(setVoltagePhaseHandler);

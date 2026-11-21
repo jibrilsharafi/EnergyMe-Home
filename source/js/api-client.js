@@ -667,17 +667,17 @@ class EnergyMeAPI {
     }
 
     /**
-     * Get the ADE7953 voltage phase (the line the voltage input is wired to)
+     * Get the ADE7953 voltage phase (the line the voltage input is wired to) and noNeutral
      */
     async getAde7953VoltagePhase() {
         return this.get('ade7953/voltage-phase');
     }
 
     /**
-     * Set the ADE7953 voltage phase (1-3)
+     * Set the ADE7953 voltage phase (1-3) and, when given, the supply without neutral
      */
-    async setAde7953VoltagePhase(voltagePhase) {
-        return this.put('ade7953/voltage-phase', { voltagePhase });
+    async setAde7953VoltagePhase(voltagePhase, noNeutral) {
+        return this.put('ade7953/voltage-phase', { voltagePhase, noNeutral }); // an undefined noNeutral is dropped by JSON.stringify
     }
 
     /**

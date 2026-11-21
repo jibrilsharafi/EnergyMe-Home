@@ -165,6 +165,7 @@
 // Configuration Preferences Keys
 #define CONFIG_SAMPLE_TIME_KEY "sample_time"
 #define CONFIG_VOLTAGE_PHASE_KEY "voltage_phase" // u8, PHASE_1..PHASE_3 (13 chars)
+#define CONFIG_NO_NEUTRAL_KEY "no_neutral" // bool, supply without neutral: the meter's N is on the line lagging the voltage phase
 #define CONFIG_AV_GAIN_KEY "av_gain"
 #define CONFIG_AI_GAIN_KEY "ai_gain"
 #define CONFIG_BI_GAIN_KEY "bi_gain"
@@ -302,6 +303,7 @@
 #define CHANNEL_REVERSE_KEY "reverse_%u" // Format: reverse_0 (10 chars)
 #define CHANNEL_LABEL_KEY "label_%u" // Format: label_0 (8 chars)
 #define CHANNEL_PHASE_KEY "phase_%u" // Format: phase_0 (9 chars)
+#define CHANNEL_LINE_CURRENT_KEY "line_%u" // Format: line_0 (8 chars)
 
 // Legacy key for migration (remove old NVS entries on load)
 #define CHANNEL_HIGHPRI_KEY_LEGACY "highpri_%u" // Format: highpri_0 (10 chars)
@@ -475,6 +477,7 @@ struct ChannelData
   bool reverse;
   char label[NAME_BUFFER_SIZE];
   Phase phase;
+  bool lineCurrent; // CT on one line of a three-wire circuit; used only on a supply without neutral (PhaseUtils::channelReference)
   CtSpecification ctSpecification;
 
   // Channel grouping (for 3-phase aggregation)
@@ -500,6 +503,7 @@ struct ChannelData
       active(false),
       reverse(false),
       phase(PHASE_1),
+      lineCurrent(false),
       ctSpecification(CtSpecification()),
       role(DEFAULT_CHANNEL_ROLE),
       startMeasuringUnixTimeMs(0),
@@ -515,6 +519,7 @@ struct ChannelData
       active(idx == 0 ? DEFAULT_CHANNEL_0_ACTIVE : DEFAULT_CHANNEL_ACTIVE),
       reverse(DEFAULT_CHANNEL_REVERSE),
       phase(DEFAULT_CHANNEL_PHASE),
+      lineCurrent(false),
       ctSpecification(CtSpecification()),
       role(idx == 0 ? DEFAULT_CHANNEL_0_ROLE : DEFAULT_CHANNEL_ROLE),
       startMeasuringUnixTimeMs(0),
@@ -634,7 +639,10 @@ namespace Ade7953
 
     // Voltage phase management
     Phase getVoltagePhase();
-    bool setVoltagePhase(Phase voltagePhase); // PHASE_1..PHASE_3; false (nothing changed) when invalid, before the boot load, or not stored
+    bool getNoNeutral();
+    // PHASE_1..PHASE_3 and the supply without neutral, written together; false (nothing changed)
+    // when invalid, before the boot load, not stored, or no neutral with a split-phase 240 V channel
+    bool setVoltagePhase(Phase voltagePhase, bool noNeutral);
     bool isVoltagePhaseStored(); // NVS holds getVoltagePhase(): false before the boot load or after a failed migration write
 
     // Channel data management

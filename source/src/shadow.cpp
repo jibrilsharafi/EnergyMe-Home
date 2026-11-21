@@ -869,8 +869,13 @@ static void _reportMeter(JsonDocument& doc) {
     rep["sample_time"] = Ade7953::getSampleTime();
     // Only the stored value: null (removed from reported) before the boot load or after a failed
     // migration write, so a default never reaches the shadow and a fresh value proves the key is in NVS.
-    if (Ade7953::isVoltagePhaseStored()) rep["voltage_phase"] = static_cast<uint8_t>(Ade7953::getVoltagePhase());
-    else rep["voltage_phase"] = nullptr;
+    if (Ade7953::isVoltagePhaseStored()) {
+        rep["voltage_phase"] = static_cast<uint8_t>(Ade7953::getVoltagePhase());
+        rep["no_neutral"] = Ade7953::getNoNeutral();
+    } else {
+        rep["voltage_phase"] = nullptr;
+        rep["no_neutral"] = nullptr;
+    }
 }
 
 static bool _applyMeter(JsonObjectConst delta, JsonObject reported) {
@@ -908,14 +913,20 @@ static bool _applyMeter(JsonObjectConst delta, JsonObject reported) {
         }
     }
 
-    // voltage_phase is a device setting outside the calibration struct, same path as the REST API.
+    // voltage_phase and no_neutral are device settings outside the calibration struct, written
+    // together in one call (same path as the REST API); a field absent from the delta keeps its value.
     JsonVariantConst vp = delta["voltage_phase"];
-    if (!vp.isNull()) {
-        if (vp.is<uint8_t>() && Ade7953::setVoltagePhase(static_cast<Phase>(vp.as<uint8_t>()))) {
+    JsonVariantConst nn = delta["no_neutral"];
+    if (!vp.isNull() || !nn.isNull()) {
+        const bool valid = (vp.isNull() || vp.is<uint8_t>()) && (nn.isNull() || nn.is<bool>());
+        const Phase phase = vp.isNull() ? Ade7953::getVoltagePhase() : static_cast<Phase>(vp.as<uint8_t>());
+        const bool noNeutral = nn.isNull() ? Ade7953::getNoNeutral() : nn.as<bool>();
+        if (valid && Ade7953::setVoltagePhase(phase, noNeutral)) {
             reported["voltage_phase"] = static_cast<uint8_t>(Ade7953::getVoltagePhase());
+            reported["no_neutral"] = Ade7953::getNoNeutral();
             applied = true;
         } else {
-            LOG_WARNING("Rejected voltage_phase (not an integer 1-3, or not stored)");
+            LOG_WARNING("Rejected voltage_phase/no_neutral");
         }
     }
 

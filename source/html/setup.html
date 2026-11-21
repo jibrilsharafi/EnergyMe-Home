@@ -147,11 +147,12 @@
         <div class="choice" data-supply="single"><span class="dot"></span><div><b>Single-phase</b><div class="muted">One live wire and neutral, 230 V. Most homes. Main breaker with 2 poles.</div></div></div>
         <div class="choice" data-supply="three"><span class="dot"></span><div><b>Three-phase</b><div class="muted">Three live wires L1, L2, L3 and neutral, 400 V between them. Main breaker with 4 poles.</div></div></div>
         <div class="choice" data-supply="split"><span class="dot"></span><div><b>Split-phase</b><div class="muted">North America. Two 120 V legs, 240 V across both.</div></div></div>
-        <p class="muted"><b>The meter's N always goes to neutral</b>, never to another phase. Split-phase: the centre neutral.</p>
+        <p class="muted" id="neutralNote"><b>The meter's N always goes to neutral</b>, never to another phase. Split-phase: the centre neutral.</p>
         <div id="vpBox">
-            <span class="field-label">The phase the meter's own L wire is connected to:</span>
+            <label class="muted"><input type="checkbox" id="noNeutral"> No neutral (3×230 V)</label>
+            <span class="field-label" id="vpLabel">The phase the meter's own L wire is connected to:</span>
             <div class="seg" id="vpSeg">
-                <button data-vp="1">L1</button><button data-vp="2">L2</button><button data-vp="3">L3</button>
+                <button data-vp="1"></button><button data-vp="2"></button><button data-vp="3"></button>
             </div>
         </div>
     </div>
@@ -211,7 +212,9 @@
             </div></span>`;
         let CHANNELS = 16; // read from the meter at boot (17 on some boards)
 
-        const S = { pick: {}, checking: {}, step: 1, cloud: true, vp: 1, supply: 'single', circuits: [], open: null, channels: [], poll: null };
+        const S = { pick: {}, checking: {}, step: 1, cloud: true, vp: 1, noNeutral: false, supply: 'single', circuits: [], open: null, channels: [], poll: null };
+        // Without neutral a single-phase load sits between two lines: phase n is the pair starting at line n
+        const PAIR = { 1: 'L1-L2', 2: 'L2-L3', 3: 'L3-L1' };
         const $ = id => document.getElementById(id);
         const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -244,10 +247,10 @@
             return out;
         }
         // No stored supply type: derive it from the channels, single-phase by default.
-        function supplyFrom(chans, vp) {
+        function supplyFrom(chans, vp, noNeutral) {
             const act = chans.filter(c => c.active);
             if (act.some(c => c.phase === 4)) return 'split';
-            if (vp !== 1 || act.some(c => c.phase === 2 || c.phase === 3)) return 'three';
+            if (noNeutral || vp !== 1 || act.some(c => c.phase === 2 || c.phase === 3)) return 'three';
             return 'single';
         }
         // Keep circuits valid for the chosen supply.
@@ -260,7 +263,7 @@
                     if (S.supply === 'split' && ct.phase !== 4) ct.phase = 1;
                 });
             });
-            if (S.supply !== 'three') S.vp = 1;
+            if (S.supply !== 'three') { S.vp = 1; S.noNeutral = false; }
         }
         const badTriple = c => c.cts.length === 3 && new Set(c.cts.map(t => t.phase)).size !== 3;
         const lastStep = () => S.supply === 'three' ? 4 : 3;
@@ -289,7 +292,7 @@
                 const wasGenerated = !ct.label || ct.label === (multi ? `${c.origName} L${ct.origPhase}` : c.origName) || c.name !== c.origName;
                 out.push({
                     ...base, index: ct.channel, active: true, label: wasGenerated ? (multi ? `${c.name} L${ct.phase}` : c.name) : ct.label,
-                    phase: ct.phase, groupLabel: groupOf(c), role: c.role,
+                    phase: ct.phase, lineCurrent: multi, groupLabel: groupOf(c), role: c.role,
                     ctSpecification: { ...(base.ctSpecification || { voltageOutput: 0.333, scalingFraction: 0 }), currentRating: c.ct !== c.origCt || ct.rating == null ? c.ct : ct.rating },
                 });
             }));
@@ -301,7 +304,11 @@
         // ---- rendering ----------------------------------------------------------
         function phaseSeg(ci, ti, ct) {
             const seg = opts => `<div class="seg sm">${opts.map(([p, t]) => `<button data-phase="${ci}:${ti}:${p}" class="${p === ct.phase ? 'on' : ''}">${t}</button>`).join('')}</div>`;
-            if (S.supply === 'three') return (S.circuits[ci].cts.length === 1 ? '<span class="field-label">Phase</span>' : '') + seg([[1, 'L1'], [2, 'L2'], [3, 'L3']]);
+            if (S.supply === 'three') {
+                const single = S.circuits[ci].cts.length === 1;
+                if (single && S.noNeutral) return '<span class="field-label">Lines</span>' + seg([1, 2, 3].map(p => [p, PAIR[p]]));
+                return (single ? '<span class="field-label">Phase</span>' : '') + seg([[1, 'L1'], [2, 'L2'], [3, 'L3']]);
+            }
             if (S.supply !== 'split') return '';
             return `<span class="field-label">Voltage ${VOLT_TIP}</span>` + seg([[1, '120 V'], [4, '240 V']]);
         }
@@ -335,7 +342,7 @@
 
         const fmtW = w => w >= 1000 ? `${(w / 1000).toFixed(2)} kW` : `${w} W`;
         // One row per channel: what it is now and what it becomes, changes highlighted.
-        const pill = p => `<span class="pill p${p}">L${p}</span>`;
+        const pill = (p, pair) => `<span class="pill p${p}">${pair ? PAIR[p] : `L${p}`}</span>`;
         const rev = (now, after) => after ? '<span class="rev">↺ reversed</span>' : now ? '<span class="rev off">↺ reversed</span>' : '';
         const reading = r => r && r.power
             ? `<span class="pw">${fmtW(r.power)}</span><span class="pf"><i><b style="width:${Math.round(Math.abs(r.pf) * 100)}%"></b></i>PF ${r.pf.toFixed(2)}</span>`
@@ -344,8 +351,8 @@
             const rows = l.channels.map((ch, i) => {
                 const ph = cand.phases[i], rv = cand.reverse[i];
                 const chg = ph !== ch.phase || rv !== ch.reverse;
-                const phTxt = ph !== ch.phase ? `<span class="old">${pill(ch.phase)}</span><span class="arrow">→</span>${pill(ph)}` : pill(ph);
-                const nowCell = withNow ? `<div class="c">${pill(ch.phase)}${rev(false, ch.reverse)}${reading(l.readings[i])}</div>` : '';
+                const phTxt = ph !== ch.phase ? `<span class="old">${pill(ch.phase, l.pair)}</span><span class="arrow">→</span>${pill(ph, l.pair)}` : pill(ph, l.pair);
+                const nowCell = withNow ? `<div class="c">${pill(ch.phase, l.pair)}${rev(false, ch.reverse)}${reading(l.readings[i])}</div>` : '';
                 return `<div>Channel ${ch.index}</div>${nowCell}<div class="c ${chg ? 'chg' : ''}">${phTxt}${rev(ch.reverse, rv)}${reading(cand.readings[i])}</div>`;
             }).join('');
             return `<div class="cmp" style="grid-template-columns:${withNow ? 'auto 1fr 1fr' : 'auto 1fr'}">${withNow ? '<div></div><div class="h">Now</div><div class="h">After</div>' : ''}${rows}</div>`;
@@ -386,7 +393,7 @@
             return `<div class="line">${h}${currentHtml(l)}</div>`;
         }
         // A single-phase channel as a one-channel line, so it renders like the others.
-        const asLine = c => ({ channels: [{ index: c.index, phase: c.phase, reverse: c.reverse, current: c.current }], readings: [c.reading] });
+        const asLine = c => ({ channels: [{ index: c.index, phase: c.phase, reverse: c.reverse, current: c.current }], readings: [c.reading], pair: S.noNeutral });
         const singleCands = c => c.options.map(o => ({ phases: [o.phase], reverse: [o.reverse], readings: [{ power: o.power, pf: o.pf }] }));
         function singleHtml(c) {
             const key = `s${c.index}`;
@@ -412,7 +419,13 @@
             document.querySelectorAll('[data-cloud]').forEach(el => el.classList.toggle('on', (el.dataset.cloud === '1') === S.cloud));
             document.querySelectorAll('[data-supply]').forEach(el => el.classList.toggle('on', el.dataset.supply === S.supply));
             $('vpBox').classList.toggle('hidden', S.supply !== 'three');
-            document.querySelectorAll('#vpSeg button').forEach(el => el.classList.toggle('on', +el.dataset.vp === S.vp));
+            $('noNeutral').checked = S.noNeutral;
+            $('neutralNote').classList.toggle('hidden', S.noNeutral);
+            $('vpLabel').textContent = S.noNeutral ? "The lines the meter's L and N wires are on:" : "The phase the meter's own L wire is connected to:";
+            document.querySelectorAll('#vpSeg button').forEach(el => {
+                el.classList.toggle('on', +el.dataset.vp === S.vp);
+                el.textContent = S.noNeutral ? PAIR[el.dataset.vp] : `L${el.dataset.vp}`;
+            });
             $('backBtn').classList.toggle('hidden', S.step === 1);
             $('nextBtn').textContent = S.step === lastStep() ? 'Finish' : 'Next';
             if (S.step === 3) renderCircuits();
@@ -423,6 +436,7 @@
         document.querySelectorAll('[data-cloud]').forEach(el => el.onclick = () => { S.cloud = el.dataset.cloud === '1'; render(); });
         document.querySelectorAll('[data-supply]').forEach(el => el.onclick = () => { S.supply = el.dataset.supply; fitSupply(); render(); });
         document.querySelectorAll('#vpSeg button').forEach(el => el.onclick = () => { S.vp = +el.dataset.vp; render(); });
+        $('noNeutral').onchange = e => { S.noNeutral = e.target.checked; render(); };
         $('addCircuit').onclick = () => {
             const ch = firstFree();
             if (ch === null) return toastError('All 16 channels are in use.');
@@ -506,7 +520,8 @@
 
         async function saveStep(step) {
             // Step 1 saves nothing: the cloud choice goes with setup/complete, so a cloud update cannot restart the meter mid-setup.
-            if (step === 2) await api.put('ade7953/voltage-phase', { voltagePhase: S.vp });
+            // No neutral goes on only after the circuits, which drop any split-phase channel it refuses
+            if (step === 2) await api.put('ade7953/voltage-phase', S.noNeutral ? { voltagePhase: S.vp } : { voltagePhase: S.vp, noNeutral: false });
             if (step === 3) {
                 // A group the page creates (a line or a new circuit) must not be shared with any other circuit
                 if (S.circuits.some(c => (c.cts.length > 1 || !c.group) && S.circuits.some(o => o !== c && groupOf(o) === groupOf(c)))) throw new Error('Two circuits have the same name.');
@@ -514,6 +529,7 @@
                 if (bad >= 0) { S.open = bad; renderCircuits(); throw new Error(`${S.circuits[bad].name}: the three CTs must be on L1, L2 and L3.`); }
                 S.channels = channelsFromCircuits();
                 await api.put('ade7953/channels', S.channels);
+                if (S.noNeutral) await api.put('ade7953/voltage-phase', { voltagePhase: S.vp, noNeutral: true });
             }
         }
 
@@ -562,11 +578,12 @@
                 ]);
                 S.cloud = !!cloud.enabled;
                 S.vp = vp.voltagePhase || 1;
+                S.noNeutral = !!vp.noNeutral;
                 S.channels = chans;
                 CHANNELS = chans.length || CHANNELS;
                 S.circuits = circuitsFromChannels(chans);
                 S.open = S.circuits.length ? 0 : null;
-                S.supply = supplyFrom(chans, S.vp);
+                S.supply = supplyFrom(chans, S.vp, S.noNeutral);
                 // Reopened mid-setup (reload, or another phone or laptop): resume on the phase check.
                 if (!status.setupDone && S.supply === 'three') {
                     const res = await api.get('ade7953/phase-check');
