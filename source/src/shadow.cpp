@@ -926,7 +926,7 @@ static bool _applyMeter(JsonObjectConst delta, JsonObject reported) {
             reported["no_neutral"] = Ade7953::getNoNeutral();
             applied = true;
         } else {
-            LOG_WARNING("Rejected voltage_phase/no_neutral (not an integer 1-3 and a boolean, not stored, or a split-phase channel)");
+            LOG_WARNING("Rejected voltage_phase/no_neutral");
         }
     }
 

@@ -3471,7 +3471,7 @@ namespace CustomServer
                 }
                 else
                 {
-                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Voltage phase not set (meter not ready, no neutral with a split-phase 240 V channel, or storage failure)");
+                    _sendErrorResponse(request, HTTP_CODE_INTERNAL_SERVER_ERROR, "Voltage phase not set (see the device log)");
                 }
             });
         server.addHandler(setVoltagePhaseHandler);

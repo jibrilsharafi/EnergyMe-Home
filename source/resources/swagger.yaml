@@ -4922,7 +4922,7 @@ components:
 
     NoNeutral:
       type: boolean
-      description: "Three-phase supply without neutral (3x230 V): the device's N is on the line after the voltage phase (1-2, 2-3, 3-1), so the voltage input is line-to-line. Channels with `lineCurrent` are then measured against their line's line-to-neutral voltage; other channels are loads between two lines, their phase naming the pair's first line. Refused while a channel is split-phase 240V. Optional on PUT: absent keeps the stored value."
+      description: "Three-phase supply without neutral (3x230 V): the device's N is on the line after the voltage phase (1-2, 2-3, 3-1). Refused while a channel is split-phase 240V. Optional on PUT."
       example: false
 
     CtSpecification:
@@ -4987,7 +4987,7 @@ components:
           $ref: '#/components/schemas/Phase'
         lineCurrent:
           type: boolean
-          description: "The CT sits on one line of a three-phase circuit. Used only with `noNeutral` on: the channel is then measured against its line's line-to-neutral voltage (1/sqrt(3) and -30 degrees from the line-to-line input). Optional on writes: absent keeps the stored value."
+          description: "CT on one line of a three-phase circuit. Used only with `noNeutral`, where any other channel's phase names a pair of lines. Optional on writes."
           example: false
         ctSpecification:
           $ref: '#/components/schemas/CtSpecification'
