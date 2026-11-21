@@ -962,7 +962,7 @@ void test_no_neutral_swapped_meter_wires_are_a_reverse(void) {
     }
 }
 
-// Field case 8856a682faac (office on 3x230 V, 20 Nov 2026, 19:32): what 2.9.0 published
+// Field case (office on 3x230 V, Nov 2026): what 2.9.0 published
 // for the three grid CTs (voltage phase 3, channels on phases 3, 1, 2), turned back into
 // the raw pair, read again with no neutral on, against the panel meter at the same time:
 // 754 W, -480 var, PF 0.82 / 0.62 / 0.86 capacitive on the lines of channels 0, 1, 2.
