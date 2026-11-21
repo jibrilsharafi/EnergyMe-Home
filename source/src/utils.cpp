@@ -2499,6 +2499,10 @@ bool restoreNvsFromJson(JsonDocument &doc) {
     // removed after the loop, so Ade7953::begin later in this boot migrates it again from the
     // restored channel 0 and the backup reads as it did when it was taken.
     const bool backupHasVoltagePhase = !doc["nvs"][PREFERENCES_NAMESPACE_ADE7953][CONFIG_VOLTAGE_PHASE_KEY].isNull();
+    // Same for the supply without neutral: a meter backup without it reads with a neutral,
+    // so the key is removed after the loop (the channels' line flags are then inert).
+    const bool clearNoNeutral = !doc["nvs"][PREFERENCES_NAMESPACE_ADE7953].isNull() &&
+                                doc["nvs"][PREFERENCES_NAMESPACE_ADE7953][CONFIG_NO_NEUTRAL_KEY].isNull();
     char channel0PhaseKey[PREFERENCES_KEY_BUFFER_SIZE];
     snprintf(channel0PhaseKey, sizeof(channel0PhaseKey), CHANNEL_PHASE_KEY, 0u);
     bool channel0PhaseRestored = false;
@@ -2604,6 +2608,14 @@ bool restoreNvsFromJson(JsonDocument &doc) {
         adePrefs.end();
         if (cleared) LOG_INFO("Backup has no voltage phase: it is migrated again from the restored channel 0 at this boot");
         else LOG_ERROR("Failed to clear the stored voltage phase: the restored channels keep it and may read rotated");
+    }
+
+    if (clearNoNeutral) {
+        Preferences adePrefs;
+        const bool cleared = adePrefs.begin(PREFERENCES_NAMESPACE_ADE7953, false) &&
+                             (!adePrefs.isKey(CONFIG_NO_NEUTRAL_KEY) || adePrefs.remove(CONFIG_NO_NEUTRAL_KEY));
+        adePrefs.end();
+        if (!cleared) LOG_ERROR("Failed to clear the stored supply without neutral: line channels may read scaled");
     }
 
     LOG_INFO("NVS restore complete: %lu/%lu keys succeeded, %lu failed",
